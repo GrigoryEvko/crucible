@@ -1,14 +1,18 @@
 #pragma once
 
-// Two one-writer publication slots for a pointer.  PublishOnce takes
-// exactly one publisher over its whole lifetime.  PublishSlot takes a
+// Three one-writer publication slots for an object.  PublishOnce takes
+// exactly one publisher over its whole lifetime.  BrandedPublishOnce takes
+// one publisher too, and only a Ref of its brand.  PublishSlot takes a
 // publisher again and again and lets a consumer take the pointer back
 // out.
 
 #include <foundation/Brand.h>
+#include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/contracts/Post.h>
+#include <foundation/core/Atomic.h>
+#include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Text.h>
@@ -148,6 +152,58 @@ public:
     [[nodiscard]] CRUCIBLE_INLINE bool is_published() const noexcept {
         return slot_.load(std::memory_order_acquire) != nullptr;
     }
+};
+
+// The targets of a BrandedPublishOnce: a target of a Ref, and the slot names
+// the pointee and not the pointer, as PublishOnce does.
+template <typename T>
+concept BrandedPublishOncePointee = PublishOncePointee<T> && ::foundation::core::RefTarget<T>;
+
+// A slot of one publisher that holds only a Ref of its brand.  A PublishOnce
+// takes a Ref of each brand, so its type does not tell which owner keeps the
+// object.  This slot names the brand, so an object that holds one, such as a
+// node of an arena, names the owner of what it borrows.  An observer gets the
+// Ref with the brand, and no raw pointer.
+//
+// The cell is one atomic word, the word of an Option of the Ref, and the empty
+// word is the never-published state.  So the size and the alignment are those
+// of a pointer, as in PublishOnce.  The cell holds each transfer property when
+// its Ref is Sendable (foundation/core/Atomic.h): two threads can observe a
+// slot of a T const when two threads can read a T.
+template <typename T, ::foundation::brand::IsFreshBrand Brand>
+    requires BrandedPublishOncePointee<T>
+class CRUCIBLE_OWNER BrandedPublishOnce final : ::foundation::Pinned<BrandedPublishOnce<T, Brand>> {
+public:
+    using brand_type = Brand;
+    using row_discipline = ::fixy::row_discipline::publish_once;
+    using row_payload = T;
+
+private:
+    using Held = ::foundation::core::Ref<T, Brand>;
+    using Word = ::foundation::core::Option<Held>;
+
+    ::foundation::core::Atomic<Word> slot_{};
+
+public:
+    constexpr BrandedPublishOnce() noexcept = default;
+    ~BrandedPublishOnce() = default;
+
+    // Publishes the object.  A Ref is never null, so no publish stores the
+    // never-published state.  A second publish ends the process in each build.
+    CRUCIBLE_INLINE void publish(Held object) noexcept {
+        bool const is_claimed =
+            slot_.cas_acq_rel(Word{::foundation::core::none}, ::foundation::core::some(object)).is_ok();
+        if (!is_claimed) [[unlikely]] {
+            publish_once_double_publish_abort_();
+        }
+    }
+
+    // The object of the publisher, or no value before the publish.
+    [[nodiscard]] CRUCIBLE_INLINE Word observe() const noexcept { return slot_.load_acquire(); }
+
+    // Any thread asks, and the publisher is a different thread, so the load
+    // takes acquire order.
+    [[nodiscard]] CRUCIBLE_INLINE bool is_published() const noexcept { return slot_.load_acquire().is_some(); }
 };
 
 template <typename T>

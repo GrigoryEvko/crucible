@@ -8,7 +8,7 @@
 //   on table-full, but never returns a different kernel).
 //
 // Strategy: per iteration, generate N random content hashes, and pair
-// each with one of N fake kernels.  Insert all N; lookup each; verify the
+// each with one of N kernels.  Insert all N; lookup each; verify the
 // original kernel comes back.  Random hash distribution exercises probe
 // chains.  Run with N up to KERNEL_CACHE_CAP/2 (50% load).
 //
@@ -53,67 +53,62 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             constexpr ::foundation::effects::cap::Nondet nondet = ::foundation::effects::testing::test().nondet;
             constexpr unsigned N = 64;
 
-            // The cache never reads a kernel, so the address of a fake
-            // object stands for one.  The N fakes have N addresses, in an
-            // arena of the scope of the check.
-            struct FakeKernel {
-                unsigned tag = 0;
+            // The cache never reads a kernel, so the address of a kernel
+            // stands for it.  The N kernels have N addresses, in an arena of
+            // the check.
+            ::fixy::BumpArena<KernelArena> arena =
+                ::fixy::mint_bump_arena<KernelArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
+            ::fixy::FixedList<KernelCache::KernelRef, N> kernels{};
+            for ([[maybe_unused]] const ::fixy::Index<N> index : ::fixy::IndexRange<N>{}) {
+                if (kernels.append(arena.make<CompiledKernel>(::foundation::effects::testing::test().alloc)).is_err())
+                    return false;
+            }
+            const auto kernel_of = [&kernels](::fixy::Index<N> index) noexcept -> KernelCache::KernelRef {
+                return *kernels.view().get(index.raw()).expect("the list holds N kernels");
             };
-            return ::fixy::with_bump_arena(
-                ::foundation::effects::testing::test().alloc, ::fixy::Quantity<::fixy::unit::Byte, size_t>{4096},
-                [&cache, &b](auto& arena) noexcept -> bool {
-                    auto fakes_run = arena.array(::foundation::effects::testing::test().alloc, N, FakeKernel{});
-                    // A plain View of an arena run: the View carries no brand of its arena.
-                    ::fixy::View<FakeKernel, N> const fakes =
-                        fakes_run.view().template window<N>(0).expect("the run holds N fakes");
-                    const auto kernel_of = [&fakes](::fixy::Index<N> index) noexcept -> KernelCache::KernelRef {
-                        return ::fixy::erase_brand(
-                            ::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&fakes.at(index)))));
-                    };
 
-                    for (const ::fixy::Index<N> index : fakes.indices()) {
-                        // RowHash{} is the bare-type / no-row baseline (raw 0):
-                        // this fuzzer keys purely on content_hash, so it pins a
-                        // single row slot of the row-keyed KernelCache for every
-                        // insert.  insert() returns
-                        // KernelCache::InsertResult, and table-full is the only
-                        // error.
-                        auto ins = cache.insert(nondet, b.hashes.at(index), RowHash{}, kernel_of(index));
-                        if (ins.is_err()) return false;
+            for (const ::fixy::Index<N> index : ::fixy::IndexRange<N>{}) {
+                // RowHash{} is the bare-type / no-row baseline (raw 0):
+                // this fuzzer keys purely on content_hash, so it pins a
+                // single row slot of the row-keyed KernelCache for every
+                // insert.  insert() returns
+                // KernelCache::InsertResult, and table-full is the only
+                // error.
+                auto ins = cache.insert(nondet, b.hashes.at(index), RowHash{}, kernel_of(index));
+                if (ins.is_err()) return false;
+            }
+
+            // Lookup each — must return the SAME kernel.
+            for (const ::fixy::Index<N> index : ::fixy::IndexRange<N>{}) {
+                const std::size_t i = index.raw();
+                const KernelCache::FoundKernel actual = cache.lookup(nondet, b.hashes.at(index), RowHash{});
+                // Two paths the lookup can return a "wrong" kernel:
+                //   1. Returned someone else's kernel (probe bug)
+                //   2. Returned no kernel (table-full or lost insert)
+                // Either fails the round-trip.
+                //
+                // Note: if two of our random hashes collide (after
+                // the |1 mask, probability still ~2^-64 per pair),
+                // the second insert overwrites and the first lookup
+                // legitimately returns the SECOND kernel.  Skip the
+                // check in that rare case.
+                bool collision_with_later = false;
+                for (std::size_t j = i + 1; j < N; ++j) {
+                    if (b.hashes.at(::fixy::Index<N>::check(j).expect("each later position is below N"))
+                        == b.hashes.at(index)) {
+                        collision_with_later = true;
+                        break;
                     }
+                }
+                if (collision_with_later) continue;
 
-                    // Lookup each — must return the SAME kernel.
-                    for (const ::fixy::Index<N> index : fakes.indices()) {
-                        const std::size_t i = index.raw();
-                        const KernelCache::FoundKernel actual = cache.lookup(nondet, b.hashes.at(index), RowHash{});
-                        // Two paths the lookup can return a "wrong" kernel:
-                        //   1. Returned someone else's kernel (probe bug)
-                        //   2. Returned no kernel (table-full or lost insert)
-                        // Either fails the round-trip.
-                        //
-                        // Note: if two of our random hashes collide (after
-                        // the |1 mask, probability still ~2^-64 per pair),
-                        // the second insert overwrites and the first lookup
-                        // legitimately returns the SECOND kernel.  Skip the
-                        // check in that rare case.
-                        bool collision_with_later = false;
-                        for (std::size_t j = i + 1; j < N; ++j) {
-                            if (b.hashes.at(::fixy::Index<N>::check(j).expect("each later position is below N"))
-                                == b.hashes.at(index)) {
-                                collision_with_later = true;
-                                break;
-                            }
-                        }
-                        if (collision_with_later) continue;
-
-                        const bool is_expected = actual.match(
-                            [&](KernelCache::KernelRef const& kernel) noexcept {
-                                return ::fixy::same_object(kernel, kernel_of(index));
-                            },
-                            []() noexcept { return false; });
-                        if (!is_expected) return false;
-                    }
-                    return true;
-                });
+                const bool is_expected = actual.match(
+                    [expected = kernel_of(index)](KernelCache::KernelRef const& kernel) noexcept {
+                        return ::fixy::same_object(kernel, expected);
+                    },
+                    []() noexcept { return false; });
+                if (!is_expected) return false;
+            }
+            return true;
         });
 }

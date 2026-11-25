@@ -1,6 +1,8 @@
 // Copyright (c) Grigory Evko
 // Licensed under the Apache License, Version 2.0
 
+#include "test_kernels.h"
+
 #include <crucible/KernelCache.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
@@ -23,7 +25,6 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 namespace {
 
-using crucible::CompiledKernel;
 using crucible::ContentHash;
 using crucible::KernelCache;
 using crucible::NumericalRecipe;
@@ -34,6 +35,8 @@ using crucible::SchemaHash;
 using crucible::TraceEntry;
 using crucible::DagArena;
 using crucible::RecipeArena;
+using crucible::test::is_found;
+using crucible::test::make_kernel;
 using fixy::BumpArena;
 
 namespace names = crucible::recipe_names;
@@ -48,21 +51,6 @@ inline ::foundation::effects::Init init_cap() noexcept { return g_init; }
 
 // A context whose row is empty, which each read of the registry admits.
 constexpr ::fixy::HotFgCtx kPure = ::foundation::effects::testing::foreground();
-
-// The cache never reads a kernel, so the address of a fake object stands
-// for one.
-template <class Fake>
-[[nodiscard]] KernelCache::KernelRef kernel_ref(Fake& fake) noexcept {
-    return ::fixy::erase_brand(::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&fake))));
-}
-
-// True when the lookup found the kernel that the fake object stands for.
-template <class Fake>
-[[nodiscard]] bool is_found(KernelCache::FoundKernel const& found, Fake& fake) noexcept {
-    return found.match(
-        [&fake](KernelCache::KernelRef kernel) noexcept { return ::fixy::same_object(kernel, kernel_ref(fake)); },
-        []() noexcept { return false; });
-}
 
 // The schema hashes are fixed so a comparison across pools or processes
 // stays stable.  The ops are a run of an arena, because the region keeps
@@ -259,6 +247,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
         CRUCIBLE_TEST_ASSERT(kTest, region_tc.content_hash != region_bf16_tc.content_hash);
         CRUCIBLE_TEST_ASSERT(kTest, region_ord.content_hash != region_bf16_tc.content_hash);
 
+        crucible::test::Kernels kernels = crucible::test::make_kernel_arena();
         KernelCache cache{alloc_cap()};
         using crucible::RowHash;
         // A cache key pairs a content hash with a row hash.  These cases
@@ -266,11 +255,8 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
         // row hash of zero.  The two axes partition the cache independently.
 
         // Training under the first recipe inserts one kernel.
-        struct FakeKernel {
-            const char* tag;
-        };
-        FakeKernel kernel_tc{"f16_tc-compiled"};
-        auto ins = cache.insert(g_test.nondet, region_tc.content_hash, RowHash{0}, kernel_ref(kernel_tc));
+        auto const kernel_tc = make_kernel(kernels);
+        auto ins = cache.insert(g_test.nondet, region_tc.content_hash, RowHash{0}, kernel_tc);
         CRUCIBLE_TEST_ASSERT(kTest, ins.is_ok());
         CRUCIBLE_FATAL_INVARIANT(is_found(cache.lookup(g_test.nondet, region_tc.content_hash, RowHash{0}), kernel_tc));
 
@@ -287,8 +273,8 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
 
         // Two kernels under two recipes coexist, each reachable only
         // through its own key.
-        FakeKernel kernel_ord{"f16_ordered-compiled"};
-        auto ins2 = cache.insert(g_test.nondet, region_ord.content_hash, RowHash{0}, kernel_ref(kernel_ord));
+        auto const kernel_ord = make_kernel(kernels);
+        auto ins2 = cache.insert(g_test.nondet, region_ord.content_hash, RowHash{0}, kernel_ord);
         CRUCIBLE_TEST_ASSERT(kTest, ins2.is_ok());
         CRUCIBLE_FATAL_INVARIANT(is_found(cache.lookup(g_test.nondet, region_tc.content_hash, RowHash{0}), kernel_tc));
         CRUCIBLE_FATAL_INVARIANT(

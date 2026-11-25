@@ -708,6 +708,9 @@ struct PeerRole {};
 
 struct LazyChannelWire : ::foundation::Pinned<LazyChannelWire> {};
 
+// The owner of the object of a branded slot.
+struct PublishedOwner {};
+
 // The tags and the two brands of the single-writer many-reader witness.
 struct SwmrWriterTag {
     using permission_row = ::foundation::effects::Row<>;
@@ -899,6 +902,7 @@ inline constexpr CarrierWitness kCarriers[] = {
 
     {^^::fixy::handle::Lazy, ^^::fixy::handle::Lazy<int>},
     {^^::fixy::handle::PublishOnce, ^^::fixy::handle::PublishOnce<int>},
+    {^^::fixy::handle::BrandedPublishOnce, ^^::fixy::handle::BrandedPublishOnce<int, PublishedOwner>},
     {^^::fixy::handle::PublishSlot, ^^::fixy::handle::PublishSlot<int>},
     {^^::fixy::channels::LazyEstablishedChannel,
      ^^::fixy::channels::LazyEstablishedChannel<::fixy::session::End, LazyChannelWire>},

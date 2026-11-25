@@ -80,10 +80,10 @@ public:
     template <typename Level, typename T>
     using AtLevel = ::fixy::Tagged<T, Level>;
 
-    // A compiled kernel in a slot.  The cache does not own the kernel, a
-    // reference is never null, and a reader of the cache gets the kernel as
-    // const.
-    using KernelRef = ::fixy::Ref<CompiledKernel const>;
+    // A compiled kernel in a slot.  The cache does not own the kernel: an
+    // arena of kernels does, and the reference names it.  A reference is never
+    // null, and a reader of the cache gets the kernel as const.
+    using KernelRef = ::crucible::KernelRef;
     // The kernel of a key, or no value when no slot holds the key.
     using FoundKernel = ::fixy::Option<KernelRef>;
 

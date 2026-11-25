@@ -38,6 +38,18 @@ static_assert(PublishOncePointee<Incomplete>);
 static_assert(sizeof(PublishOnce<int>) == sizeof(std::atomic<int*>));
 static_assert(sizeof(PublishOnce<void>) == sizeof(std::atomic<void*>));
 
+// A slot of a brand holds one word.  It shares the transfer facts of the Ref
+// that it holds: two threads can observe a slot of a const target that two
+// threads can read, and a slot of a target that one thread writes goes to no
+// second thread.  It takes a target of a Ref, so it takes no void.
+struct CheckOwner {};
+static_assert(sizeof(BrandedPublishOnce<int, CheckOwner>) == sizeof(PublishOnce<int>));
+static_assert(::foundation::transfer::Shareable<BrandedPublishOnce<int const, CheckOwner>>);
+static_assert(!::foundation::transfer::Shareable<BrandedPublishOnce<int, CheckOwner>>);
+static_assert(BrandedPublishOncePointee<int> && BrandedPublishOncePointee<int const>);
+static_assert(!BrandedPublishOncePointee<void> && !BrandedPublishOncePointee<int*>);
+static_assert(!BrandedPublishOncePointee<int[4]> && !BrandedPublishOncePointee<int&>);
+
 static_assert(alignof(PublishSlot<int>) >= 64, "PublishSlot must be cache-line aligned: repeated publish/"
                                                "exchange traffic invalidates the consumer's cached line "
                                                "every iteration, so the slot must NOT share a line with "

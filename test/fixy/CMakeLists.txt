@@ -6192,6 +6192,15 @@ fixy_neg_compile_test(neg_handle_publish_slot_null
   "no matching function for call to"
   "PublishSlot<\\{anonymous\\}::Payload>::publish\\(std::nullptr_t\\)")
 
+# A branded slot keeps its object for its whole life, so it takes only a Ref of
+# its brand: a Ref of another brand and an erased Ref name another owner or none.
+fixy_neg_compile_test(neg_handle_branded_publish_once_other_brand
+  "cannot convert .Ref<\\[...\\],\\{anonymous\\}::OtherOwner>. to .Ref<\\[...\\],\\{anonymous\\}::SlotOwner>."
+  "neg_handle_branded_publish_once_other_brand\\.cpp:[0-9]+:[0-9]+: error")
+fixy_neg_compile_test(neg_handle_branded_publish_once_erased_ref
+  "cannot convert .Ref<\\[...\\],foundation::brand::DefaultBrand>. to .Ref<\\[...\\],\\{anonymous\\}::SlotOwner>."
+  "neg_handle_branded_publish_once_erased_ref\\.cpp:[0-9]+:[0-9]+: error")
+
 # Once::call and Lazy::get_or_init each refuse, at the door, an argument
 # their body cannot use as it must.
 fixy_neg_compile_test(neg_handle_once_call_not_invocable

@@ -19,25 +19,21 @@ constexpr ::fixy::FixedArray<std::uint64_t, 8> kRowClusterSlotBases{
     1536, 1793, 2050, 2307, 2564, 2821, 3078, 3335,
 };
 constexpr std::uint64_t kRowsPerCluster = 128;
-// The kernels of each seed: the hot set, and the row siblings of the
-// clusters.
-constexpr std::size_t kSeedKernels = 1024;
+// The kernels of the hot set.
+constexpr std::uint64_t kHotKernels = 1024;
 
 // The tag of Nondet of each lookup and each insert of the bench.
 constexpr ::foundation::effects::cap::Nondet kNondet = ::foundation::effects::testing::test().nondet;
 
-struct FakeKernel {
-    std::uint64_t id = 0;
-};
+// The arena of the kernels of the bench.  The caches keep the address of each
+// kernel, so the arena lives until the end of the bench.
+using Kernels = ::fixy::BumpArena<crucible::KernelArena>;
 
-// The family tag of the arena of the fake kernels.
-struct[[= ::foundation::brand::arena_family_brand{}]] KernelArena final {};
-
-// The cache never reads a kernel, so the address of a fake object stands
-// for one.
-[[nodiscard]] KernelCache::KernelRef kernel_ref(FakeKernel& kernel) noexcept {
-    return ::fixy::erase_brand(::fixy::to(*static_cast<CompiledKernel*>(static_cast<void*>(&kernel))));
+// A new kernel.  The cache never reads a kernel, so its address stands for it.
+[[nodiscard]] KernelCache::KernelRef make_kernel(Kernels& kernels CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return kernels.make<CompiledKernel>(::foundation::effects::testing::test().alloc);
 }
+void make_kernel(Kernels&&) = delete("a temporary arena releases the kernel at the end of the statement");
 
 }  // namespace
 
@@ -168,30 +164,22 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 namespace {
 
 template <typename Cache>
-void seed_cache(Cache& cache, ::fixy::View<FakeKernel, kSeedKernels> kernels) {
-    for (auto [index, kernel] : kernels.enumerate()) {
-        kernel->id = index.raw() + 1;
-        auto inserted = cache.insert(kNondet, ContentHash{0x1000 + static_cast<std::uint64_t>(index.raw())}, RowHash{0},
-                                     kernel_ref(*kernel));
+void seed_cache(Cache& cache, Kernels& kernels) {
+    for (std::uint64_t position = 0; position < kHotKernels; ++position) {
+        auto inserted = cache.insert(kNondet, ContentHash{0x1000 + position}, RowHash{0}, make_kernel(kernels));
         CRUCIBLE_BENCH_CHECK(inserted.is_ok());
     }
 }
 
 template <typename Cache>
-void seed_row_siblings(Cache& cache, ::fixy::View<FakeKernel, kSeedKernels> kernels) {
-    const std::size_t required = kRowClusterSlotBases.size() * static_cast<std::size_t>(kRowsPerCluster);
-    CRUCIBLE_BENCH_CHECK(kernels.size() >= required);
-
-    std::size_t cursor = 0;
+void seed_row_siblings(Cache& cache, Kernels& kernels) {
     for (auto [cluster, base] : kRowClusterSlotBases.view().enumerate()) {
         const std::uint64_t content = 0xABC00000ULL | *base;
         for (std::uint64_t row = 0; row < kRowsPerCluster; ++row) {
-            FakeKernel& kernel = *kernels.get(cursor).expect("the seed holds a kernel for each row of a cluster");
-            kernel.id = 0xA000 + cursor;
-            auto inserted = cache.insert(kNondet, ContentHash{content},
-                                         RowHash{0x200 + (cluster.raw() * kRowsPerCluster) + row}, kernel_ref(kernel));
+            auto inserted =
+                cache.insert(kNondet, ContentHash{content}, RowHash{0x200 + (cluster.raw() * kRowsPerCluster) + row},
+                             make_kernel(kernels));
             CRUCIBLE_BENCH_CHECK(inserted.is_ok());
-            ++cursor;
         }
     }
 }
@@ -245,24 +233,12 @@ int main() {
     RawKernelCache raw{4096};
     KernelCache typed{::foundation::effects::testing::test().alloc, 4096};
 
-    // The caches keep the address of each kernel, so each seed takes its kernels from a run of the arena.
-    // The arena lives until the end of the bench.
-    ::fixy::BumpArena<KernelArena> arena =
-        ::fixy::mint_bump_arena<KernelArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
-    auto const take_kernels = [&arena]() noexcept {
-        auto kernels_run = arena.array(::foundation::effects::testing::test().alloc, kSeedKernels, FakeKernel{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        return kernels_run.view().window<kSeedKernels>(0).expect("the run holds the kernels of a seed");
-    };
-    ::fixy::View<FakeKernel, kSeedKernels> const raw_hot = take_kernels();
-    ::fixy::View<FakeKernel, kSeedKernels> const typed_hot = take_kernels();
-    seed_cache(raw, raw_hot);
-    seed_cache(typed, typed_hot);
-
-    ::fixy::View<FakeKernel, kSeedKernels> const raw_rows = take_kernels();
-    ::fixy::View<FakeKernel, kSeedKernels> const typed_rows = take_kernels();
-    seed_row_siblings(raw, raw_rows);
-    seed_row_siblings(typed, typed_rows);
+    Kernels kernels =
+        ::fixy::mint_bump_arena<crucible::KernelArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
+    seed_cache(raw, kernels);
+    seed_cache(typed, kernels);
+    seed_row_siblings(raw, kernels);
+    seed_row_siblings(typed, kernels);
 
     ::fixy::FixedArray<bench::Report, 6> reports{
         bench_hot_hit("raw triple KernelCache.lookup hit", raw),

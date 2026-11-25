@@ -1,7 +1,8 @@
 // What fixy/handle/PublishOnce.h and fixy/handle/Once.h claim, checked.
 //
-// Four handles, one question each.  PublishOnce takes exactly one
-// publisher ever.  PublishSlot takes one again and again and lets a
+// Five handles, one question each.  PublishOnce takes exactly one
+// publisher ever.  BrandedPublishOnce takes one too, and only a Ref of its
+// brand.  PublishSlot takes one again and again and lets a
 // consumer take the pointer back.  Once gates a body so it runs once
 // across threads, and Lazy is a value built on that gate.
 //
@@ -23,9 +24,11 @@
 #include <foundation/effects/Effect.h>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdio>
 #include <thread>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace h = fixy::handle;
@@ -89,6 +92,32 @@ static_assert(!Publishes<h::PublishSlot<Payload>, Payload*>, "a raw pointer can 
 static_assert(!Publishes<h::PublishOnce<Payload>, decltype(nullptr)>);
 static_assert(!Publishes<h::PublishSlot<Payload>, decltype(nullptr)>);
 
+// ── The publish of a Ref of one brand ────────────────────────────────
+//
+// A BrandedPublishOnce takes a Ref of its brand and of its target or of a
+// target with less const.  A Ref of another brand, an erased Ref and a raw
+// pointer do not reach publish.  A slot names a brand, so the erased brand
+// gives no slot, and void is no target.  An observer gets the Ref, and no raw
+// pointer.
+struct[[= ::foundation::brand::arena_family_brand{}]] CellArena final {};
+using ArenaCell = h::BrandedPublishOnce<Payload const, CellArena>;
+using ErasedRef = decltype(::fixy::erase_brand(std::declval<PayloadRef>()));
+static_assert(Publishes<ArenaCell, ::fixy::Ref<Payload const, CellArena>>);
+static_assert(Publishes<ArenaCell, ::fixy::Ref<Payload, CellArena>>, "a slot of a const target takes a Ref of T");
+static_assert(!Publishes<ArenaCell, PayloadRef>, "a Ref of another brand");
+static_assert(!Publishes<ArenaCell, ErasedRef>, "a Ref that names no owner");
+static_assert(!Publishes<ArenaCell, ::fixy::Ref<Other const, CellArena>>);
+static_assert(!Publishes<ArenaCell, Payload const*>, "a raw pointer can be null");
+static_assert(!Publishes<ArenaCell, decltype(nullptr)>);
+static_assert(!Publishes<h::BrandedPublishOnce<Payload, CellArena>, ::fixy::Ref<Payload const, CellArena>>,
+              "a publish never drops a const");
+template <typename T, typename Owner>
+concept CanNameOwner = requires { typename h::BrandedPublishOnce<T, Owner>; };
+static_assert(CanNameOwner<Payload, CellArena> && !CanNameOwner<Payload, ::foundation::brand::DefaultBrand>);
+static_assert(!CanNameOwner<void, CellArena> && !CanNameOwner<Payload*, CellArena>);
+static_assert(std::is_same_v<decltype(std::declval<ArenaCell const&>().observe()),
+                             ::fixy::Option<::fixy::Ref<Payload const, CellArena>>>);
+
 // ── Shape ────────────────────────────────────────────────────────────
 
 // PublishOnce keeps the natural alignment of an atomic pointer.  It is
@@ -97,6 +126,9 @@ static_assert(!Publishes<h::PublishSlot<Payload>, decltype(nullptr)>);
 // padding would break.
 static_assert(sizeof(h::PublishOnce<Payload>) == sizeof(std::atomic<Payload*>));
 static_assert(alignof(h::PublishOnce<Payload>) == alignof(std::atomic<Payload*>));
+static_assert(sizeof(ArenaCell) == sizeof(h::PublishOnce<Payload>));
+static_assert(alignof(ArenaCell) == alignof(h::PublishOnce<Payload>));
+static_assert(std::is_trivially_destructible_v<ArenaCell>, "an arena ends no slot");
 
 // PublishSlot pads to a whole line instead, because it is written again
 // and again and must not share one with anything.
@@ -108,13 +140,31 @@ static_assert(alignof(h::Once) >= 64);
 // reach, or a slot whose duplication would split ownership.
 static_assert(!std::is_copy_constructible_v<h::PublishOnce<Payload>>);
 static_assert(!std::is_move_constructible_v<h::PublishOnce<Payload>>);
+static_assert(!std::is_copy_constructible_v<ArenaCell> && !std::is_move_constructible_v<ArenaCell>);
+static_assert(!std::is_copy_assignable_v<ArenaCell> && !std::is_move_assignable_v<ArenaCell>);
 static_assert(!std::is_copy_constructible_v<h::PublishSlot<Payload>>);
 static_assert(!std::is_move_constructible_v<h::PublishSlot<Payload>>);
 static_assert(!std::is_copy_constructible_v<h::Once>);
 static_assert(!std::is_move_constructible_v<h::Once>);
 static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
 
-// ── Runtime: the two publication slots ───────────────────────────────
+// ── Runtime: the three publication slots ─────────────────────────────
+
+// The block of each arena of the cells.
+constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kCellBlock{std::size_t{256}};
+
+void branded_publish_once_runs(::fixy::TestRunnerCtx const& test) {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    ::fixy::BumpArena<CellArena> arena = ::fixy::mint_bump_arena<CellArena>(kCellBlock);
+    auto const value = arena.make<Payload>(alloc, 7, 2.5);
+    ArenaCell slot{};
+    CRUCIBLE_TEST_ASSERT(test, !slot.is_published() && slot.observe().is_none());
+    slot.publish(value);
+    CRUCIBLE_TEST_ASSERT(test, slot.is_published());
+    ::fixy::Ref<Payload const, CellArena> const seen = slot.observe().expect("the slot holds the published object");
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::same_object(seen, value) && seen->a == 7);
+    ::fixy::check::pass(test, "  a branded slot gives the published object\n");
+}
 
 [[nodiscard]] int publish_once_runs() {
     Payload value{7, 2.5};
@@ -316,6 +366,16 @@ void double_publish_aborts(::fixy::TestRunnerCtx const& test) {
             slot.publish(::fixy::to(second));
         },
         ::fixy::TextView{"crucible: fatal: PublishOnceDoublePublish"});
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+            ::fixy::BumpArena<CellArena> arena = ::fixy::mint_bump_arena<CellArena>(kCellBlock);
+            ArenaCell slot{};
+            slot.publish(arena.make<Payload>(alloc, 1, 1.0));
+            slot.publish(arena.make<Payload>(alloc, 2, 2.0));
+        },
+        ::fixy::TextView{"crucible: fatal: PublishOnceDoublePublish"});
 
     // One publish must NOT abort, or the case above would pass for a
     // handle that aborts on every call.  It runs in the test process.
@@ -335,6 +395,7 @@ int main() {
     if (const int rc = lazy_initializes_once_single_threaded(); rc != 0) return rc;
     if (const int rc = lazy_initializes_once(); rc != 0) return rc;
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    branded_publish_once_runs(test);
     double_publish_aborts(test);
     return 0;
 }

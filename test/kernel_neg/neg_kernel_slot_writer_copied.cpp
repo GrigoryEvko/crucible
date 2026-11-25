@@ -7,12 +7,17 @@
 
 #include <crucible/KernelCache.h>
 #include <crucible/MerkleDag.h>
+#include <fixy/Core.h>
+#include <foundation/effects/Effect.h>
 
+#include <cstddef>
 #include <utility>
 
 int main() {
-    crucible::CompiledKernel const kernel{};
-    crucible::KernelCache::KernelRef const held = ::fixy::erase_brand(::fixy::to(kernel));
+    ::fixy::BumpArena<crucible::KernelArena> kernels =
+        ::fixy::mint_bump_arena<crucible::KernelArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{64});
+    crucible::KernelCache::KernelRef const held =
+        kernels.make<crucible::CompiledKernel>(::foundation::effects::testing::test().alloc);
     crucible::KernelCache::KernelCacheSlot slot{};
     slot.claim(crucible::ContentHash{1})
         .match(

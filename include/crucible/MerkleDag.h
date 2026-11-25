@@ -14,6 +14,7 @@
 #include <fixy/Refined.h>
 #include <fixy/Saturated.h>
 #include <fixy/handle/PublishOnce.h>
+#include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/contracts/Decide.h>
@@ -37,6 +38,14 @@ namespace crucible {
 // class is complete and has no member, so a walk that reads the parts of a
 // type, such as the store check of a frame door, reads that it holds nothing.
 struct CompiledKernel final {};
+
+// The family tag of each arena that holds compiled kernels.  Each kernel is an
+// object of a BumpArena<KernelArena>, and each Ref of a kernel carries the tag.
+// So a region and the kernel cache keep no kernel of a different owner.
+struct[[= ::foundation::brand::arena_family_brand{}]] KernelArena final {};
+
+// A compiled kernel that an arena of kernels keeps.  A reader only reads it.
+using KernelRef = ::fixy::Ref<CompiledKernel const, KernelArena>;
 
 // The transfer facts of a compiled kernel (the opaque types of
 // foundation/Transfer.h).  The check file of this header asserts that the
@@ -504,9 +513,9 @@ struct RegionNode : TraceNode {
     NumericsHash numerics;
     // One writer publishes the compiled kernel once and every reader
     // acquire-loads it.  A reader only reads the kernel, so the slot holds
-    // a kernel of const.  sizeof(PublishOnce<T*>) equals sizeof(atomic<T*>),
-    // so the 88-byte layout below holds.
-    ::fixy::handle::PublishOnce<CompiledKernel const> compiled;
+    // a kernel of const.  The slot takes only a kernel of an arena of kernels,
+    // and it is one word, so the 88-byte layout below holds.
+    ::fixy::handle::BrandedPublishOnce<CompiledKernel const, KernelArena> compiled;
 
     // The ops are in a DAG arena, and the node only borrows them as a run of
     // the arena.  A region only reads its ops.

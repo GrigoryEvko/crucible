@@ -5,6 +5,7 @@
 #include <foundation/Transfer.h>
 
 #include <type_traits>
+#include <utility>
 
 namespace crucible {
 
@@ -13,6 +14,16 @@ namespace crucible {
 static_assert(std::is_empty_v<CompiledKernel>, "a compiled kernel holds no state until the compute path gives it one");
 static_assert(::foundation::transfer::holds_its_statement(^^CompiledKernel),
               "the definition of CompiledKernel holds the statement of its transfer facts");
+
+// A region takes only a kernel of an arena of kernels: a Ref of another brand,
+// also of a DAG arena, and a Ref that names no owner do not convert to a
+// KernelRef.
+using RegionKernel = decltype(std::declval<RegionNode&>().compiled);
+static_assert(std::is_same_v<RegionKernel, ::fixy::handle::BrandedPublishOnce<CompiledKernel const, KernelArena>>);
+static_assert(std::is_convertible_v<::fixy::Ref<CompiledKernel, KernelArena>, KernelRef>);
+static_assert(!std::is_convertible_v<DagRef<CompiledKernel const>, KernelRef>);
+static_assert(!std::is_convertible_v<::fixy::Ref<CompiledKernel const>, KernelRef>);
+static_assert(sizeof(RegionKernel) == sizeof(void*), "the slot of a kernel takes one pointer");
 
 static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorSlot);
