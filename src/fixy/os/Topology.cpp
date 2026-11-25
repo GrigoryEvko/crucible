@@ -347,12 +347,20 @@ private:
 [[nodiscard]] std::vector<int> numbered_entries(PathBuilder const& directory, std::string_view prefix) noexcept {
     std::vector<int> ids;
     if (!directory.is_whole()) return ids;
+    // The ids name CPUs or NUMA nodes, so they fit the bits of an affinity
+    // mask.  A directory with more of them gives no id, as a listing that
+    // fails gives none.  A visitor of the listing stores no borrow outside it
+    // (for_each_entry), so it keeps the ids in a list of the base.
+    base_core::FixedList<int, ::foundation::algebra::lattices::AffinityMask::kBits> found{};
+    bool is_full = false;
     bool const is_listed =
-        os_door::for_each_entry(directory.path().c_text(), [&ids, prefix](base_core::CText name) noexcept {
-            id_of_entry(name, prefix).match([&ids](int id) { ids.push_back(id); }, [] {});
-            return os_door::Visit::proceed;
+        os_door::for_each_entry(directory.path().c_text(), [&found, &is_full, prefix](base_core::CText name) noexcept {
+            id_of_entry(name, prefix).match([&found, &is_full](int id) { is_full = found.append(id).is_err(); }, [] {});
+            return is_full ? os_door::Visit::stop : os_door::Visit::proceed;
         }).is_ok();
-    if (!is_listed) return {};
+    if (!is_listed || is_full) return {};
+    for (int const id : found.view())
+        ids.push_back(id);
     std::sort(ids.begin(), ids.end());
     return ids;
 }
@@ -673,24 +681,32 @@ probe_l3_groups_(std::string_view sysfs_root, std::vector<int> const& cpus, Pack
         PathBuilder const cache_dir =
             PathBuilder{sysfs_root}.add("/devices/system/cpu/cpu").add_number(cpu).add("/cache");
         if (!cache_dir.is_whole()) continue;
-        static_cast<void>(os_door::for_each_entry(cache_dir.path().c_text(), [&](base_core::CText name) noexcept {
-            std::string_view const entry = view_of(name.view());
-            if (entry.size() < 6 || !entry.starts_with("index")) return os_door::Visit::proceed;
-            PathBuilder index_dir = cache_dir;
-            index_dir.add("/").add(name);
-            Value const level_text = read_value(PathBuilder{index_dir}.add("/level"));
-            ParsedInt const level = parse_leading_int(level_text.text());
-            if (!level.is_number || level.value != 3) return os_door::Visit::proceed;
+        // The listing keeps the CPU list of the first L3 of the CPU, and the
+        // group comes from that list after the listing.  A visitor of the
+        // listing stores no borrow outside it (for_each_entry).
+        Value shared_text{};
+        bool is_l3_found = false;
+        static_cast<void>(os_door::for_each_entry(
+            cache_dir.path().c_text(), [&cache_dir, &shared_text, &is_l3_found](base_core::CText name) noexcept {
+                std::string_view const entry = view_of(name.view());
+                if (entry.size() < 6 || !entry.starts_with("index")) return os_door::Visit::proceed;
+                PathBuilder index_dir = cache_dir;
+                index_dir.add("/").add(name);
+                Value const level_text = read_value(PathBuilder{index_dir}.add("/level"));
+                ParsedInt const level = parse_leading_int(level_text.text());
+                if (!level.is_number || level.value != 3) return os_door::Visit::proceed;
 
-            Value const shared_text = read_value(PathBuilder{index_dir}.add("/shared_cpu_list"));
-            std::vector<int> group = parse_cpu_list_(shared_text.text());
-            std::sort(group.begin(), group.end());
-            if (group.empty()) return os_door::Visit::proceed;
-            bool const is_new = std::find(all_groups.begin(), all_groups.end(), group) == all_groups.end();
-            place_l3_group_(cpu, group.front(), is_new, table);
-            if (is_new) all_groups.push_back(std::move(group));
-            return os_door::Visit::stop;  // one L3 for each CPU
-        }));
+                shared_text = read_value(PathBuilder{index_dir}.add("/shared_cpu_list"));
+                is_l3_found = true;
+                return os_door::Visit::stop;  // one L3 for each CPU
+            }));
+        if (!is_l3_found) continue;
+        std::vector<int> group = parse_cpu_list_(shared_text.text());
+        std::sort(group.begin(), group.end());
+        if (group.empty()) continue;
+        bool const is_new = std::find(all_groups.begin(), all_groups.end(), group) == all_groups.end();
+        place_l3_group_(cpu, group.front(), is_new, table);
+        if (is_new) all_groups.push_back(std::move(group));
     }
     return all_groups;
 }
