@@ -13,9 +13,12 @@
 #
 # The unit owners has owners that are no plain array.  The unit marked has a class
 # that keeps its blocks and that a caller can move (46), and a class that no code can
-# move.  The unit early has a class that the unit completes after the body that reads
-# it (27), and a class that the unit never completes (39).  The second compile of the
-# unit stale shows that a parse with no object gives the same errors.
+# move.  The unit blocks has the blocks of an owner that a caller can move: the bytes
+# behind a pointer (81), an array of bytes in a class behind a pointer (87), the storage
+# at an address that is a number (93), and an element of a list (99).  The unit early
+# has a class that the unit completes after the body that reads it (27), and a class
+# that the unit never completes (39).  The second compile of the unit stale shows that a
+# parse with no object gives the same errors.
 
 compile stale src/stale.cpp
 flag stale -freflection
@@ -107,6 +110,18 @@ flag marked -freflection
 exit marked fail
 finding marked view-escape stale-borrow src/marked.cpp:46:12 | borrow of blocks in view after a call of planted::change with blocks, which reaches a function with no body in this unit
 error marked src/marked.cpp:46 | this use reads a borrow of blocks in view after a call of planted::change with blocks, which reaches a function with no body in this unit
+
+compile blocks src/blocks.cpp
+flag blocks -freflection
+exit blocks fail
+finding blocks view-escape stale-borrow src/blocks.cpp:81:12 | borrow of blocks in value after a call of planted::change with blocks, which reaches a function with no body in this unit
+finding blocks view-escape stale-borrow src/blocks.cpp:87:12 | borrow of blocks in value after a call of planted::change with blocks, which reaches a function with no body in this unit
+finding blocks view-escape stale-borrow src/blocks.cpp:93:12 | borrow of blocks in value after a call of planted::change with blocks, which reaches a function with no body in this unit
+finding blocks view-escape stale-borrow src/blocks.cpp:99:12 | borrow of store.log in event after a call of planted::change with store, which reaches a function with no body in this unit
+error blocks src/blocks.cpp:81 | this use reads a borrow of blocks in value after a call of planted::change with blocks, which reaches a function with no body in this unit
+error blocks src/blocks.cpp:87 | this use reads a borrow of blocks in value after a call of planted::change with blocks, which reaches a function with no body in this unit
+error blocks src/blocks.cpp:93 | this use reads a borrow of blocks in value after a call of planted::change with blocks, which reaches a function with no body in this unit
+error blocks src/blocks.cpp:99 | this use reads a borrow of store.log in event after a call of planted::change with store, which reaches a function with no body in this unit
 
 compile early src/early.cpp
 flag early -freflection

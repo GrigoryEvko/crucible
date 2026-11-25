@@ -3522,13 +3522,14 @@ struct BorrowRoute {
     TypeSet targets;
 };
 
-// An owner, the types behind its pointers, whether it keeps each block until its
-// own end, and whether no code can move or assign it then.  BEHIND lives until the
-// next begin_route_reading().
+// An owner and the types behind its pointers.  For an owner that keeps each block
+// until its own end: whether a block can hold an object of each type, and whether no
+// code can move or assign the owner.  BEHIND lives until the next
+// begin_route_reading().
 struct OwnerClass {
     unsigned id = 0;
     const TypeSet* behind = nullptr;
-    bool keeps_blocks = false;
+    bool has_raw_blocks = false;
     bool is_fixed = false;
 };
 

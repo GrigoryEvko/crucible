@@ -1,0 +1,72 @@
+// A store holds a list of the base that keeps its elements.  A result that names the
+// store names no element, so a change of the list through a callee with no body ends
+// no borrow of the store.  The bytes of an element are no block of the list.
+#include <foundation/core/Array.h>
+#include <foundation/core/Owner.h>
+
+namespace foundation::core {
+
+template <class Event>
+class[[= owns_its_storage{}]] EventList final {
+public:
+    Event const& at(unsigned long position) const& noexcept;
+
+private:
+    HeapArray<Event> events_{};
+};
+
+struct PlainEvent final {
+    unsigned long value = 0;
+};
+
+struct PaddedEvent final {
+    unsigned long value = 0;
+    FixedArray<unsigned char, 8> padding{};
+};
+
+}  // namespace foundation::core
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+template <class Event>
+struct Store final {
+    fc::EventList<Event> log{};
+};
+
+template <class Event>
+struct StoreView final {
+    Store<Event> const& store;
+};
+
+using PlainStore = Store<fc::PlainEvent>;
+using PaddedStore = Store<fc::PaddedEvent>;
+
+StoreView<fc::PlainEvent> view_of(PlainStore const& store) noexcept;
+StoreView<fc::PaddedEvent> view_of(PaddedStore const& store) noexcept;
+void change(PlainStore& store) noexcept;
+void change(PaddedStore& store) noexcept;
+unsigned long read(StoreView<fc::PlainEvent> view) noexcept;
+unsigned long read(StoreView<fc::PaddedEvent> view) noexcept;
+
+unsigned long store_of_plain_events(PlainStore& store) noexcept {
+    auto const view = view_of(store);
+    change(store);
+    return read(view);
+}
+
+unsigned long store_of_padded_events(PaddedStore& store) noexcept {
+    auto const view = view_of(store);
+    change(store);
+    return read(view);
+}
+
+unsigned long element_before_the_change(PaddedStore& store) noexcept {
+    fc::PaddedEvent const& event = store.log.at(0);
+    unsigned long const value = event.value;
+    change(store);
+    return value;
+}
+
+}  // namespace planted

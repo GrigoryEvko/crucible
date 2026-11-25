@@ -130,6 +130,9 @@ concept OwnerState = MarksOwnerState<State> && GivesOwnerOperations<State>;
 // can name, until the end of the owner.  So the kind stale-borrow of the rule
 // view-escape reads a call of a member as no end of a borrow.  An EpochArena
 // ends the objects of an epoch, and only the frame of that epoch can name them.
+// A class whose blocks can hold an object of each type names them by a pointer
+// to bytes or to void, or a class behind a pointer holds an array of bytes.  The
+// blocks of each other class hold the types that its pointers name.
 struct owns_its_storage final {};
 
 // A state whose release gives nothing back, such as the run of a region that

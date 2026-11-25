@@ -32,6 +32,16 @@
 //     of it keeps the storage, so the borrow goes with it.  A target in the bytes
 //     of the argument has no owner on its route.
 //
+// Blocks
+//     A class that states owns_its_storage{} can keep an object of each type in a
+//     raw block.  Then it is on the route of each result, also when a part of the
+//     argument has the type of a target.  A block is raw when a pointer of the owner
+//     names bytes or void, and when a class behind a pointer holds an array of
+//     bytes.  A type argument of the owner is an element.  The bytes of an element
+//     are no raw block, so a list of elements is on the route of its elements only.
+//     An owner with no pointer keeps the address of its blocks as a number, so its
+//     blocks are raw.
+//
 // Answers
 //     An answer is a set of TYPE_UID values, which no collection reuses.  The
 //     family keeps an answer for the unit when the walk read each part of each
@@ -105,6 +115,7 @@ RouteAnswers<TypeSet> held_answers;
 RouteAnswers<std::vector<OwnerClass>> owner_answers;
 RouteAnswers<BorrowRoute> route_answers;
 RouteAnswers<bool> keeps_answers;
+RouteAnswers<bool> raw_block_answers;
 
 std::uint64_t pair_key(tree first, tree second) {
     return (static_cast<std::uint64_t>(TYPE_UID(first)) << 32) | TYPE_UID(second);
@@ -350,6 +361,78 @@ const TypeSet& types_behind(tree type) {
     });
 }
 
+// What the pointers of an owner name (the blocks).
+struct Blocks {
+    bool have_pointer = false;
+    bool are_raw = false;
+};
+
+void read_blocks(tree type, const TypeSet& elements, Blocks& blocks, Visits& visits);
+
+// Reads the objects that the POINTER of an owner names.
+void read_pointee(tree pointer, const TypeSet& elements, Blocks& blocks, Visits& visits) {
+    tree const named = TYPE_MAIN_VARIANT(TREE_TYPE(pointer));
+    if (FUNC_OR_METHOD_TYPE_P(named)) {
+        return;
+    }
+    blocks.have_pointer = true;
+    if (is_indirect_type(named)) {
+        read_pointee(named, elements, blocks, visits);
+    } else if (is_erased_type(element_class(named))) {
+        blocks.are_raw = true;
+    } else {
+        read_blocks(named, elements, blocks, visits);
+    }
+}
+
+// Reads the pointers and the arrays of bytes of TYPE, but not the content of an
+// element.
+void read_blocks(tree type, const TypeSet& elements, Blocks& blocks, Visits& visits) {
+    tree const object = element_class(type);
+    if (object == NULL_TREE || has_id(elements, TYPE_UID(object))) {
+        return;
+    }
+    if (is_raw_byte(object)) {
+        blocks.are_raw = blocks.are_raw || TREE_CODE(type) == ARRAY_TYPE;
+        return;
+    }
+    if (!RECORD_OR_UNION_TYPE_P(object)) {
+        return;
+    }
+    if (readable_class(object) == NULL_TREE) {
+        blocks.are_raw = true;
+        return;
+    }
+    if (!visits.enter(object)) {
+        return;
+    }
+    visit_fields(object, [&](tree field) {
+        if (is_indirect_type(TREE_TYPE(field))) {
+            read_pointee(TREE_TYPE(field), elements, blocks, visits);
+        } else {
+            read_blocks(TREE_TYPE(field), elements, blocks, visits);
+        }
+    });
+}
+
+// True when a block of the owner TYPE can hold an object of each type (the blocks).
+// The walk is linear in the count of the fields.
+bool has_raw_blocks(tree type) {
+    return raw_block_answers.get(TYPE_UID(type), [type] {
+        TypeSet elements;
+        visit_type_arguments(type, [&](tree argument) {
+            tree element = element_class(argument);
+            if (element != NULL_TREE) {
+                add_id(elements, TYPE_UID(element));
+            }
+        });
+        Blocks blocks;
+        Visits visits;
+        read_blocks(type, elements, blocks, visits);
+        return blocks.are_raw || !blocks.have_pointer;
+    });
+}
+
 // True when no code can take the value of an object of TYPE away: the class has no
 // move constructor and no assignment that a caller can use.
 bool is_fixed_class(tree type) {
@@ -392,7 +475,8 @@ void add_owners(tree type, std::vector<OwnerClass>& owners, Visits& visits, bool
             is_known = is_known || owner.id == id;
         }
         if (!is_known) {
-            owners.push_back(OwnerClass{id, &types_behind(type), keeps_blocks, keeps_blocks && is_fixed_class(type)});
+            owners.push_back(OwnerClass{id, &types_behind(type), keeps_blocks && has_raw_blocks(type),
+                                        keeps_blocks && is_fixed_class(type)});
         }
         if (keeps_blocks) {
             return;
@@ -542,7 +626,7 @@ BorrowRoute make_route(tree result, tree held) {
         can_be_raw = can_be_raw && (target == kErasedType || !has_id(contents, target));
     }
     for (const OwnerClass& owner : owners_of(held)) {
-        if (owner.keeps_blocks || have_common_type(targets, *owner.behind)
+        if (owner.has_raw_blocks || have_common_type(targets, *owner.behind)
             || (can_be_raw && has_id(*owner.behind, kRawBytes))) {
             add_id(answer.route, owner.id);
         }
@@ -566,6 +650,7 @@ void begin_route_reading(bool is_wide) {
     owner_answers.clear_open();
     route_answers.clear_open();
     keeps_answers.clear_open();
+    raw_block_answers.clear_open();
 }
 
 bool have_common_type(const TypeSet& first, const TypeSet& second) {
