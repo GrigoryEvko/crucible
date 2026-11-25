@@ -15,7 +15,6 @@ struct Guarded {
 
 int main() {
     ::fixy::CyclicBuffer<Guarded, 2> ring{};
-    ring.push_new(Guarded{});
-    ring.update(ring.slot_back(::fixy::index<0>()), [](Guarded& element) noexcept { element.value = 1; });
+    ring.update(ring.next_slot(), [](Guarded& element) noexcept { element.value = 1; });
     return 0;
 }

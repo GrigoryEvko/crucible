@@ -2380,9 +2380,9 @@ fixy_neg_compile_test(neg_cyclic_buffer_update_of_an_element_that_moves_only
 fixy_neg_compile_test(neg_cyclic_buffer_update_ends_in_slot
   "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::update\\(foundation::core::Index<Count>, Body&&\\) &"
   "update of an element with no nothrow assignment ends the element in its slot and starts the copy there")
-fixy_neg_compile_test(neg_cyclic_buffer_push_new_of_a_throwing_move
+fixy_neg_compile_test(neg_cyclic_buffer_push_new_ends_in_slot
   "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::push_new\\(T&&\\) &"
-  "push_new ends the old element of the slot before the new one starts, so the move of the element does not throw")
+  "push_new of an element with no nothrow assignment ends the old element and starts the new one in its slot")
 fixy_neg_compile_test(neg_cyclic_buffer_owner_no_default
   "no matching function for call to .mint_keyed_owner\\(const fixy::CyclicBufferOwner<.anonymous.::ThrowingDefault, 4>&\\)."
   "the expression .is_nothrow_default_constructible_v<T> \\[with T = <unnamed>::ThrowingDefault\\]. evaluated to .false.")

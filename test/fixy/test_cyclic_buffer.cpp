@@ -144,30 +144,7 @@ struct Step {
     ~Step() { ++g_step_ends; }
 };
 
-[[nodiscard]] Step step_of(std::uint64_t value) noexcept {
-    Step step{};
-    step.value = value;
-    return step;
-}
-
 [[nodiscard]] std::uint64_t value_of(Step const& step) noexcept { return step.value; }
-
-// A push_new of a full ring ends the oldest element one time and starts the
-// new element in its slot, which the slot of the newest names.
-[[nodiscard]] int push_new_starts_a_new_element_in_the_slot() {
-    ::fixy::CyclicBuffer<Step, 2> ring{};
-    Step first = step_of(11);
-    Step second = step_of(12);
-    Step third = step_of(13);
-    ring.push_new(std::move(first));
-    ring.push_new(std::move(second));
-    const int ends_before = g_step_ends;
-    ring.push_new(std::move(third));
-    if (g_step_ends != ends_before + 1) return 1;
-    if (ring.with_slot(ring.slot_back(::fixy::index<0>()), value_of) != 13) return 2;
-    if (ring.with_slot(ring.slot_back(::fixy::index<1>()), value_of) != 12 || ring.size() != 2) return 3;
-    return 0;
-}
 
 // An element with no assignment whose move and end run no code, as an element
 // with a counter that only goes up.
@@ -175,9 +152,55 @@ struct Level {
     std::uint64_t value = 0;
 
     Level() noexcept = default;
+    explicit Level(std::uint64_t from) noexcept : value{from} {}
     Level(const Level&) = default;
     Level& operator=(const Level&) = delete("a level only goes up");
 };
+
+// An element with a nothrow assignment whose end is code.  It counts its ends,
+// and its assignments.
+int g_gauge_ends = 0;
+int g_gauge_writes = 0;
+
+struct Gauge {
+    std::uint64_t value = 0;
+
+    Gauge() noexcept = default;
+    explicit Gauge(std::uint64_t from) noexcept : value{from} {}
+    Gauge(const Gauge&) = default;
+    Gauge& operator=(const Gauge& other) noexcept {
+        value = other.value;
+        ++g_gauge_writes;
+        return *this;
+    }
+    ~Gauge() { ++g_gauge_ends; }
+};
+
+// A push_new of a full ring puts its value in the place of the oldest element,
+// in the slot that the slot of the newest names.  An element with an assignment
+// takes it, so no element of the ring ends.
+template <class Element>
+[[nodiscard]] int push_new_replaces_the_oldest_element() {
+    ::fixy::CyclicBuffer<Element, 2> ring{};
+    Element first{11};
+    Element second{12};
+    Element third{13};
+    ring.push_new(std::move(first));
+    ring.push_new(std::move(second));
+    const int ends_before = g_gauge_ends;
+    ring.push_new(std::move(third));
+    if (g_gauge_ends != ends_before) return 1;
+    const auto read = [](Element const& element) noexcept { return element.value; };
+    if (ring.with_slot(ring.slot_back(::fixy::index<0>()), read) != 13) return 2;
+    if (ring.with_slot(ring.slot_back(::fixy::index<1>()), read) != 12 || ring.size() != 2) return 3;
+    return 0;
+}
+
+[[nodiscard]] int push_new_of_each_kind_of_element() {
+    if (const int failed = push_new_replaces_the_oldest_element<Level>(); failed != 0) return failed;
+    if (const int failed = push_new_replaces_the_oldest_element<Gauge>(); failed != 0) return 3 + failed;
+    return g_gauge_writes == 3 ? 0 : 7;
+}
 
 // An update of an element with no assignment puts its copy in the place of the
 // element, and it changes no other slot.
@@ -248,7 +271,7 @@ int main() {
     if (const int failed = const_ring_reads_the_same_slots(); failed != 0) return 50 + failed;
     if (const int failed = fresh_claim_starts_a_new_element_in_the_slot(); failed != 0) return 60 + failed;
     if (const int failed = keyed_ring_writes_with_its_key(); failed != 0) return 70 + failed;
-    if (const int failed = push_new_starts_a_new_element_in_the_slot(); failed != 0) return 80 + failed;
+    if (const int failed = push_new_of_each_kind_of_element(); failed != 0) return 80 + failed;
     if (const int failed = update_loses_a_nested_step(); failed != 0) return 90 + failed;
     if (const int failed = update_of_an_element_with_no_assignment(); failed != 0) return 100 + failed;
     return 0;

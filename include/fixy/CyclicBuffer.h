@@ -42,9 +42,9 @@
 //   a capture, a helper or a Ref, could claim the same slot and end the
 //   element while the body holds it.  It writes through value doors:
 //     push(value)         the slot of the next claim becomes value
-//     push_new(value)     the old element of the slot of the next claim ends,
-//                         and a new one starts from value in its place, also
-//                         for an element with no assignment
+//     push_new(value)     value takes the place of the element of the slot of
+//                         the next claim, also for an element with no
+//                         assignment whose move and end are trivial
 //     update(slot, body)  body changes a copy of the element of a slot, and
 //                         the door then puts the copy in its place (the update
 //                         door of a FixedArray, foundation/core/Array.h)
@@ -286,19 +286,23 @@ public:
         slot_at_(claim_slot_()) = std::move(value);
     }
 
-    // Claims the slot of the next claim, ends its old element, and starts a
-    // new element from value in its place.  An element that refuses an
-    // assignment, such as one with a counter that only goes up, recycles its
-    // slots.  The move does not throw, so the slot holds an element after the
-    // door.  Between the end of the old element and the start of the new one,
-    // only the destructor and the move of T run, and no body of a caller, so
-    // no code of the thread reads the slot there.  Complexity: O(1).
+    // Claims the slot of the next claim, and puts value in the place of its
+    // element.  An element with a nothrow assignment takes it, so the slot holds
+    // a live element at each step.  An element that refuses an assignment, such
+    // as one with a counter that only goes up, ends, and the new element starts
+    // in its place.  The end and the move of such an element are trivial
+    // (PutBackElement).  So no code of an element, which could read the ring by
+    // a second name, runs while the slot holds no element.  Complexity: O(1).
     constexpr void push_new(T&& value) & noexcept
-        requires(!is_keyed_) && std::is_nothrow_move_constructible_v<T>
+        requires(!is_keyed_) && ::foundation::core::PutBackElement<T>
     {
         T* const slot = __builtin_addressof(slot_at_(claim_slot_()));
-        slot->~T();
-        ::new(static_cast<void*>(slot)) T(std::move(value));
+        if constexpr (std::is_nothrow_move_assignable_v<T>) {
+            *slot = std::move(value);
+        } else {
+            slot->~T();
+            ::new(static_cast<void*>(slot)) T(std::move(value));
+        }
     }
 
     // Body changes a copy of the element of a slot, and the door then puts the
@@ -429,9 +433,10 @@ public:
         "the move and the end of the element run no code: give the element a nothrow assignment, or make the ring with "
         "mint_keyed_owner and call with_slot(key, slot, body)");
     void push_new(T&& value) & noexcept
-        requires(!is_keyed_) && (!std::is_nothrow_move_constructible_v<T>)
-    = delete("push_new ends the old element of the slot before the new one starts, so the move of the element does not "
-             "throw: a throw between the two leaves the slot with no element");
+        requires(!is_keyed_) && (!::foundation::core::PutBackElement<T>)
+    = delete("push_new of an element with no nothrow assignment ends the old element and starts the new one in its "
+             "slot, so the move and the end of the element run no code: give the element a nothrow assignment, or "
+             "make the ring with mint_keyed_owner and call with_fresh_claim(key, body)");
 
     // A door with no key on a keyed ring binds to these overloads, so the
     // refusal gives its reason.
