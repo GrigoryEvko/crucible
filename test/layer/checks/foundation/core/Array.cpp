@@ -194,6 +194,29 @@ struct NoAssignment {
     NoAssignment& operator=(NoAssignment const&) = delete("an element of the check has no assignment");
 };
 static_assert(UpdatableElement<int> && UpdatableElement<NoAssignment> && !UpdatableElement<HeapArray<int>>);
+// An element whose end or move is code puts its copy back only with a nothrow
+// assignment, because the code would run while the slot holds no element.
+struct EndsWithCode {
+    constexpr EndsWithCode() noexcept = default;
+    constexpr EndsWithCode(EndsWithCode const&) noexcept = default;
+    EndsWithCode& operator=(EndsWithCode const&) = delete("an element of the check has no assignment");
+    constexpr ~EndsWithCode() {}
+};
+struct MovesWithCode {
+    constexpr MovesWithCode() noexcept = default;
+    constexpr MovesWithCode(MovesWithCode const&) noexcept = default;
+    constexpr MovesWithCode(MovesWithCode&&) noexcept {}
+    MovesWithCode& operator=(MovesWithCode const&) = delete("an element of the check has no assignment");
+};
+struct AssignedWithCode {
+    constexpr AssignedWithCode() noexcept = default;
+    constexpr AssignedWithCode(AssignedWithCode const&) noexcept {}
+    constexpr AssignedWithCode& operator=(AssignedWithCode const&) noexcept { return *this; }
+    constexpr ~AssignedWithCode() {}
+};
+static_assert(CopiedOutElement<EndsWithCode> && !PutBackElement<EndsWithCode> && !UpdatableElement<EndsWithCode>);
+static_assert(CopiedOutElement<MovesWithCode> && !PutBackElement<MovesWithCode> && !UpdatableElement<MovesWithCode>);
+static_assert(UpdatableElement<AssignedWithCode>);
 [[nodiscard]] consteval int update_and_copy() {
     FixedArray<int, 4> numbers{1, 2, 3, 4};
     int const given = numbers.update(index<1>(), [](int& number) noexcept {

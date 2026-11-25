@@ -338,7 +338,7 @@ that the axis does not apply to the row.
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_epoch_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 17 |
 | `mint_erased_address` | `include/foundation/core/CallRef.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_fixed_heap_array` | `include/foundation/core/FixedHeapArray.h` | Y | - | Y | Y | token | · | HS14: 9 |
+| `mint_fixed_heap_array` | `include/foundation/core/FixedHeapArray.h` | Y | - | Y | Y | token | · | HS14: 10 |
 | `mint_foreign_run_address` | `include/foundation/core/DataAddress.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_foreign_text(const char*, std::size_t)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_foreign_text(foundation::core::View<const std::byte, 18446744073709551615>)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |

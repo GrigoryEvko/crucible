@@ -2341,7 +2341,8 @@ fixy_neg_compile_test(neg_cyclic_buffer_of_a_linear_element
 # A CyclicBuffer with no key lends no slot that a body writes: a helper, a Ref
 # and a push in the body ended the element that the body held.  Its value doors
 # refuse an element that does not copy or that can throw at a move, and a keyed
-# ring has none of them.
+# ring has none of them.  An update of an element with no nothrow assignment
+# runs no code of the element while its slot holds no element.
 fixy_neg_compile_test(neg_cyclic_buffer_unkeyed_claim_beside_a_helper
   "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_claim\\(Body&&\\) &"
   "a CyclicBuffer with no key lends no slot that a body writes, because another name of the ring could claim the same slot")
@@ -2360,6 +2361,9 @@ fixy_neg_compile_test(neg_cyclic_buffer_keyed_push_new
 fixy_neg_compile_test(neg_cyclic_buffer_update_of_an_element_that_moves_only
   "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::update\\(foundation::core::Index<Count>, Body&&\\) &"
   "update gives the body a copy of the element and moves the copy back, so the element copies and moves with no throw")
+fixy_neg_compile_test(neg_cyclic_buffer_update_ends_in_slot
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::update\\(foundation::core::Index<Count>, Body&&\\) &"
+  "update of an element with no nothrow assignment ends the element in its slot and starts the copy there")
 fixy_neg_compile_test(neg_cyclic_buffer_push_new_of_a_throwing_move
   "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::push_new\\(T&&\\) &"
   "push_new ends the old element of the slot before the new one starts, so the move of the element does not throw")

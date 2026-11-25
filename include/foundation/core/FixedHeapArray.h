@@ -241,6 +241,13 @@ public:
         detail::UpdateFrame<T> frame{first_()[index.raw()]};
         return frame.run(static_cast<Body&&>(body));
     }
+    template <class Body>
+        requires(!is_keyed_) && CopiedOutElement<T> && (!PutBackElement<T>)
+                 && std::is_invocable_v<Body, T&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    void update(Index<N> index, Body&& body) & = delete(
+        "update of an element with no nothrow assignment ends the element in its slot and starts the copy there, so "
+        "the move and the end of the element run no code: give the element a nothrow assignment, or make the array "
+        "with mint_keyed_owner and call with_element(key, index, body)");
     template <class... Arguments>
         requires is_keyed_
     void update(Arguments&&... arguments) & = delete(

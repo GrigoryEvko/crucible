@@ -411,14 +411,23 @@ public:
         "with_slot(key, slot, body)");
 
     // An update of an element that does not copy, or that can throw at a copy
-    // or a move, binds to this overload, and a push_new of an element that can
-    // throw at a move to the next one, so the refusal gives its reason.
+    // or a move, binds to this overload.  An update of an element with no
+    // nothrow assignment whose move or end is code binds to the next one, and
+    // a push_new of an element that can throw at a move to the one after it.
+    // So each refusal gives its reason.
     template <class Body>
-        requires(!is_keyed_) && (!::foundation::core::UpdatableElement<T>) && std::is_invocable_v<Body&&, T&>
+        requires(!is_keyed_) && (!::foundation::core::CopiedOutElement<T>) && std::is_invocable_v<Body&&, T&>
     void update(Index<N> slot, Body&& body) & = delete(
         "update gives the body a copy of the element and moves the copy back, so the element copies and moves with no "
         "throw: start a new element with push_new, or make the ring with mint_keyed_owner and call with_slot(key, "
         "slot, body)");
+    template <class Body>
+        requires(!is_keyed_) && ::foundation::core::CopiedOutElement<T> && (!::foundation::core::PutBackElement<T>)
+                 && std::is_invocable_v<Body&&, T&>
+    void update(Index<N> slot, Body&& body) & = delete(
+        "update of an element with no nothrow assignment ends the element in its slot and starts the copy there, so "
+        "the move and the end of the element run no code: give the element a nothrow assignment, or make the ring with "
+        "mint_keyed_owner and call with_slot(key, slot, body)");
     void push_new(T&& value) & noexcept
         requires(!is_keyed_) && (!std::is_nothrow_move_constructible_v<T>)
     = delete("push_new ends the old element of the slot before the new one starts, so the move of the element does not "

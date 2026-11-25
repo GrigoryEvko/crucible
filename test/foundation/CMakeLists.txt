@@ -4760,10 +4760,16 @@ foundation_neg_compile_test(neg_core_fixed_array_set_on_const
   "neg_core_fixed_array_set_on_const\\.cpp:[0-9]+:[0-9]+: error")
 # The update door gives its body a copy of the element: the element copies,
 # the result of the body holds no borrow of the copy, the body stores none of
-# it outside, and the body writes the array through no name.
+# it outside, and the body writes the array through no name.  An element with
+# no nothrow assignment puts its copy back with no code of its own.
 foundation_neg_compile_test(neg_core_fixed_array_update_move_only
   "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::update\\(foundation::core::Index<Count>, Body&&\\) &"
   "update gives the body a copy of the element and moves the copy back")
+foreach(_update_in_slot ends moves)
+  foundation_neg_compile_test(neg_core_fixed_array_update_${_update_in_slot}_in_slot
+    "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::update\\(foundation::core::Index<Count>, Body&&\\) &"
+    "update of an element with no nothrow assignment ends the element in its slot and starts the copy there")
+endforeach()
 foundation_neg_compile_test(neg_core_fixed_array_update_gives_reference
   "no matching function for call to .foundation::core::FixedArray<int, 2>::update\\("
   "HoldsNoBorrow")
@@ -5751,6 +5757,9 @@ foundation_neg_compile_test(neg_core_fixed_heap_array_nested_frame_door
 foundation_neg_compile_test(neg_core_fixed_heap_array_element_written_with_no_key
   "use of deleted function .void foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::with_element\\(foundation::core::Index<[A-Za-z]+>, Body&&\\) &"
   "a FixedHeapArray with no key lends no element that a body writes, because another name of the array could lend")
+foundation_neg_compile_test(neg_core_fixed_heap_array_update_ends_in_slot
+  "use of deleted function .void foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::update\\(foundation::core::Index<[A-Za-z]+>, Body&&\\) &"
+  "update of an element with no nothrow assignment ends the element in its slot and starts the copy there")
 # A keyed FixedHeapArray opens a frame only with the LoanKey of its brand, and
 # its gate refuses a body that reaches the key.  It has no value door, and its
 # maker takes the allocation capability.

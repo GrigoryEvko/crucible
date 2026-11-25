@@ -333,6 +333,65 @@ void test_fixed_array_update_loses_a_nested_step(::fixy::TestRunnerCtx const& te
     }
 }
 
+// The identities that ended, and what the end of an element found in the
+// watched array.
+constexpr std::size_t kIdentities = 16;
+constinit FixedArray<bool, kIdentities> ended_identities{};
+constinit std::size_t next_identity = 0;
+constinit bool is_watching = false;
+constinit bool is_ended_element_seen = false;
+constinit std::size_t reads_of_the_array = 0;
+
+// An element with an assignment.  Each element that a copy or an assignment
+// writes has an identity of its own.  The end of an element marks its identity
+// and reads the watched array.
+class Watched final {
+public:
+    constexpr Watched() noexcept = default;
+    Watched(Watched const& /*other*/) noexcept : place_{next_identity} { ++next_identity; }
+    Watched& operator=(Watched const& /*other*/) noexcept {
+        end_();
+        place_ = next_identity;
+        ++next_identity;
+        return *this;
+    }
+    ~Watched();
+
+    [[nodiscard]] bool is_ended() const noexcept {
+        return Index<kIdentities>::check(place_).is_some_and(
+            [](Index<kIdentities> const& place) noexcept { return ended_identities.at(place); });
+    }
+
+private:
+    void end_() const noexcept {
+        Index<kIdentities>::check(place_).match(
+            [](Index<kIdentities> place) noexcept { ended_identities.set(place, true); }, []() noexcept {});
+    }
+
+    std::size_t place_ = kIdentities;
+};
+
+constinit FixedArray<Watched, 3> watched_array{};
+
+Watched::~Watched() {
+    end_();
+    if (!is_watching) return;
+    ++reads_of_the_array;
+    for (Watched const& element : watched_array)
+        is_ended_element_seen = is_ended_element_seen || element.is_ended();
+}
+
+// The copy of update ends after its assignment to the element of the slot.  So
+// the end of an element that reads the array finds a live element in each slot.
+void test_the_end_of_the_copy_of_update_finds_a_whole_array() {
+    for (Index<3> const slot : watched_array.indices())
+        watched_array.set(slot, Watched{});
+    is_watching = true;
+    watched_array.update(index<1>(), [](Watched& element) noexcept { static_cast<void>(element.is_ended()); });
+    is_watching = false;
+    CRUCIBLE_TEST_ASSERT(kTest, reads_of_the_array == 1 && !is_ended_element_seen);
+}
+
 // The value doors of the run: fill writes each element, copy_from the N
 // elements of a View, and copy_window a part that fits.  A window that does
 // not fit writes nothing.
@@ -613,6 +672,7 @@ int main() {
     test_fixed_array_value_doors_write_one_element();
     test_fixed_array_update_changes_one_element();
     test_fixed_array_update_loses_a_nested_step(test);
+    test_the_end_of_the_copy_of_update_finds_a_whole_array();
     test_fixed_array_value_doors_write_the_run();
     test_fixed_array_copy_doors_take_their_own_run();
     test_build_fixed_array_gives_a_new_array();

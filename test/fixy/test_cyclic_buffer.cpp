@@ -153,9 +153,7 @@ struct Step {
 [[nodiscard]] std::uint64_t value_of(Step const& step) noexcept { return step.value; }
 
 // A push_new of a full ring ends the oldest element one time and starts the
-// new element in its slot, which the slot of the newest names.  An update of
-// an element with no assignment ends it one time, and its copy starts in its
-// place.
+// new element in its slot, which the slot of the newest names.
 [[nodiscard]] int push_new_starts_a_new_element_in_the_slot() {
     ::fixy::CyclicBuffer<Step, 2> ring{};
     Step first = step_of(11);
@@ -168,11 +166,29 @@ struct Step {
     if (g_step_ends != ends_before + 1) return 1;
     if (ring.with_slot(ring.slot_back(::fixy::index<0>()), value_of) != 13) return 2;
     if (ring.with_slot(ring.slot_back(::fixy::index<1>()), value_of) != 12 || ring.size() != 2) return 3;
-    const int ends_before_update = g_step_ends;
-    ring.update(ring.slot_back(::fixy::index<1>()), [](Step& step) noexcept { step.value += 100; });
-    // The door ends the element of the slot and its own copy.
-    if (g_step_ends != ends_before_update + 2) return 4;
-    if (ring.with_slot(ring.slot_back(::fixy::index<1>()), value_of) != 112) return 5;
+    return 0;
+}
+
+// An element with no assignment whose move and end run no code, as an element
+// with a counter that only goes up.
+struct Level {
+    std::uint64_t value = 0;
+
+    Level() noexcept = default;
+    Level(const Level&) = default;
+    Level& operator=(const Level&) = delete("a level only goes up");
+};
+
+// An update of an element with no assignment puts its copy in the place of the
+// element, and it changes no other slot.
+[[nodiscard]] int update_of_an_element_with_no_assignment() {
+    ::fixy::CyclicBuffer<Level, 2> ring{};
+    ring.push_new(Level{});
+    ring.push_new(Level{});
+    const auto level_of = [](Level const& level) noexcept { return level.value; };
+    ring.update(ring.slot_back(::fixy::index<1>()), [](Level& level) noexcept { level.value += 100; });
+    if (ring.with_slot(ring.slot_back(::fixy::index<1>()), level_of) != 100) return 1;
+    if (ring.with_slot(ring.slot_back(::fixy::index<0>()), level_of) != 0 || ring.size() != 2) return 2;
     return 0;
 }
 
@@ -234,5 +250,6 @@ int main() {
     if (const int failed = keyed_ring_writes_with_its_key(); failed != 0) return 70 + failed;
     if (const int failed = push_new_starts_a_new_element_in_the_slot(); failed != 0) return 80 + failed;
     if (const int failed = update_loses_a_nested_step(); failed != 0) return 90 + failed;
+    if (const int failed = update_of_an_element_with_no_assignment(); failed != 0) return 100 + failed;
     return 0;
 }

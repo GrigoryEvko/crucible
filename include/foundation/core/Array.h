@@ -624,11 +624,25 @@ namespace detail {
 
 }  // namespace detail
 
-// The element of the update door: a copy and a move of it do not throw.  The
-// door copies the element out, so the array holds a whole element while the
-// body runs, and it moves the copy back.
+// An element that the update door copies out of its slot: a copy and a move of
+// it do not throw.  So the array holds a whole element while the body runs.
 template <class T>
-concept UpdatableElement = std::is_nothrow_copy_constructible_v<T> && std::is_nothrow_move_constructible_v<T>;
+concept CopiedOutElement = std::is_nothrow_copy_constructible_v<T> && std::is_nothrow_move_constructible_v<T>;
+
+// An element that the update door puts back with a live element in the slot at
+// each code of the element.  A nothrow assignment writes the live element of
+// the slot.  With no such assignment, the element of the slot ends and the copy
+// starts there, so the end and the move are trivial and no code of the element
+// runs between the two.  The code of an element can reach its array, through a
+// static array, a Ref or a guard that takes itself out of a registry.  It would
+// find an ended element in the slot.
+template <class T>
+concept PutBackElement = std::is_nothrow_move_assignable_v<T>
+                      || (std::is_trivially_move_constructible_v<T> && std::is_trivially_destructible_v<T>);
+
+// The element of the update door.
+template <class T>
+concept UpdatableElement = CopiedOutElement<T> && PutBackElement<T>;
 
 namespace detail {
 
@@ -673,6 +687,7 @@ public:
 // destructor puts back in the place of the element.  The result of the body
 // exists before the destructor runs.
 template <class T>
+    requires UpdatableElement<T>
 class UpdateFrame final {
     T& slot_;
     T held_;
@@ -683,6 +698,8 @@ public:
     UpdateFrame(UpdateFrame const&) = delete("the frame of update puts its copy back one time");
     UpdateFrame& operator=(UpdateFrame const&) = delete("the frame of update puts its copy back one time");
     // An element with no assignment ends, and the copy starts in its place.
+    // Its end and its move are trivial (PutBackElement), so no code of the
+    // element runs while the slot holds no element.
     constexpr ~UpdateFrame() {
         oracle_.require_unwritten(slot_);
         if constexpr (std::is_nothrow_move_assignable_v<T>) {
@@ -913,7 +930,8 @@ public:
     // build with the test oracles ends the process when the bytes of a
     // trivially copyable element change while body runs.  An element with no
     // assignment, such as one with a Monotonic part, ends, and the copy starts
-    // in its place, so such a part moves only by its own steps in body.
+    // in its place, so such a part moves only by its own steps in body.  The
+    // end and the move of such an element are trivial (PutBackElement).
     // Complexity: O(1), and the cost of body, of one copy and of one move.
     template <class Body>
         requires(!is_keyed_)
@@ -928,11 +946,18 @@ public:
         requires(!is_keyed_) && LinearElementBody<Body, T>
     void update(Index<N> index, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
-        requires(!is_keyed_) && (!UpdatableElement<T>)
+        requires(!is_keyed_) && (!CopiedOutElement<T>)
                  && std::is_invocable_v<Body, T&> && ::foundation::linear::HoldsNoLinearValue<Body>
     void update(Index<N> index, Body&& body) & = delete(
         "update gives the body a copy of the element and moves the copy back, so the element copies and moves with no "
         "throw: take an element that does not copy with exchange");
+    template <class Body>
+        requires(!is_keyed_) && CopiedOutElement<T> && (!PutBackElement<T>)
+                 && std::is_invocable_v<Body, T&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    void update(Index<N> index, Body&& body) & = delete(
+        "update of an element with no nothrow assignment ends the element in its slot and starts the copy there, so "
+        "the move and the end of the element run no code: give the element a nothrow assignment, or make the array "
+        "with mint_keyed_owner and call with_element(key, index, body)");
     template <class... Arguments>
         requires is_keyed_
     void update(Arguments&&... arguments) & = delete(
