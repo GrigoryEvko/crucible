@@ -82,17 +82,16 @@
 //
 // The walk is a function that is no template, so no unit can specialize what
 // it admits.  It reads each pair of a type and a region one time.  It follows
-// each pointer, borrow and borrow of a frame in its own visited lists, so a
+// each pointer, borrow and borrow of a frame in its own visited list, so a
 // class that reaches itself ends the walk, and the memo keeps the verdict of
-// each captured type for the translation unit.  Complexity: linear in the
-// distinct pairs that the body reaches, times the scan of the visited list,
-// at compile time only.
+// each captured type for the translation unit.  It reads a class through
+// type_parts_v of foundation/core/TypeParts.h, which reads each class one
+// time for the translation unit, with an operation budget for each class.
+// Complexity: linear in the distinct pairs that the body reaches, times the
+// scan of the visited list, at compile time only.
 
-#include <foundation/Brand.h>
-#include <foundation/Transfer.h>
 #include <foundation/core/Frame.h>
-#include <foundation/core/Owner.h>
-#include <foundation/reflect/Members.h>
+#include <foundation/core/TypeParts.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <cstddef>
@@ -106,8 +105,7 @@ namespace foundation::core {
 
 namespace detail {
 
-// The three regions of the walk.  The test of a scope brand is
-// detail::names_scope_brand of foundation/core/Frame.h.
+// The three regions of the walk.
 enum class StoreRegion : unsigned char {
     owned,
     read_only,
@@ -121,100 +119,10 @@ enum class BodyForm : unsigned char {
     named,
 };
 
-// Whether a class carries an annotation.
-enum class Annotated : unsigned char {
-    no,
-    yes,
-};
-
 // The region of the target of a reference, a pointer or a borrow: writable
 // unless it is const.
-[[nodiscard]] consteval StoreRegion target_region_(::foundation::reflect::TypeNode const& target) {
-    return target.was_const ? StoreRegion::read_only : StoreRegion::writable;
-}
-
-// True for a scope brand itself: the closure type of CRUCIBLE_SCOPE_BRAND.
-// A closure type has no name, so the test reads the members of no named
-// class.
-[[nodiscard]] consteval bool is_scope_brand_(std::meta::info type) {
-    if (!std::meta::is_class_type(type) || std::meta::has_identifier(type)) return false;
-    return names_scope_brand(type);
-}
-
-// True for a class with a type argument that is a scope brand: a borrow of a
-// frame (the walk), such as ViewMut<T, Brand>, RefMut<T, Brand> or
-// Ref<T, Brand> of the brand of a frame.
-[[nodiscard]] consteval bool is_frame_borrow_(std::meta::info type) {
-    if (!std::meta::has_template_arguments(type)) return false;
-    std::vector<std::meta::info> const arguments = std::meta::template_arguments_of(type);
-    for (std::size_t index = 0; index < arguments.size(); ++index) {
-        if (std::meta::is_type(arguments[index]) && is_scope_brand_(std::meta::dealias(arguments[index]))) return true;
-    }
-    return false;
-}
-
-// True for a template argument that names no object that a value can hold:
-// a value argument, or an incomplete class, such as a tag that a unit only
-// declares.  A class holds no value of an incomplete class, and a pointer
-// member that names one is a member that the walk reads.
-[[nodiscard]] consteval bool holds_no_value_of_(::foundation::reflect::TypeNode argument) {
-    bool const is_class = std::meta::is_class_type(argument.type) || std::meta::is_union_type(argument.type);
-    return argument.is_value_argument || (is_class && !argument.may_read_members);
-}
-
-// True for raw storage that can hold a value of a type argument of its
-// class: an array of bytes, or a union.  A class with no such member holds a
-// value of a type argument only in a member of a type that names it, which
-// the walk reads.
-[[nodiscard]] consteval bool is_byte_storage_(std::meta::info type) {
-    if (std::meta::is_union_type(type)) return true;
-    if (!std::meta::is_array_type(type)) return false;
-    std::meta::info const element = std::meta::dealias(std::meta::remove_cv(std::meta::remove_all_extents(type)));
-    return element == ^^unsigned char || element == ^^char || element == ^^signed char || element == ^^std::byte;
-}
-
-// True for an owner of the walk: a class of the base (is_class_of_the_base_ of
-// foundation/core/Owner.h) that states an owner mark or derives from
-// OwnerCore.  No rule keeps the marks in the base, so the walk reads the
-// members of a marked class outside the base.  A class with no annotation
-// states nothing, so the test reads the annotations only of a class that has
-// some.
-[[nodiscard]] consteval bool is_storage_owner_(std::meta::info type, Annotated annotated) {
-    namespace tr = ::foundation::transfer;
-    if (!is_class_of_the_base_(type)) return false;
-    if (annotated == Annotated::yes
-        && (tr::detail::states(type, ^^tr::by_arguments) || tr::detail::states(type, ^^tr::synchronized)
-            || tr::detail::states(type, ^^tr::payload_cell) || tr::detail::states(type, ^^owns_its_storage))) {
-        return true;
-    }
-    // Each owner of the base derives from OwnerCore in public, so the public
-    // read of the bases sees it.
-    std::vector<std::meta::info> const bases = std::meta::bases_of(type, std::meta::access_context::current());
-    for (std::size_t index = 0; index < bases.size(); ++index) {
-        std::meta::info const base_type = std::meta::dealias(std::meta::type_of(bases[index]));
-        if (std::meta::has_template_arguments(base_type) && std::meta::template_of(base_type) == ^^OwnerCore) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// True for a class that states refers{}, refers_unique{} or refers_deep{}.
-[[nodiscard]] consteval bool is_borrow_(std::meta::info type, Annotated annotated) {
-    namespace tr = ::foundation::transfer;
-    return annotated == Annotated::yes
-        && (tr::detail::states(type, ^^tr::refers) || tr::detail::states(type, ^^tr::refers_unique)
-            || tr::detail::states(type, ^^tr::refers_deep));
-}
-
-// True for a borrow whose const object gives only const access to its
-// target: a class of the base (is_class_of_the_base_ of
-// foundation/core/Owner.h) that states refers_deep{}.  The walk trusts the
-// mark only in the base, and the check file of each such class pins that
-// each const door gives a borrow of a const target.
-[[nodiscard]] consteval bool gives_const_access_(std::meta::info type, Annotated annotated) {
-    namespace tr = ::foundation::transfer;
-    return annotated == Annotated::yes && is_class_of_the_base_(type) && tr::detail::states(type, ^^tr::refers_deep);
+[[nodiscard]] consteval StoreRegion target_region_(TypePart const& target) {
+    return target.has(PartFact::was_const) ? StoreRegion::read_only : StoreRegion::writable;
 }
 
 // The refusal of a capture that reaches the class Type, whose definition the
@@ -244,123 +152,184 @@ inline constexpr bool refuses_incomplete_class_v = refuse_incomplete_class_<Type
     return std::meta::extract<bool>(std::meta::substitute(^^refuses_incomplete_class_v, arguments));
 }
 
-// The visited lists of the walk, one for each region, and the next node of
-// each list.
+// One node of the walk: a bare type in a region.  kept is the reflection of
+// the kept parts of a class, when the walk has it (TypePart), and may_read
+// tells that a class is complete.
+struct StoreNode {
+    std::meta::info type{};
+    std::meta::info kept{};
+    StoreRegion region = StoreRegion::owned;
+    bool may_read = false;
+};
+
+// The node of a type that the walk reaches other than by value: a class is
+// complete or the walk cannot read it.
+[[nodiscard]] consteval StoreNode indirect_node_(std::meta::info type, StoreRegion region) {
+    std::meta::info const bare = ::foundation::reflect::bare_type(type);
+    return StoreNode{bare, std::meta::info{}, region, is_class_or_union_(bare) && std::meta::is_complete_type(bare)};
+}
+
+// True for the node of a template argument that names no object that a value
+// can hold: an incomplete class, such as a tag that a unit only declares.  A
+// class holds no value of an incomplete class, and a pointer member that names
+// one is a member that the walk reads.
+[[nodiscard]] consteval bool holds_no_value_of_(StoreNode const& argument) {
+    return is_class_or_union_(argument.type) && !argument.may_read;
+}
+
+// The visited list of the walk, and the next node of each region.  The list
+// is one array, so the walk allocates one time for a small graph.
 class StoreWalk {
 public:
-    // Adds the node to the list of the region, unless the list holds its type
-    // or the type can hold no borrow slot: an arithmetic type or an
-    // enumeration.  Complexity: linear in the list.
-    consteval void push(StoreRegion region, ::foundation::reflect::TypeNode node) {
-        if (std::meta::is_arithmetic_type(node.type) || std::meta::is_enum_type(node.type)) return;
-        ::foundation::reflect::TypeNodeList& list = list_(region);
-        for (::foundation::reflect::TypeNode const& seen : list) {
-            if (seen.type == node.type && (seen.may_read_members || !node.may_read_members)) return;
+    consteval StoreWalk() noexcept = default;
+    StoreWalk(StoreWalk const&) = delete("a walk owns its list, so a copy would free the list two times");
+    StoreWalk& operator=(StoreWalk const&) = delete("a walk owns its list, so a copy would free the list two times");
+    // A destructor cannot be consteval, and a walk exists only in a constant
+    // evaluation, so the branch is the only path.
+    constexpr ~StoreWalk() {
+        if consteval {
+            delete[] nodes_;
         }
-        list.push_back(node);
     }
 
-    // True when a node waits in some list.
-    [[nodiscard]] consteval bool has_next() const {
-        return next_[0] < lists_[0].size() || next_[1] < lists_[1].size() || next_[2] < lists_[2].size();
+    // Adds the node to the list, unless the list holds its type in its region
+    // or the type can hold no borrow slot (is_leaf_).  Complexity: linear in
+    // the list.
+    consteval void push(StoreNode const& node) {
+        std::meta::info const type = node.type;
+        if (is_leaf_(type)) return;
+        StoreNode const* const nodes = nodes_;
+        for (std::size_t index = 0; index < size_; ++index) {
+            if (nodes[index].type == type && nodes[index].region == node.region
+                && (nodes[index].may_read || !node.may_read)) {
+                return;
+            }
+        }
+        if (size_ == capacity_) grow_();
+        nodes_[size_] = node;
+        ++size_;
     }
 
-    // The region of the next node: the writable region first, so a refusal
-    // comes early.
-    [[nodiscard]] consteval StoreRegion next_region() const {
-        if (next_[2] < lists_[2].size()) return StoreRegion::writable;
-        if (next_[0] < lists_[0].size()) return StoreRegion::owned;
-        return StoreRegion::read_only;
+    // True when a node waits in some region.
+    [[nodiscard]] consteval bool has_next() {
+        return waits_(StoreRegion::writable) || waits_(StoreRegion::owned) || waits_(StoreRegion::read_only);
     }
 
-    // The next node of the region.
-    [[nodiscard]] consteval ::foundation::reflect::TypeNode take(StoreRegion region) {
-        std::size_t const slot = static_cast<std::size_t>(region);
-        return lists_[slot].begin()[next_[slot]++];
+    // The next node: the first one of the writable region, so a refusal comes
+    // early, then of the owned region, and then of the read_only region.
+    [[nodiscard]] consteval StoreNode take() {
+        StoreRegion region = StoreRegion::read_only;
+        if (waits_(StoreRegion::writable)) {
+            region = StoreRegion::writable;
+        } else if (waits_(StoreRegion::owned)) {
+            region = StoreRegion::owned;
+        }
+        return nodes_[next_[static_cast<std::size_t>(region)]++];
     }
 
 private:
-    [[nodiscard]] consteval ::foundation::reflect::TypeNodeList& list_(StoreRegion region) {
-        return lists_[static_cast<std::size_t>(region)];
+    // True when a node of the region waits, and next_ of the region is then
+    // its place.
+    [[nodiscard]] consteval bool waits_(StoreRegion region) {
+        std::size_t& next = next_[static_cast<std::size_t>(region)];
+        while (next < size_ && nodes_[next].region != region) {
+            ++next;
+        }
+        return next < size_;
     }
 
-    ::foundation::reflect::TypeNodeList lists_[3]{};
+    // Doubles the capacity, and moves each node into the new array.
+    // Complexity: linear in the number of nodes.
+    consteval void grow_() {
+        std::size_t const capacity = capacity_ == 0 ? 32 : 2 * capacity_;
+        StoreNode* const nodes = new StoreNode[capacity]{};
+        for (std::size_t index = 0; index < size_; ++index)
+            nodes[index] = nodes_[index];
+        delete[] nodes_;
+        nodes_ = nodes;
+        capacity_ = capacity;
+    }
+
+    StoreNode* nodes_ = nullptr;
+    std::size_t size_ = 0;
+    std::size_t capacity_ = 0;
     std::size_t next_[3]{};
 };
 
-[[nodiscard]] consteval bool reaches_slot_(std::meta::info type, StoreRegion region);
+// Pushes the bases and the members of the class in the region: a member by
+// reference in the region of its target, a mutable member of an object that
+// the body does not own in the writable region, and each other part in the
+// region of its class.
+consteval void push_members_(StoreWalk& walk, TypeParts const& parts, StoreRegion region) {
+    PartRun const run = parts.run();
+    for (std::size_t index = parts.argument_count; index < parts.size; ++index) {
+        TypePart const part = run[index];
+        if (part.has(PartFact::is_plain)) continue;
+        if (part.has(PartFact::was_reference)) {
+            walk.push(indirect_node_(part.type, target_region_(part)));
+        } else {
+            bool const is_written = part.has(PartFact::is_mutable) && region != StoreRegion::owned;
+            walk.push(StoreNode{part.type, part.kept, is_written ? StoreRegion::writable : region, true});
+        }
+    }
+}
 
 // True when the walk from the start type in the start region reaches a
 // borrow slot in the writable region.  The start type is bare, and a class
 // type is complete or the walk refuses it.  The walk pushes the target of each
-// pointer, borrow and borrow of a frame into its own lists, so a type that
+// pointer, borrow and borrow of a frame into its own list, so a type that
 // reaches itself, such as a node with a pointer to its parent, ends with the
-// visited lists and asks no memo in the middle of its own walk.
+// visited list and asks no memo in the middle of its own walk.
 [[nodiscard]] consteval bool reaches_slot_from_(std::meta::info start_type, StoreRegion start) {
-    namespace refl = ::foundation::reflect;
-    constexpr refl::SpecializationRead read = refl::SpecializationRead::Instantiating;
-    constexpr StoreRegion owned = StoreRegion::owned;
     constexpr StoreRegion read_only = StoreRegion::read_only;
     constexpr StoreRegion writable = StoreRegion::writable;
     StoreWalk walk;
-    walk.push(start, refl::node_reached_indirectly(start_type, read));
+    walk.push(indirect_node_(start_type, start));
     while (walk.has_next()) {
-        StoreRegion const region = walk.next_region();
-        refl::TypeNode const node = walk.take(region);
+        StoreNode const node = walk.take();
         std::meta::info const type = node.type;
+        StoreRegion const region = node.region;
         if (std::meta::is_pointer_type(type)) {
             std::meta::info const pointee = std::meta::remove_pointer(type);
             if (std::meta::is_function_type(pointee)) continue;
             if (region == writable) return true;
-            refl::TypeNode const target = refl::node_reached_indirectly(pointee, read);
-            walk.push(target_region_(target), target);
+            walk.push(indirect_node_(pointee, std::meta::is_const_type(pointee) ? read_only : writable));
             continue;
         }
         if (std::meta::is_array_type(type)) {
-            walk.push(region,
-                      refl::TypeNode{refl::bare_type(std::meta::remove_all_extents(type)), node.may_read_members});
+            std::meta::info const element = ::foundation::reflect::bare_type(std::meta::remove_all_extents(type));
+            walk.push(StoreNode{element, std::meta::info{}, region, node.may_read});
             continue;
         }
-        bool const is_class = std::meta::is_class_type(type) || std::meta::is_union_type(type);
-        if (!is_class) continue;
-        if (!node.may_read_members) return refuse_incomplete_capture_(type);
-        if (refl::holds_unreadable_state(node)) return true;
-        if (is_frame_borrow_(type)) {
-            for (refl::TypeNode const& argument : refl::argument_components_of(node, read)) {
-                if (holds_no_value_of_(argument) || is_scope_brand_(argument.type)) continue;
-                walk.push(target_region_(argument), refl::node_reached_indirectly(argument.type, read));
+        if (!is_class_or_union_(type)) continue;
+        if (!node.may_read) return refuse_incomplete_capture_(type);
+        if (node.kept == std::meta::info{} && is_plain_class_(type)) continue;
+        TypeParts const& parts =
+            std::meta::extract<TypeParts const&>(node.kept == std::meta::info{} ? kept_parts_of(type) : node.kept);
+        if (parts.is_unreadable) return true;
+        PartRun const run = parts.run();
+        if (parts.is_frame_borrow) {
+            for (std::size_t index = 0; index < parts.argument_count; ++index) {
+                TypePart const argument = run[index];
+                StoreNode const target = indirect_node_(argument.type, target_region_(argument));
+                if (!argument.has(PartFact::is_scope_brand) && !holds_no_value_of_(target)) walk.push(target);
             }
             continue;
         }
-        Annotated const annotated = std::meta::annotations_of(type).size() != 0 ? Annotated::yes : Annotated::no;
-        if (is_borrow_(type, annotated)) {
+        if (parts.is_borrow) {
             if (region == writable) return true;
-            bool const gives_const = region == read_only && gives_const_access_(type, annotated);
-            for (refl::TypeNode const& argument : refl::argument_components_of(node, read)) {
-                if (argument.is_value_argument) continue;
-                walk.push(gives_const ? read_only : target_region_(argument),
-                          refl::node_reached_indirectly(argument.type, read));
-                break;
+            bool const gives_const = region == read_only && parts.gives_const_access;
+            bool const is_read = gives_const || parts.is_first_argument_const;
+            if (parts.first_argument != std::meta::info{}) {
+                walk.push(indirect_node_(parts.first_argument, is_read ? read_only : writable));
             }
             continue;
         }
-        bool const is_owner = is_storage_owner_(type, annotated);
-        bool holds_bytes = is_owner;
-        if (!is_owner) {
-            for (refl::TypeNode const& member : refl::member_components_of(node, read)) {
-                holds_bytes = holds_bytes || is_byte_storage_(member.type);
-                if (member.was_reference) {
-                    walk.push(target_region_(member), member);
-                } else if (member.is_mutable && region != owned) {
-                    walk.push(writable, member);
-                } else {
-                    walk.push(region, member);
-                }
-            }
-        }
-        if (!holds_bytes) continue;
-        for (refl::TypeNode const& argument : refl::argument_components_of(node, read)) {
-            if (!holds_no_value_of_(argument)) walk.push(region, argument);
+        if (!parts.is_storage_owner) push_members_(walk, parts, region);
+        if (!parts.is_storage_owner && !parts.holds_bytes) continue;
+        for (std::size_t index = 0; index < parts.argument_count; ++index) {
+            StoreNode const argument = indirect_node_(run[index].type, region);
+            if (!holds_no_value_of_(argument)) walk.push(argument);
         }
     }
     return false;
@@ -372,13 +341,41 @@ private:
 //   instance of this variable template.  The bodies of one class capture
 //   this, a context or an owner of the class again and again, and each such
 //   capture then costs one lookup.
-template <std::meta::info Type, StoreRegion Region>
-inline constexpr bool reaches_slot_from_v = reaches_slot_from_(Type, Region);
+template <class Type, StoreRegion Region>
+inline constexpr bool reaches_slot_from_v = reaches_slot_from_(^^Type, Region);
 
-// The memo of the verdict of the type in the region (the memo).
+// The class that a pointer to a type converts to when the walk from the type
+// in the region reaches no borrow slot in the writable region, and else not.
+template <StoreRegion Region>
+struct NoSlotTest final {
+    template <class Type>
+        requires(!reaches_slot_from_v<Type, Region>)
+    consteval NoSlotTest(Type*) noexcept {}
+};
+
+// The verdict of the type in the region, from the memo.  The read is the read
+// of is_plain_class_ of foundation/core/TypeParts.h, with the constraint of
+// NoSlotTest, so a type with no verdict refuses the body.
 [[nodiscard]] consteval bool reaches_slot_(std::meta::info type, StoreRegion region) {
-    std::meta::info const arguments[] = {std::meta::reflect_constant(type), std::meta::reflect_constant(region)};
-    return std::meta::extract<bool>(std::meta::substitute(^^reaches_slot_from_v, arguments));
+    std::meta::info const tests[] = {^^NoSlotTest<StoreRegion::owned>, ^^NoSlotTest<StoreRegion::read_only>,
+                                     ^^NoSlotTest<StoreRegion::writable>};
+    return !std::meta::is_convertible_type(std::meta::add_pointer(type), tests[static_cast<std::size_t>(region)]);
+}
+
+// True when the walk from one capture or one base of the class of a body
+// reaches a borrow slot in the writable region: a capture by reference in the
+// region of its target, and each other one owned.  Most captures name a scalar
+// or a plain class, which holds a borrow slot in no region.
+[[nodiscard]] consteval bool stores_borrow_in_(std::meta::info declared) {
+    std::meta::info const type = ::foundation::reflect::bare_type(declared);
+    if (is_leaf_(type)) return false;
+    if (is_class_or_union_(type) && std::meta::is_complete_type(type) && is_plain_class_(type)) return false;
+    StoreRegion region = StoreRegion::owned;
+    if (std::meta::is_reference_type(declared)) {
+        bool const is_const = std::meta::is_const_type(std::meta::remove_reference(declared));
+        region = is_const ? StoreRegion::read_only : StoreRegion::writable;
+    }
+    return reaches_slot_(type, region);
 }
 
 // True when the walk from the class of a body reaches a borrow slot in the
@@ -387,21 +384,23 @@ inline constexpr bool reaches_slot_from_v = reaches_slot_from_(Type, Region);
 // here and asks the memo for each of them.  A named class is the start of the
 // memo itself.
 [[nodiscard]] consteval bool stores_borrow_outside_(std::meta::info body, BodyForm form) {
-    namespace refl = ::foundation::reflect;
-    constexpr refl::SpecializationRead read = refl::SpecializationRead::Instantiating;
-    std::meta::info const root = refl::bare_type(body);
+    std::meta::info const root = ::foundation::reflect::bare_type(body);
     if (!std::meta::is_class_type(root)) return false;
     bool const is_named_class = form == BodyForm::named && std::meta::has_identifier(root)
                              && !std::meta::is_const_type(std::meta::dealias(body));
     if (is_named_class) return reaches_slot_(root, StoreRegion::writable);
-    refl::TypeNode const root_node{root, true};
-    if (refl::holds_unreadable_state(root_node)) return true;
-    for (refl::TypeNode const& member : refl::member_components_of(root_node, read)) {
-        StoreRegion region = StoreRegion::owned;
-        if (member.was_reference) {
-            region = target_region_(member);
-        }
-        if (reaches_slot_(member.type, region)) return true;
+    std::meta::access_context const unchecked = std::meta::access_context::unchecked();
+    std::vector<std::meta::info> const bases = std::meta::bases_of(root, unchecked);
+    std::vector<std::meta::info> const members = std::meta::nonstatic_data_members_of(root, unchecked);
+    std::size_t const base_count = bases.size();
+    std::size_t const member_count = members.size();
+    bool const shows_no_state = base_count == 0 && member_count == 0;
+    if (shows_no_state && !std::meta::has_template_arguments(root) && !std::meta::is_empty_type(root)) return true;
+    for (std::size_t index = 0; index < base_count; ++index) {
+        if (stores_borrow_in_(std::meta::type_of(bases[index]))) return true;
+    }
+    for (std::size_t index = 0; index < member_count; ++index) {
+        if (stores_borrow_in_(std::meta::type_of(members[index]))) return true;
     }
     return false;
 }
