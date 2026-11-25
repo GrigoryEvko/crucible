@@ -56,16 +56,20 @@
 // that such code puts into an owner in its end leaks, because the end of the
 // owner is at its last step.
 //
-// A state states the member runs_element_code as false when its release runs
-// no such code, such as the storage of bytes or of elements with a trivial end.
-// The end of its owner then releases the state in place, and writes nothing.  A
-// state with no statement keeps the order above.
+// A state states the member runs_element_code as false when its release runs no
+// such code, such as the storage of bytes.  A state that ends elements names their
+// type in the member type released_element, and its release runs such code when the
+// end of that type does.  The end of an owner whose release runs none releases the
+// state in place, and writes nothing.  A state with no statement keeps the order
+// above.
 //
 // A move of an owner on the core copies a state and runs no code of a caller,
 // and the end of a moved-from owner releases nothing.  BareOwner tells that fact
 // of an owner that holds nothing beside its core and writes no move of its own.
-// A class outside the base is no Owner of a core, so it is no bare owner, and
-// the container of an element reads the fact here alone.
+// A class outside the base is no Owner of a core, so it is no bare owner.
+// MoveRunsCode and EndRunsCode read that fact through the parts of a class: a class
+// that writes no move and no end leaves each to its parts.  The container of an
+// element reads the two concepts alone.
 //
 // Copy of a state
 // Each copy of a state goes through a local state of the core, and no local
@@ -164,10 +168,18 @@ struct owns_its_storage final {};
 template <class State>
 concept ReleasesNothing = requires { requires State::releases_nothing; };
 
+namespace detail {
+
+struct PartPath;
+
+[[nodiscard]] consteval bool releases_no_code_(std::meta::info state, PartPath const* outer);
+
+}  // namespace detail
+
 // A state whose release can run code of an element: each state that does not
-// state the member runs_element_code as false.
+// state the opposite (the code of an element).
 template <class State>
-concept RunsElementCode = !requires { requires !State::runs_element_code; };
+concept RunsElementCode = !detail::releases_no_code_(^^State, nullptr);
 
 namespace detail {
 
@@ -303,10 +315,10 @@ namespace detail {
 
 // True when the type derives from the core that names it as its Owner, holds
 // nothing beside that core, and writes no move and no end of its own.  Only a
-// class of the base builds a core, so no other class is such an owner.
-// Complexity: O(bases + members).
+// class of the base builds a core, so no other class is such an owner.  A class
+// that is only declared is no bare owner.  Complexity: O(bases + members).
 [[nodiscard]] consteval bool is_bare_owner_(std::meta::info type) {
-    if (!std::meta::is_class_type(type)) {
+    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) {
         return false;
     }
     auto const everything = std::meta::access_context::unchecked();
@@ -338,9 +350,119 @@ namespace detail {
 
 // An owner on the core that is its core and nothing more (the code of an
 // element).  A move of it runs no code of a caller, and the end of a moved-from
-// one runs none.  The type is complete and has no const.
+// one runs none.  A const type and a type that is only declared are none.
 template <class T>
 concept BareOwner = detail::is_bare_owner_(^^T);
+
+namespace detail {
+
+// True when a class writes no end of its own, and, for a move, no copy and no move:
+// each of them then runs the one of each part.  A class that a template constructor
+// moves has a move constructor with no body too, which the language prefers.
+// Complexity: O(members).
+[[nodiscard]] consteval bool leaves_its_parts_to_move_(std::meta::info type, bool is_move) {
+    bool has_move = false;
+    auto const members = std::meta::members_of(type, std::meta::access_context::unchecked());
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member = members[index];
+        bool const is_copy_or_move = std::meta::is_copy_constructor(member) || std::meta::is_move_constructor(member);
+        if ((std::meta::is_destructor(member) || (is_move && is_copy_or_move)) && std::meta::is_user_provided(member)) {
+            return false;
+        }
+        has_move = has_move || (std::meta::is_move_constructor(member) && !std::meta::is_deleted(member));
+    }
+    return has_move || !is_move;
+}
+
+// The types that a walk of parts is inside of, from the innermost one.
+struct PartPath final {
+    std::meta::info type;
+    PartPath const* outer;
+};
+
+// True when the end of a live object of the type runs no code that a class outside
+// the owner core writes, or, for a move, when the move and the end of a moved-from
+// object run none.  An owner on the core, a trivial type, and a class that leaves
+// each of its parts to such a type.  A type that the walk is inside of, as the
+// element of a tree is, adds no code of its own.  The end of a type that is only
+// declared can be code, so the walk finds code there and reads no trait of it.  The
+// owner then refuses the end with its own message.  Complexity: O(parts).
+[[nodiscard]] consteval bool runs_no_code_(std::meta::info spelled, bool is_move, PartPath const* outer);
+
+// True when the release of an owner state runs no code of an element: the state
+// states the member runs_element_code as false, or it names the type of the elements
+// that its release ends in the member type released_element, and the end of that type
+// runs none.  Complexity: O(members + parts).
+consteval bool releases_no_code_(std::meta::info state, PartPath const* outer) {
+    auto const members = std::meta::members_of(state, std::meta::access_context::unchecked());
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member = members[index];
+        if (::foundation::reflect::has_identifier_named(member, "runs_element_code")) {
+            return !std::meta::extract<bool>(member);
+        }
+        if (::foundation::reflect::has_identifier_named(member, "released_element")) {
+            return runs_no_code_(member, false, outer);
+        }
+    }
+    return false;
+}
+
+consteval bool runs_no_code_(std::meta::info spelled, bool is_move, PartPath const* outer) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::remove_all_extents(std::meta::dealias(spelled)));
+    if (std::meta::is_reference_type(type)) {
+        return true;
+    }
+    for (PartPath const* step = outer; step != nullptr; step = step->outer) {
+        if (step->type == type) {
+            return true;
+        }
+    }
+    if (!std::meta::is_complete_type(type)) {
+        return false;
+    }
+    if (std::meta::is_trivially_destructible_type(type)
+        && (!is_move || std::meta::is_trivially_move_constructible_type(type))) {
+        return true;
+    }
+    if (!std::meta::is_class_type(type)) {
+        return false;
+    }
+    auto const everything = std::meta::access_context::unchecked();
+    auto const bases = std::meta::bases_of(type, everything);
+    PartPath const here{type, outer};
+    if (is_bare_owner_(type)) {
+        std::meta::info const core = std::meta::dealias(std::meta::type_of(bases[0]));
+        return is_move || releases_no_code_(std::meta::template_arguments_of(core)[0], &here);
+    }
+    if (!leaves_its_parts_to_move_(type, is_move)) {
+        return false;
+    }
+    for (std::size_t index = 0; index < bases.size(); ++index) {
+        if (!runs_no_code_(std::meta::type_of(bases[index]), is_move, &here)) {
+            return false;
+        }
+    }
+    auto const members = std::meta::nonstatic_data_members_of(type, everything);
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        if (!runs_no_code_(std::meta::type_of(members[index]), is_move, &here)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace detail
+
+// The move of a T, or the end of a moved-from T, can be code of a caller (the code
+// of an element).  The answer for a type that is only declared is code, and the
+// unit keeps it.
+template <class T>
+concept MoveRunsCode = !detail::runs_no_code_(^^T, true, nullptr);
+
+// The end of a live T can be code of a caller (the code of an element).  The answer
+// for a type that is only declared is code, and the unit keeps it.
+template <class T>
+concept EndRunsCode = !detail::runs_no_code_(^^T, false, nullptr);
 
 }  // namespace foundation::core
 

@@ -1426,7 +1426,7 @@ namespace owner {
 template <class T, std::size_t Align>
 struct HeapArrayState {
     using owner_state_mark = OwnerStateMark;
-    static constexpr bool runs_element_code = !std::is_trivially_destructible_v<T>;
+    using released_element = T;
 
     T* first = nullptr;
     std::size_t count = 0;
@@ -1445,7 +1445,7 @@ struct HeapArrayState {
 template <class T, std::size_t Align>
 struct MaskedArrayState {
     using owner_state_mark = OwnerStateMark;
-    static constexpr bool runs_element_code = !std::is_trivially_destructible_v<T>;
+    using released_element = T;
 
     T* first = nullptr;
     std::size_t count = 0;

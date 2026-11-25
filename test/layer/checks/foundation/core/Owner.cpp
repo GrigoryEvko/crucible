@@ -2,6 +2,8 @@
 
 #include <foundation/core/Owner.h>
 
+#include <foundation/core/Array.h>
+
 #include <cstddef>
 #include <type_traits>
 
@@ -183,8 +185,16 @@ struct StateWithCode {
     [[nodiscard]] static constexpr StateWithCode emptied(StateWithCode const& /*state*/) noexcept { return {}; }
     static constexpr void release(StateWithCode const& /*state*/) noexcept {}
 };
+template <class T>
+struct StateOfElements {
+    using owner_state_mark = OwnerStateMark;
+    using released_element = T;
+
+    [[nodiscard]] static constexpr StateOfElements emptied(StateOfElements const& /*state*/) noexcept { return {}; }
+    static constexpr void release(StateOfElements const& /*state*/) noexcept {}
+};
 static_assert(RunsElementCode<owner::CheckState> && RunsElementCode<StateWithCode>);
-static_assert(!RunsElementCode<StateWithNoCode>);
+static_assert(!RunsElementCode<StateWithNoCode> && !RunsElementCode<StateOfElements<int>>);
 
 // A bare owner is its core and nothing more.  An owner with a member, with a
 // move or an end of its own, and a class on the core of another owner are none.
@@ -210,6 +220,97 @@ struct ClassOnAnotherCore : public OwnerCore<owner::CheckState, CheckOwner> {};
 static_assert(BareOwner<CheckOwner> && BareOwner<SecondCheckOwner> && BareOwner<OwnerOutsideHome>);
 static_assert(!BareOwner<OwnerWithMember> && !BareOwner<OwnerWithMove> && !BareOwner<OwnerWithEnd>);
 static_assert(!BareOwner<ClassOnAnotherCore> && !BareOwner<owner::CheckState> && !BareOwner<int>);
+
+// The move of a bare owner runs no code of a caller, and its end runs none when its
+// state states that.  A class with a move or an end of its own can run code in each
+// of the two.
+struct QuietCheckOwner final : public OwnerCore<StateWithNoCode, QuietCheckOwner> {
+    QuietCheckOwner() noexcept = default;
+};
+struct ClassWithMove {
+    ClassWithMove() noexcept = default;
+    ClassWithMove(ClassWithMove&&) noexcept {}
+};
+struct ClassWithEnd {
+    ClassWithEnd() noexcept = default;
+    ClassWithEnd(ClassWithEnd&&) noexcept = default;
+    ~ClassWithEnd() {}
+};
+template <class T>
+struct OwnerOfElements final : public OwnerCore<StateOfElements<T>, OwnerOfElements<T>> {
+    OwnerOfElements() noexcept = default;
+};
+// A tree whose node owns nodes: the walk of its parts ends at the node.
+struct TreeNode {
+    OwnerOfElements<TreeNode> nodes{};
+    int label = 0;
+};
+struct TreeNodeWithEnd {
+    OwnerOfElements<TreeNodeWithEnd> nodes{};
+    ClassWithEnd ended{};
+};
+static_assert(!EndRunsCode<OwnerOfElements<int>> && EndRunsCode<OwnerOfElements<ClassWithEnd>>);
+static_assert(!MoveRunsCode<OwnerOfElements<ClassWithEnd>>);
+static_assert(!EndRunsCode<TreeNode> && !MoveRunsCode<TreeNode> && !EndRunsCode<OwnerOfElements<TreeNode>>);
+static_assert(EndRunsCode<TreeNodeWithEnd> && EndRunsCode<OwnerOfElements<TreeNodeWithEnd>>);
+static_assert(!MoveRunsCode<int> && !MoveRunsCode<CheckOwner> && !MoveRunsCode<QuietCheckOwner>);
+static_assert(MoveRunsCode<ClassWithMove> && MoveRunsCode<ClassWithEnd> && MoveRunsCode<OwnerWithMember>);
+// A class that writes no move and no end leaves each to its parts, so the verdict of
+// each part is its verdict.  A move or an end in the program text of a part, of a
+// base or of an array element is code, and so is a copy that a class has no move
+// beside.  A union that is not trivial has no verdict of its parts.
+struct TwoOwners {
+    CheckOwner first{};
+    QuietCheckOwner second{};
+    int count = 0;
+};
+struct QuietBase {
+    QuietCheckOwner held{};
+};
+struct QuietParts : QuietBase {
+    FixedArray<QuietCheckOwner, 2> rows{};
+    int& count;
+};
+struct PartWithMove {
+    QuietCheckOwner owner{};
+    ClassWithMove moved{};
+};
+struct PartWithEnd {
+    QuietCheckOwner owner{};
+    ClassWithEnd ended{};
+};
+struct CopyInPlaceOfAMove {
+    QuietCheckOwner owner{};
+    CopyInPlaceOfAMove() noexcept = default;
+    CopyInPlaceOfAMove(CopyInPlaceOfAMove const&) noexcept : owner{} {}
+};
+struct DefaultedInTheText {
+    QuietCheckOwner owner{};
+    DefaultedInTheText() noexcept = default;
+    DefaultedInTheText(DefaultedInTheText&&) noexcept = default;
+    ~DefaultedInTheText() = default;
+};
+union UnionOfAnOwner {
+    UnionOfAnOwner() noexcept : count{0} {}
+    ~UnionOfAnOwner() {}
+    QuietCheckOwner owner;
+    int count;
+};
+static_assert(!MoveRunsCode<TwoOwners> && EndRunsCode<TwoOwners>);
+static_assert(!MoveRunsCode<QuietParts> && !EndRunsCode<QuietParts>);
+static_assert(MoveRunsCode<PartWithMove> && !EndRunsCode<PartWithMove>);
+static_assert(MoveRunsCode<PartWithEnd> && EndRunsCode<PartWithEnd>);
+static_assert(MoveRunsCode<CopyInPlaceOfAMove> && !EndRunsCode<CopyInPlaceOfAMove>);
+static_assert(!MoveRunsCode<DefaultedInTheText> && !EndRunsCode<DefaultedInTheText>);
+static_assert(MoveRunsCode<UnionOfAnOwner> && EndRunsCode<UnionOfAnOwner>);
+static_assert(!EndRunsCode<int> && !EndRunsCode<ClassWithMove> && !EndRunsCode<QuietCheckOwner>);
+static_assert(EndRunsCode<CheckOwner> && EndRunsCode<ClassWithEnd> && EndRunsCode<OwnerWithMember>);
+// A type that is only declared can end with code, so the walk finds code there
+// and reads no trait of it.  The move of a bare owner of it still runs none.
+struct OnlyDeclared;
+static_assert(MoveRunsCode<OnlyDeclared> && EndRunsCode<OnlyDeclared> && !BareOwner<OnlyDeclared>);
+static_assert(RunsElementCode<StateOfElements<OnlyDeclared>> && EndRunsCode<OwnerOfElements<OnlyDeclared>>);
+static_assert(!MoveRunsCode<OwnerOfElements<OnlyDeclared>>);
 
 // The home holds the two states above and the states of each owner header
 // that the unit includes, because the walk units compile this file after

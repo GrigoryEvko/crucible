@@ -159,6 +159,23 @@ static_assert(::foundation::core::BareOwner<GrowText> && ::foundation::core::Bar
 static_assert(::foundation::core::BareOwner<AlignedBytes>);
 static_assert(!::foundation::core::BareOwner<HolderOfABox> && !::foundation::core::BareOwner<Option<Box<int>>>);
 
+// The end of an owner of words runs no code of a caller, and neither does the end of
+// an owner of such owners, or of a class that holds them.  The end of a class that
+// writes it runs code, and so does the end of an owner of such a class.
+struct HolderWithEnd final {
+    Box<int> held;
+    HolderWithEnd() noexcept = default;
+    HolderWithEnd(HolderWithEnd&&) noexcept = default;
+    ~HolderWithEnd() {}
+};
+static_assert(!::foundation::core::EndRunsCode<Box<int>> && !::foundation::core::EndRunsCode<HeapArray<int>>);
+static_assert(!::foundation::core::EndRunsCode<GrowText> && !::foundation::core::EndRunsCode<AlignedBytes>);
+static_assert(!::foundation::core::EndRunsCode<Box<Box<int>>> && !::foundation::core::EndRunsCode<GrowList<Box<int>>>);
+static_assert(!::foundation::core::EndRunsCode<HolderOfABox> && !::foundation::core::EndRunsCode<Box<HolderOfABox>>);
+static_assert(::foundation::core::EndRunsCode<HolderWithEnd> && ::foundation::core::EndRunsCode<Box<HolderWithEnd>>);
+static_assert(!::foundation::core::MoveRunsCode<Box<Box<int>>> && !::foundation::core::MoveRunsCode<HolderOfABox>);
+static_assert(!::foundation::core::MoveRunsCode<Box<HolderWithEnd>> && ::foundation::core::MoveRunsCode<HolderWithEnd>);
+
 // ── The chain of Boxes ──────────────────────────────────────────────────
 
 struct BoxNode;

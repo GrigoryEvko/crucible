@@ -1091,8 +1091,9 @@ namespace owner {
 template <BoxPayload T>
 struct BoxState {
     using owner_state_mark = OwnerStateMark;
-    // Only the end of a Box reads the statement, where T is complete.
-    static constexpr bool runs_element_code = !std::is_trivially_destructible_v<T>;
+    // The end of a Box walks the parts of T.  When T is only declared, the walk
+    // finds code, and release refuses the end with its message.
+    using released_element = T;
 
     T* object = nullptr;
 
