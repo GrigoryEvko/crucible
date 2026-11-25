@@ -1,9 +1,9 @@
 // An open of a FIFO with no writer waits for a writer.  A timer signal whose
 // handler has no SA_RESTART interrupts that wait again and again, and the
 // open door starts the open again after each signal.  So the open waits until
-// a writer opens the FIFO, and it gives the file.  The old door issued openat
-// one time, so the first signal made the open give eintr, and the caller saw
-// a failed open of a file that exists.
+// a writer opens the FIFO.  The door then reads the type of the opened file,
+// and it refuses the FIFO with eftype, because a FIFO is no regular file.  A
+// door that issues openat one time gives eintr at the first signal.
 //
 // The reader runs in one child and the writer in a second child.  The timer
 // raises SIGALRM in the reader each 2 ms.  The writer waits 100 ms, so the
@@ -127,23 +127,28 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 namespace {
 
 // Opens the FIFO for reading through the open door while the timer
-// interrupts the open.  The child exits with 0 when the open gives the file
-// after at least one signal.
+// interrupts the open.  The child exits with 0 when the door refuses the type
+// of the FIFO after at least one signal, so the open itself ended.
 void read_the_fifo() noexcept {
+    using ::foundation::os::Errno;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     if (!start_the_timer()) ::fixy::fatal("the reader does not start the timer");
-    const bool is_opened =
+    const Errno refusal =
         ::fixy::fs::mint_file<::fixy::fs::read_only>(
             ctx, ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(fifo_text()))
                      .expect("the path of the FIFO passes the sanitizer"))
             .match(
                 [](::fixy::Linear<::fixy::fs::FileOf<::fixy::fs::read_only>> opened) {
                     static_cast<void>(std::move(opened).consume());
-                    return true;
+                    return Errno{};
                 },
-                [](::foundation::os::Errno) { return false; });
+                [](Errno error) { return error; });
     stop_the_timer();
-    if (!is_opened) ::fixy::fatal("the open of the FIFO failed while a timer signal interrupted it");
+    if (refusal == Errno::eintr) ::fixy::fatal("a timer signal ended the open of the FIFO");
+    if (refusal != Errno::eftype) {
+        ::fixy::fatal("the open of the FIFO gave the error {}, and a FIFO is no regular file",
+                      static_cast<std::uint16_t>(refusal));
+    }
     if (timer_signals.load_acquire() == 0) ::fixy::fatal("no timer signal reached the open of the FIFO");
 }
 
@@ -166,7 +171,8 @@ int main() {
         ::fixy::process::wait(std::move(writer)).expect("the test waits for the writer");
     remove_the_fifo();
     CRUCIBLE_TEST_ASSERT(kTest, reader_report.is_exit_with(0)
-                                    && "an open of a FIFO starts again after each signal, until a writer opens it");
+                                    && "an open of a FIFO starts again after each signal, until a writer opens it, and "
+                                       "the door then refuses the FIFO");
     CRUCIBLE_TEST_ASSERT(kTest, writer_report.is_exit_with(0));
     ::fixy::check::pass(kTest, "test_os_open_interrupted: all tests passed\n");
     return 0;

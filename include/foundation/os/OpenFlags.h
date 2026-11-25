@@ -1,9 +1,9 @@
 #pragma once
 
 // The argument words of an open of the doors: the directory of a relative
-// path, the access mode and the flags of an open, the flag of a status read
-// through a descriptor, the argument and the resolve flags of openat2, and
-// the flags and the seals of a memory file.
+// path, the access mode and the flags of an open, the flags of a status read
+// through a descriptor, the type bits of a status, the argument and the
+// resolve flags of openat2, and the flags and the seals of a memory file.
 //
 // The values are the values of <linux/fcntl.h>, <linux/openat2.h> and
 // <linux/memfd.h> on x86_64 and aarch64.  The values of O_DIRECTORY,
@@ -12,7 +12,9 @@
 // src/foundation/os/Syscall.cpp compares each value and the layout of
 // OpenHow with those headers.  A door that includes a header of the C library
 // cannot include <linux/fcntl.h> too, because <fcntl.h> declares the same
-// structs, so the doors take the values from here.
+// structs, so the doors take the values from here.  <linux/stat.h> hides the
+// type bits from a file that reads a header of the C library, so
+// test_os_file_type compares them with <sys/stat.h>.
 //
 // This header is in the floor layer F0_os of utils/rule-table.txt.
 
@@ -32,6 +34,28 @@ inline constexpr int kAtSymlinkNoFollow = 0x100;
 // (AT_REMOVEDIR).  A directory that holds an entry gives ENOTEMPTY.
 inline constexpr int kAtRemoveDirectory = 0x200;
 
+// A status read with an empty path reads the file of the descriptor itself
+// (AT_EMPTY_PATH).
+inline constexpr int kAtEmptyPath = 0x1000;
+
+// A status read gives what the host knows of the file, and it asks no server
+// of a network file system (AT_STATX_DONT_SYNC).
+inline constexpr int kAtStatusNoSync = 0x4000;
+
+// The bits of the mode of a file that hold its type (S_IFMT), and the types
+// with their bits (S_IFIFO, S_IFCHR, S_IFDIR, S_IFBLK, S_IFREG, S_IFLNK and
+// S_IFSOCK).
+inline constexpr std::uint32_t kFileTypeMask = 0170000;
+enum class FileType : std::uint32_t {
+    fifo = 0010000,
+    character_device = 0020000,
+    directory = 0040000,
+    block_device = 0060000,
+    regular = 0100000,
+    symbolic_link = 0120000,
+    socket = 0140000,
+};
+
 // An open for reading only (O_RDONLY).
 inline constexpr int kOpenReadOnly = 0;
 
@@ -49,6 +73,10 @@ inline constexpr int kOpenCreate = 0100;
 // also a symbolic link (O_EXCL).  So the file of a successful open is a new
 // file that no other open of the same path made.
 inline constexpr int kOpenExclusive = 0200;
+
+// The open of a terminal does not make it the controlling terminal of the
+// process (O_NOCTTY).
+inline constexpr int kOpenNoControllingTerminal = 0400;
 
 // The open cuts a regular file that it opens for writing to a length of zero
 // (O_TRUNC).

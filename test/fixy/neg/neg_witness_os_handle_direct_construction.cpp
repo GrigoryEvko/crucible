@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::OpenedDescriptor>()};
+    [[maybe_unused]] auto forged = fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::OpenedDescriptor<fixy::fs::OpenedType::regular_file>>()};
     return 0;
 }

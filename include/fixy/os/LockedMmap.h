@@ -64,9 +64,16 @@
 //   - An object that gets shorter later.  Memory with a seal cannot, and the
 //     atom faults_on_truncate states the risk
 //   The mint of a file of a Handle makes no test.  A shared map takes sealed
-//   memory or the atom faults_on_truncate.  A Handle of the kind File can also
-//   name a character device, and no gate asks if a private map of a device
-//   loads its pages again.
+//   memory or the atom faults_on_truncate.  A Handle of the kind File is a
+//   regular file, because its open read the type (the opened descriptor of
+//   fixy/os/Fd.h), and no door maps a character device.  The page cache holds
+//   the pages of a regular file of a disk or of a tmpfs, so a page that a
+//   discard drops comes back.  A regular file of a file system of the kernel
+//   can have a map of its own.  A map of fixed frames, such as the map of
+//   /sys/kernel/btf/vmlinux, refuses the discard with einval.  A map that
+//   inserts its pages, such as the map of the file kcov of debugfs, which only
+//   root opens, loses them at a discard.  No door tells such a file from each
+//   other regular file, so the mint of it stays a promise of the caller.
 //
 // The object is pinned, and a map can fail, so a mint gives a Box of the
 // object, which is one allocation on a cold door.  A map that fails gives the

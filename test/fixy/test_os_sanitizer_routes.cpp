@@ -84,16 +84,17 @@ private:
 
 using RelaxedWord = RelaxedCell<std::uint64_t>;
 
-// A file of /dev/null, open for reading only.
-using NullFile = ::fixy::fs::FileOf<::fixy::fs::read_only>;
+// The device /dev/null, open for reading only.
+using NullDevice = ::fixy::fs::CharacterDevice<::fixy::fs::DeviceAccess::read_only>;
 
-// The number of the descriptor of file, which the kernel gave the open.
-[[nodiscard]] int number_of(NullFile const& file) noexcept { return file.ref().abi_descriptor(); }
+// The number of the descriptor of device, which the kernel gave the open.
+[[nodiscard]] int number_of(NullDevice const& device) noexcept { return device.ref().abi_descriptor(); }
 
-// Takes the descriptor of file, and closes it with close(2) of the C library,
-// which the sanitizer intercepts.  The file is empty after the call.
-[[nodiscard]] bool close_through_the_c_library(NullFile&& file) noexcept {
-    return ::close(std::move(file).release_to_abi()) == 0;
+// Takes the descriptor of device, and closes it with close(2) of the C
+// library, which the sanitizer intercepts.  The handle is empty after the
+// call.
+[[nodiscard]] bool close_through_the_c_library(NullDevice&& device) noexcept {
+    return ::close(std::move(device).release_to_abi()) == 0;
 }
 
 }  // namespace
@@ -120,9 +121,11 @@ void wait_for(RelaxedWord const& word) noexcept {
     return fixy::sanitize_path(fixy::mint_tagged<src::External>(text)).expect("each test path passes the sanitizer");
 }
 
-// A file of /dev/null under devices, which must open.
-[[nodiscard]] NullFile open_null(BgCtx const& ctx, fs::DirectoryHandle const& devices) {
-    return fs::mint_file_at<fs::read_only>(ctx, devices.ref(), "null").expect("/dev/null opens for a read").consume();
+// The device /dev/null under devices, which must open.
+[[nodiscard]] NullDevice open_null(BgCtx const& ctx, fs::DirectoryHandle const& devices) {
+    return fs::mint_character_device_at<fs::DeviceAccess::read_only>(ctx, devices.ref(), "null")
+        .expect("/dev/null opens for a read")
+        .consume();
 }
 
 // The count of the descriptors that the second thread of the close case
@@ -137,7 +140,7 @@ constexpr std::size_t kOpenTries = 64;
 [[nodiscard]] bool open_again_and_close(BgCtx const& ctx, fs::DirectoryHandle const& devices, int first_number,
                                         std::size_t tries_left) {
     if (tries_left == 0) return false;
-    NullFile null = open_null(ctx, devices);
+    NullDevice null = open_null(ctx, devices);
     if (number_of(null) == first_number) return close_through_the_c_library(std::move(null));
     if (number_of(null) > first_number) return false;
     return open_again_and_close(ctx, devices, first_number, tries_left - 1);
@@ -156,7 +159,7 @@ constexpr std::size_t kOpenTries = 64;
     auto first = [&](BgCtx const& thread_ctx) noexcept {
         int first_number = -1;
         {
-            NullFile const null = open_null(thread_ctx, devices);
+            NullDevice const null = open_null(thread_ctx, devices);
             first_number = number_of(null);
             auto const [is_read, bytes] =
                 fixy::build_fixed_array<std::byte, 8>([&thread_ctx, &null](auto run) noexcept {

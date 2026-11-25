@@ -583,7 +583,8 @@ class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
     [[nodiscard]] static PtpClockReader empty_() noexcept { return PtpClockReader{PtpClockHandle{}}; }
 
     // Opens /dev/ptpN read-only and gives the reader that owns its
-    // descriptor, or the error of a failed open.
+    // descriptor, or the error of a failed open.  A node that is no character
+    // device gives eftype.
     [[nodiscard]] static ::foundation::core::Result<PtpClockReader, ::foundation::os::Errno>
     open_(PtpDeviceIndex index) noexcept {
         // "/dev/ptp", a maximum of three digits for an index of 255 or
@@ -607,10 +608,10 @@ class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
         }
         path[length] = '\0';
 
-        return ::fixy::fs::detail::OpenedDescriptorDoor::admit(
+        return ::fixy::fs::detail::OpenedDescriptorDoor::admit<::fixy::fs::OpenedType::character_device>(
             ::fixy::fs::detail::open_descriptor_(
                 path.data(), ::foundation::os::kOpenReadOnly | ::foundation::os::kOpenCloseOnExec, 0),
-            [](::fixy::fs::OpenedDescriptor descriptor) noexcept {
+            [](::fixy::fs::OpenedDescriptor<::fixy::fs::OpenedType::character_device> descriptor) noexcept {
                 return PtpClockReader{PtpClockHandle{std::move(descriptor)}};
             });
     }

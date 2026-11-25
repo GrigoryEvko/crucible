@@ -10,9 +10,9 @@
 // owner of a descriptor is the Handle of fixy/os/Handle.h.
 //
 // The door file src/fixy/os/Fd.cpp holds the open, the close and the query
-// of a descriptor, and the generation of each number of a descriptor.  It
-// issues the calls with the raw primitive of foundation/os/Syscall.h, so this
-// header includes no system header.
+// of a descriptor, the read of the type of an opened file, and the generation
+// of each number of a descriptor.  It issues the calls with the raw primitive
+// of foundation/os/Syscall.h, so this header includes no system header.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/NoObject.h>
@@ -21,6 +21,7 @@
 #include <foundation/core/Quantity.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
+#include <foundation/os/OpenFlags.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -175,16 +176,49 @@ public:
     }
 };
 
+// The type of the file of an opened number, and how the base knows it (the
+// opened descriptor below).
+enum class OpenedType : std::uint8_t {
+    // The call that gave the number gives no file of another kind: a socket, an
+    // event of perf_event_open, a memory file, or an open with O_DIRECTORY.
+    of_call,
+    // A regular file.  The door of the open reads the type, unless the flags
+    // of the open make the file.
+    regular_file,
+    // A character device.  The door of the open reads the type.
+    character_device,
+};
+
+// An open with Flags makes its file, so the file is a regular file that no
+// other open made: O_CREAT with O_EXCL, or O_TMPFILE.
+template <int Flags>
+concept MakesItsFile = (Flags & (::foundation::os::kOpenCreate | ::foundation::os::kOpenExclusive))
+                        == (::foundation::os::kOpenCreate | ::foundation::os::kOpenExclusive)
+                    || (Flags & ::foundation::os::kOpenTemporary) == ::foundation::os::kOpenTemporary;
+
 // Opened descriptor
-//   An OpenedDescriptor is the number that an open gave to the base, below the
-//   limit Slots of the slots of the generations, so the number has a
-//   generation.  The private constructor of a Handle takes one, so each number
-//   that a Handle owns has a generation.  A number at or past the limit, which
-//   a host with a raised fs.nr_open and a raised limit of open files can
-//   give, has no generation: the door of an open closes it and gives emfile
-//   (admit_opened_number_).  The value moves and does not copy, so no two
-//   Handles take one number.  detail::OpenedDescriptorDoor is the one friend
-//   that makes one.
+//   An OpenedDescriptor is the number that an open gave to the base, with the
+//   type of its file, Type.  The private constructor of a Handle takes one
+//   with the type of its kind (opened_type_of of fixy/os/Handle.h), so the
+//   kind of a Handle states the type of its file.  The value moves and does
+//   not copy, so no two Handles take one number.
+//   detail::OpenedDescriptorDoor is the one friend that makes one.
+//
+//   The number is below the slots of the generations, so each number that a
+//   Handle owns has a generation.  A number at or past them, which a host with
+//   a raised fs.nr_open and a raised limit of open files can give, has no
+//   generation: the door of an open closes it and gives emfile
+//   (admit_opened_number_).
+//
+//   A path can name each type of file: a regular file, a directory, a device,
+//   a FIFO or a socket.  The door of an open that has no other proof reads the
+//   type of the opened file (admit_regular_file_), and it closes a file of
+//   another type and gives eftype.  The type of a file never changes, so the
+//   answer stays true for the life of the Handle.  The read asks for the type
+//   alone, and it asks no server of a network file system.  The open itself
+//   comes before the read.  So the open of a FIFO with no writer waits for a
+//   writer before the refusal, and the open of a device runs its driver.
+template <OpenedType Type>
 class OpenedDescriptor final {
     int number_ = -1;
 
@@ -215,33 +249,70 @@ namespace detail {
 [[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno>
 admit_opened_number_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept;
 
+// The number of admit_opened_number_ when its file is a regular file.  A file
+// of another type is closed, and the result is eftype (the opened
+// descriptor).  An error of the type read closes the file and is the result.
+[[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno>
+admit_regular_file_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept;
+
+// The number of admit_opened_number_ when its file is a character device, with
+// the refusals of admit_regular_file_.
+[[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno>
+admit_character_device_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept;
+
 // The door that makes an opened descriptor.  No object of it exists.
 struct OpenedDescriptorDoor final : ::foundation::NoObject<OpenedDescriptorDoor> {
-    // The opened descriptor of the number descriptor that an open gave, when
-    // it is below Slots.  A number at or past Slots is closed, and the result
-    // is emfile (the opened descriptor).  The limit is a parameter, so a test
-    // can give a low limit to a real open.
+    // The number descriptor that an open gave, when it is below Slots.  A
+    // number at or past Slots is closed, and the result is emfile (the opened
+    // descriptor).  The limit is a parameter, so a test can give a low limit to
+    // a real open.
     template <std::size_t Slots>
-    [[nodiscard]] static ::foundation::core::Result<OpenedDescriptor, ::foundation::os::Errno>
-    admit_below(int descriptor) noexcept {
+    [[nodiscard]] static ::foundation::core::Result<int, ::foundation::os::Errno> admit_below(int descriptor) noexcept {
         if (static_cast<std::size_t>(descriptor) >= Slots) {
             close_descriptor_(descriptor);
             return ::foundation::core::err(::foundation::os::Errno::emfile);
         }
-        return OpenedDescriptor{descriptor};
+        return descriptor;
     }
 
     // Gives make(opened descriptor) for the result of an open, or the error of
-    // the open, or emfile for a number with no generation (the opened
+    // the open, or the refusal of the number or of its file (the opened
     // descriptor).  A door of an open gives the opened descriptor to the
-    // constructor of a Handle in make.  The check and the close of a refused
+    // constructor of a Handle in make.  The checks and the close of a refused
     // number are one call in the door file, whose result is in registers, so
     // each open holds that call and the body of make.
-    template <class Make>
+    template <OpenedType Type, class Make>
     [[nodiscard]] static auto admit(::foundation::core::Result<int, ::foundation::os::Errno> opened,
                                     Make make) noexcept {
+        return checked_<Type>(opened).map(
+            [&make](int descriptor) noexcept { return make(OpenedDescriptor<Type>{descriptor}); });
+    }
+
+    // Gives make(opened descriptor) for the result of an open with Flags,
+    // which makes its regular file, so the door reads no type.
+    template <int Flags, class Make>
+        requires MakesItsFile<Flags>
+    [[nodiscard]] static auto admit_new_file(::foundation::core::Result<int, ::foundation::os::Errno> opened,
+                                             Make make) noexcept {
         return admit_opened_number_(opened).map(
-            [&make](int descriptor) noexcept { return make(OpenedDescriptor{descriptor}); });
+            [&make](int descriptor) noexcept { return make(OpenedDescriptor<OpenedType::regular_file>{descriptor}); });
+    }
+
+private:
+    // The number of an open whose file has the type Type, or the refusal.  A
+    // type with no arm does not compile.
+    template <OpenedType Type>
+    [[nodiscard]] static ::foundation::core::Result<int, ::foundation::os::Errno>
+    checked_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
+        if constexpr (Type == OpenedType::regular_file) {
+            return admit_regular_file_(opened);
+        } else if constexpr (Type == OpenedType::character_device) {
+            return admit_character_device_(opened);
+        } else {
+            static_assert(Type == OpenedType::of_call,
+                          "OpenedDescriptorDoor::admit: the type has no check.  Give it an arm that reads it.");
+            return admit_opened_number_(opened);
+        }
     }
 };
 

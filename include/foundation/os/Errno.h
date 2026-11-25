@@ -156,6 +156,10 @@ enum class[[= ::foundation::core::open_values{}]] Errno : std::uint16_t {
     enotrecoverable = 131,
     erfkill = 132,
     ehwpoison = 133,
+    // The path names a file of a type that the open does not take.  Linux 7.2
+    // added the number, and a door that reads the type of a file itself gives
+    // it on each release (the opened descriptor of fixy/os/Fd.h).
+    eftype = 134,
 };
 
 // The largest error number that the kernel returns.  A word from

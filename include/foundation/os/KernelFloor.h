@@ -107,6 +107,9 @@ enum class KernelFlag : std::uint8_t {
     open_temporary,
     // AT_FDCWD and AT_SYMLINK_NOFOLLOW of the calls of the *at family.
     at_family_words,
+    // AT_EMPTY_PATH, AT_STATX_DONT_SYNC and STATX_TYPE of the read of the type
+    // of an opened descriptor of fixy/os/Fd.h.
+    status_words,
     // RESOLVE_BENEATH and RESOLVE_NO_MAGICLINKS of each open with openat2.
     resolve_beneath,
     // MAP_HUGETLB of a map of huge pages of fixy/os/Mmap.h.
@@ -251,6 +254,10 @@ struct FlagFloor {
         case KernelFlag::at_family_words:
             return FlagFloor{
                 .release = {2, 6, 16}, .need = FlagNeed::each_call, .word = "AT_FDCWD, AT_SYMLINK_NOFOLLOW"};
+        case KernelFlag::status_words:
+            return FlagFloor{.release = {4, 11, 0},
+                             .need = FlagNeed::each_call,
+                             .word = "AT_EMPTY_PATH, AT_STATX_DONT_SYNC, STATX_TYPE"};
         case KernelFlag::resolve_beneath:
             return FlagFloor{
                 .release = {5, 6, 0}, .need = FlagNeed::each_call, .word = "RESOLVE_BENEATH, RESOLVE_NO_MAGICLINKS"};

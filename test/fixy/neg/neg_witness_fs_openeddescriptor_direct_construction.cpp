@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// fixy::fs::OpenedDescriptor in utils/rule-table.txt.  Edit the row, not this file.
+// fixy::fs::OpenedDescriptor<fixy::fs::OpenedType::regular_file> in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// fixy::fs::OpenedDescriptor attests to a fact that it cannot see.  The expression below is
+// fixy::fs::OpenedDescriptor<fixy::fs::OpenedType::regular_file> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "is private within this context".
 //
@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::fs::OpenedDescriptor{3};
+    [[maybe_unused]] auto forged = fixy::fs::OpenedDescriptor<fixy::fs::OpenedType::regular_file>{3};
     return 0;
 }

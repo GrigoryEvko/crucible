@@ -53,11 +53,14 @@ static_assert(kAtCurrentDirectory == AT_FDCWD, "kAtCurrentDirectory is not AT_FD
 static_assert(kAtSymlinkNoFollow == AT_SYMLINK_NOFOLLOW,
               "kAtSymlinkNoFollow is not AT_SYMLINK_NOFOLLOW of <linux/fcntl.h>");
 static_assert(kAtRemoveDirectory == AT_REMOVEDIR, "kAtRemoveDirectory is not AT_REMOVEDIR of <linux/fcntl.h>");
+static_assert(kAtEmptyPath == AT_EMPTY_PATH, "kAtEmptyPath is not AT_EMPTY_PATH of <linux/fcntl.h>");
+static_assert(kAtStatusNoSync == AT_STATX_DONT_SYNC, "kAtStatusNoSync is not AT_STATX_DONT_SYNC of <linux/fcntl.h>");
 static_assert(kOpenReadOnly == O_RDONLY, "kOpenReadOnly is not O_RDONLY of <linux/fcntl.h>");
 static_assert(kOpenWriteOnly == O_WRONLY, "kOpenWriteOnly is not O_WRONLY of <linux/fcntl.h>");
 static_assert(kOpenReadWrite == O_RDWR, "kOpenReadWrite is not O_RDWR of <linux/fcntl.h>");
 static_assert(kOpenCreate == O_CREAT, "kOpenCreate is not O_CREAT of <linux/fcntl.h>");
 static_assert(kOpenExclusive == O_EXCL, "kOpenExclusive is not O_EXCL of <linux/fcntl.h>");
+static_assert(kOpenNoControllingTerminal == O_NOCTTY, "kOpenNoControllingTerminal is not O_NOCTTY of <linux/fcntl.h>");
 static_assert(kOpenTruncate == O_TRUNC, "kOpenTruncate is not O_TRUNC of <linux/fcntl.h>");
 static_assert(kOpenAppend == O_APPEND, "kOpenAppend is not O_APPEND of <linux/fcntl.h>");
 static_assert(kOpenDataSync == O_DSYNC, "kOpenDataSync is not O_DSYNC of <linux/fcntl.h>");
@@ -321,6 +324,8 @@ constexpr long kNoCall = -1;
             return __NR_fallocate;
         case Syscall::fcntl:
             return __NR_fcntl;
+        case Syscall::statx:
+            return __NR_statx;
         default:
             return kNoCall;
     }
@@ -518,7 +523,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // 5.3.  pidfd_open came in 5.3.  mincore, gettid, geteuid, clock_gettime,
 // clock_nanosleep and mremap came before 2.6.0, and getcpu came in 2.6.19.
 // fallocate came in 2.6.23 and memfd_create in 3.17.  fcntl came before 2.6.0,
-// and the file door uses its F_ADD_SEALS, which came in 3.17.
+// and the file door uses its F_ADD_SEALS, which came in 3.17.  statx came in
+// 4.11.
 // The file door opens
 // each path under a directory with openat2 and RESOLVE_BENEATH, and an open
 // with openat would follow a path out of the directory with no error.  So
@@ -573,6 +579,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
             break;
         case Syscall::copy_file_range:
             added = KernelVersion{4, 5, 0};
+            break;
+        case Syscall::statx:
+            added = KernelVersion{4, 11, 0};
             break;
         case Syscall::io_uring_setup:
             added = KernelVersion{5, 1, 0};

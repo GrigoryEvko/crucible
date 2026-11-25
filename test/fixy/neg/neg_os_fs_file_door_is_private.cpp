@@ -9,7 +9,7 @@
 #include <fcntl.h>
 
 int main() {
-    [[maybe_unused]] auto opened =
-        fixy::fs::FileDoor::open_path_("/etc/hostname", O_RDONLY, fixy::fs::FileMode::owner_read);
+    [[maybe_unused]] auto opened = fixy::fs::FileDoor::open_file_<fixy::fs::FileOf<fixy::fs::read_only>, O_RDONLY>(
+        "/etc/hostname", fixy::fs::FileMode::owner_read);
     return 0;
 }

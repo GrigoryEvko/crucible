@@ -154,6 +154,7 @@ constexpr KernelErrno kKernelErrnos[] = {
     {Errno::enotrecoverable, ENOTRECOVERABLE},
     {Errno::erfkill, ERFKILL},
     {Errno::ehwpoison, EHWPOISON},
+    {Errno::eftype, EFTYPE},
 };
 
 // True when each row names the value of its macro.

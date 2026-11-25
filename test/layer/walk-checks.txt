@@ -107,7 +107,7 @@ fixy/concurrent/Stage.cpp | 1.1 | ::foundation::transfer::door_probe_contexts, u
 fixy/handle/OneShotFlag.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/handle/Published.cpp | 0.1 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/os/Fs.cpp | 0.1 | ::fixy::session::combinators, unknown
-fixy/os/Handle.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
+fixy/os/Handle.cpp | unmeasured | ::fixy::os::kind, ::foundation::transfer::door_probe_contexts, unknown
 fixy/os/Io.cpp | 0.1 | unknown
 fixy/os/LockedMmap.cpp | unmeasured | ::foundation::permissions::permission_rows
 fixy/os/Mmap.cpp | 0.1 | unknown

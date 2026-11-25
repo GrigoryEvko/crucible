@@ -28,13 +28,33 @@ static_assert(!::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::fs::mode, A_NoFol
 static_assert(!::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::fs::mode>);
 static_assert(!::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::fs::mode, A_RO, A_Trunc>);
 
-static_assert(fold_open_flags<A_RO>() == (word::kOpenReadOnly | word::kOpenCloseOnExec));
+// The flags that each open of a file holds.
+inline constexpr int kEachOpen = word::kOpenCloseOnExec | word::kOpenNoControllingTerminal;
+
+static_assert(fold_open_flags<A_RO>() == (word::kOpenReadOnly | kEachOpen));
 static_assert(fold_open_flags<A_Trunc, A_NoFollow>()
-              == (word::kOpenWriteOnly | word::kOpenCreate | word::kOpenTruncate | word::kOpenNoFollow
-                  | word::kOpenCloseOnExec));
+              == (word::kOpenWriteOnly | word::kOpenCreate | word::kOpenTruncate | word::kOpenNoFollow | kEachOpen));
 static_assert(fold_open_flags<A_Trunc, A_Fsync, A_Rename>()
-                  == (word::kOpenWriteOnly | word::kOpenCreate | word::kOpenTruncate | word::kOpenCloseOnExec),
+                  == (word::kOpenWriteOnly | word::kOpenCreate | word::kOpenTruncate | kEachOpen),
               "durable and atomic_write atoms declare intent and add no open flag.");
+
+// The open flags of a character device hold no flag that makes a file, so a
+// device door makes no file at a path that names none.
+static_assert(device_open_flags<DeviceAccess::read_only>() == (word::kOpenReadOnly | kEachOpen));
+static_assert(device_open_flags<DeviceAccess::write_only>() == (word::kOpenWriteOnly | kEachOpen));
+static_assert(device_open_flags<DeviceAccess::read_write>() == (word::kOpenReadWrite | kEachOpen));
+
+// An open makes its file only with O_CREAT and O_EXCL, or with O_TMPFILE.  Each
+// other open can open a file that is there, so the door reads its type.
+using A_Exclusive = ::fixy::atom::fs::mode<open_mode::WriteExclusive>;
+using A_Create = ::fixy::atom::fs::mode<open_mode::WriteCreate>;
+static_assert(MakesItsFile<fold_open_flags<A_Exclusive>()>);
+static_assert(MakesItsFile<word::kOpenTemporary | word::kOpenReadWrite>);
+static_assert(!MakesItsFile<fold_open_flags<A_RO>()> && !MakesItsFile<fold_open_flags<A_Create>()>
+              && !MakesItsFile<fold_open_flags<A_Trunc>()>);
+static_assert(!MakesItsFile<word::kOpenExclusive | word::kOpenWriteOnly>, "O_EXCL with no O_CREAT makes no file.");
+static_assert(!MakesItsFile<word::kOpenDirectory | word::kOpenReadOnly>,
+              "O_TMPFILE holds the bit of O_DIRECTORY, and an open of a directory makes no file.");
 
 // A tag with no row in a table has no bits.  A read of them is a
 // compile error, so an unknown mode cannot open for reading and an
@@ -154,5 +174,16 @@ static_assert(!std::is_convertible_v<DirectoryRef<directory_rights>, FileRef<dir
 static_assert(!std::is_convertible_v<FileRef<temporary_file_rights>, DirectoryRef<temporary_file_rights>>
                   && !std::is_constructible_v<DirectoryRef<temporary_file_rights>, FileRef<temporary_file_rights>>,
               "a door under a directory must not take a file.");
+
+// A character device holds the rights of its access, and no conversion makes a
+// file of it.
+static_assert(CharacterDevice<DeviceAccess::read_only>::rights == RightSet::read
+              && CharacterDevice<DeviceAccess::write_only>::rights == RightSet::write
+              && CharacterDevice<DeviceAccess::read_write>::rights == (RightSet::read | RightSet::write));
+static_assert(!std::is_convertible_v<CharacterDeviceRef<RightSet::read>, FileRef<RightSet::read>>
+                  && !std::is_constructible_v<FileRef<RightSet::read>, CharacterDeviceRef<RightSet::read>>,
+              "a door of a file must not take a character device.");
+static_assert(!::fixy::os::HoldsRights<CharacterDevice<DeviceAccess::read_write>::rights, RightSet::map>,
+              "a character device holds no map right.");
 
 }  // namespace fixy::fs::detail::fs_surface_invariants

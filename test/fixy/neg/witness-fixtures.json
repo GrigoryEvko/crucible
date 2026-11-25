@@ -2818,7 +2818,7 @@
       "header": "fixy/os/Io.h"
     },
     {
-      "type": "fixy::fs::OpenedDescriptor",
+      "type": "fixy::fs::OpenedDescriptor<fixy::fs::OpenedType::regular_file>",
       "header": "fixy/os/Fd.h"
     },
     {

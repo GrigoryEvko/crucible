@@ -165,6 +165,9 @@ enum class Syscall : std::uint8_t {
     memfd_create,
     fallocate,
     fcntl,
+    // The type of the file of an opened descriptor, which the door of an open
+    // reads (the opened descriptor of fixy/os/Fd.h).
+    statx,
 };
 
 // True when the call can wait for a long time: for another thread or process

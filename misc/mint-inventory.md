@@ -198,8 +198,8 @@ that the axis does not apply to the row.
 | `mint_sequence_source` | `include/fixy/Stale.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | HS14: 8 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 5 |
-| `mint_tagged(T0_1)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 19 |
-| `mint_tagged(foundation::core::ForeignText)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 19 |
+| `mint_tagged(T0_1)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |
+| `mint_tagged(foundation::core::ForeignText)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_wide_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 3 |
@@ -252,6 +252,8 @@ that the axis does not apply to the row.
 | `OwnedMmap::mint_region(const T1_1&, const foundation::permissions::Permission<T0_0, T0_3>&, std::size_t)` | `include/fixy/os/OwnedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
 | `mint_affinity` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_bounded_sleep` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_character_device` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
+| `mint_character_device_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
@@ -262,7 +264,7 @@ that the axis does not apply to the row.
 | `mint_locked_mmap` | `include/fixy/os/LockedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_locked_mmap_anon` | `include/fixy/os/LockedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 10 |
 | `mint_locked_mmap_foreign` | `include/fixy/os/LockedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
-| `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
+| `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 6 |
 | `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_numa_policy` | `include/fixy/os/NumaPlacement.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
@@ -409,7 +411,7 @@ that the axis does not apply to the row.
 | `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 10 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 305 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 306 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 77 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
@@ -422,4 +424,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 80 | 46 | 25 | 9 | 0 | 7 |
-| substrate (`include/foundation/`, `include/fixy/`) | 183 | 66 | 113 | 4 | 0 | 2 |
+| substrate (`include/foundation/`, `include/fixy/`) | 185 | 68 | 113 | 4 | 0 | 2 |

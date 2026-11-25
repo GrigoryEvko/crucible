@@ -348,6 +348,7 @@ door <unistd.h> src/foundation/os/Intercepted.cpp
 door <sys/mman.h> src/foundation/os/Intercepted.cpp
 door <sys/wait.h> src/foundation/os/Intercepted.cpp
 door <linux/auxvec.h> src/foundation/os/Auxiliary.cpp
+door <linux/stat.h> src/fixy/os/Fd.cpp
 door <asm/stat.h> src/fixy/os/Fs.cpp
 door <linux/fs.h> src/fixy/os/Fs.cpp
 door <linux/io_uring.h> src/fixy/os/Io.cpp
@@ -1347,17 +1348,18 @@ witness <fixy/os/Io.h> private | fixy::io::IoUringRing | fixy::io::IoUringRing{{
 # its one friend is mint_io_uring_ring, which sets up the ring.
 witness <fixy/os/Io.h> deleted | fixy::io::IoRingDoor | fixy::io::IoRingDoor{}
 # An opened descriptor is a number that a door of an open gave, below the
-# slots of the generations.  Its constructor is private, and its one friend
-# is the door that refuses a number past the slots.  A stamp of a descriptor
+# slots of the generations, with a file of the type of its template argument.
+# Its constructor is private, and its one friend is the door that refuses a
+# number past the slots and a file of another type.  A stamp of a descriptor
 # is a number and its generation, and its constructor is private, so only a
 # read of the generation now makes one.
-witness <fixy/os/Fd.h> private | fixy::fs::OpenedDescriptor | fixy::fs::OpenedDescriptor{3}
+witness <fixy/os/Fd.h> private | fixy::fs::OpenedDescriptor<fixy::fs::OpenedType::regular_file> | fixy::fs::OpenedDescriptor<fixy::fs::OpenedType::regular_file>{3}
 witness <fixy/os/Fd.h> private | fixy::fs::DescriptorStamp | fixy::fs::DescriptorStamp{forge::rvalue<int>(), forge::rvalue<std::uint32_t>()}
 # A Handle claims one descriptor with the rights of its type, and a borrow
 # holds the stamp of the descriptor of a Handle.  The constructor of each is
 # private, and the friends of a Handle are the door classes that open a
 # descriptor.
-witness <fixy/os/Handle.h> private | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::OpenedDescriptor>()}
+witness <fixy/os/Handle.h> private | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::OpenedDescriptor<fixy::fs::OpenedType::regular_file>>()}
 witness <fixy/os/Handle.h> private | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::DescriptorStamp>()}
 # A foreign ref names the descriptor of a socket that a Handle owns or that
 # a C library opened, with the stamp of its number.  Its constructor from a

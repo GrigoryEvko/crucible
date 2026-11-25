@@ -20,9 +20,16 @@
 //   bit for each family.
 //
 // Kinds
-//   A kind is a tag of namespace kind, and HandleKind names each one, so a
-//   class of a caller is no kind.  A socket kind takes the tag of its socket
-//   (fixy/os/Socket.h), because the doors of a socket read its triple.
+//   A kind is a tag of namespace kind, and the table of the kinds
+//   (detail::kind_table) has one row for each of them, so a class of a caller
+//   is no kind.  A socket kind takes the tag of its socket (fixy/os/Socket.h),
+//   because the doors of a socket read its triple.
+//
+//   The row of a kind states the type of the file of its handle and the proof
+//   of it (opened_type_of), and the constructor of a Handle takes an opened
+//   number of that type.  So a Handle of the kind File is a regular file, and a
+//   door of a file does no check of the type again.  A kind with no row is no
+//   kind, and a Handle of it does not compile.
 //
 // Borrow
 //   HandleRef is the one borrow of a descriptor.  It holds the number of the
@@ -53,10 +60,10 @@
 //   are the door classes that make the open, socket, perf_event_open and
 //   PTP open calls, and each door admits only its gated mints.  The
 //   constructor takes an OpenedDescriptor of fixy/os/Fd.h, so each number of
-//   a Handle has a generation.  The doors of the base read the descriptor of
-//   a borrow, and an owner reads the descriptor of its own Handle, through
-//   detail::HandleDoor.  A use of a namespace detail outside the base is a
-//   finding of the quarantine plugin.
+//   a Handle has a generation and a file of the type of its kind.  The doors
+//   of the base read the descriptor of a borrow, and an owner reads the
+//   descriptor of its own Handle, through detail::HandleDoor.  A use of a
+//   namespace detail outside the base is a finding of the quarantine plugin.
 //
 // ABI descriptor
 //   A call of a C ABI, such as a call of libbpf that takes a descriptor,
@@ -76,12 +83,10 @@
 #include <foundation/core/Choice.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/PathText.h>
-#include <foundation/reflect/Instance.h>
 
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <type_traits>
+#include <meta>
 #include <utility>
 
 namespace fixy::fs {
@@ -135,6 +140,8 @@ concept HoldsRights = (std::to_underlying(Held) & std::to_underlying(Needed)) ==
 namespace kind {
 // A regular file of a file system.
 struct File final {};
+// A character device of a device node, such as /dev/null.  No door maps it.
+struct CharacterDevice final {};
 // A directory, the root of the paths beneath it.
 struct Directory final {};
 // A socket of the kind SocketKind of fixy/os/Socket.h.
@@ -151,13 +158,56 @@ struct PtpClock final {};
 struct SealedMemory final {};
 }  // namespace kind
 
-// A kind of namespace kind.  The concept names each kind, so a class of a
-// different header is no kind.
+namespace detail {
+
+// One row of the table of the kinds: a kind, or the template of a family of
+// kinds, and the type of the opened number of its handles (the opened
+// descriptor of fixy/os/Fd.h).
+struct KindRow final {
+    std::meta::info kind{};
+    ::fixy::fs::OpenedType type{};
+};
+
+// The table of the kinds.  A node of /dev/ptpN can be another device, and the
+// kernel refuses each PTP call on one, so the row of a PTP clock states the
+// device and no more.
+inline constexpr KindRow kind_table[] = {
+    {^^kind::File, ::fixy::fs::OpenedType::regular_file},
+    {^^kind::CharacterDevice, ::fixy::fs::OpenedType::character_device},
+    {^^kind::PtpClock, ::fixy::fs::OpenedType::character_device},
+    {^^kind::Directory, ::fixy::fs::OpenedType::of_call},
+    {^^kind::Socket, ::fixy::fs::OpenedType::of_call},
+    {^^kind::PerfEvent, ::fixy::fs::OpenedType::of_call},
+    {^^kind::IoRing, ::fixy::fs::OpenedType::of_call},
+    {^^kind::SealedMemory, ::fixy::fs::OpenedType::of_call},
+};
+inline constexpr std::size_t kind_count = sizeof kind_table / sizeof kind_table[0];
+
+// The index of the row of kind, or kind_count when the table has none.  A
+// specialization of a template has the row of its template.  Complexity:
+// linear in the rows, at compile time.
+[[nodiscard]] consteval std::size_t kind_row_of_(std::meta::info kind) noexcept {
+    std::meta::info const bare = std::meta::dealias(kind);
+    std::meta::info const wanted = std::meta::has_template_arguments(bare) ? std::meta::template_of(bare) : bare;
+    for (std::size_t row = 0; row < kind_count; ++row) {
+        if (kind_table[row].kind == wanted) return row;
+    }
+    return kind_count;
+}
+
+}  // namespace detail
+
+// A kind of namespace kind: a class with a row in the table of the kinds, so a
+// class of a different header is no kind.
 template <class Kind>
-concept HandleKind =
-    std::same_as<Kind, kind::File> || std::same_as<Kind, kind::Directory> || std::same_as<Kind, kind::PerfEvent>
-    || std::same_as<Kind, kind::IoRing> || std::same_as<Kind, kind::PtpClock> || std::same_as<Kind, kind::SealedMemory>
-    || ::foundation::reflect::IsInstanceOf<Kind, ^^kind::Socket>;
+concept HandleKind = detail::kind_row_of_(^^Kind) < detail::kind_count;
+
+// The type of the opened number of a handle of the kind Kind.
+template <class Kind>
+    requires HandleKind<Kind>
+[[nodiscard]] consteval ::fixy::fs::OpenedType opened_type_of() noexcept {
+    return detail::kind_table[detail::kind_row_of_(^^Kind)].type;
+}
 
 template <class Kind, RightSet Rights>
     requires HandleKind<Kind>
@@ -273,9 +323,10 @@ class [[nodiscard]] Handle final {
 
     // The open gave the number to this Handle, so the generation of the
     // number advances (the generation of a descriptor of fixy/os/Fd.h).  The
-    // number is below the slots of the generations (the opened descriptor of
-    // fixy/os/Fd.h), so it has a generation.
-    explicit Handle(::fixy::fs::OpenedDescriptor&& opened) noexcept : descriptor_{opened.number()} {
+    // number is below the slots of the generations, and its file has the type
+    // of the kind (the opened descriptor of fixy/os/Fd.h).
+    explicit Handle(::fixy::fs::OpenedDescriptor<opened_type_of<Kind>()>&& opened) noexcept
+        : descriptor_{opened.number()} {
         ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
     }
 

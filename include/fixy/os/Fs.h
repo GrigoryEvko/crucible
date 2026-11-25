@@ -39,7 +39,10 @@
 //     of the door are private, and its friends are the gated mints that use
 //     it.  So a file or a directory that is owned is a descriptor that the
 //     kernel handed out to a gated mint.  A call takes the borrow of a
-//     handle, and asks for the rights of its work in its constraint.
+//     handle, and asks for the rights of its work in its constraint.  A file
+//     is a regular file: an open of a path that names a directory, a device,
+//     a FIFO or a socket gives eftype, or the error of the kernel.  A
+//     character device has its own kind and its own mints.
 //
 //  5. open_directory takes a context and a sanitized path, so the path
 //     discipline and the effect row reach it as they reach each other
@@ -142,6 +145,44 @@ inline constexpr ::fixy::os::RightSet sealed_memory_rights =
 
 // The handle of sealed memory (the sealed memory below).
 using SealedMemory = ::fixy::os::Handle<::fixy::os::kind::SealedMemory, sealed_memory_rights>;
+
+// What the open of a character device permits (the character device below).
+enum class DeviceAccess : std::uint8_t {
+    read_only,
+    write_only,
+    read_write,
+};
+
+namespace detail {
+
+// The open flags and the rights of one access of a character device.
+struct DeviceAccessRow final {
+    int flags = 0;
+    ::fixy::os::RightSet rights = ::fixy::os::RightSet::none;
+};
+
+// The row of each access.  An access that the enumeration does not name reads
+// past the end, so it does not compile.
+inline constexpr DeviceAccessRow device_access_table[] = {
+    {::foundation::os::kOpenReadOnly, ::fixy::os::RightSet::read},
+    {::foundation::os::kOpenWriteOnly, ::fixy::os::RightSet::write},
+    {::foundation::os::kOpenReadWrite, ::fixy::os::RightSet::read | ::fixy::os::RightSet::write},
+};
+
+}  // namespace detail
+
+// The rights of a character device of an access.  A device holds no right of a
+// map, of a seek or of a sync, so no door of a file takes it.
+[[nodiscard]] consteval ::fixy::os::RightSet device_rights(DeviceAccess access) noexcept {
+    return detail::device_access_table[std::to_underlying(access)].rights;
+}
+
+// The handle of a character device of the access Access, and its borrow.
+template <DeviceAccess Access>
+using CharacterDevice = ::fixy::os::Handle<::fixy::os::kind::CharacterDevice, device_rights(Access)>;
+
+template <::fixy::os::RightSet Rights>
+using CharacterDeviceRef = ::fixy::os::HandleRef<::fixy::os::kind::CharacterDevice, Rights>;
 
 inline constexpr ::fixy::atom_pack::tag_row<int> flag_table[] = {
     {^^flag::CloseOnExec, ::foundation::os::kOpenCloseOnExec}, {^^flag::NoFollow, ::foundation::os::kOpenNoFollow},
@@ -592,12 +633,22 @@ template <typename... Atoms>
 }
 
 // O_CLOEXEC is folded in unconditionally.  A descriptor that survives
-// execve leaks into every child process.
+// execve leaks into every child process.  O_NOCTTY is folded in too, because
+// the open comes before the refusal of a terminal (the opened descriptor of
+// fixy/os/Fd.h).
 template <typename... Atoms>
 [[nodiscard]] consteval int fold_open_flags() noexcept {
-    int acc = ::foundation::os::kOpenCloseOnExec;
+    int acc = ::foundation::os::kOpenCloseOnExec | ::foundation::os::kOpenNoControllingTerminal;
     ((acc |= atom_open_flags_v<Atoms>), ...);
     return acc;
+}
+
+// The open flags of a character device of the access Access.  No flag makes a
+// file.
+template <DeviceAccess Access>
+[[nodiscard]] consteval int device_open_flags() noexcept {
+    return device_access_table[std::to_underlying(Access)].flags | ::foundation::os::kOpenCloseOnExec
+         | ::foundation::os::kOpenNoControllingTerminal;
 }
 
 // The rights that an open of a pack under a directory needs of the
@@ -727,12 +778,30 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<Linear<SealedMemory>, ::foundation::os::Errno>
 mint_sealed_memory(Ctx const&, FileOffset length) noexcept;
 
+// The opens of a character device (below), declared here and defined below
+// FileDoor for the same reason.
+template <DeviceAccess Access, eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<Linear<CharacterDevice<Access>>, ::foundation::os::Errno>
+mint_character_device(Ctx const&, Path<tags::source::Sanitized> const& sanitized_path) noexcept;
+
+template <DeviceAccess Access, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup>
+[[nodiscard]] inline ::foundation::core::Result<Linear<CharacterDevice<Access>>, ::foundation::os::Errno>
+mint_character_device_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept;
+
 // The door to the open of a path and to a new memory file.  No object of it
 // exists.  Its members are private, and its friends are the gated mints that
-// open a path, mint_file, open_directory, mint_file_at, open_directory_at and
-// mint_temporary_file_at, and the mint of sealed memory.  A Handle befriends
-// this class, so a handle over a path or over sealed memory comes only from
-// one of those mints, after their gates.
+// open a path, mint_file, open_directory, mint_file_at, open_directory_at,
+// mint_temporary_file_at, mint_character_device and mint_character_device_at,
+// and the mint of sealed memory.  A Handle befriends this class, so a handle
+// over a path or over sealed memory comes only from one of those mints, after
+// their gates.
+//
+// Each member that makes a handle gives the door of the opened descriptor the
+// type of the kind of the handle (opened_type_of of fixy/os/Handle.h).  So a
+// File is a regular file and a CharacterDevice a character device, and a path
+// of another type gives eftype.
 //
 // The trailing return types are necessary: fixy/os/CpuPinned.h gives the
 // parse reason.
@@ -767,6 +836,17 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     friend auto mint_sealed_memory(FriendCtx const&, FileOffset) noexcept
         -> ::foundation::core::Result<Linear<SealedMemory>, ::foundation::os::Errno>;
 
+    template <DeviceAccess FriendAccess, eff::IsExecCtx FriendCtx>
+        requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
+    friend auto mint_character_device(FriendCtx const&, Path<tags::source::Sanitized> const&) noexcept
+        -> ::foundation::core::Result<Linear<CharacterDevice<FriendAccess>>, ::foundation::os::Errno>;
+
+    template <DeviceAccess FriendAccess, ::fixy::os::RightSet FriendRights, eff::IsExecCtx FriendCtx>
+        requires CtxFitsHandleCall<FriendCtx, FriendRights, ::fixy::os::RightSet::lookup>
+    friend auto mint_character_device_at(FriendCtx const&, DirectoryRef<FriendRights>,
+                                         ::foundation::core::CText) noexcept
+        -> ::foundation::core::Result<Linear<CharacterDevice<FriendAccess>>, ::foundation::os::Errno>;
+
     // The open flags of a file with no name: it reads and writes, and it
     // closes when a thread starts a program.
     static constexpr int temporary_flags_ =
@@ -777,30 +857,52 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     static constexpr int directory_flags_ = ::foundation::os::kOpenDirectory | ::foundation::os::kOpenNoFollow
                                           | ::foundation::os::kOpenCloseOnExec | ::foundation::os::kOpenReadOnly;
 
+    // The type of the opened number of the handle Owned.
+    template <class Owned>
+    static constexpr OpenedType type_of_ = ::fixy::os::opened_type_of<typename Owned::kind_type>();
+
     // The handle Owned of a descriptor that the open gave, or the error of
-    // the open, or emfile for a number with no generation (the opened
+    // the open, or the refusal of its number or of its file (the opened
     // descriptor of fixy/os/Fd.h).
     template <class Owned>
     [[nodiscard]] static ::foundation::core::Result<Owned, ::foundation::os::Errno>
     own_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
-        return detail::OpenedDescriptorDoor::admit(
-            opened, [](OpenedDescriptor descriptor) noexcept { return Owned{std::move(descriptor)}; });
+        return detail::OpenedDescriptorDoor::admit<type_of_<Owned>>(
+            opened, [](OpenedDescriptor<type_of_<Owned>> descriptor) noexcept { return Owned{std::move(descriptor)}; });
     }
 
-    // The handle Owned of the open, in a Linear, or the error of the open.
+    // The handle Owned of the open, in a Linear, or an error of own_.
     template <class Owned>
     [[nodiscard]] static ::foundation::core::Result<Linear<Owned>, ::foundation::os::Errno>
     own_linear_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
-        return detail::OpenedDescriptorDoor::admit(opened, [](OpenedDescriptor descriptor) noexcept {
-            return mint_linear<Owned>(Owned{std::move(descriptor)});
-        });
+        return detail::OpenedDescriptorDoor::admit<type_of_<Owned>>(
+            opened, [](OpenedDescriptor<type_of_<Owned>> descriptor) noexcept {
+                return mint_linear<Owned>(Owned{std::move(descriptor)});
+            });
     }
 
-    // The open reads perms only when flags holds O_CREAT and ignores it
-    // otherwise, so it is passed in each case.
-    [[nodiscard]] static ::foundation::core::Result<int, ::foundation::os::Errno>
-    open_path_(const char* path, int flags, FileMode perms) noexcept {
-        return detail::open_descriptor_(path, flags, std::to_underlying(perms));
+    // The file Owned of an open with Flags, in a Linear, or an error of own_.
+    // An open that makes its file needs no read of the type.
+    template <class Owned, int Flags>
+    [[nodiscard]] static ::foundation::core::Result<Linear<Owned>, ::foundation::os::Errno>
+    own_file_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
+        if constexpr (MakesItsFile<Flags>) {
+            return detail::OpenedDescriptorDoor::admit_new_file<Flags>(
+                opened, [](OpenedDescriptor<OpenedType::regular_file> descriptor) noexcept {
+                    return mint_linear<Owned>(Owned{std::move(descriptor)});
+                });
+        } else {
+            return own_linear_<Owned>(opened);
+        }
+    }
+
+    // Opens path with Flags and gives the file Owned.  The open reads perms
+    // only when Flags holds O_CREAT and ignores it otherwise, so it is passed
+    // in each case.
+    template <class Owned, int Flags>
+    [[nodiscard]] static ::foundation::core::Result<Linear<Owned>, ::foundation::os::Errno>
+    open_file_(const char* path, FileMode perms) noexcept {
+        return own_file_<Owned, Flags>(detail::open_descriptor_(path, Flags, std::to_underlying(perms)));
     }
 
     // The descriptor is what a later fsync flushes the entry through.
@@ -809,10 +911,12 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
         return detail::open_descriptor_(dir_path, directory_flags_, 0);
     }
 
-    // The opens of a path beneath the directory of the descriptor directory.
-    [[nodiscard]] static ::foundation::core::Result<int, ::foundation::os::Errno>
-    open_path_at_(int directory, const char* path, int flags, FileMode perms) noexcept {
-        return detail::open_beneath_(directory, path, flags, std::to_underlying(perms));
+    // Opens path beneath the directory of the descriptor directory with Flags
+    // and gives the file Owned.
+    template <class Owned, int Flags>
+    [[nodiscard]] static ::foundation::core::Result<Linear<Owned>, ::foundation::os::Errno>
+    open_file_at_(int directory, const char* path, FileMode perms) noexcept {
+        return own_file_<Owned, Flags>(detail::open_beneath_(directory, path, Flags, std::to_underlying(perms)));
     }
 
     [[nodiscard]] static ::foundation::core::Result<int, ::foundation::os::Errno>
@@ -820,10 +924,19 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
         return detail::open_beneath_(directory, path, directory_flags_, 0);
     }
 
-    // The open of a file with no name in the directory of the descriptor.
-    [[nodiscard]] static ::foundation::core::Result<int, ::foundation::os::Errno>
-    open_temporary_at_(int directory, FileMode perms) noexcept {
-        return detail::open_beneath_(directory, ".", temporary_flags_, std::to_underlying(perms));
+    // The opens of a character device of the access Access.
+    template <DeviceAccess Access>
+    [[nodiscard]] static ::foundation::core::Result<Linear<CharacterDevice<Access>>, ::foundation::os::Errno>
+    open_device_(const char* path) noexcept {
+        return own_linear_<CharacterDevice<Access>>(
+            detail::open_descriptor_(path, detail::device_open_flags<Access>(), 0));
+    }
+
+    template <DeviceAccess Access>
+    [[nodiscard]] static ::foundation::core::Result<Linear<CharacterDevice<Access>>, ::foundation::os::Errno>
+    open_device_at_(int directory, const char* path) noexcept {
+        constexpr int flags = detail::device_open_flags<Access>() | ::foundation::os::kOpenNoFollow;
+        return own_linear_<CharacterDevice<Access>>(detail::open_beneath_(directory, path, flags, 0));
     }
 };
 
@@ -832,8 +945,8 @@ template <typename... Atoms, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<Linear<FileOf<Atoms...>>, ::foundation::os::Errno>
 mint_file(Ctx const&, Path<tags::source::Sanitized> const& sanitized_path, FileMode perms) noexcept {
     constexpr int flags = detail::fold_open_flags<Atoms...>();
-    return FileDoor::own_linear_<FileOf<Atoms...>>(
-        FileDoor::open_path_(::foundation::core::detail::c_text_first_(sanitized_path.value().c_text()), flags, perms));
+    return FileDoor::open_file_<FileOf<Atoms...>, flags>(
+        ::foundation::core::detail::c_text_first_(sanitized_path.value().c_text()), perms);
 }
 
 // Fdatasync or Fsync of a file.  The gate refuses FsyncParentDir, which
@@ -920,7 +1033,9 @@ open_directory(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept {
 //   time, so no close between two reads gives the kernel -1.
 
 // Opens path under dir with the mode and the flags of Atoms, as mint_file
-// does.  The kernel reads perms only for a mode that creates the file.
+// does.  The kernel reads perms only for a mode that creates the file.  A path
+// that names no regular file gives eftype, or eisdir for a directory and a mode
+// that creates.
 template <typename... Atoms, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsFileMintAt<Ctx, Rights, Atoms...>
 [[nodiscard]] inline ::foundation::core::Result<Linear<FileOf<Atoms...>>, ::foundation::os::Errno>
@@ -930,8 +1045,8 @@ mint_file_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText pat
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
     constexpr int flags = detail::fold_open_flags<Atoms...>() | ::foundation::os::kOpenNoFollow;
-    return FileDoor::own_linear_<FileOf<Atoms...>>(
-        FileDoor::open_path_at_(directory, ::foundation::core::detail::c_text_first_(path), flags, perms));
+    return FileDoor::open_file_at_<FileOf<Atoms...>, flags>(directory, ::foundation::core::detail::c_text_first_(path),
+                                                            perms);
 }
 
 // Opens the directory at path under dir.
@@ -963,7 +1078,7 @@ mint_temporary_file_at(Ctx const&, DirectoryRef<Rights> dir, FileMode perms) noe
     if (directory < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return FileDoor::own_linear_<TemporaryFile>(FileDoor::open_temporary_at_(directory, perms));
+    return FileDoor::open_file_at_<TemporaryFile, FileDoor::temporary_flags_>(directory, ".", perms);
 }
 
 // Sealed memory
@@ -988,6 +1103,36 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<Linear<SealedMemory>, ::foundation::os::Errno>
 mint_sealed_memory(Ctx const&, FileOffset length) noexcept {
     return FileDoor::own_linear_<SealedMemory>(detail::make_sealed_memory_(length.raw()));
+}
+
+// Character device
+//   mint_character_device opens the device node at a sanitized path, and
+//   mint_character_device_at opens one beneath a directory.  The template
+//   argument gives the access, and the handle holds the read and the write
+//   rights of the access and no other right.  So read_full and write_full take
+//   the device, and no door of a file, no sync and no map takes it.  A path
+//   that names no character device gives eftype.  No open makes a node, and no
+//   terminal becomes the controlling terminal of the process.  The open runs
+//   the driver of the node and can wait for the device.
+
+// Opens the character device at sanitized_path.
+template <DeviceAccess Access, eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<Linear<CharacterDevice<Access>>, ::foundation::os::Errno>
+mint_character_device(Ctx const&, Path<tags::source::Sanitized> const& sanitized_path) noexcept {
+    return FileDoor::open_device_<Access>(::foundation::core::detail::c_text_first_(sanitized_path.value().c_text()));
+}
+
+// Opens the character device at path under dir (the calls under a directory).
+template <DeviceAccess Access, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup>
+[[nodiscard]] inline ::foundation::core::Result<Linear<CharacterDevice<Access>>, ::foundation::os::Errno>
+mint_character_device_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept {
+    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
+    if (directory < 0) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
+    return FileDoor::open_device_at_<Access>(directory, ::foundation::core::detail::c_text_first_(path));
 }
 
 // A rename under a directory with the rights Held.  The rename makes the

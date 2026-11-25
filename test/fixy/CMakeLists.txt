@@ -6940,7 +6940,7 @@ fixy_neg_compile_test(neg_owned_mmap_foreign_prot_row
 # whose members are private, and only the gated mints are friends.
 fixy_neg_compile_test(neg_os_fs_file_door_is_private
   "is private within this context"
-  "fixy::fs::FileDoor::open_path_\\(const char\\*, int, fixy::fs::FileMode\\)")
+  "fixy::fs::FileDoor::open_file_\\(const char\\*, fixy::fs::FileMode\\)")
 
 fixy_neg_compile_test(neg_os_socket_door_is_private
   "is private within this context"
@@ -6985,8 +6985,49 @@ fixy_neg_compile_test(neg_sealed_memory_without_io
 fixy_test(test_fs)
 
 # An open of a FIFO with no writer starts again after each timer signal whose
-# handler has no SA_RESTART, until a writer opens the FIFO.
+# handler has no SA_RESTART, until a writer opens the FIFO.  The door then
+# refuses the FIFO, which is no regular file.
 fixy_test(test_os_open_interrupted)
+
+# ── The type of an opened file ───────────────────────────────────────
+#
+# A Handle of the kind File is a regular file, and a Handle of the kind
+# CharacterDevice a character device.  The test opens a path of each type
+# through each door.  A Handle takes only an opened number with the proof of
+# its kind, and a kind with no proof is no kind.  The borrow of a device has a
+# kind of its own, so no map and no door of a file takes it.
+fixy_test(test_os_file_type)
+fixy_neg_compile_test(neg_os_handle_file_of_unread_number
+  "no matching function for call to .fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>::Handle\\("
+  "no known conversion for argument 1 from .*OpenedDescriptor<fixy::fs::OpenedType::of_call>.* to .fixy::fs::OpenedDescriptor<fixy::fs::OpenedType::regular_file>&&.")
+fixy_neg_compile_test(neg_os_handle_kind_without_a_proof
+  "template constraint failure for .template<class Kind, fixy::os::RightSet Rights>  requires  HandleKind<Kind> class fixy::os::Handle."
+  "the expression .kind_row_of_\\(.* < fixy::os::detail::kind_count \\[with Kind = .*BlockDevice\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_mmap_of_a_character_device
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Private>\\("
+  "fixy::os::kind::CharacterDevice")
+fixy_neg_compile_test(neg_os_fs_file_size_of_a_character_device
+  "no matching function for call to .file_size\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::CharacterDevice"
+  "mismatched types .fixy::os::kind::File. and .fixy::os::kind::CharacterDevice.")
+
+# The mints of a character device open a device node, and the open can wait for
+# the device, so each asks for a context that owns IO and Block.  The path is a
+# sanitized path, or a path beneath a directory with the lookup right.
+fixy_neg_compile_test(neg_os_fs_character_device_ctx_lacks_block
+  "no matching function for call to .mint_character_device<fixy::fs::DeviceAccess::read_only>\\(\\{anonymous\\}::IoOnlyCtx&"
+  "required for the satisfaction of .CtxAdmitsFs<Ctx>.")
+fixy_neg_compile_test(neg_os_fs_character_device_external_path
+  "no matching function for call to .mint_character_device<fixy::fs::DeviceAccess::read_only>\\("
+  "Tagged<foundation::os::PathText<4096>, fixy::tags::source::External>\\)")
+fixy_neg_compile_test(neg_os_fs_character_device_at_ctx_lacks_block
+  "no matching function for call to .mint_character_device_at<fixy::fs::DeviceAccess::read_only>\\(\\{anonymous\\}::IoOnlyCtx&"
+  "required for the satisfaction of .CtxAdmitsFs<Ctx>.")
+fixy_neg_compile_test(neg_os_fs_character_device_at_lacks_lookup
+  "no matching function for call to .mint_character_device_at<fixy::fs::DeviceAccess::read_only>\\(\\{anonymous\\}::IoBlockCtx&"
+  "the expression .\\(.*\\) == .* \\[with Held = .*Needed = fixy::os::RightSet::lookup\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_fs_write_through_read_only_device
+  "no matching function for call to .write_full\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::CharacterDevice"
+  "the expression .\\(.*\\) == .* \\[with Held = .*Needed = fixy::os::RightSet::write\\]. evaluated to .false.")
 
 # Each door under a directory refuses a path that escapes the directory: an
 # absolute path, a ".." part, a symbolic link and a magic link.
