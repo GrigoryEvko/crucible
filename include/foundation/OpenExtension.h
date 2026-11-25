@@ -52,8 +52,10 @@ struct open_extension final {
 // True when the entity carries the open mark.  An instance of a class
 // template or of a variable template reads the annotations of its template.
 // The read goes through a constant array, so it calls no member of the
-// container that the query gives.  Complexity: linear in the number of
-// annotations of the entity.
+// container that the query gives.  It does not use carries_annotation of
+// foundation/reflect/Annotation.h, because this header is in the lowest
+// layer, and that header is in the layer above it.  Complexity: linear in
+// the number of annotations of the entity.
 [[nodiscard]] consteval bool is_open_extension(std::meta::info entity) {
     const std::meta::info found =
         std::meta::reflect_constant_array(std::meta::annotations_of_with_type(entity, ^^open_extension));

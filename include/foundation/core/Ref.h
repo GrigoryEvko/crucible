@@ -105,6 +105,7 @@
 #include <foundation/core/LoanKeyTrait.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Report.h>
+#include <foundation/reflect/Annotation.h>
 
 #include <concepts>
 #include <cstddef>
@@ -285,9 +286,9 @@ namespace detail {
 // store of the Ref names its arena, and no erased Ref of an arena exists.
 [[nodiscard]] consteval bool names_arena_brand_(std::meta::info brand) {
     namespace brand_marks = ::foundation::brand;
-    return ::foundation::linear::carries_annotation(brand, ^^brand_marks::arena_member_brand)
-        || ::foundation::linear::carries_annotation(brand, ^^brand_marks::arena_family_brand)
-        || ::foundation::linear::carries_annotation(brand, ^^brand_marks::epoch_brand);
+    return ::foundation::reflect::carries_annotation(brand, ^^brand_marks::arena_member_brand)
+        || ::foundation::reflect::carries_annotation(brand, ^^brand_marks::arena_family_brand)
+        || ::foundation::reflect::carries_annotation(brand, ^^brand_marks::epoch_brand);
 }
 
 }  // namespace detail

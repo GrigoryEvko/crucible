@@ -187,6 +187,7 @@
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Report.h>
+#include <foundation/reflect/Annotation.h>
 #include <foundation/reflect/Instance.h>
 
 #include <concepts>
@@ -239,7 +240,7 @@ concept AtomicWordType = AtomicBitsValue<W> && (std::is_integral_v<W> || std::is
 // A type with a specialization of atomic_word: its atomic_word does not
 // carry the annotation of the primary template.
 template <class T>
-concept HasAtomicWord = !::foundation::linear::carries_annotation(^^atomic_word<T>, ^^UndeclaredWord);
+concept HasAtomicWord = !::foundation::reflect::carries_annotation(^^atomic_word<T>, ^^UndeclaredWord);
 
 // The statement of the word of a stated payload in the protocol of a value.
 enum class WordStatement : unsigned char {

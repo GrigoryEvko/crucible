@@ -108,6 +108,7 @@
 #include <foundation/core/Frame.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Side.h>
+#include <foundation/reflect/Annotation.h>
 #include <foundation/reflect/Instance.h>
 #include <foundation/reflect/TypeComponents.h>
 #include <foundation/reflect/TypeList.h>
@@ -151,7 +152,7 @@ struct ErrorMarkKind final {};
 // gate and the error gate refuse it.  The concept reads only the annotations
 // of the class T, so a unit cannot change its answer for a different type.
 template <class T>
-concept ErrMark = std::is_class_v<T> && ::foundation::linear::carries_annotation(^^T, ^^ErrorMarkKind);
+concept ErrMark = std::is_class_v<T> && ::foundation::reflect::carries_annotation(^^T, ^^ErrorMarkKind);
 
 // The annotation of the primary template of niche.  A specialization does
 // not carry it, so its absence tells that a type declares a niche.
@@ -339,7 +340,7 @@ namespace detail {
 
 // True when niche<T> is the primary template, so T declares no niche.
 template <class T>
-concept UndeclaredNicheOf = ::foundation::linear::carries_annotation(^^niche<T>, ^^UndeclaredNiche);
+concept UndeclaredNicheOf = ::foundation::reflect::carries_annotation(^^niche<T>, ^^UndeclaredNiche);
 
 // A class that names a member of the member protocol, also only the statement
 // is_niche_empty_never_built, so a statement with no member pair declares a
@@ -1307,9 +1308,9 @@ template <class Arm, class Payload>
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
     bool const states_borrow =
         std::meta::is_complete_type(type)
-        && (::foundation::linear::carries_annotation(type, ^^::foundation::transfer::refers)
-            || ::foundation::linear::carries_annotation(type, ^^::foundation::transfer::refers_unique)
-            || ::foundation::linear::carries_annotation(type, ^^::foundation::transfer::refers_deep));
+        && (::foundation::reflect::carries_annotation(type, ^^::foundation::transfer::refers)
+            || ::foundation::reflect::carries_annotation(type, ^^::foundation::transfer::refers_unique)
+            || ::foundation::reflect::carries_annotation(type, ^^::foundation::transfer::refers_deep));
     if (states_borrow) return true;
     if (std::meta::has_template_arguments(type)) {
         std::meta::info const family = std::meta::template_of(type);

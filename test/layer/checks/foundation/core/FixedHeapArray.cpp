@@ -4,6 +4,7 @@
 
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/reflect/Annotation.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -91,8 +92,8 @@ static_assert(UpdatesElement<FixedHeapArray<int, 8>> && !UpdatesElement<FixedHea
 static_assert(!UpdatesElement<KeyedWords>);
 
 static_assert(sizeof(KeyedWords) == sizeof(FixedHeapArray<int, 8>));
-static_assert(::foundation::linear::carries_annotation(std::meta::dealias(^^KeyedWords), ^^loan_key_mark));
-static_assert(!::foundation::linear::carries_annotation(^^FixedHeapArray<int, 8>, ^^loan_key_mark));
+static_assert(::foundation::reflect::carries_annotation(std::meta::dealias(^^KeyedWords), ^^loan_key_mark));
+static_assert(!::foundation::reflect::carries_annotation(^^FixedHeapArray<int, 8>, ^^loan_key_mark));
 static_assert(OpensWithKey<KeyedWords, LoanKey<KeyedCheckBrand>, TouchRun>);
 static_assert(!OpensWithNoKey<KeyedWords, TouchRun> && !OpensWithNoKey<FixedHeapArray<int, 8>, TouchRun>);
 static_assert(OpensWithNoKey<LendsWithNoKey, TouchRun>);

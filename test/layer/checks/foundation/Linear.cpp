@@ -4,6 +4,7 @@
 
 #include <foundation/ByteSeal.h>
 #include <foundation/Pinned.h>
+#include <foundation/reflect/Annotation.h>
 
 #include <type_traits>
 
@@ -137,12 +138,12 @@ static_assert(!is_linear_v<lc::HoldsReference>);
 // A class template marks only the instances whose condition is true.
 static_assert(is_linear_v<lc::Conditional<true>>);
 static_assert(!is_linear_v<lc::Conditional<false>>);
-static_assert(carries_annotation(^^lc::Conditional<false>, ^^not_linear));
-static_assert(!carries_annotation(^^lc::Conditional<false>, ^^linear));
+static_assert(::foundation::reflect::carries_annotation(^^lc::Conditional<false>, ^^not_linear));
+static_assert(!::foundation::reflect::carries_annotation(^^lc::Conditional<false>, ^^linear));
 
 // A function carries the annotation of its door.
-static_assert(carries_annotation(^^lc::end_token, ^^drop_door));
-static_assert(!carries_annotation(^^lc::end_token, ^^detach_door));
+static_assert(::foundation::reflect::carries_annotation(^^lc::end_token, ^^drop_door));
+static_assert(!::foundation::reflect::carries_annotation(^^lc::end_token, ^^detach_door));
 
 // A closure that holds a linear value by copy is linear: the sixth GCC
 // patch shows the field of the capture, and the trait reads it as a member.

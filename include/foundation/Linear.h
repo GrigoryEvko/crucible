@@ -63,6 +63,7 @@
 // type erasure.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/reflect/Annotation.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <cstdint>
@@ -166,22 +167,11 @@ inline constexpr auto owes_consume_when = owes_no_consume{};
 template <>
 inline constexpr auto owes_consume_when<true> = owes_consume{};
 
-// True when the entity carries an annotation of the type.  The read goes
-// through a constant array, so it calls no member of the container that
-// the query gives.  The entity must be complete.  Complexity: linear in
-// the number of annotations of the entity.
-[[nodiscard]] consteval bool carries_annotation(std::meta::info entity, std::meta::info annotation_type) {
-    const std::meta::info found =
-        std::meta::reflect_constant_array(std::meta::annotations_of_with_type(entity, annotation_type));
-    const std::meta::info found_type = std::meta::type_of(found);
-    return std::meta::is_array_type(found_type) && std::meta::extent(found_type) != 0;
-}
-
 // True when the class or union carries the annotation linear.
 [[nodiscard]] consteval bool is_marked_linear(std::meta::info type) {
     const std::meta::info bare = ::foundation::reflect::bare_type(type);
     if (!std::meta::is_class_type(bare) && !std::meta::is_union_type(bare)) return false;
-    return carries_annotation(bare, ^^linear);
+    return ::foundation::reflect::carries_annotation(bare, ^^linear);
 }
 
 // True when the marked class has the shape of a linear class.
@@ -199,7 +189,7 @@ inline constexpr auto owes_consume_when<true> = owes_consume{};
     const std::meta::info bare = ::foundation::reflect::bare_type(type);
     if (std::meta::is_array_type(bare)) return is_linear_type(std::meta::remove_all_extents(bare));
     if (!std::meta::is_class_type(bare) && !std::meta::is_union_type(bare)) return false;
-    if (carries_annotation(bare, ^^linear)) {
+    if (::foundation::reflect::carries_annotation(bare, ^^linear)) {
         if (!has_linear_shape(bare)) {
             throw std::meta::exception(u8"linear: a class carries the annotation linear and does not have the shape "
                                        u8"of a linear class.  Make it move-only with a move constructor and a "
@@ -252,7 +242,7 @@ concept HoldsNoLinearValue =
 // True when the class owes a consume at its end (owes_consume).
 [[nodiscard]] consteval bool owes_consume_at_end(std::meta::info type) {
     const std::meta::info bare = ::foundation::reflect::bare_type(type);
-    return std::meta::is_class_type(bare) && carries_annotation(bare, ^^owes_consume);
+    return std::meta::is_class_type(bare) && ::foundation::reflect::carries_annotation(bare, ^^owes_consume);
 }
 
 // True when the class marks its own end: it carries the annotation linear, it
@@ -265,7 +255,8 @@ concept HoldsNoLinearValue =
 // of the class.
 [[nodiscard]] consteval bool marks_own_end(std::meta::info type) {
     const std::meta::info bare = ::foundation::reflect::bare_type(type);
-    if (!is_marked_linear(bare) || carries_annotation(bare, ^^sum) || carries_annotation(bare, ^^owes_consume)) {
+    if (!is_marked_linear(bare) || ::foundation::reflect::carries_annotation(bare, ^^sum)
+        || ::foundation::reflect::carries_annotation(bare, ^^owes_consume)) {
         return false;
     }
     for (const ::foundation::reflect::TypeNode& argument :

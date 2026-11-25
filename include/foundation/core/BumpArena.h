@@ -172,6 +172,7 @@
 #include <foundation/core/Report.h>
 #include <foundation/core/Side.h>
 #include <foundation/core/TypeParts.h>
+#include <foundation/reflect/Annotation.h>
 #include <foundation/reflect/Members.h>
 #include <foundation/reflect/TypeComponents.h>
 
@@ -382,11 +383,11 @@ struct names_owner_second {};
     bool const is_named_family = family == ^^Ref || family == ^^Link || family == ^^ArenaRun;
     if (!is_named_family) {
         if (!is_class_of_the_base_(type)) return false;
-        if (!::foundation::linear::carries_annotation(type, ^^names_owner_second)) return false;
+        if (!::foundation::reflect::carries_annotation(type, ^^names_owner_second)) return false;
     }
     std::meta::info const owner = std::meta::dealias(std::meta::template_arguments_of(type)[1]);
-    return owner == brand || ::foundation::linear::carries_annotation(owner, ^^brand_marks::arena_member_brand)
-        || ::foundation::linear::carries_annotation(owner, ^^brand_marks::arena_family_brand);
+    return owner == brand || ::foundation::reflect::carries_annotation(owner, ^^brand_marks::arena_member_brand)
+        || ::foundation::reflect::carries_annotation(owner, ^^brand_marks::arena_family_brand);
 }
 
 // Where a class names the type of a part: in its type arguments, or only in a

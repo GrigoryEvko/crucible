@@ -53,7 +53,7 @@
 // New code uses start_as_array.
 
 #include <foundation/ByteSeal.h>
-#include <foundation/Linear.h>
+#include <foundation/reflect/Annotation.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <concepts>
@@ -84,8 +84,8 @@ inline constexpr int max_subobject_depth = 64;
         && ::foundation::reflect::holds_unreadable_state(::foundation::reflect::TypeNode{type, true})) {
         return false;
     }
-    if (is_class_or_union && ::foundation::linear::carries_annotation(type, ^^no_start_over_bytes)) return false;
-    if (is_class_or_union && ::foundation::linear::carries_annotation(type, ^^::foundation::core::closed_tag)) {
+    if (is_class_or_union && ::foundation::reflect::carries_annotation(type, ^^no_start_over_bytes)) return false;
+    if (is_class_or_union && ::foundation::reflect::carries_annotation(type, ^^::foundation::core::closed_tag)) {
         return false;
     }
     if (!std::meta::extract<bool>(std::meta::substitute(^^std::is_implicit_lifetime_v, {type}))) return false;

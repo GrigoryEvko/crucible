@@ -33,6 +33,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
+#include <foundation/reflect/Annotation.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <concepts>
@@ -193,7 +194,7 @@ inline constexpr bool conveys_authority_listed_v = conveys_authority_listed<T>::
                                        type);
         }
     }
-    return ::foundation::linear::carries_annotation(type, ^^::foundation::linear::authority);
+    return ::foundation::reflect::carries_annotation(type, ^^::foundation::linear::authority);
 }
 
 // Two walks.  The first reads the enumerated kinds and instantiates

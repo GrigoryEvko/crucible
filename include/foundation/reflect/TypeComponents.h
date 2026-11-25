@@ -256,29 +256,6 @@ enum class SpecializationRead : unsigned char {
     return TypeNode{bare, members_readable_without_instantiation(bare), false, was_reference, was_const};
 }
 
-// True for a class whose state the walk cannot read: complete, not
-// empty, and with no reflected base and no reflected non-static data
-// member.  A class that holds only unnamed bit-fields has this shape,
-// because an unnamed bit-field is not a member.  A lambda with captures
-// has it on a compiler without the sixth GCC patch, which shows no capture
-// field, so a gate that reads this fails closed there.  A gate that
-// must know what a class holds refuses such a class.  The query reads
-// members only where the node says `may_read_members`.
-//
-// A specialization answers false with no read.  A closure type is never
-// a specialization, and the completeness query would instantiate a
-// specialization that a walk promises to read for its arguments only.
-[[nodiscard]] consteval bool holds_unreadable_state(TypeNode node) {
-    const std::meta::info type = bare_type(node.type);
-    if (!node.may_read_members) return false;
-    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
-    if (std::meta::has_template_arguments(type)) return false;
-    if (!std::meta::is_complete_type(type) || std::meta::is_empty_type(type)) return false;
-    const auto unchecked = std::meta::access_context::unchecked();
-    return std::meta::bases_of(type, unchecked).empty()
-        && std::meta::nonstatic_data_members_of(type, unchecked).empty();
-}
-
 // The components one step below `type` that need no read of its
 // members: the element of a pointer, a reference or an array, the return
 // and parameter types of a function type, the class and the member type
@@ -363,6 +340,27 @@ argument_components_of(TypeNode node, SpecializationRead read = SpecializationRe
         components.push_back(part);
     }
     return components;
+}
+
+// True for a class whose state the walk cannot read: complete, not
+// empty, and with no reflected base and no reflected non-static data
+// member.  A class that holds only unnamed bit-fields has this shape,
+// because an unnamed bit-field is not a member.  A lambda with captures
+// has it on a compiler without the sixth GCC patch, which shows no capture
+// field, so a gate that reads this fails closed there.  A gate that
+// must know what a class holds refuses such a class.  The query reads
+// members only where the node says `may_read_members`.
+//
+// A specialization answers false with no read.  A closure type is never
+// a specialization, and the completeness query would instantiate a
+// specialization that a walk promises to read for its arguments only.
+[[nodiscard]] consteval bool holds_unreadable_state(TypeNode node) {
+    const std::meta::info type = bare_type(node.type);
+    if (!node.may_read_members) return false;
+    if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
+    if (std::meta::has_template_arguments(type)) return false;
+    if (!std::meta::is_complete_type(type) || std::meta::is_empty_type(type)) return false;
+    return member_components_of(TypeNode{type, true}).empty();
 }
 
 // The first node that `Predicate` accepts: the root or a node the walk

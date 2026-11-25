@@ -327,11 +327,12 @@
 // compiler shows, through
 // member_components_of and argument_components_of of
 // foundation/reflect/TypeComponents.h, and the annotations through
-// carries_annotation of foundation/Linear.h.  Complexity: linear in the number
-// of distinct types that the walk reaches, times the cost of the scan of the
-// visited list.
+// carries_annotation of foundation/reflect/Annotation.h.  Complexity: linear
+// in the number of distinct types that the walk reaches, times the cost of the
+// scan of the visited list.
 
 #include <foundation/Linear.h>
+#include <foundation/reflect/Annotation.h>
 #include <foundation/reflect/Members.h>
 #include <foundation/reflect/TypeComponents.h>
 
@@ -497,7 +498,7 @@ private:
 };
 
 [[nodiscard]] consteval bool states(std::meta::info type, std::meta::info annotation) {
-    return ::foundation::linear::carries_annotation(type, annotation);
+    return ::foundation::reflect::carries_annotation(type, annotation);
 }
 
 // Each function below has no constant definition.  A call to one stops the

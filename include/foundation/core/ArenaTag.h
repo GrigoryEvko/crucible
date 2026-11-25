@@ -16,12 +16,12 @@
 //   NamedArenaTag<Tag>    a member tag or a family tag
 //
 // The marks stand in foundation/Brand.h, and the concepts read them through
-// carries_annotation of foundation/Linear.h.  Brand.h reaches that read only
-// through Linear.h, which holds the reflection of the base, so the concepts
-// have this header of their own, and Brand.h stays light.
+// carries_annotation of foundation/reflect/Annotation.h.  That read includes
+// <meta>, so the concepts have this header of their own, and Brand.h stays
+// light.
 
 #include <foundation/Brand.h>
-#include <foundation/Linear.h>
+#include <foundation/reflect/Annotation.h>
 
 namespace foundation::core {
 
@@ -29,15 +29,15 @@ namespace foundation::core {
 // arena_member_brand, and not a family tag.
 template <class Tag>
 concept ArenaMemberTag = ::foundation::brand::IsFreshBrand<Tag>
-                      && ::foundation::linear::carries_annotation(^^Tag, ^^::foundation::brand::arena_member_brand)
-                      && !::foundation::linear::carries_annotation(^^Tag, ^^::foundation::brand::arena_family_brand);
+                      && ::foundation::reflect::carries_annotation(^^Tag, ^^::foundation::brand::arena_member_brand)
+                      && !::foundation::reflect::carries_annotation(^^Tag, ^^::foundation::brand::arena_family_brand);
 
 // A family tag: a complete empty class with the annotation
 // arena_family_brand, and not a member tag.
 template <class Tag>
 concept ArenaFamilyTag = ::foundation::brand::IsFreshBrand<Tag>
-                      && ::foundation::linear::carries_annotation(^^Tag, ^^::foundation::brand::arena_family_brand)
-                      && !::foundation::linear::carries_annotation(^^Tag, ^^::foundation::brand::arena_member_brand);
+                      && ::foundation::reflect::carries_annotation(^^Tag, ^^::foundation::brand::arena_family_brand)
+                      && !::foundation::reflect::carries_annotation(^^Tag, ^^::foundation::brand::arena_member_brand);
 
 // A named tag: a member tag or a family tag.
 template <class Tag>

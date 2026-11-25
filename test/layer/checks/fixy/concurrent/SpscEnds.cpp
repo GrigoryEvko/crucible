@@ -6,6 +6,7 @@
 #include <foundation/Transfer.h>
 #include <foundation/core/CaptureStore.h>
 #include <foundation/core/Owner.h>
+#include <foundation/reflect/Annotation.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -80,8 +81,8 @@ template <std::meta::info End, std::meta::info Ref, std::meta::info State>
     return is_expected && count == 2;
 }
 
-static_assert(::foundation::linear::carries_annotation(std::meta::dealias(^^ProducerEnd<PlainOwner>),
-                                                       ^^::foundation::core::owns_its_storage));
+static_assert(::foundation::reflect::carries_annotation(std::meta::dealias(^^ProducerEnd<PlainOwner>),
+                                                        ^^::foundation::core::owns_its_storage));
 static_assert(holds_const_ref_and_state<^^ProducerEnd<PlainOwner>,
                                         ^^::foundation::core::Ref<PlainOwner, SpscSplitBrand<PlainOwner>>,
                                         ^^PlainOwner::producer_state>());

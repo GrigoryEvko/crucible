@@ -98,6 +98,13 @@ concept PublishesInto = std::is_convertible_v<Target*, T*>;
 // (foundation/Transfer.h).  Two threads can read a PublishOnce<T const>
 // when two threads can read a T, and a slot of a T that is not const asks
 // that two threads can write the T.
+//
+// Use this slot only in the base, and only where no brand names the owner of
+// the object: for an object that the caller owns and gives by a reference,
+// such as the resource of LazyEstablishedChannel, and for a void payload.
+// The caller keeps such an object alive.  An observer gets a raw pointer, and
+// the type names no owner, so no product code takes this slot.  Product code
+// takes BrandedPublishOnce below.
 template <typename T>
 class CRUCIBLE_OWNER[[= ::foundation::transfer::refers{}]] PublishOnce {
     static_assert(PublishOncePointee<T>, "PublishOnce<T> hands off a T*, so T is the pointee.  PublishOnce<Foo*> "
@@ -164,6 +171,10 @@ concept BrandedPublishOncePointee = PublishOncePointee<T> && ::foundation::core:
 // object.  This slot names the brand, so an object that holds one, such as a
 // node of an arena, names the owner of what it borrows.  An observer gets the
 // Ref with the brand, and no raw pointer.
+//
+// Use this slot wherever a brand names the owner of the published object,
+// such as the tag of an arena or of a pool.  Product code takes only this
+// slot.  A void payload has no Ref, so it stays with PublishOnce.
 //
 // The cell is one atomic word, the word of an Option of the Ref, and the empty
 // word is the never-published state.  So the size and the alignment are those

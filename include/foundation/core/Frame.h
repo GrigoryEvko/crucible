@@ -227,6 +227,7 @@
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/LoanKeyTrait.h>
+#include <foundation/reflect/Annotation.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <cstddef>
@@ -436,7 +437,7 @@ struct dispatch_brand final {};
 [[nodiscard]] consteval bool is_dispatch_brand_(std::meta::info brand) {
     std::meta::info const bare = std::meta::dealias(brand);
     return std::meta::is_class_type(bare) && std::meta::is_complete_type(bare)
-        && ::foundation::linear::carries_annotation(bare, ^^dispatch_brand);
+        && ::foundation::reflect::carries_annotation(bare, ^^dispatch_brand);
 }
 
 template <class Brand>
@@ -584,7 +585,7 @@ namespace detail {
     if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) {
         return false;
     }
-    if (!::foundation::linear::carries_annotation(type, ^^loan_key_mark) || !std::meta::has_template_arguments(type)) {
+    if (!::foundation::reflect::carries_annotation(type, ^^loan_key_mark) || !std::meta::has_template_arguments(type)) {
         return false;
     }
     ::foundation::reflect::TypeNode const node{type, false};

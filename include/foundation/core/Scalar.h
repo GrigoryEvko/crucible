@@ -70,6 +70,7 @@
 #include <foundation/Linear.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Equatable.h>
+#include <foundation/reflect/Annotation.h>
 
 #include <concepts>
 #include <cstddef>
@@ -324,7 +325,7 @@ inline constexpr int max_plain_depth = 64;
 // defines the type, so each unit that names the type sees the same answer.
 [[nodiscard]] consteval bool declares_niche_at(std::meta::info type) {
     if (!std::meta::is_class_type(type) && !std::meta::is_enum_type(type)) return false;
-    return !::foundation::linear::carries_annotation(std::meta::substitute(^^niche, {type}), ^^UndeclaredNiche);
+    return !::foundation::reflect::carries_annotation(std::meta::substitute(^^niche, {type}), ^^UndeclaredNiche);
 }
 
 // True when each bit of a value of the type is a value bit.  float and
