@@ -43,6 +43,10 @@ struct CallSiteTable {
         Lineno lineno = ::fixy::mint_refined_constant<::fixy::non_negative, int32_t{0}>();
     };
 
+    // The log of the entries, inline with the directory of its segments.  The
+    // log has 280 bytes and the set of the hashes has 32768, so the log is less
+    // than one percent of a table, and a read of an entry needs no second
+    // pointer to a directory on the heap.
     ::fixy::AppendOnly<Entry> entries = ::fixy::mint_append_only<Entry>();
 
     // An open-addressed set of the hashes seen so far. A zero hash marks an

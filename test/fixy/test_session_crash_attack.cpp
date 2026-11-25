@@ -130,13 +130,11 @@ void recorder_sees_the_crash() {
     });
     bool lost_recorded = false;
     bool stop_recorded = false;
-    log.with_view([&lost_recorded, &stop_recorded](::fixy::View<s::SessionEvent const> events) noexcept {
-        for (const s::SessionEvent& event : events) {
-            if (event.op() == s::SessionOp::Send && event.delivery_fate() == s::DeliveryFate::LostToCrashedPeer)
-                lost_recorded = true;
-            if (event.op() == s::SessionOp::Stop && event.crash_cause() == s::CrashCause::Throw) stop_recorded = true;
-        }
-    });
+    for (const s::SessionEvent& event : log.events()) {
+        if (event.op() == s::SessionOp::Send && event.delivery_fate() == s::DeliveryFate::LostToCrashedPeer)
+            lost_recorded = true;
+        if (event.op() == s::SessionOp::Stop && event.crash_cause() == s::CrashCause::Throw) stop_recorded = true;
+    }
     finish(undelivered.is_some() && lost_recorded && stop_recorded ? Outcome::Correct : Outcome::Silent);
 }
 

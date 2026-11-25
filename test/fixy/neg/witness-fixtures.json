@@ -797,6 +797,21 @@
       "constructor": "(?<!~)\\bMintKey\\("
     },
     {
+      "name": "neg_witness_core_segmentcursor_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "(?<!~)\\bSegmentCursor\\("
+    },
+    {
+      "name": "neg_witness_core_segmentlist_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "(?<!~)\\bSegmentList\\("
+    },
+    {
+      "name": "neg_witness_core_segmentruncursor_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "(?<!~)\\bSegmentRunCursor\\("
+    },
+    {
       "name": "neg_witness_core_slotcursor_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bSlotCursor\\("
@@ -2515,6 +2530,18 @@
     {
       "type": "foundation::core::HeapText",
       "header": "foundation/core/Grow.h"
+    },
+    {
+      "type": "foundation::core::SegmentList<int>",
+      "header": "foundation/core/SegmentList.h"
+    },
+    {
+      "type": "foundation::core::SegmentCursor<int>",
+      "header": "foundation/core/SegmentList.h"
+    },
+    {
+      "type": "foundation::core::SegmentRunCursor<int>",
+      "header": "foundation/core/SegmentList.h"
     },
     {
       "type": "foundation::core::BitSet<8>",

@@ -1,7 +1,8 @@
-// A growth of a log moves each element, and a move that throws could lose one.
-// So the door of the log refuses an element whose move can throw.
+// append moves its item into the log and does not throw.  So append refuses an
+// element whose move can throw.
 
 #include <fixy/Mutation.h>
+#include <foundation/effects/Effect.h>
 
 struct ThrowingMove {
     int value = 0;
@@ -11,5 +12,6 @@ struct ThrowingMove {
 
 int main() {
     auto log = fixy::mint_append_only<ThrowingMove>();
+    log.append(::foundation::effects::testing::test().alloc, ThrowingMove{});
     return static_cast<int>(log.size());
 }

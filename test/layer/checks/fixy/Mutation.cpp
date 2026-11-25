@@ -2,22 +2,22 @@
 
 #include <fixy/Mutation.h>
 
-#include <foundation/Linear.h>
 #include <foundation/Pinned.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/AllocTag.h>
 #include <foundation/core/CaptureStore.h>
-#include <foundation/core/Grow.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/SegmentList.h>
 
 namespace fixy {
 
-static_assert(sizeof(AppendOnly<char*>) == sizeof(::foundation::core::GrowList<char*>),
-              "AppendOnly<char*> must collapse to its GrowList. The grade "
+static_assert(sizeof(AppendOnly<char*>) == sizeof(::foundation::core::SegmentList<char*>),
+              "AppendOnly<char*> must collapse to its SegmentList. The grade "
               "(Length{size_t}) is computed from c.size() rather than stored "
               "separately, which holds only while SeqPrefixLattice supplies a "
               "grade_of trait method.");
-static_assert(sizeof(AppendOnly<std::uint64_t>) == sizeof(::foundation::core::GrowList<std::uint64_t>),
-              "AppendOnly<uint64_t> must collapse to its GrowList. The grade is "
+static_assert(sizeof(AppendOnly<std::uint64_t>) == sizeof(::foundation::core::SegmentList<std::uint64_t>),
+              "AppendOnly<uint64_t> must collapse to its SegmentList. The grade is "
               "computed from c.size() rather than stored separately.");
 
 static_assert(sizeof(OrderedAppendOnly<std::uint64_t>) == sizeof(AppendOnly<std::uint64_t>),
@@ -28,7 +28,9 @@ namespace detail::log_checks {
 using ::foundation::core::Alloc;
 using ::foundation::core::View;
 
-// An element that only moves, one whose move can throw, and a pinned one.
+// An element that only moves, one whose move can throw, and a pinned one.  Each
+// of them is an element of a log.  Only the first one moves into it, so an
+// ordered log takes only that one.
 struct MoveOnly final {
     int value = 0;
     MoveOnly() noexcept = default;
@@ -44,7 +46,10 @@ struct MovedPin final : ::foundation::Pinned<MovedPin> {
     MovedPin(MovedPin&& other) noexcept : ::foundation::Pinned<MovedPin>{}, value{other.value} {}
 };
 static_assert(AppendOnlyElement<int> && AppendOnlyElement<MoveOnly> && AppendOnlyElement<char*>);
-static_assert(!AppendOnlyElement<ThrowingMove> && !AppendOnlyElement<MovedPin>);
+static_assert(AppendOnlyElement<ThrowingMove> && AppendOnlyElement<MovedPin>);
+static_assert(!AppendOnlyElement<int const> && !AppendOnlyElement<int[2]> && !AppendOnlyElement<int&>);
+static_assert(OrderedLogElement<int> && OrderedLogElement<MoveOnly>);
+static_assert(!OrderedLogElement<ThrowingMove> && !OrderedLogElement<MovedPin>);
 
 // An append takes the allocation capability first, it does not throw, and a
 // const log and a temporary log have none.
@@ -57,38 +62,50 @@ static_assert(Appends<AppendOnly<int>&, Alloc, int> && Appends<AppendOnly<MoveOn
 static_assert(Appends<OrderedAppendOnly<int>&, Alloc, int>);
 static_assert(!Appends<AppendOnly<int>&, OtherTag, int> && !Appends<OrderedAppendOnly<int>&, OtherTag, int>);
 static_assert(!Appends<AppendOnly<int> const&, Alloc, int> && !Appends<AppendOnly<int>, Alloc, int>);
+static_assert(!Appends<AppendOnly<MovedPin>&, Alloc, MovedPin>);
+static_assert(!Appends<AppendOnly<ThrowingMove>&, Alloc, ThrowingMove>);
 
-// A log gives a plain element by value, and no iterator, no reference and no
-// View out of a frame.  Each other element is read in a frame.
+// append_with builds each element in place.  An ordered log has no such append,
+// because it reads the key of an item before the item goes into the log.
+template <class Log, class Marker, class Make>
+concept Builds = requires(Log&& log, Marker marker, Make make) {
+    { static_cast<Log&&>(log).append_with(marker, make) } noexcept -> std::same_as<void>;
+};
+struct MakesPin final {
+    [[nodiscard]] MovedPin operator()(std::size_t) const noexcept { return MovedPin{}; }
+};
+struct MakesInt final {
+    [[nodiscard]] int operator()(std::size_t) const noexcept { return 1; }
+};
+static_assert(Builds<AppendOnly<MovedPin>&, Alloc, MakesPin> && Builds<AppendOnly<int>&, Alloc, MakesInt>);
+static_assert(!Builds<AppendOnly<int>&, OtherTag, MakesInt> && !Builds<AppendOnly<int>, Alloc, MakesInt>);
+static_assert(!Builds<OrderedAppendOnly<int>&, Alloc, MakesInt>);
+
+// A log gives each element, and the list of its elements, as a const object.  A
+// temporary log gives none, and no log gives a View of all its elements.
 template <class Log, class T>
-concept ReadsByValue = requires(Log const& log) {
-    { log[std::size_t{0}] } noexcept -> std::same_as<T>;
-    { log.front() } noexcept -> std::same_as<T>;
-    { log.back() } noexcept -> std::same_as<T>;
+concept Reads = requires(Log&& log) {
+    { static_cast<Log&&>(log)[std::size_t{0}] } noexcept -> std::same_as<T const&>;
+    { static_cast<Log&&>(log).front() } noexcept -> std::same_as<T const&>;
+    { static_cast<Log&&>(log).back() } noexcept -> std::same_as<T const&>;
+    { static_cast<Log&&>(log).peek() } noexcept -> std::same_as<::foundation::core::SegmentList<T> const&>;
 };
 template <class Log>
-concept Iterates = requires(Log const& log) { log.begin(); };
-static_assert(ReadsByValue<AppendOnly<int>, int> && ReadsByValue<OrderedAppendOnly<int>, int>);
-static_assert(!ReadsByValue<AppendOnly<MoveOnly>, MoveOnly> && !ReadsByValue<AppendOnly<char*>, char*>);
-static_assert(!Iterates<AppendOnly<int>> && !Iterates<OrderedAppendOnly<int>>);
+concept Views = requires(Log const& log) { log.view(); };
+static_assert(Reads<AppendOnly<int>&, int> && Reads<AppendOnly<int> const&, int>);
+static_assert(Reads<AppendOnly<MoveOnly>&, MoveOnly> && Reads<AppendOnly<MovedPin>&, MovedPin>);
+struct ValueOfMoveOnly final {
+    [[nodiscard]] constexpr int operator()(MoveOnly const& item) const noexcept { return item.value; }
+};
+static_assert(Reads<OrderedAppendOnly<int>&, int>
+              && Reads<OrderedAppendOnly<MoveOnly, ValueOfMoveOnly> const&, MoveOnly>);
+static_assert(!Reads<AppendOnly<int>, int> && !Reads<AppendOnly<int> const, int>);
+static_assert(!Reads<OrderedAppendOnly<int>, int> && !Views<AppendOnly<int>> && !Views<OrderedAppendOnly<int>>);
 
-struct CountsElements final {
-    [[nodiscard]] constexpr std::size_t operator()(View<int const> held) const noexcept { return held.size(); }
-};
-struct GivesElements final {
-    [[nodiscard]] constexpr View<int const> operator()(View<int const> held) const noexcept { return held; }
-};
-struct KeepsElements final {
-    View<int const>& kept;
-    void operator()(View<int const> held) const noexcept { kept = held; }
-};
-template <class Log, class Body>
-concept Lends = requires(Log&& log, Body body) { static_cast<Log&&>(log).with_view(static_cast<Body&&>(body)); };
-static_assert(Lends<AppendOnly<int>&, CountsElements> && Lends<AppendOnly<int> const&, CountsElements>);
-static_assert(Lends<OrderedAppendOnly<int>&, CountsElements>);
-static_assert(!Lends<AppendOnly<int>&, GivesElements> && !Lends<AppendOnly<int>&, KeepsElements>);
-static_assert(!Lends<OrderedAppendOnly<int>&, GivesElements> && !Lends<OrderedAppendOnly<int>&, KeepsElements>);
-static_assert(!Lends<AppendOnly<int>, CountsElements> && !Lends<OrderedAppendOnly<int>, CountsElements>);
+// Two threads can read one log when they can read its element.
+static_assert(::foundation::transfer::Shareable<AppendOnly<int>>
+              && ::foundation::transfer::Shareable<OrderedAppendOnly<int>>);
+static_assert(!::foundation::transfer::Shareable<AppendOnly<char*>>);
 
 // The store check reads the elements of a log, and no slot of its storage.  So
 // a body that reaches a log of plain elements stores no borrow, and a log of a

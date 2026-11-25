@@ -1,5 +1,5 @@
-// A growth of an ordered log moves each element, and a move that throws could
-// lose one.  So the door of the log refuses an element whose move can throw.
+// An ordered log moves each item into it, and its append does not throw.  So the
+// door of the log refuses an element whose move can throw.
 
 #include <fixy/Mutation.h>
 

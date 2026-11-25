@@ -46,9 +46,18 @@ template <typename T>
     return log;
 }
 
-void read_append_only_past_end() { (void)opaque(log_of(3)[opaque(std::size_t{3})]); }
-void read_front_of_empty_append_only() { (void)opaque(log_of(0).front()); }
-void read_back_of_empty_append_only() { (void)opaque(log_of(0).back()); }
+void read_append_only_past_end() {
+    ::fixy::AppendOnly<int> const log = log_of(3);
+    (void)opaque(log[opaque(std::size_t{3})]);
+}
+void read_front_of_empty_append_only() {
+    ::fixy::AppendOnly<int> const log = log_of(0);
+    (void)opaque(log.front());
+}
+void read_back_of_empty_append_only() {
+    ::fixy::AppendOnly<int> const log = log_of(0);
+    (void)opaque(log.back());
+}
 
 void read_ordered_past_end() {
     ::fixy::OrderedAppendOnly<int> ordered = ::fixy::mint_ordered_append_only<int>();

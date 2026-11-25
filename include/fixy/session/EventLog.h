@@ -5,9 +5,9 @@
 //
 // ── The record ──────────────────────────────────────────────────────
 //
-// Each event is 72 bytes, so a whole log drains to durable storage as
-// one block of bytes.  The layout and the byte values of each lane are
-// fixed, so a stored log decodes unchanged.  Each kind of operation reads
+// Each event is 72 bytes, so each segment of a log drains to durable
+// storage as one block of bytes.  The layout and the byte values of each
+// lane are fixed, so a stored log decodes unchanged.  Each kind of operation reads
 // the two general lanes and the two control bytes in its own way.  The
 // factories write each reading, and the accessors read it back.
 //
@@ -69,13 +69,11 @@
 //
 // ── The read of a log ───────────────────────────────────────────────
 //
-// An append can move each event to new storage.  So a reader reads a log after
-// its writer ends, or on the thread of its writer.  size(), empty(),
-// operator[], back() and merge_session_logs write no state of the log: two
-// threads can read one finished log with them at the same time.  No type states
-// that sharing, so the caller orders the end of the writer before each read.
-// with_view lends the storage and writes its lend count, so one thread at a time
-// opens a frame of a log.
+// No append moves an event, so the thread of the writer can keep a reference to
+// an event, and a View of a segment, across its appends.  A read writes no state
+// of the log, so a log is Shareable, and the bodies of run_joined read one
+// finished log through references to const.  The writer of a log is not
+// Sendable, so no body of a thread door appends while another body reads.
 //
 // merge_session_logs reads the logs of a run as one sequence: by step id,
 // and for one step id in the order of the logs in its arguments.  The
@@ -95,10 +93,10 @@
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Choice.h>
-#include <foundation/core/Grow.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/SegmentList.h>
 #include <foundation/core/Side.h>
 #include <foundation/reflect/EnumName.h>
 #include <foundation/reflect/Hash.h>
@@ -361,11 +359,11 @@ class[[= ::foundation::lifetime::no_start_over_bytes{}]] SessionEvent {
     decode_session_event(::foundation::core::View<std::byte const> bytes) noexcept;
 
 public:
-    // The copy is trivial, so it runs no code of the event, and copy_at of a
-    // GrowList gives an event by value.  The move assignment is the one
-    // user-provided member of the five, and it copies.  A default of it would
-    // make the event trivially copyable, and std::bit_cast would then build an
-    // event from bytes that no session step wrote.
+    // The copy is trivial, so a copy of an event runs no code of it.  The move
+    // assignment is the one user-provided member of the five, and it copies.
+    // A default of it would make the event trivially copyable, and
+    // std::bit_cast would then build an event from bytes that no session step
+    // wrote.
     constexpr SessionEvent(const SessionEvent&) noexcept = default;
     constexpr SessionEvent& operator=(const SessionEvent&) noexcept = default;
     constexpr SessionEvent& operator=(SessionEvent&& other) noexcept { return *this = other; }
@@ -741,7 +739,7 @@ class [[nodiscard]] SessionEventLog : ::foundation::Pinned<SessionEventLog> {
 
 public:
     using event_type = SessionEvent;
-    using storage_type = ::foundation::core::GrowList<SessionEvent>;
+    using storage_type = ::foundation::core::SegmentList<SessionEvent>;
 
     explicit SessionEventLog(SessionTagId id = {}) noexcept : session_id_{id} {}
 
@@ -754,25 +752,16 @@ public:
     [[nodiscard]] std::size_t size() const noexcept { return log_.size(); }
     [[nodiscard]] bool empty() const noexcept { return log_.empty(); }
 
-    // An event of the log by value.  An index at or past size() ends the
-    // process.
-    [[nodiscard]] SessionEvent operator[](std::size_t index) const noexcept { return log_[index]; }
-    [[nodiscard]] SessionEvent back() const noexcept { return log_.back(); }
+    // An event of the log.  An index at or past size() ends the process.
+    [[nodiscard]] SessionEvent const& operator[](std::size_t index) const& noexcept { return log_[index]; }
+    [[nodiscard]] SessionEvent const& back() const& noexcept { return log_.back(); }
+    void operator[](std::size_t index) const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
+    void back() const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
 
-    // The frame door of the events: body gets the View of the events, and the
-    // log lends its storage until body returns (the read of a log).
-    template <class Body>
-        requires ::fixy::LogViewBody<Body, SessionEvent>
-    [[= ::foundation::linear::borrow_match{}]] std::invoke_result_t<Body, ::foundation::core::View<SessionEvent const>>
-        with_view(Body&& body) const& noexcept(
-            std::is_nothrow_invocable_v<Body, ::foundation::core::View<SessionEvent const>>) {
-        return log_.with_view(static_cast<Body&&>(body));
-    }
-    template <class Body>
-        requires ::fixy::RefusedLogViewBody<Body, SessionEvent>
-    void with_view(Body&& body) const& = delete(CRUCIBLE_LOG_FRAME_REFUSAL);
-    template <class Body>
-    void with_view(Body&& body) const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
+    // The events in the order of the appends, for the loop, the walk and the
+    // walk of the segments (the read of a log).
+    [[nodiscard]] storage_type const& events() const& noexcept { return log_.peek(); }
+    void events() const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
 
     [[nodiscard]] storage_type drain() && noexcept { return std::move(log_).drain(); }
 };
@@ -884,7 +873,7 @@ merge_session_logs(::foundation::core::Alloc allocation, const SessionEventLog& 
             const StepId step = (*logs[index])[next[index]].step_id();
             if (chosen == log_count || StepIdLess{}(step, (*logs[chosen])[next[chosen]].step_id())) chosen = index;
         }
-        const SessionEvent merged = (*logs[chosen])[next[chosen]];
+        const SessionEvent& merged = (*logs[chosen])[next[chosen]];
         events.with_element(
             place, [&merged](SessionEvent& event) noexcept { event = merged; },
             [] noexcept { ::foundation::core::fatal("the events hold a slot for each event of the logs"); });

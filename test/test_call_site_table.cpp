@@ -49,14 +49,11 @@ struct ExpectedEntry {
     int32_t lineno = 0;
 };
 
-// True when the table holds the entry at a position.  The entries own their
-// names, so the test reads them in a frame of the entries.
+// True when the table holds the entry at a position.
 static bool holds_entry(CallSiteTable const& table, std::size_t position, ExpectedEntry const& expected) {
-    return table.entries.with_view([position, &expected](::fixy::View<CallSiteTable::Entry const> held) noexcept {
-        return held.get(position).is_some_and([&expected](auto entry) noexcept {
-            return name_of(entry->filename) == expected.filename && name_of(entry->funcname) == expected.funcname
-                && entry->lineno.value() == expected.lineno;
-        });
+    return table.entries.peek().get(position).is_some_and([&expected](auto entry) noexcept {
+        return name_of(entry->filename) == expected.filename && name_of(entry->funcname) == expected.funcname
+            && entry->lineno.value() == expected.lineno;
     });
 }
 

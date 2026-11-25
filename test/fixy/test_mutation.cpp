@@ -4,12 +4,13 @@
 
 #include <fixy/Mutation.h>
 
+#include <foundation/Pinned.h>
 #include <foundation/algebra/GradedTrait.h>
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
-#include <foundation/core/Grow.h>
+#include <foundation/core/SegmentList.h>
 #include <foundation/effects/Effect.h>
 
 #include <atomic>
@@ -37,7 +38,7 @@ using ::fixy::WideStart;
 using ::fixy::WriteOnce;
 using ::fixy::WriteOnceNonNull;
 using ::fixy::check::expect_dies;
-using ::foundation::core::GrowList;
+using ::foundation::core::SegmentList;
 
 // The reports of the refusals of the counters that two or more cases share.
 constexpr ::fixy::TextView kBumpAtTheEnd{
@@ -68,9 +69,9 @@ static_assert(std::is_same_v<Monotonic<std::uint64_t>::lattice_type::element_typ
 
 // AppendOnly: the grade derives from the container (regime 3), no
 // second field.
-static_assert(sizeof(AppendOnly<int>) == sizeof(GrowList<int>));
-static_assert(sizeof(AppendOnly<char*>) == sizeof(GrowList<char*>));
-static_assert(fa::LatticeDerivesGrade<AppendOnly<int>::lattice_type, GrowList<int>>);
+static_assert(sizeof(AppendOnly<int>) == sizeof(SegmentList<int>));
+static_assert(sizeof(AppendOnly<char*>) == sizeof(SegmentList<char*>));
+static_assert(fa::LatticeDerivesGrade<AppendOnly<int>::lattice_type, SegmentList<int>>);
 
 // OrderedAppendOnly collapses its empty functors onto the AppendOnly.
 static_assert(sizeof(OrderedAppendOnly<std::uint64_t>) == sizeof(AppendOnly<std::uint64_t>));
@@ -122,18 +123,18 @@ static_assert(AppendOnly<int>::lattice_name() == "SeqPrefixLattice");
 static_assert(Monotonic<std::uint64_t>::value_type_name() == Monotonic<std::uint64_t>::graded_type::value_type_name());
 static_assert(AppendOnly<int>::value_type_name() == AppendOnly<int>::graded_type::value_type_name());
 static_assert(std::is_same_v<AppendOnly<int>::value_type, int>);
-static_assert(std::is_same_v<AppendOnly<int>::graded_type::value_type, GrowList<int>>);
+static_assert(std::is_same_v<AppendOnly<int>::graded_type::value_type, SegmentList<int>>);
 
-// The substrate's bottom stays reachable through graded_type.  The substrate
-// of a log has none: only the mint of a GrowList gives an empty list, and
-// mint_append_only calls it.
+// The substrate's bottom stays reachable through graded_type.  The bottom of a
+// log is the empty list.
 static_assert(Monotonic<std::uint64_t>::graded_type::at_bottom().grade() == 0u);
 static_assert(Monotonic<std::uint64_t, std::greater<std::uint64_t>>::graded_type::at_bottom().grade()
               == std::numeric_limits<std::uint64_t>::max());
 template <typename G>
 concept CanAtBottomNoArg = requires { G::at_bottom(); };
 static_assert(CanAtBottomNoArg<Monotonic<std::uint64_t>::graded_type>);
-static_assert(!CanAtBottomNoArg<AppendOnly<int>::graded_type>);
+static_assert(CanAtBottomNoArg<AppendOnly<int>::graded_type>);
+static_assert(AppendOnly<int>::graded_type::at_bottom().grade().length == 0);
 
 // ── One door ─────────────────────────────────────────────────────────
 static_assert(!std::is_default_constructible_v<AppendOnly<int>>);
@@ -212,16 +213,20 @@ static_assert(!::fixy::mint_write_once_non_null<int*>().has_value());
     return ::foundation::effects::testing::test().alloc;
 }
 
-// The sum of the elements of a log, in a frame of the log.
+// The sum of the elements of a log.
 template <class Log>
 [[nodiscard]] std::uint64_t sum_of(Log const& log) noexcept {
-    return log.with_view([](auto held) noexcept {
-        std::uint64_t sum = 0;
-        for (auto const& item : held)
-            sum += static_cast<std::uint64_t>(item);
-        return sum;
-    });
+    std::uint64_t sum = 0;
+    for (auto const& item : log.peek())
+        sum += static_cast<std::uint64_t>(item);
+    return sum;
 }
+
+// A pinned element: its address is its identity.
+struct PinnedLabel final : ::foundation::Pinned<PinnedLabel> {
+    std::size_t position = 0;
+    explicit PinnedLabel(std::size_t at) noexcept : position{at} {}
+};
 
 // An element that only moves.
 struct MovedLabel {
@@ -251,24 +256,51 @@ int check_append_only() {
     if (log.front() != 1 || log.back() != 3) return 12;
     if (sum_of(log) != 6) return 13;
 
-    GrowList<int> drained = std::move(log).drain();
-    if (drained.size() != 3 || drained.copy_at(0) != ::fixy::some(1)) return 14;
+    SegmentList<int> drained = std::move(log).drain();
+    if (drained.size() != 3 || *drained.get(0).expect("the list holds three elements") != 1) return 14;
 
     // A log of elements that only move keeps each of them, in the order of the
-    // appends, across many growths.
+    // appends.  A reference to the first one and a View of the first segment
+    // stay correct across each append.
     AppendOnly<MovedLabel> labels = ::fixy::mint_append_only<MovedLabel>();
+    labels.emplace(test_alloc(), 0, 0);
+    MovedLabel const& first = labels.front();
     constexpr int kLabels = 3000;
-    for (int at = 0; at < kLabels; ++at)
+    for (int at = 1; at < kLabels; ++at)
         labels.emplace(test_alloc(), at, at * 7);
-    const int in_order = labels.with_view([](::fixy::View<MovedLabel const> held) noexcept {
-        int expected = 0;
-        for (MovedLabel const& label : held) {
-            if (label.step != expected || label.payload != expected * 7) break;
-            ++expected;
-        }
-        return expected;
-    });
-    if (labels.size() != kLabels || in_order != kLabels) return 16;
+    if (first.step != 0 || first.payload != 0 || &first != &labels[0]) return 17;
+    int expected = 0;
+    for (MovedLabel const& label : labels.peek()) {
+        if (label.step != expected || label.payload != expected * 7) break;
+        ++expected;
+    }
+    if (labels.size() != kLabels || expected != kLabels) return 16;
+    if (labels.back().step != kLabels - 1) return 18;
+
+    // A log of pinned elements builds each one in place, from its position.
+    AppendOnly<PinnedLabel> pins = ::fixy::mint_append_only<PinnedLabel>();
+    for (int at = 0; at < 200; ++at)
+        pins.append_with(test_alloc(), [](std::size_t position) noexcept { return PinnedLabel{position}; });
+    std::size_t position = 0;
+    for (PinnedLabel const& pin : pins.peek()) {
+        if (pin.position != position) return 19;
+        ++position;
+    }
+    if (position != 200) return 19;
+    return 0;
+}
+
+// An append to a log while a loop reads it adds no step to the loop.
+int check_append_while_a_loop_reads() {
+    AppendOnly<int> log = ::fixy::mint_append_only<int>();
+    for (int value = 0; value < 40; ++value)
+        log.append(test_alloc(), value);
+    int steps = 0;
+    for (int const& item : log.peek()) {
+        log.append(test_alloc(), item + 1000);
+        ++steps;
+    }
+    if (steps != 40 || log.size() != 80 || log[40] != 1000 || log.back() != 1039) return 8;
     return 0;
 }
 
@@ -335,7 +367,7 @@ int check_ordered_append_only() {
         if (timeline.empty()) return 44;
         if (sum_of(timeline) != 9) return 45;
 
-        GrowList<std::uint64_t> drained = std::move(timeline).drain();
+        SegmentList<std::uint64_t> drained = std::move(timeline).drain();
         if (drained.size() != 5) return 46;
     }
     // With a projected key the ordering runs on one field, so the payload is
@@ -364,7 +396,7 @@ int check_ordered_append_only() {
         if (log_by_step.size() != 3) return 47;
         if (log_by_step.back().step != 20) return 48;
     }
-    // The order check reads the last element in a frame, so an element that only
+    // The order check reads the last element in the log, so an element that only
     // moves has it too.
     {
         OrderedAppendOnly<MovedLabel, StepOfLabel> labels = ::fixy::mint_ordered_append_only<MovedLabel, StepOfLabel>();
@@ -988,6 +1020,7 @@ int check_contracts_abort() {
 
 int main() {
     if (int rc = check_append_only(); rc != 0) return rc;
+    if (int rc = check_append_while_a_loop_reads(); rc != 0) return rc;
     if (int rc = check_monotonic(); rc != 0) return rc;
     if (int rc = check_ordered_append_only(); rc != 0) return rc;
     if (int rc = check_bounded_monotonic(); rc != 0) return rc;

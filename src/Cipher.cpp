@@ -1166,7 +1166,7 @@ ContentHash Cipher::hash_at_step(OpenView const&, uint64_t step_id) const {
 
     while (lo > 0) {
         --lo;
-        const LogEntry entry = log_[lo];
+        const LogEntry& entry = log_[lo];
         if (commits_head_(entry)) {
             return committed_hash_(entry);
         }
@@ -1204,7 +1204,7 @@ ContentHash Cipher::latest_committed_head() const noexcept {
     std::size_t i = log_.size();
     while (i > 0) {
         --i;
-        const LogEntry entry = log_[i];
+        const LogEntry& entry = log_[i];
         if (commits_head_(entry)) {
             return committed_hash_(entry);
         }

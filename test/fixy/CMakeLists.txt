@@ -333,8 +333,8 @@ fixy_neg_compile_test(neg_mutation_ordered_append_only_copy_assign
   "OrderedAppendOnly never removes an element\\. An assignment would drop every element it holds\\.")
 
 # A copy of a log would allocate with no capability at its call.  An append
-# takes the allocation capability, and a growth ends each borrow of an element.
-# So a log gives an element by value, or in a frame that keeps no borrow.
+# takes the allocation capability.  A log gives only const elements, a temporary
+# log gives none, and no function gives back an element of a local log.
 fixy_neg_compile_test(neg_mutation_append_only_copied
   "use of deleted function .fixy::AppendOnly<T>::AppendOnly\\(const fixy::AppendOnly<T>&\\)"
   "a copy of an AppendOnly allocates, and no allocation capability shows at a copy")
@@ -347,21 +347,21 @@ fixy_neg_compile_test(neg_mutation_append_only_append_without_allocation
 fixy_neg_compile_test(neg_mutation_ordered_append_only_append_without_allocation
   "no matching function for call to .fixy::OrderedAppendOnly<int, std::identity, std::less<void> >::append\\(foundation::effects::cap::IO, int\\)."
   "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
-fixy_neg_compile_test(neg_mutation_append_only_ref_across_append
-  "cannot bind non-const lvalue reference of type .int&. to an rvalue of type .int."
-  "neg_mutation_append_only_ref_across_append\\.cpp:11:")
-fixy_neg_compile_test(neg_mutation_append_only_append_in_frame
+fixy_neg_compile_test(neg_mutation_append_only_write_through_subscript
+  "binding reference of type .int&. to .const int. discards qualifiers"
+  "neg_mutation_append_only_write_through_subscript\\.cpp:10:")
+fixy_neg_compile_test(neg_mutation_append_only_write_through_peek
+  "assignment of read-only location .\\(& log\\.fixy::AppendOnly<int>::peek\\(\\)\\)->foundation::core::SegmentList<int>::get"
+  "neg_mutation_append_only_write_through_peek\\.cpp:10:")
+fixy_neg_compile_test(neg_mutation_append_only_append_in_make
   "this arm of a borrow match writes the sum that the match reads .mutating-call log."
   "the payload that the arm borrows can end while the arm holds its reference")
-fixy_neg_compile_test(neg_mutation_append_only_view_kept_past_its_frame
-  "use of deleted function .void fixy::AppendOnly<T>::with_view\\(Body&&\\) const &"
-  "a body of a frame of a log gives no borrow, holds no linear value by value and stores no borrow outside the frame")
-fixy_neg_compile_test(neg_mutation_append_only_write_in_frame
-  "assignment of read-only location .held\\.foundation::core::View<const int"
-  "neg_mutation_append_only_write_in_frame\\.cpp:11:")
-fixy_neg_compile_test(neg_mutation_append_only_moved_element_by_value
-  "use of deleted function .T fixy::AppendOnly<T>::operator.* const requires"
-  "a log gives by value only an element whose copy is trivial and that holds no borrow")
+fixy_neg_compile_test(neg_mutation_append_only_read_of_temporary
+  "use of deleted function .void fixy::AppendOnly<T>::operator.* const &&"
+  "an element of a temporary log dangles at the end of the full expression")
+fixy_neg_compile_test(neg_mutation_append_only_returned_element_of_local
+  "neg_mutation_append_only_returned_element_of_local\\.cpp:13:[0-9]+: error: this function gives back a borrow of the local log"
+  "and that object ends with the frame of the function")
 
 # The bound of a BoundedMonotonic is an integer the carrier holds
 # exactly, so no conversion changes it.  GCC separates template
@@ -394,22 +394,29 @@ fixy_neg_compile_test(neg_mutation_wide_monotonic_zero_step_bound
   "the expression .MaxStep >= 1 \\[with MaxStep = 0\\]. evaluated to .false.")
 
 # The door of each mutation wrapper refuses a type argument its concept
-# does not admit.
+# does not admit.  A log takes a pinned element and an element whose move can
+# throw, and its append refuses the two.
+fixy_neg_compile_test(neg_mutation_append_only_const_element
+  "no matching function for call to .mint_append_only<const int>\\(\\)."
+  "required for the satisfaction of .AppendOnlyElement<T>. \\[with T = const int\\]"
+  "the expression .!\\(is_const_v<T>\\) \\[with T = const int\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_mutation_append_only_array_element
+  "no matching function for call to .mint_append_only<int \\[2\\]>\\(\\)."
+  "required for the satisfaction of .AppendOnlyElement<T>. \\[with T = int\\[2\\]\\]"
+  "the expression .!\\(is_array_v<T>\\) \\[with T = int\\[2\\]\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_mutation_append_only_pinned_element
-  "no matching function for call to .mint_append_only<Cell>\\(\\)."
-  "required for the satisfaction of .AppendOnlyElement<T>. \\[with T = Cell\\]"
-  "the expression .!\\(is_base_of_v<foundation::Pinned<T>, T>\\) \\[with T = Cell\\]. evaluated to .false.")
+  "use of deleted function .void fixy::AppendOnly<T>::append\\(Marker, const T&\\) &"
+  "append moves the item into the log, and this element does not move: build it in place with append_with")
 fixy_neg_compile_test(neg_mutation_append_only_throwing_move
-  "no matching function for call to .mint_append_only<ThrowingMove>\\(\\)."
-  "required for the satisfaction of .AppendOnlyElement<T>. \\[with T = ThrowingMove\\]"
-  "the expression .is_nothrow_move_constructible_v<T> \\[with T = ThrowingMove\\]. evaluated to .false.")
+  "use of deleted function .void fixy::AppendOnly<T>::append\\(Marker, const T&\\) & \\[with Marker = foundation::core::Alloc; T = ThrowingMove\\]"
+  "append moves the item into the log, and this element does not move: build it in place with append_with")
 fixy_neg_compile_test(neg_mutation_ordered_append_only_pinned_element
   "no matching function for call to .mint_ordered_append_only<Cell, ValueOfCell>\\(\\)."
-  "required for the satisfaction of .AppendOnlyElement<T>. \\[with T = Cell\\]"
+  "required for the satisfaction of .OrderedLogElement<T>. \\[with T = Cell\\]"
   "the expression .!\\(is_base_of_v<foundation::Pinned<T>, T>\\) \\[with T = Cell\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_mutation_ordered_append_only_throwing_move
   "no matching function for call to .mint_ordered_append_only<ThrowingMove, ValueOfMove>\\(\\)."
-  "required for the satisfaction of .AppendOnlyElement<T>. \\[with T = ThrowingMove\\]"
+  "required for the satisfaction of .OrderedLogElement<T>. \\[with T = ThrowingMove\\]"
   "the expression .is_nothrow_move_constructible_v<T> \\[with T = ThrowingMove\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_mutation_atomic_monotonic_string
   "fixy::mint_atomic_monotonic\\(T\\) .with T = std::__cxx11::basic_string<char>."
@@ -4034,12 +4041,11 @@ fixy_neg_compile_test(neg_sess_event_writer_from_const_log
   "use of deleted function .void fixy::session::mint_session_event_writer\\(foundation::core::Alloc, const SessionEventLog&\\)"
   "\\[Event_Log_Writer_From_Const_Log\\] a const log is a view of the record")
 
-# A frame of a log lends its events, and its body keeps no View of them past
-# the frame.  A body of another frame door reaches a log, and keeps no View of
-# events either.
-fixy_neg_compile_test(neg_sess_event_log_view_kept_past_its_frame
-  "use of deleted function .void fixy::session::SessionEventLog::with_view\\(Body&&\\) const &"
-  "a body of a frame of a log gives no borrow, holds no linear value by value and stores no borrow outside the frame")
+# A temporary log gives no event.  A body of a frame door reaches a log, and
+# keeps no View of events past its frame.
+fixy_neg_compile_test(neg_sess_event_log_event_of_temporary
+  "use of deleted function .void fixy::session::SessionEventLog::operator.* const &&"
+  "an element of a temporary log dangles at the end of the full expression")
 fixy_neg_compile_test(neg_locked_body_keeps_a_view_of_events
   "neg_locked_body_keeps_a_view_of_events\\.cpp:42:16: error: use of deleted function .void fixy::spin::Locked<T, Tag, Strategy>::with\\(const Ctx&, Body&&\\) &"
   "a body of a frame door stores no borrow outside the frame")

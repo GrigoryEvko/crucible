@@ -27,9 +27,7 @@ int main() {
     (void)t.insert(::foundation::effects::testing::test().alloc,
                    ::fixy::mint_refined<::fixy::non_zero>(crucible::CallsiteHash{uint64_t{0xC0FFEE}}), "file.py", "f",
                    int32_t{42});
-    t.entries.with_view([](::fixy::View<crucible::CallSiteTable::Entry const> entries) noexcept {
-        for (crucible::CallSiteTable::Entry const& entry : entries)
-            wants_external_only(entry.filename);
-    });
+    for (crucible::CallSiteTable::Entry const& entry : t.entries.peek())
+        wants_external_only(entry.filename);
     return 0;
 }

@@ -56,8 +56,14 @@ template <typename T>
     return log;
 }
 
-void read_append_only_past_end() noexcept { (void)opaque(log_of(3)[opaque(std::size_t{3})]); }
-void read_front_of_empty_append_only() noexcept { (void)opaque(log_of(0).front()); }
+void read_append_only_past_end() noexcept {
+    ::fixy::AppendOnly<int> const log = log_of(3);
+    (void)opaque(log[opaque(std::size_t{3})]);
+}
+void read_front_of_empty_append_only() noexcept {
+    ::fixy::AppendOnly<int> const log = log_of(0);
+    (void)opaque(log.front());
+}
 
 void read_clock_past_end() noexcept { (void)opaque(Clock::bottom()[opaque(std::size_t{2})]); }
 void step_clock_past_end() noexcept { (void)opaque(Clock::successor_at(Clock::bottom(), opaque(std::size_t{2}))); }

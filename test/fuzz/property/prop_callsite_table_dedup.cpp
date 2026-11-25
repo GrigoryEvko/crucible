@@ -139,17 +139,13 @@ struct Batch {
 void record_at(Batch const&&, unsigned) =
     delete("the reference names a record of the batch, and a temporary ends with the full expression");
 
-// True when the entry of the table at position is the record.  The entries own
-// their names, so the test reads them in a frame of the entries.
+// True when the entry of the table at position is the record.
 [[nodiscard]] bool holds_record(::crucible::CallSiteTable const& table, unsigned position,
                                 Record const& record) noexcept {
-    return table.entries.with_view([position,
-                                    &record](::fixy::View<::crucible::CallSiteTable::Entry const> held) noexcept {
-        return held.get(position).is_some_and([&record](auto entry) noexcept {
-            return entry->hash == ::crucible::CallsiteHash{record.hash_raw}
-                && entry->filename.value().view() == record.filename.view()
-                && entry->funcname.value().view() == record.funcname.view() && entry->lineno.value() == record.lineno;
-        });
+    return table.entries.peek().get(position).is_some_and([&record](auto entry) noexcept {
+        return entry->hash == ::crucible::CallsiteHash{record.hash_raw}
+            && entry->filename.value().view() == record.filename.view()
+            && entry->funcname.value().view() == record.funcname.view() && entry->lineno.value() == record.lineno;
     });
 }
 

@@ -14,6 +14,7 @@
 #   each weight, and --measure BUILD_DIR measures each weight again.
 crucible/BackgroundThread.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 crucible/CKernel.cpp | 0.5 | ::fixy::tags::admitted_retags
+crucible/CallSiteTable.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 crucible/DimHash.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/MerkleDag.cpp | 3.9 | ::foundation::transfer::door_probe_contexts, unknown
 crucible/MetaLogSession.cpp | 0.5 | ::fixy::session::combinators, ::fixy::session::pole_tables
@@ -66,6 +67,7 @@ fixy/Collision.cpp | 16.7 | ::fixy::collision, ::fixy::collision::detail, ::fixy
 fixy/Corpus.cpp | 3.1 | ::fixy::corpus, ::fixy::tags::secret_policy, unknown
 fixy/Fn.cpp | 2.8 | ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
 fixy/Machine.cpp | 0.0 | ::fixy::machine::no_edges, unknown
+fixy/Mutation.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/OwnedRegion.cpp | 0.5 | ::foundation::permissions::permission_rows
 fixy/PredicateImplies.cpp | 5.6 | ::fixy::refined::admitted_implications
 fixy/Reject.cpp | 2.6 | unknown
@@ -119,6 +121,7 @@ fixy/session/Checkpoint.cpp | 0.1 | ::fixy::session::combinators, unknown
 fixy/session/ContextNet.cpp | 7.4 | ::fixy::session::combinators
 fixy/session/Crash.cpp | 0.6 | ::fixy::session::combinators
 fixy/session/Delegate.cpp | 0.4 | ::fixy::session::combinators, ::foundation::transfer::door_probe_contexts, unknown
+fixy/session/EventLog.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/session/Flow.cpp | 2.3 | ::fixy::session::combinators, ::foundation::permissions::permission_rows
 fixy/session/Handle.cpp | 0.2 | ::fixy::session::combinators, ::fixy::session::pole_tables
 fixy/session/Network.cpp | 0.0 | ::fixy::session::combinators
@@ -136,6 +139,8 @@ foundation/core/Link.cpp | 0.3 | ::foundation::transfer::door_probe_contexts, un
 foundation/core/Owner.cpp | 0.1 | unknown
 foundation/core/Ref.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Region.cpp | 2.2 | ::foundation::transfer::door_probe_contexts, unknown
+foundation/core/Sealed.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
+foundation/core/SegmentList.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Strided.cpp | 0.2 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/diag/Catalog.cpp | 3.5 | ::foundation::diag
 foundation/diag/Insights.cpp | 0.6 | ::foundation::diag

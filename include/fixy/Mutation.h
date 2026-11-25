@@ -17,12 +17,11 @@
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/AllocTag.h>
-#include <foundation/core/CaptureStore.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
-#include <foundation/core/Grow.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/Ref.h>
-#include <foundation/core/Region.h>
+#include <foundation/core/SegmentList.h>
 #include <foundation/reflect/Instance.h>
 
 #include <atomic>
@@ -120,58 +119,46 @@ inline constexpr bool is_writeoncenonnull_v = ::foundation::reflect::IsInstanceO
 // Append-only logs
 //   AppendOnly<T>         the elements in the order of their appends
 //   OrderedAppendOnly<T>  the same, with a key that never goes down
-// A log keeps its elements in a GrowList of foundation/core/Grow.h, and it
-// shows no door that removes, moves out or writes an element.
+// A log keeps its elements in a SegmentList of foundation/core/SegmentList.h,
+// and it shows no door that removes, moves out or writes an element.
 //
 //   append(alloc, item)   puts item after the last element.  The allocation
-//                         capability comes first, so each growth shows at its
-//                         call.  A log has no maximum: a growth doubles the
-//                         storage, and an exhausted memory ends the process in
-//                         the allocation door of foundation/core/Heap.h.  So
-//                         append gives nothing, and it does not throw
+//                         capability comes first, so each allocation shows at
+//                         its call.  A log has no maximum, and an exhausted
+//                         memory ends the process in the allocation door of
+//                         foundation/core/Heap.h.  So append gives nothing, and
+//                         it does not throw
+//   append_with(alloc, make)
+//                         builds the element from make(position) in place, so a
+//                         pinned element passes.  An ordered log has none,
+//                         because it reads the key of an item before the item
+//                         goes into the log
 //   log[i], front(), back()
-//                         give an element by value.  The copy of the element is
-//                         trivial, and it holds no borrow (CopiedElement of
-//                         foundation/core/Grow.h).  A read at or past size()
-//                         ends the process
-//   with_view(body)       calls body with the View of the const elements.  It is
-//                         the read of each other element, and of a run
+//                         the const element.  A read at or past size() ends the
+//                         process
+//   peek()                the SegmentList, for each other read: get and last,
+//                         the loop, walk() and segments()
 //   std::move(log).drain()
-//                         gives the GrowList, and ends the log
+//                         gives the SegmentList, and ends the log
 //
-// A growth moves each element, so a log gives no reference, no View and no
-// iterator out of a frame.  A frame writes the lend count of the GrowList, so
-// one thread at a time opens a frame of a log.  The reads by value and size()
-// write no state, so two threads can use them on one log at the same time while
-// no thread appends.  No type states that sharing.
+// No append moves an element, so a reference to an element, and a View of a
+// segment, stay correct across each append, until the log ends.  A log gives no
+// View of all its elements, because they are in segments.  segments() gives the
+// View of each run, and walk() gives each element.
 
-// The element of a log: the element of a GrowList.  It moves with no throw,
-// because a growth moves it, and it is no pinned object.
+// The element of a log: an element that an owner holds.  No append moves an
+// element of the log, so the element can be a pinned object.
 template <typename T>
-concept AppendOnlyElement = ::foundation::core::GrowListElement<T>;
+concept AppendOnlyElement = ::foundation::core::OwnedElement<T>;
 
-// The body of the frame door of a log: it takes the View of the const elements,
-// its result holds no borrow, it holds no linear value by value, and it stores
-// no borrow outside the frame.
-template <typename Body, typename T>
-concept LogViewBody = std::is_invocable_v<Body, ::foundation::core::View<T const>>
-                   && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body, ::foundation::core::View<T const>>>
-                   && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>;
+// The element of an ordered log.  The log reads the key of an item before the
+// item moves into it, so the item moves.
+template <typename T>
+concept OrderedLogElement = AppendOnlyElement<T> && ::foundation::core::MovedSegmentElement<T>;
 
-// A body of a frame of a log that LogViewBody refuses: the deleted twin of the
-// door binds to it.
-template <typename Body, typename T>
-concept RefusedLogViewBody = std::is_invocable_v<Body, ::foundation::core::View<T const>> && (!LogViewBody<Body, T>);
-
-// The reasons of the deleted twins of the doors of a log.
-#define CRUCIBLE_LOG_BY_VALUE_REFUSAL                                                                               \
-    "a log gives by value only an element whose copy is trivial and that holds no borrow: read another element in " \
-    "with_view"
-#define CRUCIBLE_LOG_FRAME_REFUSAL                                                                                 \
-    "a body of a frame of a log gives no borrow, holds no linear value by value and stores no borrow outside the " \
-    "frame: the next append can end the storage that its View borrows"
+// The reason of the deleted twins of the reads of a log.
 #define CRUCIBLE_LOG_TEMPORARY_REFUSAL \
-    "a frame of a temporary log lends storage that the full expression frees: read a log that has a name"
+    "an element of a temporary log dangles at the end of the full expression: read a log that has a name"
 
 // Cmp{}(a, b) must mean "a is strictly less than b" on the carrier, and
 // the carrier moves into and out of the lattice.
@@ -222,7 +209,7 @@ template <typename T>
 template <typename T>
 class [[nodiscard]] AppendOnly
     : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
-                           ::foundation::algebra::lattices::SeqPrefixLattice<T>, ::foundation::core::GrowList<T>> {
+                           ::foundation::algebra::lattices::SeqPrefixLattice<T>, ::foundation::core::SegmentList<T>> {
     static_assert(!is_writeonce_v<T>, "AppendOnly<WriteOnce<T>> is redundant: AppendOnly already guarantees "
                                       "that emplaced elements are never mutated, reassigned, or removed. "
                                       "Use AppendOnly<T> directly — the WriteOnce layer adds no invariant "
@@ -248,7 +235,7 @@ public:
     // graded_facade.
     using value_type = T;
     static constexpr bool value_type_decoupled = true;
-    using storage_type = ::foundation::core::GrowList<T>;
+    using storage_type = ::foundation::core::SegmentList<T>;
 
     using facade_ = graded_facade<::foundation::algebra::ModalityKind::Absolute,
                                   ::foundation::algebra::lattices::SeqPrefixLattice<T>, storage_type>;
@@ -259,11 +246,8 @@ private:
     graded_type impl_;
 
     using key_ = ::foundation::algebra::grade_key<AppendOnly>;
-    using View_ = ::foundation::core::View<T const>;
-    static constexpr bool is_copied_ = ::foundation::core::CopiedElement<T>;
 
-    constexpr AppendOnly() noexcept
-        : impl_{::foundation::core::mint_grow_list<T>(::foundation::core::max_of<std::size_t>)} {}
+    constexpr AppendOnly() noexcept : impl_{storage_type{}} {}
 
     template <typename U>
         requires AppendOnlyElement<U>
@@ -284,15 +268,23 @@ public:
     // the tail updates it with no separate field to maintain.  Growing is
     // the one write this class makes, which keeps the derived grade
     // moving up the order.
-    //
-    // The list has the largest count of a View as its maximum, so an exhausted
-    // memory ends the process in the allocation door before an append can meet
-    // that maximum.  A lent log ends the process too (the lend count of
-    // foundation/core/Grow.h).
     template <class Marker>
-        requires ::foundation::core::AllocationCapability<Marker>
+        requires ::foundation::core::AllocationCapability<Marker> && ::foundation::core::MovedSegmentElement<T>
     void append(Marker allocation, T item) & noexcept {
-        impl_.peek_mut(key_{}).append(allocation, std::move(item)).expect("an append-only log has no maximum");
+        impl_.peek_mut(key_{}).append(allocation, std::move(item));
+    }
+    template <class Marker>
+        requires ::foundation::core::AllocationCapability<Marker> && (!::foundation::core::MovedSegmentElement<T>)
+    void append(Marker allocation, T const& item) & =
+        delete("append moves the item into the log, and this element does not move: build it in place with "
+               "append_with");
+
+    // Builds the element from make(position) in the log, with no copy and no
+    // move.
+    template <class Marker, class Make>
+        requires ::foundation::core::MakesSegmentElement<T, Marker, Make>
+    [[= ::foundation::linear::borrow_match{}]] void append_with(Marker allocation, Make&& make) & noexcept {
+        impl_.peek_mut(key_{}).append_with(allocation, static_cast<Make&&>(make));
     }
 
     // Builds the element from args, and then appends it.
@@ -302,54 +294,32 @@ public:
         append(allocation, T{std::forward<Args>(args)...});
     }
 
-    // Each read by value checks its index in each build and under each contract
+    // Each read checks its index in each build and under each contract
     // semantic.  OrderedAppendOnly reads through these members, so it gets the
     // same checks.
-    [[nodiscard]] T operator[](std::size_t i) const noexcept
-        requires is_copied_
-    {
+    [[nodiscard]] T const& operator[](std::size_t i) const& noexcept {
         CRUCIBLE_FATAL_INVARIANT(i < size());
-        return impl_.peek().copy_at(i).expect("the check above found the element");
+        return *impl_.peek().get(i).expect("the check above found the element");
     }
-    [[nodiscard]] T front() const noexcept
-        requires is_copied_
-    {
+    [[nodiscard]] T const& front() const& noexcept {
         CRUCIBLE_FATAL_INVARIANT(!empty());
-        return impl_.peek().copy_at(0).expect("the check above found an element");
+        return *impl_.peek().get(0).expect("the check above found an element");
     }
-    [[nodiscard]] T back() const noexcept
-        requires is_copied_
-    {
+    [[nodiscard]] T const& back() const& noexcept {
         CRUCIBLE_FATAL_INVARIANT(!empty());
-        return impl_.peek().copy_at(size() - 1).expect("the check above found an element");
+        return *impl_.peek().last().expect("the check above found an element");
     }
-    T operator[](std::size_t i) const
-        requires(!is_copied_)
-    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
-    T front() const
-        requires(!is_copied_)
-    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
-    T back() const
-        requires(!is_copied_)
-    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
+    void operator[](std::size_t i) const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
+    void front() const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
+    void back() const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
 
     [[nodiscard]] std::size_t size() const noexcept { return impl_.peek().size(); }
     [[nodiscard]] bool empty() const noexcept { return size() == 0; }
 
-    // The frame door of the elements: body gets the View of the const elements,
-    // and the log lends its storage until body returns.  Complexity: O(1), and
-    // the cost of body.
-    template <class Body>
-        requires LogViewBody<Body, T>
-    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View_>
-        with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View_>) {
-        return impl_.peek().with_view(static_cast<Body&&>(body));
-    }
-    template <class Body>
-        requires RefusedLogViewBody<Body, T>
-    void with_view(Body&& body) const& = delete(CRUCIBLE_LOG_FRAME_REFUSAL);
-    template <class Body>
-    void with_view(Body&& body) const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
+    // The elements, for each read that this class does not name.  A const list
+    // has no door that changes an element.
+    [[nodiscard]] constexpr storage_type const& peek() const& noexcept { return impl_.peek(); }
+    void peek() const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
 
     // Gives the elements to the caller, and leaves the log empty.
     [[nodiscard]] constexpr storage_type drain() && noexcept { return std::move(impl_).consume(); }
@@ -393,7 +363,7 @@ class OrderedAppendOnly;
 
 // The one door of an OrderedAppendOnly: an empty log.  It allocates nothing.
 template <typename T, typename KeyFn = std::identity, typename Cmp = std::less<>>
-    requires AppendOnlyElement<T>
+    requires OrderedLogElement<T>
 [[nodiscard]] constexpr OrderedAppendOnly<T, KeyFn, Cmp> mint_ordered_append_only() noexcept;
 
 template <typename T, typename KeyFn, typename Cmp>
@@ -411,24 +381,16 @@ class [[nodiscard]] OrderedAppendOnly {
     [[no_unique_address]] KeyFn key_{};
     [[no_unique_address]] Cmp cmp_{};
 
-    using View_ = ::foundation::core::View<T const>;
-    static constexpr bool is_copied_ = ::foundation::core::CopiedElement<T>;
-
     constexpr OrderedAppendOnly() noexcept = default;
 
     template <typename U, typename K, typename C>
-        requires AppendOnlyElement<U>
+        requires OrderedLogElement<U>
     friend constexpr OrderedAppendOnly<U, K, C> mint_ordered_append_only() noexcept;
 
     // True when the log is empty, or the key of item is not less than the key of
-    // the last element.  The last element is read in a frame, because only some
-    // elements have a read by value.
+    // the last element.
     [[nodiscard]] bool keeps_order_(T const& item) const noexcept {
-        return inner_.empty() || inner_.with_view([this, &item](View_ held) noexcept {
-            return held.get(held.size() - 1).is_some_and([this, &item](auto last) noexcept {
-                return !cmp_(key_(item), key_(*last));
-            });
-        });
+        return inner_.empty() || !cmp_(key_(item), key_(inner_.back()));
     }
 
 public:
@@ -438,7 +400,7 @@ public:
     using key_type = std::invoke_result_t<KeyFn, const T&>;
     using key_fn_type = KeyFn;
     using comparator = Cmp;
-    using storage_type = ::foundation::core::GrowList<T>;
+    using storage_type = ::foundation::core::SegmentList<T>;
 
     static_assert(std::is_nothrow_invocable_v<KeyFn const&, T const&>
                       && std::is_nothrow_invocable_v<Cmp const&, key_type, key_type>,
@@ -470,51 +432,24 @@ public:
     }
 
     // The reads are those of AppendOnly.
-    [[nodiscard]] T operator[](std::size_t i) const noexcept
-        requires is_copied_
-    {
-        return inner_[i];
-    }
-    [[nodiscard]] T front() const noexcept
-        requires is_copied_
-    {
-        return inner_.front();
-    }
-    [[nodiscard]] T back() const noexcept
-        requires is_copied_
-    {
-        return inner_.back();
-    }
-    T operator[](std::size_t i) const
-        requires(!is_copied_)
-    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
-    T front() const
-        requires(!is_copied_)
-    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
-    T back() const
-        requires(!is_copied_)
-    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
+    [[nodiscard]] T const& operator[](std::size_t i) const& noexcept { return inner_[i]; }
+    [[nodiscard]] T const& front() const& noexcept { return inner_.front(); }
+    [[nodiscard]] T const& back() const& noexcept { return inner_.back(); }
+    void operator[](std::size_t i) const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
+    void front() const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
+    void back() const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
 
     [[nodiscard]] std::size_t size() const noexcept { return inner_.size(); }
     [[nodiscard]] bool empty() const noexcept { return inner_.empty(); }
 
-    template <class Body>
-        requires LogViewBody<Body, T>
-    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View_>
-        with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View_>) {
-        return inner_.with_view(static_cast<Body&&>(body));
-    }
-    template <class Body>
-        requires RefusedLogViewBody<Body, T>
-    void with_view(Body&& body) const& = delete(CRUCIBLE_LOG_FRAME_REFUSAL);
-    template <class Body>
-    void with_view(Body&& body) const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
+    [[nodiscard]] constexpr storage_type const& peek() const& noexcept { return inner_.peek(); }
+    void peek() const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
 
     [[nodiscard]] constexpr storage_type drain() && noexcept { return std::move(inner_).drain(); }
 };
 
 template <typename T, typename KeyFn, typename Cmp>
-    requires AppendOnlyElement<T>
+    requires OrderedLogElement<T>
 [[nodiscard]] constexpr OrderedAppendOnly<T, KeyFn, Cmp> mint_ordered_append_only() noexcept {
     return OrderedAppendOnly<T, KeyFn, Cmp>{};
 }

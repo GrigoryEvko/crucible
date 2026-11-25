@@ -31,7 +31,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
-#include <foundation/core/Grow.h>
+#include <foundation/core/SegmentList.h>
 #include <foundation/effects/Ctx.h>
 
 #include <compare>
@@ -198,8 +198,8 @@ static_assert(std::is_trivially_destructible_v<Stale<int>>);
 
 // AppendOnly grades a container and derives the grade from its size,
 // so it costs exactly the container.
-static_assert(sizeof(AppendOnly<int>) == sizeof(::foundation::core::GrowList<int>));
-static_assert(sizeof(AppendOnly<TwoWords>) == sizeof(::foundation::core::GrowList<TwoWords>));
+static_assert(sizeof(AppendOnly<int>) == sizeof(::foundation::core::SegmentList<int>));
+static_assert(sizeof(AppendOnly<TwoWords>) == sizeof(::foundation::core::SegmentList<TwoWords>));
 
 // RecipeSpec stores both numerical axes beside the value.
 static_assert(sizeof(RecipeSpec<int>) >= sizeof(int) + 2);

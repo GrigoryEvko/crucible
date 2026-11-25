@@ -3,9 +3,10 @@
 #include <fixy/session/EventLog.h>
 
 #include <foundation/Lifetime.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/AllocTag.h>
 #include <foundation/core/CaptureStore.h>
-#include <foundation/core/Grow.h>
+#include <foundation/core/Choice.h>
 #include <foundation/core/Region.h>
 
 namespace fixy::session {
@@ -31,9 +32,8 @@ static_assert(!std::is_trivially_move_assignable_v<SessionEvent> && std::is_noth
 static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<SessionEvent>,
               "the checked lifetime start must refuse SessionEvent, or a start over a buffer builds an event that no "
               "session step wrote.");
-static_assert(::foundation::core::CopiedElement<SessionEvent>,
-              "the copy of SessionEvent must be trivial and hold no borrow, so a log gives an event by value with no "
-              "lend.");
+static_assert(::foundation::core::HoldsNoBorrow<SessionEvent>,
+              "an event must hold no borrow, so a copy of it outlives its log.");
 
 namespace detail::event_log_checks {
 
@@ -68,33 +68,29 @@ static_assert(StoresNoBorrowOutside<ReachesLog> && StoresNoBorrowOutside<HoldsWr
 static_assert(StoresNoBorrowOutside<HoldsEvents> && !StoresNoBorrowOutside<ReachesEvents>);
 static_assert(!StoresNoBorrowOutside<ReachesWriter>);
 
-// A log gives an event by value and no iterator, and its frame door takes a
-// body that keeps no borrow.  The appends of a writer do not throw.
+// A log gives a const event and the const list of its events, and a temporary
+// log gives none.  The appends of a writer do not throw.
 template <class Log>
-concept Iterates = requires(Log const& log) { log.begin(); };
-static_assert(std::is_same_v<decltype(std::declval<SessionEventLog const&>()[std::size_t{0}]), SessionEvent>);
-static_assert(std::is_same_v<decltype(std::declval<SessionEventLog const&>().back()), SessionEvent>);
-static_assert(!Iterates<SessionEventLog>);
+concept Reads = requires(Log&& log) {
+    { static_cast<Log&&>(log)[std::size_t{0}] } noexcept -> std::same_as<SessionEvent const&>;
+    { static_cast<Log&&>(log).back() } noexcept -> std::same_as<SessionEvent const&>;
+    { static_cast<Log&&>(log).events() } noexcept -> std::same_as<SessionEventLog::storage_type const&>;
+};
+static_assert(Reads<SessionEventLog&> && Reads<SessionEventLog const&>);
+static_assert(!Reads<SessionEventLog> && !Reads<SessionEventLog const>);
 static_assert(noexcept(std::declval<SessionEventWriter&>().record_now(std::declval<SessionEvent>()))
               && noexcept(std::declval<SessionEventWriter&>().record(std::declval<SessionEvent>())));
 static_assert(sizeof(SessionEventWriter) == sizeof(SessionEventLog*),
               "the allocation capability of a writer must take no byte");
 
-struct CountsEvents final {
-    [[nodiscard]] std::size_t operator()(Events events) const noexcept { return events.size(); }
-};
-struct GivesEvents final {
-    [[nodiscard]] Events operator()(Events events) const noexcept { return events; }
-};
-struct KeepsEvents final {
-    Events& kept;
-    void operator()(Events events) const noexcept { kept = events; }
-};
-template <class Log, class Body>
-concept Lends = requires(Log&& log, Body body) { static_cast<Log&&>(log).with_view(static_cast<Body&&>(body)); };
-static_assert(Lends<SessionEventLog&, CountsEvents> && Lends<SessionEventLog const&, CountsEvents>);
-static_assert(!Lends<SessionEventLog&, GivesEvents> && !Lends<SessionEventLog&, KeepsEvents>);
-static_assert(!Lends<SessionEventLog, CountsEvents>);
+// The bodies of run_joined can read one log through references to const, and
+// no body can hold the writer of a log.  A body beside its caller can hold no
+// reference to a log, because the caller can append to it.
+static_assert(::foundation::transfer::Shareable<SessionEventLog>
+              && ::foundation::transfer::Sendable<SessionEventLog const&>);
+static_assert(!::foundation::transfer::Sendable<SessionEventWriter>
+              && !::foundation::transfer::Sendable<SessionEventWriter&>);
+static_assert(!::foundation::transfer::SendableBeside<SessionEventLog const&>);
 
 // Only the allocation capability mints a writer.
 template <class Marker, class Log>

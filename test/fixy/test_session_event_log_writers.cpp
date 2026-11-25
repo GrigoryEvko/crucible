@@ -8,7 +8,7 @@
 // recorded sessions on two threads many times, and each merge gives the
 // same sequence.  The tsan preset runs the same test, so the shape with
 // one log for each thread is the shape that ThreadSanitizer checks.  Two
-// threads then read one finished log by index at the same time.
+// threads then read one finished log at the same time.
 
 #include <fixy/Ctx.h>
 #include <fixy/session/Entry.h>
@@ -120,31 +120,34 @@ void two_threads_record_into_their_own_logs() {
     }
 }
 
-// A frame of a log lends its storage.  A writer that the body holds appends
-// through its own name of the log, which no rule sees, so the lend count of the
-// storage ends the process.  Without the append, the body reads the event.
-void an_append_in_a_frame_of_the_log_ends_the_process() {
-    s::SessionEventLog log;
+// A writer appends while the same thread holds an event and a View of the
+// events, and while a loop reads the log.  No append moves an event, so each
+// borrow stays correct, and the loop sees the events of its start.
+void an_append_keeps_each_event_at_its_address() {
+    s::SessionEventLog log{s::SessionTagId{4}};
     s::SessionEventWriter writer = s::mint_session_event_writer(test_alloc(), log);
     writer.record_now(s::SessionEvent::close(kLeft, kSink));
-    const std::size_t seen =
-        log.with_view([](::fixy::View<s::SessionEvent const> events) noexcept { return events.size(); });
-    CRUCIBLE_TEST_ASSERT(kTest, seen == 1 && log.size() == 1);
-    ::fixy::check::expect_dies(
-        kTest,
-        [&log, &writer] noexcept {
-            log.with_view([held = std::move(writer)](::fixy::View<s::SessionEvent const>) mutable noexcept {
-                held.record_now(s::SessionEvent::close(kLeft, kSink));
-            });
-        },
-        ::fixy::TextView{"while a frame door lends its storage"});
+    writer.record_now(s::SessionEvent::close(kRight, kSink));
+    s::SessionEvent const& first = log[0];
+    ::fixy::View<s::SessionEvent const> const run = *log.events().segments().begin();
+    for (int turn = 0; turn < kSends; ++turn)
+        writer.record_now(s::SessionEvent::close(kSink, kLeft));
+    CRUCIBLE_TEST_ASSERT(kTest, first.from_role() == kLeft && first.step_id().raw() == 1 && &first == &log[0]);
+    CRUCIBLE_TEST_ASSERT(kTest, run.size() == 2 && run.get(1).expect("two events")->from_role() == kRight);
+    std::size_t steps = 0;
+    for (s::SessionEvent const& event : log.events()) {
+        CRUCIBLE_TEST_ASSERT(kTest, event.step_id().raw() == steps + 1);
+        writer.record_now(s::SessionEvent::close(kSink, kRight));
+        ++steps;
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, steps == kSends + 2 && log.size() == 2 * steps);
+    CRUCIBLE_TEST_ASSERT(kTest, log.back().to_role() == kRight && log.back().step_id().raw() == 2 * steps);
 }
 
-// Two threads read one finished log at the same time, by index and through the
-// merge.  The reads write no state of the log, so ThreadSanitizer sees no race.
-// No type states that sharing, so the probe door starts the threads.  The last
-// append comes before the start of each thread, and the join comes before the
-// end of the log.
+// Two threads read one finished log at the same time, by index, by the loop and
+// through the merge.  The log is Shareable, so the typed thread door starts the
+// threads.  The reads write no state of the log, so ThreadSanitizer sees no
+// race.
 void two_threads_read_one_finished_log() {
     s::SessionEventLog log{s::SessionTagId{5}};
     {
@@ -159,16 +162,16 @@ void two_threads_read_one_finished_log() {
         const auto merged = s::merge_session_logs(test_alloc(), finished);
         for (const s::SessionEvent& event : merged.view())
             steps += event.step_id().raw();
+        for (const s::SessionEvent& event : finished.events())
+            steps += event.step_id().raw();
         return steps + finished.back().step_id().raw();
     };
-    const auto sums =
-        ::fixy::thread::run_joined_raw_probe(::fixy::BgLoadCtx{::foundation::effects::testing::bg()}, kTest,
-                                             "two readers of one finished log, which no type states as shared",
-                                             ::fixy::thread::ThreadOptions{}, auto{add_steps}, std::move(add_steps))
-            .expect("the probe starts two threads");
+    const auto sums = ::fixy::thread::run_joined(::fixy::BgLoadCtx{::foundation::effects::testing::bg()},
+                                                 ::fixy::thread::ThreadOptions{}, auto{add_steps}, std::move(add_steps))
+                          .expect("the test starts two threads");
     constexpr std::uint64_t kLast = kSends;
-    CRUCIBLE_TEST_ASSERT(kTest, sums.at(::fixy::index<0>()) == kLast * (kLast + 1) + kLast);
-    CRUCIBLE_TEST_ASSERT(kTest, sums.at(::fixy::index<1>()) == kLast * (kLast + 1) + kLast);
+    constexpr std::uint64_t kSum = 3 * (kLast * (kLast + 1) / 2) + kLast;
+    CRUCIBLE_TEST_ASSERT(kTest, sums.at(::fixy::index<0>()) == kSum && sums.at(::fixy::index<1>()) == kSum);
 }
 
 // An empty log adds nothing, and a tie of steps keeps the order of the
@@ -197,7 +200,7 @@ int main() {
     using namespace test_session_event_log_writers;
     a_second_writer_of_one_log_ends_the_process();
     two_threads_record_into_their_own_logs();
-    an_append_in_a_frame_of_the_log_ends_the_process();
+    an_append_keeps_each_event_at_its_address();
     two_threads_read_one_finished_log();
     a_merge_keeps_the_order_of_the_arguments_for_one_step();
     ::fixy::check::pass(kTest, "test_session_event_log_writers: OK\n");
