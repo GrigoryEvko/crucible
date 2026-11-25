@@ -97,14 +97,38 @@ inline constexpr bool is_run_of_<RunOf<T, Slot>> = true;
 // The brand of the runs of a RunSet, which names no owner of them.
 struct RunsOfAnyOwner final {};
 
+// The runs of a set: one run or more, and each a RunOf.
+template <class... Runs>
+concept RunsOfSet = sizeof...(Runs) > 0 && (is_run_of_<Runs> && ...);
+
+template <UnsignedInteger Count, class Brand, class... Runs>
+    requires RunsOfSet<Runs...>
+class RunTable_;
+
+}  // namespace detail
+
+template <UnsignedInteger Count, class... Runs>
+    requires detail::RunsOfSet<Runs...>
+class RunSet;
+
+template <UnsignedInteger Count, ::foundation::brand::IsFreshBrand Brand, class... Runs>
+    requires detail::RunsOfSet<Runs...>
+class ArenaRunSet;
+
+namespace detail {
+
 // The first element of the run at index I, or the null pointer when the set
 // holds no elements for the run.  The index keeps two runs of one element
 // type in two distinct bases.  The pointer refers to the elements of the run
 // as a reference does, so the class states refers{} over its first argument.
-// The elements are bytes of an owner of the brand.
+// The elements are bytes of an owner of the brand, and only the table of a set
+// writes the pointer, from a run of its own brand.  So the class names the
+// owner (names_owner_second of foundation/core/BumpArena.h).
 template <class T, class Brand, std::size_t I>
-struct[[= ::foundation::transfer::refers{}]] RunFirst_ {
-    using brand_type = Brand;
+class[[= ::foundation::transfer::refers{}]][[= names_owner_second{}]] RunFirst_ {
+    template <UnsignedInteger Count, class TableBrand, class... Runs>
+        requires RunsOfSet<Runs...>
+    friend class RunTable_;
 
     T* first_ = nullptr;
 };
@@ -125,14 +149,6 @@ template <class... Runs>
     ((largest = Runs::slot > largest ? Runs::slot : largest), ...);
     return largest + 1;
 }
-
-// The runs of a set: one run or more, and each a RunOf.
-template <class... Runs>
-concept RunsOfSet = sizeof...(Runs) > 0 && (is_run_of_<Runs> && ...);
-
-template <UnsignedInteger Count, class Brand, class... Runs>
-    requires RunsOfSet<Runs...>
-class RunTable_;
 
 }  // namespace detail
 
@@ -161,11 +177,15 @@ class RunSetLayoutDoor final : ::foundation::NoObject<RunSetLayoutDoor> {
 namespace detail {
 
 // The table of a set: the first element of each run and the counts, and each
-// door of the family other than set<I>.  Only the two sets derive from it, and
-// only their set<I> keeps a run.
+// door of the family other than set<I>.  keep_run_ is private, and the two sets
+// are the friends.  So only set<I> of the two keeps a run.  Each other table
+// is empty or a copy of the table of a set of the same brand.
 template <UnsignedInteger Count, class Brand, class... Runs>
     requires RunsOfSet<Runs...>
 class RunTable_ : private RunFirsts_<Brand, std::index_sequence_for<Runs...>, Runs...> {
+    friend class RunSet<Count, Runs...>;
+    friend class ArenaRunSet<Count, Brand, Runs...>;
+
 public:
     // The count of slots in the table of counts.
     static constexpr std::size_t slot_count = run_slot_count_<Runs...>();
@@ -211,15 +231,6 @@ private:
     FixedArray<Count, slot_count> counts_{};
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-protected:
-    // A table with each count zero and no elements for each run.
-    constexpr RunTable_() noexcept = default;
-    constexpr RunTable_(RunTable_ const&) noexcept = default;
-    constexpr RunTable_(RunTable_&&) noexcept = default;
-    constexpr RunTable_& operator=(RunTable_ const&) noexcept = default;
-    constexpr RunTable_& operator=(RunTable_&&) noexcept = default;
-    constexpr ~RunTable_() = default;
-
     // Keeps the elements of run for the run at index I.  The run holds the
     // count of its slot, or the process ends in each build.
     template <std::size_t I>
@@ -232,6 +243,9 @@ protected:
     }
 
 public:
+    // A table with each count zero and no elements for each run.
+    constexpr RunTable_() noexcept = default;
+
     // The count at the slot.
     template <std::size_t Slot>
         requires(Slot < slot_count)

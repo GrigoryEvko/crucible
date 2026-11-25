@@ -5,6 +5,9 @@
 
 #include <foundation/Platform.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Grow.h>
+#include <foundation/core/Link.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
@@ -262,6 +265,45 @@ void test_position_names_its_object_in_its_arena() {
     CRUCIBLE_FATAL_INVARIANT(other->at(first_position).is_none());
 }
 
+// An object of an arena that holds a run and a link of the arena.
+struct Copied {
+    ArenaRun<std::uint32_t const, TestFamily> elements{};
+    ::foundation::core::Link<Pair, TestFamily> summary{};
+};
+
+// A body of a frame door copies the elements of the frame into an arena that
+// it captures, and it keeps the position of the object that names the copy.
+// The caller reads the copy and the link through the arena after the list of
+// the frame ends.
+void test_object_of_a_frame_body_outlives_the_frame() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    BumpArena<TestFamily> arena = ::foundation::core::mint_bump_arena<TestFamily>(Bytes{4096});
+    ::foundation::core::Option<::foundation::core::ArenaPosition<Copied, TestFamily>> position{
+        ::foundation::core::none};
+    {
+        auto list = ::foundation::core::mint_grow_list<std::uint32_t>(4);
+        for (std::uint32_t value = 1; value <= 3; ++value)
+            CRUCIBLE_FATAL_INVARIANT(list.append(alloc, value).is_ok());
+        list.with_view([&arena, &position, alloc](View<std::uint32_t const> run) noexcept {
+            auto const copy = arena.build_array<std::uint32_t>(
+                alloc, ElementCount{run.size()}, [run](RunStart at) noexcept -> std::uint32_t {
+                    return *run.get(at.value().raw()).expect("the position is below the count of the run");
+                });
+            Ref<Pair, TestFamily> const summary = arena.make<Pair>(alloc, Pair{.key = run.size()});
+            Ref<Copied, TestFamily> const made =
+                arena.make<Copied>(alloc, Copied{.elements = copy, .summary = summary});
+            position = arena.position_of(made);
+        });
+    }
+    auto const held = std::move(position).expect("the body kept the position of its object");
+    Ref<Copied, TestFamily> const copied = arena.at(held).expect("the position is of this arena");
+    std::uint32_t total = 0;
+    for (std::uint32_t const& element : copied->elements.view())
+        total += element;
+    CRUCIBLE_FATAL_INVARIANT(copied->elements.size() == 3 && total == 6);
+    CRUCIBLE_FATAL_INVARIANT(copied->summary.expect("the object links its summary")->key == 3);
+}
+
 // The second epoch gets the addresses of the first epoch, and the arena
 // takes no block for it.
 void test_end_keeps_the_blocks() {
@@ -434,6 +476,7 @@ int main() {
     test_large_request_takes_its_own_block();
     test_family_arena_lives_in_a_box();
     test_position_names_its_object_in_its_arena();
+    test_object_of_a_frame_body_outlives_the_frame();
     test_end_keeps_the_blocks();
     test_end_above_the_limit_keeps_one_block();
     test_set_limit_refuses_the_blocks_above_it();

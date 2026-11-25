@@ -56,7 +56,8 @@ static_assert(!CanSet<int, RunOf<int, 0>> && !CanSet<bool, RunOf<int, 0>> && !Ca
 static_assert(!CanSet<std::uint16_t>);
 
 // A set of an arena has the layout of a set of any owner, and it copies as
-// that set does.  Each of its first elements states the brand of the arena.
+// that set does.  Only the two sets keep a run in their table, so a class that
+// derives from a table keeps none.
 struct[[= ::foundation::brand::arena_family_brand{}]] CheckArena final {};
 struct[[= ::foundation::brand::arena_family_brand{}]] OtherArena final {};
 template <class Brand>
@@ -67,7 +68,11 @@ static_assert(ArenaMixed::slot_count == 2 && ArenaMixed::run_count == 3 && Arena
 static_assert(std::is_nothrow_copy_constructible_v<ArenaMixed> && std::is_nothrow_copy_assignable_v<ArenaMixed>);
 static_assert(std::is_trivially_destructible_v<ArenaMixed> && !std::is_trivially_copyable_v<ArenaMixed>);
 static_assert(std::is_same_v<ArenaMixed::brand_type, CheckArena>);
-static_assert(std::is_same_v<RunFirst_<int, CheckArena, 0>::brand_type, CheckArena>);
+struct DerivedTable : RunTable_<std::uint16_t, CheckArena, RunOf<std::uint32_t, 0>> {
+    template <class Self>
+    static constexpr bool keeps = requires(Self& self, View<std::uint32_t> run) { self.template keep_run_<0>(run); };
+};
+static_assert(!DerivedTable::keeps<DerivedTable>);
 
 // Only an ArenaRun of the brand of the set gives a run to it.  A run of the
 // elements of another arena, a View, and a run of other elements do not.  The

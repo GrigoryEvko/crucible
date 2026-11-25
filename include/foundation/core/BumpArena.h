@@ -54,6 +54,38 @@
 // nothing, and its bytes die when the arena ends, or when the epoch that gave
 // them ends.
 //
+// Objects of an arena
+//   An object of an arena lives until the arena or its epoch ends, and a
+//   caller reaches it again through a Ref, a run, a link or a position.  The
+//   type of the arena names no object of it, so the store check of a frame
+//   body (foundation/core/CaptureStore.h) reads no object of an arena that the
+//   body captures.  So an object of an arena holds no borrow of a different
+//   owner, and make, array and build_array refuse a type that can hold one
+//   (ArenaKeeps).  The walk reads each base, each member and each element by
+//   value, at each depth:
+//     - A Ref, a Link, an ArenaRun and a run of an ArenaRunSet pass when they
+//       name the brand of the arena, or a member tag or a family tag.  An
+//       epoch brand passes only in an object of that epoch, and a scope brand
+//       only in an object of the arena of that scope
+//     - Each other class that states refers{}, refers_unique{} or
+//       refers_deep{} is a refusal, such as a View, a Ref of the erased brand
+//       and a class outside the base that states the mark.  So is a class
+//       with a scope brand in its type arguments, which proves a fact of a
+//       frame
+//     - A reference member, a pointer to an object, a class whose state
+//       reflection does not show and an incomplete class are refusals
+//     - A void* passes only in a class that names it as a type argument, such
+//       as a Tagged<void*, Tag>.  That class states an address that no reader
+//       follows, and each raw pointer outside the base is a finding of the
+//       quarantine.  A void* that no type argument names can be a borrow with
+//       no type, as in a CallRef.  So a StaticText and a RunAddress are
+//       refusals too, although neither one dangles
+//     - A class that holds its values in raw storage, such as an Option, and an
+//       owner of the base, such as an Atomic, give their type arguments
+//   The walk trusts the brand of a Ref.  A type that states an arena tag as its
+//   brand_type gives a Ref of that tag for each of its objects (to() of
+//   foundation/core/Ref.h), so such a type keeps its constructors for an arena.
+//
 // Brands of an arena
 //   The brand of an arena is its first template argument, and each Ref and
 //   each ArenaRun of the arena carries it.  The brand is one of three kinds:
@@ -132,12 +164,14 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Identity.h>
+#include <foundation/core/Link.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Side.h>
+#include <foundation/core/TypeParts.h>
 #include <foundation/reflect/Members.h>
 #include <foundation/reflect/TypeComponents.h>
 
@@ -327,6 +361,97 @@ private:
 
     View<T> run_{};
 };
+
+namespace detail {
+
+// The mark of a borrow of the base whose second type argument is the brand of
+// the owner of its target, such as the first element of a run of a set of
+// runs (foundation/core/RunSet.h).  Only the doors of the class make a value
+// that is not empty, from a borrow of that brand.  The walk of the objects of
+// an arena trusts the mark only in the base.
+struct names_owner_second {};
+
+// True for a borrow of the base that names an arena as the owner of its
+// target: the brand of the arena, or a member tag or a family tag
+// (foundation/core/ArenaTag.h).  The second type argument of a Ref, a Link, an
+// ArenaRun and a class with the mark names_owner_second is the brand.
+[[nodiscard]] consteval bool is_borrow_of_arena_(std::meta::info type, std::meta::info brand) {
+    namespace brand_marks = ::foundation::brand;
+    if (!std::meta::has_template_arguments(type)) return false;
+    std::meta::info const family = std::meta::template_of(type);
+    bool const is_named_family = family == ^^Ref || family == ^^Link || family == ^^ArenaRun;
+    if (!is_named_family) {
+        if (!is_class_of_the_base_(type)) return false;
+        if (!::foundation::linear::carries_annotation(type, ^^names_owner_second)) return false;
+    }
+    std::meta::info const owner = std::meta::dealias(std::meta::template_arguments_of(type)[1]);
+    return owner == brand || ::foundation::linear::carries_annotation(owner, ^^brand_marks::arena_member_brand)
+        || ::foundation::linear::carries_annotation(owner, ^^brand_marks::arena_family_brand);
+}
+
+// Where a class names the type of a part: in its type arguments, or only in a
+// member.
+enum class PartNaming : unsigned char {
+    by_argument,
+    by_member,
+};
+
+// True when an object of the type holds a borrow of a different owner than an
+// arena, as the rules of the objects of an arena read it.  brand is the brand
+// of the arena that keeps the object.  The read follows only what the object
+// holds by value, so it ends with the depth of the type.  It is a function
+// that is no template, so no unit can specialize what it admits.  Complexity:
+// linear in the parts that the object holds by value.
+[[nodiscard]] consteval bool holds_loose_borrow_(std::meta::info type, std::meta::info brand, PartNaming naming) {
+    std::meta::info const held = std::meta::remove_all_extents(std::meta::dealias(type));
+    if (is_leaf_(held)) return false;
+    if (std::meta::is_pointer_type(held)) {
+        std::meta::info const pointee = std::meta::remove_pointer(held);
+        bool const is_stated_address = naming == PartNaming::by_argument && std::meta::is_void_type(pointee);
+        return !is_stated_address && !std::meta::is_function_type(pointee);
+    }
+    if (!is_class_or_union_(held)) return false;
+    if (!std::meta::is_complete_type(held)) return true;
+    if (is_plain_class_(held)) return false;
+    TypeParts const& parts = std::meta::extract<TypeParts const&>(kept_parts_of(held));
+    if (parts.is_frame_borrow || parts.is_borrow) return !is_borrow_of_arena_(held, brand);
+    if (parts.is_unreadable) return true;
+    PartRun const run = parts.run();
+    if (parts.holds_bytes || parts.is_storage_owner) {
+        for (std::size_t index = 0; index < parts.argument_count; ++index) {
+            TypePart const argument = run[index];
+            bool const is_only_a_tag = is_class_or_union_(argument.type) && !std::meta::is_complete_type(argument.type);
+            if (is_only_a_tag) continue;
+            if (argument.has(PartFact::was_reference)) return true;
+            if (holds_loose_borrow_(argument.type, brand, PartNaming::by_argument)) return true;
+        }
+    }
+    if (parts.is_storage_owner) return false;
+    for (std::size_t index = parts.argument_count; index < parts.size; ++index) {
+        TypePart const part = run[index];
+        if (part.has(PartFact::was_reference)) return true;
+        if (part.has(PartFact::is_plain)) continue;
+        PartNaming part_naming = PartNaming::by_member;
+        for (std::size_t argument = 0; argument < parts.argument_count; ++argument) {
+            bool const is_named = run[argument].type == std::meta::remove_all_extents(part.type);
+            if (is_named) part_naming = PartNaming::by_argument;
+        }
+        if (holds_loose_borrow_(part.type, brand, part_naming)) return true;
+    }
+    return false;
+}
+
+}  // namespace detail
+
+// An object type that an arena of the brand can keep (objects of an arena).
+template <class T, class Brand>
+concept ArenaKeeps = !detail::holds_loose_borrow_(^^T, ^^Brand, detail::PartNaming::by_member);
+
+// The reason of each deleted door of an arena for a type that it cannot keep.
+#define CRUCIBLE_ARENA_KEEPS_REFUSAL                                                                               \
+    "an object of an arena lives until the arena ends, so it holds no borrow of a different owner: hold a Ref, a " \
+    "Link or an ArenaRun of an arena, or a copy of the value, and not a View, a Ref of the erased brand or a "     \
+    "pointer"
 
 namespace detail {
 
@@ -642,11 +767,17 @@ public:
     // One T that the arguments build in new bytes of the arena, at the
     // alignment of T, as a Ref of the brand of the arena.
     template <class T, class Marker, class... Args>
-        requires CanMakeInArena<T, Marker, Args...>
+        requires CanMakeInArena<T, Marker, Args...> && ArenaKeeps<T, Brand>
     [[nodiscard]] Ref<T, Brand> make(this BumpArena& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
                                      Args&&... args) noexcept {
         return ArenaRefDoor::lend_<Brand>(self.core_.template build_<T>(static_cast<Args&&>(args)...));
     }
+
+    // A T that holds a borrow of a different owner binds to this overload, so
+    // the refusal gives its reason (objects of an arena).
+    template <class T, class Marker, class... Args>
+        requires CanMakeInArena<T, Marker, Args...> && (!ArenaKeeps<T, Brand>)
+    void make(this BumpArena& self, Marker, Args&&...) = delete(CRUCIBLE_ARENA_KEEPS_REFUSAL);
 
     // A T that holds a linear value binds to this overload, so the refusal
     // gives its reason (CanMakeInArena).
@@ -665,11 +796,17 @@ public:
     // run and takes no bytes.  A count past the largest count of a View ends
     // the process.  Complexity: O(count).
     template <class T, class Marker>
-        requires CanFillArenaArray<T, Marker>
+        requires CanFillArenaArray<T, Marker> && ArenaKeeps<T, Brand>
     [[nodiscard]] ArenaRun<T, Brand> array(this BumpArena& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
                                            std::size_t count, T const& fill) noexcept {
         return self.core_.template fill_<T, Brand>(count, fill);
     }
+
+    // A T that holds a borrow of a different owner binds to this overload, so
+    // the refusal gives its reason (objects of an arena).
+    template <class T, class Marker>
+        requires CanFillArenaArray<T, Marker> && (!ArenaKeeps<T, Brand>)
+    void array(this BumpArena& self, Marker, std::size_t, T const&) = delete(CRUCIBLE_ARENA_KEEPS_REFUSAL);
 
     template <class T, class Marker>
     void array(this BumpArena&& self, Marker, std::size_t,
@@ -685,10 +822,18 @@ public:
     // Complexity: O(count) calls of make.
     template <class T, class Marker, class Make>
         requires CanBuildArenaArray<T, Marker, Make> && ::foundation::linear::HoldsNoLinearValue<Make>
+              && ArenaKeeps<T, Brand>
     [[nodiscard]] ArenaRun<T, Brand> build_array(this BumpArena& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
                                                  ElementCount count, Make&& make) noexcept {
         return self.core_.template build_run_<T, Brand>(count.raw(), make);
     }
+
+    // A T that holds a borrow of a different owner binds to this overload, so
+    // the refusal gives its reason (objects of an arena).
+    template <class T, class Marker, class Make>
+        requires CanBuildArenaArray<T, Marker, Make> && ::foundation::linear::HoldsNoLinearValue<Make>
+                  && (!ArenaKeeps<T, Brand>)
+    void build_array(this BumpArena& self, Marker, ElementCount, Make&&) = delete(CRUCIBLE_ARENA_KEEPS_REFUSAL);
 
     // A make that holds a linear value by value binds to this overload, so
     // the refusal gives its reason.
@@ -767,11 +912,17 @@ public:
     // One T that the arguments build in new bytes of the epoch, at the
     // alignment of T, as a Ref of the epoch brand.
     template <class T, class Marker, class... Args>
-        requires CanMakeInArena<T, Marker, Args...>
+        requires CanMakeInArena<T, Marker, Args...> && ArenaKeeps<T, Brand>
     [[nodiscard]] Ref<T, Brand> make(this Epoch& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
                                      Args&&... args) noexcept {
         return ArenaRefDoor::lend_<Brand>((*self.core_).template build_<T>(static_cast<Args&&>(args)...));
     }
+
+    // A T that holds a borrow of a different owner binds to this overload, so
+    // the refusal gives its reason (objects of an arena).
+    template <class T, class Marker, class... Args>
+        requires CanMakeInArena<T, Marker, Args...> && (!ArenaKeeps<T, Brand>)
+    void make(this Epoch& self, Marker, Args&&...) = delete(CRUCIBLE_ARENA_KEEPS_REFUSAL);
 
     // A T that holds a linear value binds to this overload, so the refusal
     // gives its reason (CanMakeInArena).
@@ -788,11 +939,17 @@ public:
     // brand.  A count of zero gives the empty run and takes no bytes.
     // Complexity: O(count).
     template <class T, class Marker>
-        requires CanFillArenaArray<T, Marker>
+        requires CanFillArenaArray<T, Marker> && ArenaKeeps<T, Brand>
     [[nodiscard]] ArenaRun<T, Brand> array(this Epoch& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
                                            std::size_t count, T const& fill) noexcept {
         return (*self.core_).template fill_<T, Brand>(count, fill);
     }
+
+    // A T that holds a borrow of a different owner binds to this overload, so
+    // the refusal gives its reason (objects of an arena).
+    template <class T, class Marker>
+        requires CanFillArenaArray<T, Marker> && (!ArenaKeeps<T, Brand>)
+    void array(this Epoch& self, Marker, std::size_t, T const&) = delete(CRUCIBLE_ARENA_KEEPS_REFUSAL);
 
     template <class T, class Marker>
     void array(this Epoch&& self, Marker, std::size_t,
@@ -803,10 +960,18 @@ public:
     // BumpArena).  Complexity: O(count) calls of make.
     template <class T, class Marker, class Make>
         requires CanBuildArenaArray<T, Marker, Make> && ::foundation::linear::HoldsNoLinearValue<Make>
+              && ArenaKeeps<T, Brand>
     [[nodiscard]] ArenaRun<T, Brand> build_array(this Epoch& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
                                                  ElementCount count, Make&& make) noexcept {
         return (*self.core_).template build_run_<T, Brand>(count.raw(), make);
     }
+
+    // A T that holds a borrow of a different owner binds to this overload, so
+    // the refusal gives its reason (objects of an arena).
+    template <class T, class Marker, class Make>
+        requires CanBuildArenaArray<T, Marker, Make> && ::foundation::linear::HoldsNoLinearValue<Make>
+                  && (!ArenaKeeps<T, Brand>)
+    void build_array(this Epoch& self, Marker, ElementCount, Make&&) = delete(CRUCIBLE_ARENA_KEEPS_REFUSAL);
 
     // A make that holds a linear value by value binds to this overload, so
     // the refusal gives its reason.

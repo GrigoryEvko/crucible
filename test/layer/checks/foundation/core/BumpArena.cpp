@@ -2,10 +2,19 @@
 
 #include <foundation/core/BumpArena.h>
 
+#include <foundation/core/Array.h>
+#include <foundation/core/Atomic.h>
+#include <foundation/core/CallRef.h>
+#include <foundation/core/DataAddress.h>
+#include <foundation/core/Link.h>
+#include <foundation/core/List.h>
+#include <foundation/core/RunSet.h>
+#include <foundation/core/StaticText.h>
 #include <foundation/core/Verbs.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 #include <utility>
 
@@ -252,6 +261,114 @@ static_assert(std::is_same_v<decltype(std::declval<BumpArena<Family>&>().build_a
 static_assert(std::is_same_v<decltype(std::declval<Epoch<EpochOf<Owner::Member>>&>().build_array<Plain>(
                                  std::declval<Alloc>(), ElementCount{2}, std::declval<MakesPlain>())),
                              ArenaRun<Plain, EpochOf<Owner::Member>>>);
+
+// The objects of an arena.  A class of scalars passes, and so does a borrow
+// that names the brand of the arena, a family tag or a member tag, also at a
+// depth, in an Option, in a list, in a cell and in a run set.
+struct[[= ::foundation::brand::arena_family_brand{}]] OtherFamily final {};
+struct HoldsBorrows {
+    Ref<int, Family> ref;
+    Link<Plain, OtherFamily> link{};
+    ArenaRun<Plain const, Owner::Member> run{};
+    Option<Ref<int const, Family>> option{none};
+    FixedList<Ref<int, Family>, 2> list{};
+    Atomic<Option<Ref<int const, Family>>> cell{};
+    ArenaRunSet<std::uint16_t, Family, RunOf<int const, 0>> set{};
+};
+struct HoldsBorrowsDeep : HoldsBorrows {
+    FixedArray<HoldsBorrows, 2> array;
+};
+static_assert(ArenaKeeps<int, Family> && ArenaKeeps<Plain, Family> && ArenaKeeps<FixedArray<Plain, 3>, Family>);
+static_assert(ArenaKeeps<HoldsBorrows, Family> && ArenaKeeps<HoldsBorrowsDeep, OtherFamily>);
+static_assert(ArenaKeeps<ArenaPosition<int, OtherFamily>, Family>, "a position of an object is no borrow");
+
+// An epoch brand passes only in an object of that epoch.
+using EpochRef = Ref<int, EpochOf<Owner::Member>>;
+static_assert(ArenaKeeps<EpochRef, EpochOf<Owner::Member>> && !ArenaKeeps<EpochRef, Family>);
+static_assert(ArenaKeeps<Ref<int, Family>, EpochOf<Owner::Member>>);
+
+// A scope brand passes only in an object of the arena of that scope, and a
+// class that names one proves a fact of a frame.
+template <class Brand>
+struct Proof {};
+[[nodiscard]] consteval bool keeps_a_scope_brand_in_its_arena() {
+    using Scope = CRUCIBLE_SCOPE_BRAND;
+    return ArenaKeeps<Ref<int, Scope>, Scope> && ArenaKeeps<ArenaRun<int, Scope>, Scope>
+        && !ArenaKeeps<Ref<int, Scope>, Family> && !ArenaKeeps<Ref<int, Scope>, EpochOf<Owner::Member>>
+        && !ArenaKeeps<ViewMut<int, Scope>, Scope> && !ArenaKeeps<Proof<Scope>, Family>;
+}
+static_assert(keeps_a_scope_brand_in_its_arena());
+
+// A borrow that names no arena is a refusal: a View, a Ref of a brand that is
+// no arena tag, an erased Ref, a CallRef, a set of runs of any owner, and each
+// class that holds one by value.
+struct HoldsView {
+    View<int const> view{};
+};
+struct HoldsViewDeep {
+    FixedArray<HoldsView, 2> array{};
+};
+struct DerivedOfView : HoldsView {};
+using ErasedRef = decltype(erase_brand(std::declval<Ref<int, Unmarked>>()));
+static_assert(!ArenaKeeps<View<int const>, Family> && !ArenaKeeps<TextView, Family>);
+static_assert(!ArenaKeeps<Ref<int, Unmarked>, Family> && !ArenaKeeps<ErasedRef, Family>);
+static_assert(!ArenaKeeps<Link<int, Unmarked>, Family> && !ArenaKeeps<ArenaRun<int, Unmarked>, Family>);
+static_assert(!ArenaKeeps<HoldsView, Family> && !ArenaKeeps<HoldsViewDeep, Family>);
+static_assert(!ArenaKeeps<DerivedOfView, Family> && !ArenaKeeps<Option<View<int const>>, Family>);
+static_assert(!ArenaKeeps<FixedList<View<int const>, 2>, Family>);
+static_assert(!ArenaKeeps<Atomic<Option<Ref<int const, Unmarked>>>, Family>);
+static_assert(!ArenaKeeps<RunSet<std::uint16_t, RunOf<int const, 0>>, Family>);
+static_assert(!ArenaKeeps<CallRef<int() noexcept>, Family>);
+static_assert(!ArenaKeeps<RunAddress, Family> && !ArenaKeeps<StaticText, Family>,
+              "each holds a pointer that its type arguments do not name");
+
+// A reference member, a pointer to an object and an incomplete class are
+// refusals.  A pointer to a function and a pointer to member pass.  A void*
+// passes only in a class that names it as a type argument.
+struct HoldsReference {
+    Plain& target;
+};
+struct Declared;
+template <class Value>
+struct Stated {
+    Value value{};
+};
+static_assert(!ArenaKeeps<HoldsReference, Family> && !ArenaKeeps<Declared, Family>);
+static_assert(!holds_loose_borrow_(^^void (*)(int), ^^Family, PartNaming::by_member));
+static_assert(!holds_loose_borrow_(^^int Plain::*, ^^Family, PartNaming::by_member));
+static_assert(holds_loose_borrow_(^^int*, ^^Family, PartNaming::by_argument));
+static_assert(holds_loose_borrow_(^^void*, ^^Family, PartNaming::by_member));
+static_assert(!holds_loose_borrow_(^^void*, ^^Family, PartNaming::by_argument));
+static_assert(!holds_loose_borrow_(^^void const*, ^^Family, PartNaming::by_argument));
+static_assert(!holds_loose_borrow_(^^Stated<void*>, ^^Family, PartNaming::by_member));
+static_assert(!holds_loose_borrow_(^^Stated<Stated<void*>>, ^^Family, PartNaming::by_member));
+static_assert(holds_loose_borrow_(^^Stated<int*>, ^^Family, PartNaming::by_member));
+
+// Each door of an arena and of an epoch takes a type that it can keep, and no
+// other one.
+template <class Arena, class T>
+concept FillsHeld = requires { std::declval<Arena>().array(std::declval<Alloc>(), 2, std::declval<T const&>()); };
+struct MakesView {
+    [[nodiscard]] View<int const> operator()(RunStart) const noexcept { return {}; }
+};
+struct MakesFamilyRun {
+    [[nodiscard]] ArenaRun<int, Family> operator()(RunStart) const noexcept { return {}; }
+};
+template <class Arena, class T, class Make>
+concept BuildsHeld = requires {
+    std::declval<Arena>().template build_array<T>(std::declval<Alloc>(), ElementCount{2}, std::declval<Make>());
+};
+using FamilyArena = BumpArena<Family>&;
+using MemberEpochArena = Epoch<EpochOf<Owner::Member>>&;
+static_assert(MakesHeld<FamilyArena, Ref<int, Family>> && MakesHeld<MemberEpochArena, Ref<int, Family>>);
+static_assert(!MakesHeld<FamilyArena, HoldsView> && !MakesHeld<MemberEpochArena, HoldsView>);
+static_assert(MakesHeld<MemberEpochArena, EpochRef> && !MakesHeld<FamilyArena, EpochRef>);
+static_assert(FillsHeld<FamilyArena, Ref<int, Family>> && FillsHeld<MemberEpochArena, Ref<int, Family>>);
+static_assert(!FillsHeld<FamilyArena, HoldsView> && !FillsHeld<MemberEpochArena, HoldsView>);
+static_assert(BuildsHeld<FamilyArena, ArenaRun<int, Family>, MakesFamilyRun>);
+static_assert(BuildsHeld<MemberEpochArena, ArenaRun<int, Family>, MakesFamilyRun>);
+static_assert(!BuildsHeld<FamilyArena, View<int const>, MakesView>);
+static_assert(!BuildsHeld<MemberEpochArena, View<int const>, MakesView>);
 
 // An epoch arena has no make and no array.  Its epoch gives them with the
 // epoch brand.

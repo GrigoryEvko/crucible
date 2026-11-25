@@ -3649,6 +3649,34 @@ foundation_neg_compile_test(neg_core_bump_arena_make_linear_holder
 foundation_neg_compile_test(neg_core_epoch_make_linear_token
   "use of deleted function .void foundation::core::Epoch<Brand>::make\\(this foundation::core::Epoch<Brand>&, Marker, Args&& ...\\) \\[with T = \\{anonymous\\}::End; Marker = foundation::core::Alloc; Args = \\{\\{anonymous\\}::End\\}; Brand = foundation::core::EpochOf<Owner::Scratch>\\]."
   "an arena ends no object, so a linear value that make builds in it ends with no consume")
+# An object of an arena lives until the arena or the epoch ends, so it holds no
+# borrow of a different owner: a View, an erased Ref, a Ref of an epoch in a
+# named arena, a Ref of a scope in an epoch, and a class outside the base that
+# states the mark of a borrow and an arena tag.
+foundation_neg_compile_test(neg_core_bump_arena_make_holder_of_a_view
+  "use of deleted function .void foundation::core::BumpArena<Brand>::make\\(this foundation::core::BumpArena<Brand>&, Marker, Args&& ...\\) \\[with T = \\{anonymous\\}::Holder. .*Brand = Family\\]."
+  "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
+foundation_neg_compile_test(neg_core_bump_arena_make_ref_of_an_epoch
+  "use of deleted function .void foundation::core::BumpArena<Brand>::make\\(this foundation::core::BumpArena<Brand>&, Marker, Args&& ...\\) \\[with T = \\{anonymous\\}::Holder. .*Brand = Family\\]."
+  "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
+foundation_neg_compile_test(neg_core_bump_arena_make_marked_borrow
+  "use of deleted function .void foundation::core::BumpArena<Brand>::make\\(this foundation::core::BumpArena<Brand>&, Marker, Args&& ...\\) \\[with T = \\{anonymous\\}::OwnRef<int, Family>. .*Brand = Family\\]."
+  "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
+foundation_neg_compile_test(neg_core_bump_arena_array_of_views
+  "use of deleted function .void foundation::core::BumpArena<Brand>::array\\(this foundation::core::BumpArena<Brand>&, Marker, std::size_t, const T&\\) \\[with T = foundation::core::View<const int>. .*Brand = Family.*\\]."
+  "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
+foundation_neg_compile_test(neg_core_bump_arena_build_array_of_erased_refs
+  "use of deleted function .void foundation::core::BumpArena<Brand>::build_array\\(this foundation::core::BumpArena<Brand>&, Marker, foundation::core::ElementCount, Make&&\\) \\[with T = foundation::core::Ref<int, foundation::brand::DefaultBrand>. .*Brand = Family.*\\]."
+  "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
+foundation_neg_compile_test(neg_core_epoch_make_ref_of_a_scope
+  "use of deleted function .void foundation::core::Epoch<Brand>::make\\(this foundation::core::Epoch<Brand>&, Marker, Args&& ...\\) \\[with T = foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >. .*Brand = foundation::core::EpochOf<Owner::Scratch>\\]."
+  "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
+foundation_neg_compile_test(neg_core_epoch_array_of_views
+  "use of deleted function .void foundation::core::Epoch<Brand>::array\\(this foundation::core::Epoch<Brand>&, Marker, std::size_t, const T&\\) \\[with T = foundation::core::View<const int>. .*Brand = foundation::core::EpochOf<Owner::Scratch>.*\\]."
+  "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
+foundation_neg_compile_test(neg_core_epoch_build_array_of_erased_refs
+  "use of deleted function .void foundation::core::Epoch<Brand>::build_array\\(this foundation::core::Epoch<Brand>&, Marker, foundation::core::ElementCount, Make&&\\) \\[with T = foundation::core::Ref<int, foundation::brand::DefaultBrand>. .*Brand = foundation::core::EpochOf<Owner::Scratch>.*\\]."
+  "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
 # The brands of an arena: the two mints take a named tag of one kind, a Ref
 # of one family does not fit a different family, an arena has no public
 # constructor, and the view-escape rule refuses a Ref of a local arena that
