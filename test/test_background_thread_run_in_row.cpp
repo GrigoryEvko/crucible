@@ -413,11 +413,12 @@ int main() {
     test_publish_adds_no_block_to_the_region_arena();
     test_scratch_bytes_beside_a_publish();
     test_store_releases_what_left_the_queue();
+    test_sweep_frees_known_slots();
     test_sweep_waits_for_no_write();
     test_region_handed_again_keeps_no_old_mark();
     test_kept_region_keeps_no_old_mark();
     test_sweep_matches_a_walk_of_each_region();
 
-    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 36 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 37 groups, all passed\n");
     return 0;
 }

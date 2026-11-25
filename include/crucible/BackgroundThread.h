@@ -1221,11 +1221,14 @@ private:
 
     // Sweeps a full store with fresh marks, and gives a slot that is free after
     // it, or none.
-    [[nodiscard]] CRUCIBLE_COLD ::fixy::Option<RegionSlot> free_a_slot_(PublishStage const& stage) noexcept;
+    [[nodiscard]] CRUCIBLE_COLD ::fixy::Option<RegionSlot> free_a_slot_(::foundation::effects::Alloc alloc,
+                                                                        PublishStage const& stage) noexcept;
 
     // Releases each region of the store that no holder names, on the
-    // publish stage after each publish.  The body tells the rule.
-    void sweep_regions_(PublishStage const& stage, RegionMarks const& marks) noexcept;
+    // publish stage after each publish.  The body tells the rule.  The list
+    // of the slots of a sweep takes its segment from alloc.
+    void sweep_regions_(::foundation::effects::Alloc alloc, PublishStage const& stage,
+                        RegionMarks const& marks) noexcept;
 
     // Sweeps the region of one slot.  True when the next sweep must read the
     // slot too.
@@ -1722,6 +1725,12 @@ public:
     [[nodiscard]] uint32_t region_count(PublishStage const& stage) const noexcept;
     [[nodiscard]] uint64_t regions_dropped_full(PublishStage const&) const noexcept { return regions_dropped_full_; }
 
+    // The generation at which the region of the slot left the view of the
+    // foreground (RegionMemory::NOT_LEFT when it did not), or none when the
+    // slot holds no region.  The publish stage owns the store.
+    [[nodiscard]] ::fixy::Option<uint64_t> left_generation_of(PublishStage const& stage,
+                                                              RegionSlot slot) const noexcept;
+
     // The bytes of the blocks of the arenas of the regions in the store: the
     // runs, the node and the plan of each region.  The publish stage owns the
     // store.  Complexity: O(S) for S slots of the store.
@@ -1751,6 +1760,10 @@ public:
         }
         [[nodiscard]] uint64_t regions_dropped_full(PublishStage const& stage) const noexcept {
             return owner_.regions_dropped_full(stage);
+        }
+        [[nodiscard]] ::fixy::Option<uint64_t> left_generation_of(PublishStage const& stage,
+                                                                  RegionSlot slot) const noexcept {
+            return owner_.left_generation_of(stage, slot);
         }
         [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t>
         region_bytes(PublishStage const& stage) const noexcept {

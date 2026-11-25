@@ -665,7 +665,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
                                       StreamPoint reset_point) {
     ::fixy::Option<RegionSlot> free_slot = find_free_slot_();
     if (free_slot.is_none()) [[unlikely]] {
-        free_slot = free_a_slot_(stage);
+        free_slot = free_a_slot_(bg.alloc, stage);
     }
     if (free_slot.is_none()) [[unlikely]] {
         ++regions_dropped_full_;
@@ -718,7 +718,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     (*region_ready_)(
         bg, PublishStage{},
         region_store_.view().get(slot.raw()).expect("an id of a slot lies below the count of the store")->published);
-    sweep_regions_(stage, (*region_marks_)(PublishStage{}));
+    sweep_regions_(bg.alloc, stage, (*region_marks_)(PublishStage{}));
 }
 
 void BackgroundThread::set_left_generation_(RegionSlot slot, uint64_t generation) noexcept {
@@ -749,8 +749,9 @@ void BackgroundThread::set_left_generation_(RegionSlot slot, uint64_t generation
 // The last publish into the full store swept it with the marks of that time.
 // The foreground can have written its holders after it, and the write lets
 // regions go.
-::fixy::Option<RegionSlot> BackgroundThread::free_a_slot_(PublishStage const& stage) noexcept {
-    sweep_regions_(stage, (*region_marks_)(PublishStage{}));
+::fixy::Option<RegionSlot> BackgroundThread::free_a_slot_(::foundation::effects::Alloc alloc,
+                                                          PublishStage const& stage) noexcept {
+    sweep_regions_(alloc, stage, (*region_marks_)(PublishStage{}));
     return find_free_slot_();
 }
 
@@ -790,16 +791,29 @@ void BackgroundThread::set_left_generation_(RegionSlot slot, uint64_t generation
 //
 // The sweep reads each slot through the View of the const store, and then
 // writes the step for the slot through the element door of the store.
-void BackgroundThread::sweep_regions_(PublishStage const& stage, RegionMarks const& marks) noexcept {
+//
+// The walk of the keys of swept_slots_ lends the keys to a body, and a body
+// that writes the store could keep a borrow in it.  So the body only appends
+// each key to a local list of plain slot ids, and the sweep of each slot runs
+// after the walk, in the same ascending order.  W is at most the count of the
+// regions that left the queue, plus four: the last published region, the one
+// before it, the handed region and the kept regions.  A sweep with W > 0 takes
+// one segment of 256 bytes (64 ids) from alloc for the list, and the end of the
+// list frees it.  This is on the publish stage, never on the hot path.
+void BackgroundThread::sweep_regions_(::foundation::effects::Alloc alloc, PublishStage const& stage,
+                                      RegionMarks const& marks) noexcept {
     if (marks.handed.is_some() && !::fixy::same_target(marks.handed, last_published_)) [[unlikely]] {
         for (const RegionSlot handed : find_slot_of_(marks.handed))
             swept_slots_.set(handed);
     }
-    swept_slots_.with_keys([this, &stage, &marks](auto const& slots) noexcept {
-        for (const RegionSlot slot : slots) {
-            if (!sweep_slot_(stage, marks, slot)) settled_slots_.set(slot);
-        }
+    ::fixy::SegmentList<RegionSlot> sweep_order{};
+    swept_slots_.with_keys([alloc, &sweep_order](auto const& slots) noexcept {
+        for (const RegionSlot slot : slots)
+            sweep_order.append(alloc, slot);
     });
+    for (const RegionSlot slot : sweep_order) {
+        if (!sweep_slot_(stage, marks, slot)) settled_slots_.set(slot);
+    }
     swept_slots_.subtract(settled_slots_).expect("the two sets have the count of the store");
     settled_slots_.clear();
 }
@@ -860,6 +874,14 @@ void BackgroundThread::keep_region(PublishStage const&, ConstRegionLink region) 
 uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
     return ::fixy::narrow<uint32_t>(region_store_.size() - free_slots_.size())
         .expect("the count of the store is a uint32_t");
+}
+
+::fixy::Option<uint64_t> BackgroundThread::left_generation_of(PublishStage const&, RegionSlot slot) const noexcept {
+    if (free_slots_.test(slot)) return ::fixy::none;
+    return ::fixy::some(region_store_.view()
+                            .get(slot.raw())
+                            .expect("an id of a slot lies below the count of the store")
+                            ->left_generation);
 }
 
 ::fixy::Quantity<::fixy::unit::Byte, size_t> BackgroundThread::region_bytes(PublishStage const&) const noexcept {

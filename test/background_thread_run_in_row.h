@@ -50,6 +50,7 @@ void test_store_releases_what_left_the_queue();
 
 // The sweep of the region store with a foreground
 // (test_background_thread_run_in_row_sweep.cpp).
+void test_sweep_frees_known_slots();
 void test_sweep_waits_for_no_write();
 void test_region_handed_again_keeps_no_old_mark();
 void test_kept_region_keeps_no_old_mark();

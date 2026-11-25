@@ -202,6 +202,28 @@ template <class Handle>
     return counts;
 }
 
+// The state of each slot of the small store: FREE_SLOT for a slot that holds no
+// region, and else the generation at which its region left the view
+// (RegionMemory::NOT_LEFT when it did not).
+constexpr uint64_t FREE_SLOT = crucible::RegionMemory::NOT_LEFT - 1;
+using SlotStates = ::fixy::FixedArray<uint64_t, 4>;
+
+template <class Handle>
+[[nodiscard]] SlotStates read_slots(Handle& handle) noexcept {
+    SlotStates states{};
+    handle.run_on_publish_stage(
+        [&states](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
+            for (const ::fixy::Index<4> position : states.indices()) {
+                const crucible::RegionSlot slot{
+                    ::fixy::narrow<uint32_t>(position.raw()).expect("a slot of the small store is a uint32_t")};
+                states.set(position, owner.left_generation_of(stage, slot)
+                                         .match([](uint64_t generation) noexcept { return generation; },
+                                                [] noexcept { return FREE_SLOT; }));
+            }
+        });
+    return states;
+}
+
 // The regions of a test, which a Stopped handle builds before the pipeline
 // starts.  Each one leaves the array one time.
 constexpr uint32_t BUILT = 8;
@@ -514,6 +536,60 @@ static void check_open_write(Handle& handle, sweep_rig::Foreground& foreground,
     foreground.hold(::fixy::none);
     publish(handle, built.take(6));
     CRUCIBLE_TEST_ASSERT(kTest, read_counts(handle) == StoreCounts({.stored = 2, .dropped = 1}));
+}
+
+// True when each slot of the store has the state that the test expects.
+template <class Handle>
+[[nodiscard]] static bool has_slots(Handle& handle, sweep_rig::SlotStates const& expected) noexcept {
+    sweep_rig::SlotStates const states = sweep_rig::read_slots(handle);
+    for (const ::fixy::Index<4> position : states.indices()) {
+        if (states.at(position) != expected.at(position)) return false;
+    }
+    return true;
+}
+
+// The slots that the sweeps of a run with known regions free, and the generation
+// at which each other region left the view, after each publish of the run of
+// check_open_write.  The sweep walks its slots in ascending order, and the step
+// of a slot reads and writes only that slot, so a change of the form of the
+// sweep keeps each state.
+template <class Handle>
+static void check_known_slots(Handle& handle, sweep_rig::Foreground& foreground,
+                              sweep_rig::BuiltRegions& built) noexcept {
+    using namespace sweep_rig;
+    constexpr uint64_t NOT_LEFT = crucible::RegionMemory::NOT_LEFT;
+    publish(handle, built.take(0));
+    publish(handle, built.take(1));
+    // Region 0 left the view at generation 0, and slots 2 and 3 are free.
+    CRUCIBLE_TEST_ASSERT(kTest, has_slots(handle, SlotStates{0, NOT_LEFT, FREE_SLOT, FREE_SLOT}));
+    foreground.hold(::fixy::none);
+    foreground.write([&handle, &built](auto store_cell) noexcept {
+        publish(handle, built.take(2));
+        store_cell(::fixy::index<0>(), ::fixy::none);
+        publish(handle, built.take(3));
+        publish(handle, built.take(4));
+        // The open write holds each mark: the store is full, and region 4 is
+        // dropped.
+        CRUCIBLE_TEST_ASSERT(kTest, has_slots(handle, SlotStates{0, NOT_LEFT, NOT_LEFT, NOT_LEFT}));
+    });
+    // The sweep released region 0, region 5 took its slot, and regions 1, 2 and
+    // 3 left the view at generation 2.
+    publish(handle, built.take(5));
+    CRUCIBLE_TEST_ASSERT(kTest, has_slots(handle, SlotStates{NOT_LEFT, 2, 2, 2}));
+    // The next write lets regions 1, 2 and 3 go, region 6 takes slot 1, and
+    // region 5 left the view at generation 3.
+    foreground.hold(::fixy::none);
+    publish(handle, built.take(6));
+    CRUCIBLE_TEST_ASSERT(kTest, has_slots(handle, SlotStates{3, NOT_LEFT, FREE_SLOT, FREE_SLOT}));
+}
+
+void test_sweep_frees_known_slots() {
+    using namespace sweep_rig;
+    with_small_store([](crucible::MetaLog const& log, Foreground& foreground, auto stopped) noexcept {
+        BuiltRegions built{stopped, log};
+        check_known_slots(stopped, foreground, built);
+    });
+    ::fixy::check::pass(kTest, "  sweep_frees_known_slots:                   PASSED\n");
 }
 
 void test_sweep_waits_for_no_write() {
