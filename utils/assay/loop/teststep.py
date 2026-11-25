@@ -190,8 +190,11 @@ CPU limit of a test
     and the limit judges one that runs away, as COMPILE_CPU_LIMIT_S of
     assay.loop.step judges a compile of the build.  On 2026-11-19 the
     heaviest such test used 297 s of CPU in all of its processes together.
-    A process at the limit ends on SIGKILL, the test is red, and the
-    launcher writes a line.  So a command in such a test needs no wall limit
+    A process at the limit ends on SIGKILL, and the test is red.  The
+    launcher writes a line when a failed test used at least LIMIT_CLOCK_PART
+    of the limit of one process in all of its processes together
+    (limit_line()).  The sum does not tell if one process came to the limit,
+    and the line says so.  So a command in such a test needs no wall limit
     of its own: a loaded host makes it slower, but not red, and the guard of
     ctest bounds a hang (the hang guard of assay.loop.gate).  A program of
     the build gets no limit, because a test that waits for a different
@@ -818,6 +821,26 @@ def traced_run(
     return readset.plan(build_dir, name, command, version_of(words, ()))
 
 
+def limit_line(name: str, run: cost_meter.Measurement) -> str | None:
+    """Return the line of a failed test that the CPU limit of its processes can have stopped, or None (the CPU limit).
+
+    The CPU time of a measurement is the sum of each process of the test, and the limit is of each process.  So a test
+    that starts many compilers comes to the limit with no process that the kernel stopped, and the line says only that
+    the limit can have stopped one.
+
+    Args:
+        name: The name of the test
+        run: The measurement of the test
+    """
+    if not run.reached_cpu_limit:
+        return None
+    return (
+        f"loop test-step: the test {name} failed after {run.cpu_s:.0f} s of CPU time in all of its processes together.  "
+        f"Each process has a limit of {run.cpu_limit_s} s, so the limit can have stopped one of them (the CPU limit of a "
+        f"test)"
+    )
+
+
 def level_verdict(level_text: str, build_dir: str | None, name: str) -> int | None:
     """Return the exit of a test whose host is below its need, or None when the test runs (the level).
 
@@ -939,12 +962,9 @@ def main(argv: list[str]) -> int:
         sys.exit(127)
     if plan is not None:
         safely(lambda: plan.save(run.exit_code), None)
-    if run.reached_cpu_limit:
-        print(
-            f"loop test-step: a process of the test {name} ran to the CPU limit of {run.cpu_limit_s} s of each process "
-            f"(THE CPU LIMIT OF A TEST), and the kernel stopped it",
-            file=sys.stderr,
-        )
+    said = limit_line(name, run)
+    if said is not None:
+        print(said, file=sys.stderr)
     emulator = command[0] if program_at > 0 else None
     status = judge_and_record(name, program, place, build_dir, run, budget, emulator)
     stop_core_dumps()

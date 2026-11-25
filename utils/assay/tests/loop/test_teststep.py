@@ -356,6 +356,28 @@ class Planted:
             f"a script test and each of its processes run with the CPU limit of {limit} s: status {status} {said}",
             status == 0,
         )
+        limit_s = test_launcher.TEST_CPU_LIMIT_S
+        part_s = limit_s * cost_meter.LIMIT_CLOCK_PART
+        runs = {
+            "many": cost_meter.Measurement(1, part_s, part_s, 42.0, 1, 0.0, 0.0, limit_s),
+            "short": cost_meter.Measurement(1, 1.0, 0.0, 1.0, 1, 0.0, 0.0, limit_s),
+            "passed": cost_meter.Measurement(0, part_s, part_s, 42.0, 1, 0.0, 0.0, limit_s),
+            "unlimited": cost_meter.Measurement(1, part_s, part_s, 42.0, 1, 0.0, 0.0, None),
+        }
+        lines = {name: test_launcher.limit_line("planted_many", run) for name, run in runs.items()}
+        expect(
+            f"a failed test whose processes used at least the part of the limit together gives a line that states the "
+            f"sum and the limit of each process, and that claims no stop of one: {lines['many']}",
+            lines["many"] is not None
+            and f"{2 * part_s:.0f} s of CPU time in all of its processes together" in lines["many"]
+            and f"a limit of {limit_s} s" in lines["many"]
+            and "can have stopped one of them" in lines["many"]
+            and "the kernel stopped" not in lines["many"],
+        )
+        expect(
+            f"a short failure, a test that passed, and a test with no limit give no line: {lines}",
+            lines["short"] is None and lines["passed"] is None and lines["unlimited"] is None,
+        )
         built = self.plant_test("test_planted_unlimited", f'#!/bin/sh\ntest "$(ulimit -t)" = {inherited}\n')
         status, said = self.launch(built)
         expect(
