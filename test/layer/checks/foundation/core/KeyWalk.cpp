@@ -5,6 +5,7 @@
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
+#include <foundation/core/Id.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 
@@ -267,7 +268,50 @@ static_assert(reaches_key<HoldsReference (*)[2]>() && !reaches_key<HoldsOther (*
 static_assert(reaches_key<NamesType<HoldsReference (&)[2]>>() && !reaches_key<NamesType<HoldsOther (&)[2]>>());
 static_assert(reaches_key<ReferenceClosure<HoldsReference[2]>>() && !reaches_key<ReferenceClosure<HoldsOther[2]>>());
 static_assert(reaches_key<OnlyDeclared (*)[2]>() && borrows_owner<OnlyDeclared (*)[2]>());
+static_assert(reaches_key<ReferenceClosure<OnlyDeclared>>() && borrows_owner<ReferenceClosure<OnlyDeclared>>());
+static_assert(borrows_owner<TwoCaptures<int, HoldsOwner>>() && borrows_owner<TwoCaptures<BorrowsHolder, int>>());
+static_assert(!borrows_owner<TwoCaptures<HoldsOwner, int>>());
 static_assert(borrows_owner<HoldsOwner (*)[2]>() && !borrows_owner<Scalars (*)[2]>());
+
+// A type argument of a plain class that is only declared is a tag, and a value
+// of the class reaches no object of it.  The same argument of a class with a
+// reference, of a borrow, of an owner and of a cell, and a pointer or a reference
+// to the declared class, stay refused.
+template <class Tag>
+struct Numbered {
+    int number = 0;
+};
+template <class Tag>
+struct ReachesTag {
+    Tag& target;
+};
+template <class Tag>
+struct NamesTagBesideReference {
+    int& number;
+};
+using DeclaredNumber = Numbered<OnlyDeclared>;
+static_assert(!reaches_key<DeclaredNumber>() && !borrows_owner<DeclaredNumber>());
+static_assert(!reaches_key<DeclaredNumber*>() && !borrows_owner<View<DeclaredNumber const>>());
+static_assert(!reaches_key<Id<struct ElaboratedTag, unsigned>>() && !reaches_key<NamesType<DeclaredNumber>>());
+static_assert(!reaches_key<ReferenceClosure<DeclaredNumber>>() && !borrows_owner<ReferenceClosure<DeclaredNumber>>());
+static_assert(reaches_key<ReachesTag<OnlyDeclared>>() && borrows_owner<ReachesTag<OnlyDeclared>>());
+static_assert(reaches_key<NamesTagBesideReference<OnlyDeclared>>());
+static_assert(reaches_key<NamesTarget<OnlyDeclared>>() && borrows_owner<NamesTarget<OnlyDeclared>>());
+static_assert(reaches_key<OwnsTarget<OnlyDeclared>>() && borrows_owner<OwnsTarget<OnlyDeclared>>());
+static_assert(reaches_key<Numbered<OnlyDeclared*>>() && reaches_key<Numbered<OnlyDeclared&>>());
+static_assert(borrows_owner<Numbered<OnlyDeclared*>>() && borrows_owner<Numbered<OnlyDeclared&>>());
+static_assert(reaches_key<OnlyDeclared*>() && reaches_key<NamesTarget<Numbered<OnlyDeclared*>>>());
+
+// A tag that the unit completes later gives a sound answer at each point: the
+// kept answer reads nothing of it, and a later walk of another root reads its
+// parts and refuses more.
+struct TagCompletedLater;
+static_assert(!reaches_key<Numbered<TagCompletedLater>>());
+struct TagCompletedLater {
+    Key& key;
+};
+static_assert(!reaches_key<Numbered<TagCompletedLater>>());
+static_assert(reaches_key<NamesType<Numbered<TagCompletedLater>>>() && reaches_key<NamesType<TagCompletedLater>>());
 
 }  // namespace detail::key_walk_checks
 

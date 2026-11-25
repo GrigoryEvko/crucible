@@ -25,10 +25,12 @@
 //   each of them.  A walk that reaches a class that is incomplete in the unit,
 //   or a class whose state reflection does not show, refuses, and a kept
 //   refusal stays after the unit completes the class.  Each other walk reads
-//   only complete classes, whose parts do not change.  So no kept answer admits
-//   a body that a later walk of the unit refuses.  The kept variables are
-//   templates, and the rule specialization-home refuses a specialization of one
-//   outside this header.
+//   only complete classes, whose parts do not change, and it reads nothing of a
+//   tag that a plain class only names (is_declared_tag_).  A value of the plain
+//   class reaches no object of that tag, whatever the tag holds.  So each kept
+//   answer that admits a body stays correct.  The kept variables are templates,
+//   and the rule specialization-home refuses a specialization of one outside
+//   this header.
 //
 // Order of the reads
 //   A walk is a loop over a list of its own.  It asks of a class that it
@@ -277,11 +279,24 @@ consteval void list_members_of_class_(KeyNodeList& list, std::meta::info type, T
     list_held_parts_(list, std::meta::extract<TypeParts const&>(kept_held_parts_of(type)), region, reference);
 }
 
+// True for a template argument of a plain class that is an incomplete class,
+// such as the tag of an Id that a unit only declares.  parts are the parts of
+// the class, part is the argument, and argument is the node of it.  A plain class
+// holds no object of a type argument, no pointer and no borrow
+// (foundation/core/TypeParts.h), so a value of it reaches no object of the tag,
+// also after the unit completes the tag.  An argument that is a reference type,
+// and an incomplete argument of each other class, is no such tag.
+[[nodiscard]] consteval bool is_declared_tag_(TypeParts const& parts, TypePart const& part, KeyNode const& argument) {
+    return parts.is_plain && !part.has(PartFact::was_reference) && is_class_or_union_(argument.type)
+        && !argument.may_read;
+}
+
 // The marked classes that the walk of the gate reaches from the node.  Each
 // node of the walk is held: the walk follows each base, each member, each
 // target of a reference or a pointer, and each type that a template argument, a
-// function type or a pointer to member names.  Complexity: linear in the
-// distinct types that the node reaches, times the scan of the list.
+// function type or a pointer to member names, apart from a declared tag of a
+// plain class.  Complexity: linear in the distinct types that the node reaches,
+// times the scan of the list.
 [[nodiscard]] consteval KeyReach walk_keys_(KeyNode const& start) {
     constexpr BorrowRegion held = BorrowRegion::held;
     KeyReach reach{};
@@ -307,8 +322,10 @@ consteval void list_members_of_class_(KeyNodeList& list, std::meta::info type, T
         }
         if (parts.is_key_marked) reach.add(type);
         PartRun const run = parts.run();
-        for (std::size_t index = 0; index < parts.member_start; ++index)
-            list.push(indirect_key_node_(run[index].type, held));
+        for (std::size_t index = 0; index < parts.member_start; ++index) {
+            KeyNode const argument = indirect_key_node_(run[index].type, held);
+            if (!is_declared_tag_(parts, run[index], argument)) list.push(argument);
+        }
         list_members_of_class_(list, type, parts, held, held);
     }
     return reach;
@@ -484,7 +501,8 @@ struct MarkedClassTest final {
             } else if (parts.states_by_arguments && part.has(PartFact::is_first)) {
                 target = region;
             }
-            list.push(indirect_key_node_(part.type, target));
+            KeyNode const argument = indirect_key_node_(part.type, target);
+            if (!is_declared_tag_(parts, part, argument)) list.push(argument);
         }
         if (parts.states_by_arguments || (parts.states_cell && region == borrowed)) continue;
         list_members_of_class_(list, type, parts, region, borrowed);

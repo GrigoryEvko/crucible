@@ -5,7 +5,9 @@
 #include <foundation/Linear.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/CaptureStore.h>
+#include <foundation/core/Id.h>
 #include <foundation/core/Owner.h>
+#include <foundation/core/Region.h>
 #include <foundation/reflect/Annotation.h>
 
 #include <cstddef>
@@ -150,6 +152,24 @@ struct ReachesTheOtherToken {
 };
 static_assert(!ReachesNoSideToken<ReachesItsToken, ProducerToken<CheckOwner, CheckBrand>>);
 static_assert(ReachesNoSideToken<ReachesTheOtherToken, ProducerToken<CheckOwner, CheckBrand>>);
+
+// A body that reaches an id of a tag that the unit only declares reaches no
+// token, also through a borrow of a run of ids, so each door admits it.  A body
+// that reaches an object of the declared class is refused.
+struct DeclaredTag;
+using DeclaredId = ::foundation::core::Id<DeclaredTag, std::uint64_t>;
+struct ReachesDeclaredIds {
+    DeclaredId& id;
+    ::foundation::core::View<DeclaredId const> ids;
+    void operator()(ProducerEnd<CheckOwner>& /*end*/) noexcept {}
+};
+struct ReachesDeclaredClass {
+    DeclaredTag& object;
+    void operator()(ProducerEnd<CheckOwner>& /*end*/) noexcept {}
+};
+static_assert(ReachesNoSideToken<ReachesDeclaredIds, ProducerToken<CheckOwner, CheckBrand>>);
+static_assert(SpscEndBody<ReachesDeclaredIds, ProducerEnd<CheckOwner>, ProducerToken<CheckOwner, CheckBrand>>);
+static_assert(!ReachesNoSideToken<ReachesDeclaredClass, ProducerToken<CheckOwner, CheckBrand>>);
 
 // An owner gives the first state of each end with two static members, and
 // the mint builds each end of each other owner with the state that its type
