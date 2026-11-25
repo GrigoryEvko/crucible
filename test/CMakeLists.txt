@@ -473,6 +473,9 @@ crucible_test(test_cipher_durable)
 crucible_test(test_cipher_root)
 crucible_test(test_cipher_sync_dirs)
 crucible_test(test_kernel_cache_levels)
+# One claim of a slot of the kernel cache gives its one writer.  Two threads
+# insert one content hash at the same time, and the tsan preset runs them.
+crucible_test(test_kernel_cache_claims)
 crucible_test(test_trace_ring_hot_path)
 crucible_test(test_cipher_commit_lifetime)
 crucible_test(test_chase_lev_deque)
@@ -2282,6 +2285,18 @@ crucible_neg_compile_test(neg_dag_node_mint_of_a_plan
 crucible_neg_compile_test(neg_dag_node_mint_in_another_family
   "no matching function for call to .mint_dag_node<crucible::RegionNode>"
   "foundation::core::BumpArena<.anonymous.::OtherFamily>")
+
+# A slot of the kernel cache gives its one writer only with the claim that won
+# the slot.
+crucible_neg_compile_test(neg_kernel_slot_writer_without_claim
+  "class crucible::KernelCache::KernelCacheSlot. has no member named .writer."
+  "neg_kernel_slot_writer_without_claim.cpp:[0-9]+:[0-9]+: error")
+crucible_neg_compile_test(neg_kernel_slot_writer_forged
+  "WriterHandle::WriterHandle\\(crucible::KernelCache::KernelCacheSlot&\\). is private within this context"
+  "neg_kernel_slot_writer_forged.cpp:[0-9]+:[0-9]+: error")
+crucible_neg_compile_test(neg_kernel_slot_writer_copied
+  "use of deleted function .crucible::KernelCache::KernelCacheSlot::WriterHandle::WriterHandle\\(const crucible::KernelCache::KernelCacheSlot::WriterHandle&\\)."
+  "a WriterHandle is the one writer of its slot")
 
 # The target of an arm is a link, and a link has no operator->.  A walk
 # reads the target through a match, a loop over the link, or

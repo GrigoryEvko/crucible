@@ -122,12 +122,10 @@ struct RosterEntry {
 };
 
 // The count of the entries of the roster.
-constexpr std::size_t kRosterEntries = 14;
+constexpr std::size_t kRosterEntries = 13;
 
 // The reason of each tag with an empty row.
 constexpr ::fixy::FixedArray<RosterEntry, kRosterEntries> kEmptyRowRoster{
-    RosterEntry{"crucible::KernelCache::KernelCompileTag",
-                "the token writes the slot that it is given, and the slots of a cache are private to the cache"},
     RosterEntry{"crucible::observe::RuntimeMetricsWriterTag",
                 "the metrics channel names the brand of its writer root, so a root of another brand opens no writer"},
     RosterEntry{"crucible::observe::RuntimeMetricsReaderTag",

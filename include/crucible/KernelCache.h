@@ -1,9 +1,8 @@
 #pragma once
 
 // The kernel cache and the one function that reads it while it builds the
-// DAG.  The cache maps (ContentHash, RowHash) to a compiled kernel.  A slot
-// write needs a writer permission, so this header includes the permission
-// layer, and MerkleDag.h does not.
+// DAG.  The cache maps (ContentHash, RowHash) to a compiled kernel.  The
+// writer of a slot comes only from the claim that won the slot.
 
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
@@ -11,15 +10,12 @@
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/os/SpinBudget.h>
-#include <foundation/Brand.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
-#include <foundation/effects/Row.h>
-#include <foundation/permissions/Permission.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -37,9 +33,11 @@ namespace crucible {
 // itself a valid key, not an absence.
 //
 // A slot is EMPTY (content 0), CLAIMED (content claimed by CAS, kernel still
-// null) or PUBLISHED (both set).  Slots are insert-only.  row_hash is written
-// once per slot.  A later publish under the same pair replaces only the
-// kernel, so a concurrent reader sees one kernel or the other, both valid.
+// null) or PUBLISHED (both set).  Slots are insert-only.  The claim that won
+// the CAS gives the one writer of the slot, so row_hash is written once per
+// slot, with the kernel of the same insert.  A later insert under the same
+// pair replaces only the kernel, so a concurrent reader sees one kernel or
+// the other, both valid.
 //
 // The publish order is row_hash then kernel, both release.  kernel.store is
 // therefore the last store of the sequence, and a reader that acquire-loads a
@@ -67,11 +65,6 @@ namespace crucible {
 // recipe, and each kernel of one recipe gives the same bits (DetSafe).
 class CRUCIBLE_OWNER KernelCache {
 public:
-    // A slot write touches only the slot's three atomics in memory, so the
-    // writer token incurs no effect.
-    struct KernelCompileTag {
-        using permission_row = ::foundation::effects::Row<>;
-    };
     struct KernelCacheReaderTag {};
 
     // The three levels of the cache, ordered by portability: the
@@ -119,64 +112,48 @@ public:
 
     public:
         using snapshot_type = KernelCacheSlotSnapshot;
-        using writer_tag = KernelCompileTag;
         using reader_tag = KernelCacheReaderTag;
 
         KernelCacheSlot() noexcept = default;
 
-        // The writer handle is linear (foundation/Linear.h).  Its door is
-        // release(), which gives the token back to the caller.  The handle
-        // keeps the brand of its token, so no erased token opens a writer.
-        template <class Brand>
+        // The one writer of a claimed slot.  Only the claim that won the slot
+        // makes it, so no slot has two writers, and the row and the first
+        // kernel of a slot come from one insert.  The handle is linear
+        // (foundation/Linear.h).  Its door is publish(), which ends it, so
+        // each claim ends with a kernel that a reader can find.
         class[[= ::foundation::linear::linear{}]] WriterHandle {
             ::fixy::Ref<KernelCacheSlot> slot_;
-            [[no_unique_address]] ::foundation::permissions::Permission<writer_tag, Brand> perm_;
 
-            constexpr WriterHandle(KernelCacheSlot& slot,
-                                   ::foundation::permissions::Permission<writer_tag, Brand>&& perm) noexcept
-                : slot_{::fixy::erase_brand(::fixy::to(slot))}, perm_{std::move(perm)} {}
+            constexpr explicit WriterHandle(KernelCacheSlot& slot) noexcept
+                : slot_{::fixy::erase_brand(::fixy::to(slot))} {}
 
             friend class KernelCacheSlot;
 
         public:
-            using value_type = snapshot_type;
-            using tag_type = writer_tag;
-
-            WriterHandle(WriterHandle const&) =
-                delete("KernelCacheSlot::WriterHandle owns the linear writer permission");
-            WriterHandle&
-            operator=(WriterHandle const&) = delete("KernelCacheSlot::WriterHandle owns the linear writer permission");
-            // The move of the token is trivial and its move assignment is
+            WriterHandle(WriterHandle const&) = delete("a WriterHandle is the one writer of its slot");
+            WriterHandle& operator=(WriterHandle const&) = delete("a WriterHandle is the one writer of its slot");
+            // The move of the Ref is trivial and its move assignment is
             // user-provided.  So GCC 16 counts the handle as not trivially
             // copyable, and the ABI passes it in a register.  An assignment
-            // would drop the token of the target.  The check file of this
+            // would drop the claim of the target.  The check file of this
             // header asserts the three facts.
             constexpr WriterHandle(WriterHandle&&) noexcept = default;
             WriterHandle& operator=(WriterHandle&&) = delete(
-                "KernelCacheSlot::WriterHandle owns the linear writer permission, and an assignment would drop "
-                "the token of the target");
+                "a WriterHandle is the one writer of its slot, and an assignment would drop the claim of the target");
+            ~WriterHandle() = default;
 
-            // The release door.  The handle gives the token back to the
-            // caller, and the call spends the handle.
-            [[nodiscard]] constexpr ::foundation::permissions::Permission<writer_tag, Brand> release() && noexcept {
-                return std::move(perm_);
-            }
-
-            void publish(snapshot_type const& snapshot) noexcept {
-                CRUCIBLE_PRE(::foundation::decide::is_non_zero(snapshot.content_hash));
-                CRUCIBLE_PRE(snapshot.kernel.is_some());
-                // The content hash is already claimed by CAS before this
-                // endpoint exists.  The two stores must stay in this order:
-                // the kernel store is what makes the row visible to readers.
-                CRUCIBLE_FATAL_INVARIANT(slot_->content_hash_.load_acquire() == snapshot.content_hash);
-                slot_->row_hash_.store_release(snapshot.row_hash);
-                slot_->kernel_.store_release(snapshot.kernel);
-            }
-
-            void publish_kernel_variant(KernelRef kernel) noexcept {
+            // Publishes the row and the kernel of the slot, and ends the
+            // claim.  The two stores must stay in this order: the kernel
+            // store is what makes the row visible to readers.
+            void publish(RowHash row_hash, KernelRef kernel) && noexcept {
+                slot_->row_hash_.store_release(row_hash.raw());
                 slot_->kernel_.store_release(::fixy::some(kernel));
             }
         };
+
+        // A claim of the slot: its one writer, or the content hash that the
+        // slot holds already.
+        using Claim = ::fixy::Result<WriterHandle, ContentHash>;
 
         class ReaderHandle {
             ::fixy::Ref<const KernelCacheSlot> slot_;
@@ -212,11 +189,16 @@ public:
             [[nodiscard]] CRUCIBLE_INLINE FoundKernel kernel() const noexcept { return slot_->kernel_.load_acquire(); }
         };
 
-        template <class Brand>
-            requires ::foundation::brand::IsFreshBrand<Brand>
-        [[nodiscard]] WriterHandle<Brand>
-        writer(::foundation::permissions::Permission<writer_tag, Brand>&& perm) noexcept {
-            return WriterHandle<Brand>{*this, std::move(perm)};
+        // Claims an empty slot for the content hash.  One compare-and-swap
+        // claims a slot, so one claim of a slot wins, and it gives the writer
+        // of the slot.  Each other claim gives the content hash that the slot
+        // holds.  Complexity: O(1).
+        [[nodiscard]] CRUCIBLE_INLINE Claim claim(ContentHash content_hash) noexcept {
+            CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
+            auto claimed = content_hash_.cas_acq_rel(uint64_t{0}, content_hash.raw());
+            if (claimed.is_ok()) return WriterHandle{*this};
+            return ::fixy::err(
+                ContentHash{std::move(claimed).err().expect("a refused swap gives the value that it read").observed});
         }
 
         [[nodiscard]] ReaderHandle reader() const noexcept { return ReaderHandle{*this}; }
@@ -227,17 +209,12 @@ public:
 
         [[nodiscard]] CRUCIBLE_INLINE FoundKernel kernel() const noexcept { return kernel_.load_acquire(); }
 
-        // A failed claim writes the content hash that the slot holds into
-        // expected.
-        [[nodiscard]] CRUCIBLE_INLINE bool try_claim_content_hash(uint64_t& expected, uint64_t desired) noexcept {
-            CRUCIBLE_PRE(::foundation::decide::is_non_zero(desired));
-            auto claimed = content_hash_.cas_acq_rel(expected, desired);
-            if (claimed.is_ok()) return true;
-            expected = std::move(claimed).err().expect("a refused swap gives the value that it read").observed;
-            return false;
-        }
-
     private:
+        // Replaces the kernel of a published slot, for an insert under the
+        // content hash and the row of the slot.  The row does not change.
+        // Only the cache calls it, after it found the row.
+        CRUCIBLE_INLINE void replace_kernel_(KernelRef kernel) noexcept { kernel_.store_release(::fixy::some(kernel)); }
+
         // Every access is acquire or release, never relaxed: a relaxed load
         // would let a reader match the content and then read an incoherent
         // row and kernel, which serves a kernel under the wrong row.
@@ -330,7 +307,6 @@ public:
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(content_hash));
         CRUCIBLE_PRE(::foundation::decide::not_sentinel_hash(content_hash));
         const uint64_t lookup_hash = content_hash.raw();
-        const uint64_t lookup_row = row_hash.raw();
         // The element door of each probe lends the slot in place.  The slots
         // are atomic cells, and the door writes no state of the table, so two
         // inserts can probe one table at the same time.
@@ -340,48 +316,39 @@ public:
         };
         // The body takes the Ref of the kernel by value.  The Ref names a
         // const kernel, so the body writes no part of the kernel.
-        const std::size_t slots = table_.size();
-        for (std::size_t probe = 0; probe < slots; probe++) {
-            const ProbeStep step =
-                table_.with_masked(lookup_hash + probe, [&size = size_, kernel, nondet, lookup_hash,
-                                                         lookup_row](KernelCacheSlot& entry) noexcept {
-                    uint64_t expected = 0;
-                    // A successful CAS claims the slot for this thread.  The
-                    // writer token keeps the brand of its root.  Two inserts can
-                    // run at one time, so each takes a root of its own, and the
-                    // claim gives each token its one slot.
-                    if (entry.try_claim_content_hash(expected, lookup_hash)) {
-                        auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
-                        writer.publish(KernelCacheSlotSnapshot{
-                            .content_hash = lookup_hash,
-                            .row_hash = lookup_row,
-                            .kernel = ::fixy::some(kernel),
-                        });
-                        ::foundation::linear::drop(std::move(writer).release());
-                        // Nothing branches on the exact count.  The content hash
-                        // CAS carries the real synchronization.
+        const auto place = [&size = size_, kernel, nondet, content_hash, row_hash](KernelCacheSlot& entry) noexcept {
+            return entry.claim(content_hash)
+                .match(
+                    // The claim that won gives the one writer of the slot.
+                    [&size, kernel, row_hash](KernelCacheSlot::WriterHandle writer) noexcept {
+                        std::move(writer).publish(row_hash, kernel);
+                        // Nothing branches on the exact count.  The content
+                        // hash CAS carries the real synchronization.
                         (void)size.fetch_add_acq_rel(1);
                         return ProbeStep::Placed;
-                    }
-                    if (expected != lookup_hash) return ProbeStep::Next;
-                    // The content matches, so the row decides.  Spin on the
-                    // kernel, never on the row: a CLAIMED slot reads row 0, which
-                    // is indistinguishable from a published row of 0.
-                    bool is_published = entry.kernel_.load_acquire().is_some();
-                    if (!is_published) [[unlikely]] {
-                        is_published = await_claimed_(nondet, entry).is_some();
-                    }
-                    // A published kernel makes the row visible too.
-                    if (!is_published || entry.row_hash() != lookup_row) return ProbeStep::Next;
-                    // Variant update: the row stays pinned and only the kernel
-                    // changes, so a concurrent reader observes one kernel or the
-                    // other and both are valid.
-                    auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
-                    writer.publish_kernel_variant(kernel);
-                    ::foundation::linear::drop(std::move(writer).release());
-                    return ProbeStep::Placed;
-                });
-            if (step == ProbeStep::Placed) return ::fixy::Unit{};
+                    },
+                    [&entry, kernel, nondet, content_hash, row_hash](ContentHash held) noexcept {
+                        if (held != content_hash) return ProbeStep::Next;
+                        // The content matches, so the row decides.  Spin on
+                        // the kernel, never on the row: a CLAIMED slot reads
+                        // row 0, which is indistinguishable from a published
+                        // row of 0.
+                        bool is_published = entry.kernel_.load_acquire().is_some();
+                        if (!is_published) [[unlikely]] {
+                            is_published = await_claimed_(nondet, entry).is_some();
+                        }
+                        // A published kernel makes the row visible too.
+                        if (!is_published || entry.row_hash() != row_hash.raw()) return ProbeStep::Next;
+                        // Variant update: the row stays pinned and only the
+                        // kernel changes, so a concurrent reader observes one
+                        // kernel or the other and both are valid.
+                        entry.replace_kernel_(kernel);
+                        return ProbeStep::Placed;
+                    });
+        };
+        const std::size_t slots = table_.size();
+        for (std::size_t probe = 0; probe < slots; probe++) {
+            if (table_.with_masked(lookup_hash + probe, place) == ProbeStep::Placed) return ::fixy::Unit{};
         }
         return ::fixy::err(InsertError::TableFull);
     }
