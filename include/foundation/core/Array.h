@@ -323,9 +323,8 @@ inline constexpr std::size_t frame_extent_v = decltype(std::declval<Owner const&
 // ArrayFrameKeyDoor names it as a friend, so this declaration stands before
 // the door, and the default argument of the brand belongs to it.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
-         && ArrayFrameOwner<Owner>
-         && FrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
+    requires NamesNoArgument<Refused...> && MovedOwner<Owner> && ArrayFrameOwner<Owner>
+          && FrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
 [[nodiscard]] constexpr detail::frame_return_t<
     detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>>, Owner>
 with_mut(Owner&& owner, Body&& body) noexcept;
@@ -405,17 +404,21 @@ concept BuildsUnnamedArray =
     BuildableElement<T, N>
     && !detail::could_write_array_(^^std::remove_reference_t<Body>, std::meta::dealias(^^FixedArray<T, N, Unkeyed>));
 
-// The body of build_fixed_array: a body of each frame door that names no
-// object that the array could initialize.
+// The gates of a body of build_fixed_array, which read no call of the body: the
+// gates of each frame body, and no object that the array could initialize.
+template <class Body, class T, std::size_t N>
+concept BuildGates = BuildsUnnamedArray<Body, T, N> && FrameGates<Body>;
+
+// The body of build_fixed_array: a frame callable that passes the gates.
 template <class Body, class T, std::size_t N, class Fresh>
-concept BuildsFixedArray = BuildableElement<T, N> && FrameBody<Body, T, Fresh, N> && BuildsUnnamedArray<Body, T, N>;
+concept BuildsFixedArray = BuildGates<Body, T, N> && FrameCallable<Body, T, Fresh, N>;
 
 // The build door of a FixedArray (the definition below).  ArrayFrameKeyDoor
 // names it as a friend, so this declaration stands before the door, and the
 // default argument of the brand belongs to it.
 template <class T, std::size_t N, class... Refused, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires(sizeof...(Refused) == 0) && BuildsFixedArray<Body, T, N, Fresh>
+    requires NamesNoArgument<Refused...> && BuildsFixedArray<Body, T, N, Fresh>
 [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
                                                FixedArray<T, N, Unkeyed>>
 build_fixed_array(Body&& body) noexcept;
@@ -435,14 +438,13 @@ class ArrayFrameKeyDoor final : ::foundation::NoObject<ArrayFrameKeyDoor> {
         requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
     friend class FixedArray;
     template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
-        requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
-             && ArrayFrameOwner<Owner>
-             && FrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
+        requires NamesNoArgument<Refused...> && MovedOwner<Owner> && ArrayFrameOwner<Owner>
+              && FrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
     friend constexpr auto ::foundation::core::with_mut(Owner&& owner, Body&& body) noexcept -> detail::frame_return_t<
         detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>>,
         Owner>;
     template <class T, std::size_t N, class... Refused, class Body, ::foundation::brand::IsBrand Fresh>
-        requires(sizeof...(Refused) == 0) && BuildsFixedArray<Body, T, N, Fresh>
+        requires NamesNoArgument<Refused...> && BuildsFixedArray<Body, T, N, Fresh>
     friend constexpr auto ::foundation::core::build_fixed_array(Body&& body) noexcept
         -> detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>, FixedArray<T, N, Unkeyed>>;
 
@@ -536,24 +538,17 @@ using array_storage_t = std::conditional_t<IsKeyBrand<KeyBrand>, KeyedArrayStora
 
 }  // namespace detail
 
-// The gates of a body of a keyed frame door that read the captures of the body
-// and no call of it: the body reaches no key of the brand of the owner (the
-// gate of foundation/core/Frame.h), it holds no linear value by value, and it
-// stores no borrow outside the frame.  The elements T hold no key of the brand.
+// The gates of a body of a keyed frame door, which read the captures of the
+// body and no call of it: the gates of each frame body, and no key of the brand
+// of the owner that the body reaches (the gate of foundation/core/Frame.h).
+// The elements T hold no key of the brand.
 template <class Body, class T, class Brand>
-concept KeyedFrameGates = ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand>
-                       && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>;
+concept KeyedFrameGates = ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand> && FrameGates<Body>;
 
 // The body of a keyed frame door of an owner whose elements are T and whose
-// brand is Brand: a body of FrameBody that passes the gates.
-//
-// The refused twin of a keyed door states KeyedFrameGates alone, and it gives
-// the reason for each body that passes the gates and is no frame callable.  For
-// a correct body the two doors bind, and the compiler takes the keyed door,
-// because its constraints contain those of the twin.  So the twin reads no call
-// of the body.  Each call of a generic body instantiates it, and the brand of
-// each door is its own, so a twin that reads the call would instantiate the
-// innermost body of a nest of d frames 2^d times.
+// brand is Brand: a frame callable that passes the gates.  The refused twin of
+// a keyed door states KeyedFrameGates alone, as each refused twin does
+// (FrameBody of foundation/core/Region.h).
 template <class Body, class T, class Brand, class Fresh, std::size_t Extent>
 concept KeyedFrameBody = KeyedFrameGates<Body, T, Brand> && FrameCallable<Body, T, Fresh, Extent>;
 
@@ -1281,7 +1276,7 @@ public:
 // refuses each explicit argument after N, so no caller names the brand.
 // Complexity: O(N) for the value-initialization, and the cost of body.
 template <class T, std::size_t N, class... Refused, class Body, ::foundation::brand::IsBrand Fresh>
-    requires(sizeof...(Refused) == 0) && BuildsFixedArray<Body, T, N, Fresh>
+    requires NamesNoArgument<Refused...> && BuildsFixedArray<Body, T, N, Fresh>
 [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
                                                FixedArray<T, N, Unkeyed>>
 build_fixed_array(Body&& body) noexcept {
@@ -1296,16 +1291,15 @@ build_fixed_array(Body&& body) noexcept {
     }
 }
 
-// A body whose result holds a borrow or names the brand of the frame, a body
-// that holds a linear value, a body that stores a borrow outside the frame,
-// and a body that could write the object that the array initializes bind to
-// these overloads, so each refusal gives its reason.
+// A body that is no frame callable (the refused twin, FrameBody of
+// foundation/core/Region.h), a body that holds a linear value, a body that
+// stores a borrow outside the frame, and a body that could write the object
+// that the array initializes bind to these overloads, so each refusal gives its
+// reason.
 template <class T, std::size_t N, class... Refused, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires(sizeof...(Refused) == 0) && BuildableElement<T, N> && RefusedFrameBody<Body, T, Fresh, N>
-void build_fixed_array(Body&& body) = delete(
-    "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
-    "the frame: give a plain value");
+    requires NamesNoArgument<Refused...> && BuildGates<Body, T, N>
+void build_fixed_array(Body&& body) = delete(CRUCIBLE_FRAME_BODY_REFUSAL);
 template <class T, std::size_t N, class... Refused, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && BuildableElement<T, N> && LinearFrameBody<Body, T, Fresh, N>
@@ -1316,8 +1310,7 @@ template <class T, std::size_t N, class... Refused, class Body,
 void build_fixed_array(Body&& body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 template <class T, std::size_t N, class... Refused, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires(sizeof...(Refused) == 0)
-             && BuildableElement<T, N> && FrameBody<Body, T, Fresh, N> && (!BuildsUnnamedArray<Body, T, N>)
+    requires(sizeof...(Refused) == 0) && BuildableElement<T, N> && FrameGates<Body> && (!BuildsUnnamedArray<Body, T, N>)
 void build_fixed_array(Body&& body) = delete(
     "a body of build_fixed_array reaches an object that holds an array of the type that it builds, through a "
     "reference or a pointer that is not const, so it could write the object that the array initializes: capture the "
@@ -2162,9 +2155,8 @@ template <class T, std::size_t Align = alignof(T), class Marker>
 // the frame.  A HeapArray and a MaskedArray move a pointer and a count in and
 // out.  Complexity: O(1), and the cost of the body.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
-    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
-         && ArrayFrameOwner<Owner>
-         && FrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
+    requires NamesNoArgument<Refused...> && MovedOwner<Owner> && ArrayFrameOwner<Owner>
+          && FrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
 [[nodiscard]] constexpr detail::frame_return_t<
     detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>>, Owner>
 with_mut(Owner&& owner, Body&& body) noexcept {
@@ -2175,15 +2167,11 @@ with_mut(Owner&& owner, Body&& body) noexcept {
                                          static_cast<Body&&>(body));
 }
 
-// A body whose result holds a borrow or names the brand of the frame binds
-// to this overload, so the refusal gives its reason.
+// A body that is no frame callable binds to this overload, the refused twin
+// (FrameBody of foundation/core/Region.h), so the refusal gives its reason.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
-             && ArrayFrameOwner<Owner>
-             && RefusedFrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
-void with_mut(Owner&& owner, Body&& body) = delete(
-    "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
-    "the frame: give a plain value");
+    requires NamesNoArgument<Refused...> && MovedOwner<Owner> && ArrayFrameOwner<Owner> && FrameGates<Body>
+void with_mut(Owner&& owner, Body&& body) = delete(CRUCIBLE_FRAME_BODY_REFUSAL);
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
              && ArrayFrameOwner<Owner>

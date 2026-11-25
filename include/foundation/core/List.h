@@ -477,9 +477,8 @@ public:
 // names it as a friend, so this declaration stands before the door, and the
 // default argument of the brand belongs to it.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
-         && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
-         && FrameBody<Body, typename Owner::element_type, Fresh>
+    requires NamesNoArgument<Refused...> && MovedOwner<Owner> && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
+          && FrameBody<Body, typename Owner::element_type, Fresh>
 [[nodiscard]] constexpr detail::frame_return_t<
     detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
 with_mut(Owner&& owner, Body&& body) noexcept;
@@ -492,9 +491,9 @@ with_mut(Owner&& owner, Body&& body) noexcept;
 // utils/rule-table.txt keeps this definition in this header.
 class ListFrameKeyDoor final : ::foundation::NoObject<ListFrameKeyDoor> {
     template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
-        requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
-             && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
-             && FrameBody<Body, typename Owner::element_type, Fresh>
+        requires NamesNoArgument<Refused...> && MovedOwner<Owner>
+              && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
+              && FrameBody<Body, typename Owner::element_type, Fresh>
     friend constexpr auto ::foundation::core::with_mut(Owner&& owner, Body&& body) noexcept
         -> detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>;
 
@@ -510,9 +509,8 @@ class ListFrameKeyDoor final : ::foundation::NoObject<ListFrameKeyDoor> {
 // so the door moves size() elements in and out.  Complexity: O(size()), and
 // the cost of the body.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
-    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
-         && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
-         && FrameBody<Body, typename Owner::element_type, Fresh>
+    requires NamesNoArgument<Refused...> && MovedOwner<Owner> && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
+          && FrameBody<Body, typename Owner::element_type, Fresh>
 [[nodiscard]] constexpr detail::frame_return_t<
     detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
 with_mut(Owner&& owner, Body&& body) noexcept {
@@ -522,15 +520,12 @@ with_mut(Owner&& owner, Body&& body) noexcept {
                                          static_cast<Body&&>(body));
 }
 
-// A body whose result holds a borrow or names the brand of the frame binds
-// to this overload, so the refusal gives its reason.
+// A body that is no frame callable binds to this overload, the refused twin
+// (FrameBody of foundation/core/Region.h), so the refusal gives its reason.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
-             && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
-             && RefusedFrameBody<Body, typename Owner::element_type, Fresh>
-void with_mut(Owner&& owner, Body&& body) = delete(
-    "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
-    "the frame: give a plain value");
+    requires NamesNoArgument<Refused...> && MovedOwner<Owner> && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
+              && FrameGates<Body>
+void with_mut(Owner&& owner, Body&& body) = delete(CRUCIBLE_FRAME_BODY_REFUSAL);
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
              && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>

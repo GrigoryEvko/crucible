@@ -414,15 +414,30 @@ template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
 concept FrameCallable = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
                      && FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>;
 
-// The body of a frame door of an owner whose elements are T: a frame
-// callable that holds no linear value by value (HoldsNoLinearValue of
-// foundation/Linear.h).  Extent is the extent of the run of the owner.
-template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
-concept FrameBody = FrameCallable<Body, T, Brand, Extent> && ::foundation::linear::HoldsNoLinearValue<Body>
-                 && StoresNoBorrowOutside<Body>;
+// The gates of a body of a frame door that read the captures of the body and
+// no call of it: the body holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h), and it stores no borrow outside the frame
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
+template <class Body>
+concept FrameGates = ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>;
 
-// A body whose result does not leave the frame: the refused twin of each
-// door binds to it.
+// The body of a frame door of an owner whose elements are T: a frame callable
+// that passes the gates.  Extent is the extent of the run of the owner.
+//
+// The refused twin of a frame door with a brand of its own states the gates
+// alone, and it gives the reason for each body that passes the gates and is no
+// frame callable.  For a correct body the two doors bind, and the compiler
+// takes the frame door, because its constraints contain those of the twin.  So
+// the twin reads no call of the body.  Each call of a generic body
+// instantiates it, and the brand of each door is its own, so a twin that reads
+// the call would instantiate the innermost body of a nest of d frames 2^d
+// times.
+template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
+concept FrameBody = FrameGates<Body> && FrameCallable<Body, T, Brand, Extent>;
+
+// A body whose result does not leave the frame: the refused twin of a door
+// whose frame has the brand of the caller binds to it, so it reads the same
+// call as the door.
 template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
 concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
                         && (!FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>)
@@ -435,10 +450,15 @@ concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand,
 template <class... Named>
 concept NamesNoArgument = sizeof...(Named) == 0;
 
-// The reason of the refused twin of a keyed frame door: the body does not take
-// the ViewMut, it can throw, or its result does not leave the frame.
-#define CRUCIBLE_FRAME_BODY_REFUSAL                                                                                     \
-    "the body of a keyed frame takes the ViewMut and throws nothing, and the result of a frame door leaves the frame, " \
+// An owner that the caller gives to a free frame door by move: an rvalue that
+// is not const.  It is a concept for the same reason.
+template <class Owner>
+concept MovedOwner = (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>);
+
+// The reason of the refused twin of a frame door: the body does not take the
+// ViewMut, it can throw, or its result does not leave the frame.
+#define CRUCIBLE_FRAME_BODY_REFUSAL                                                                                    \
+    "the body of a frame door takes the ViewMut and throws nothing, and the result of a frame door leaves the frame, " \
     "so it holds no reference and no address, and it names no brand of the frame: give a plain value"
 
 // A body of a frame door that stores a borrow outside the frame: the store

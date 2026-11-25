@@ -4657,7 +4657,7 @@ foundation_neg_compile_test(neg_core_keyed_array_ref_alias
   "a keyed FixedArray opens a frame only with its LoanKey")
 foundation_neg_compile_test(neg_core_keyed_array_body_can_throw
   "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(foundation::core::LoanKey<KeyBrand>&, Body&&\\) &"
-  "the body of a keyed frame takes the ViewMut and throws nothing")
+  "the body of a frame door takes the ViewMut and throws nothing")
 foundation_neg_compile_test(neg_core_loan_key_through_holder
   "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(foundation::core::LoanKey<KeyBrand>&&, Body&&\\) &"
   "a body of a keyed frame reaches a LoanKey of the brand of its owner")
@@ -4741,6 +4741,9 @@ foundation_neg_compile_test(neg_core_fixed_array_nested_update
 foundation_neg_compile_test(neg_core_build_fixed_array_gives_view_mut
   "use of deleted function .void foundation::core::build_fixed_array\\(Body&&\\)"
   "the result of a frame door leaves the frame, so it holds no reference and no address")
+foundation_neg_compile_test(neg_core_build_fixed_array_body_can_throw
+  "use of deleted function .void foundation::core::build_fixed_array\\(Body&&\\)"
+  "the body of a frame door takes the ViewMut and throws nothing")
 foundation_neg_compile_test(neg_core_build_fixed_array_linear_capture
   "use of deleted function .void foundation::core::build_fixed_array\\(Body&&\\)"
   "the body holds a linear value by value, and the door calls it with no consume")
@@ -5246,6 +5249,9 @@ foundation_neg_compile_test(neg_core_with_mut_sum_second_frame
 foundation_neg_compile_test(neg_core_with_mut_gives_view_mut
   "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Refused = \\{\\}. Owner = HeapArray<int>"
   "the result of a frame door leaves the frame, so it holds no reference and no address")
+foundation_neg_compile_test(neg_core_heap_array_frame_body_can_throw
+  "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Refused = \\{\\}. Owner = HeapArray<int>"
+  "the body of a frame door takes the ViewMut and throws nothing")
 foundation_neg_compile_test(neg_core_with_mut_gives_brand
   "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Refused = \\{\\}. Owner = FixedList<int, 4>"
   "and it names no brand of the frame: give a plain value")

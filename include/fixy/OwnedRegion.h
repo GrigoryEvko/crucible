@@ -576,20 +576,18 @@ constexpr ::foundation::core::View<T const> mint_borrowed(OwnedRegion<T, Tag, Br
 // doors (OwnedRegionFrameKeyDoor below), which names it as a friend.
 template <class... Refused, class T, class Tag, class Brand, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires(sizeof...(Refused) == 0) && ::foundation::core::FrameBody<Body, T, Fresh>
+    requires ::foundation::core::NamesNoArgument<Refused...> && ::foundation::core::FrameBody<Body, T, Fresh>
 [[nodiscard]] constexpr ::foundation::core::detail::frame_return_t<
     ::foundation::core::detail::body_result_t<Body&&, ::foundation::core::ViewMut<T, Fresh>>,
     OwnedRegion<T, Tag, Brand>>
 with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) noexcept;
 
-// A body whose result holds a borrow or names the brand of the frame binds
-// to this overload, so the refusal gives its reason.
+// A body that is no frame callable binds to this overload, the refused twin
+// (FrameBody of foundation/core/Region.h), so the refusal gives its reason.
 template <class... Refused, class T, class Tag, class Brand, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires(sizeof...(Refused) == 0) && ::foundation::core::RefusedFrameBody<Body, T, Fresh>
-void with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) = delete(
-    "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
-    "the frame: give a plain value");
+    requires ::foundation::core::NamesNoArgument<Refused...> && ::foundation::core::FrameGates<Body>
+void with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) = delete(CRUCIBLE_FRAME_BODY_REFUSAL);
 template <class... Refused, class T, class Tag, class Brand, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && ::foundation::core::LinearFrameBody<Body, T, Fresh>
@@ -737,7 +735,7 @@ namespace foundation::core {
 // header.
 class OwnedRegionFrameKeyDoor final : ::foundation::NoObject<OwnedRegionFrameKeyDoor> {
     template <class... Refused, class T, class Tag, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
-        requires(sizeof...(Refused) == 0) && FrameBody<Body, T, Fresh>
+        requires NamesNoArgument<Refused...> && FrameBody<Body, T, Fresh>
     friend constexpr auto ::fixy::with_mut(::fixy::OwnedRegion<T, Tag, Brand>&& region, Body&& body) noexcept
         -> ::foundation::core::detail::frame_return_t<
             ::foundation::core::detail::body_result_t<Body&&, ::foundation::core::ViewMut<T, Fresh>>,
@@ -756,7 +754,7 @@ class OwnedRegionFrameKeyDoor final : ::foundation::NoObject<OwnedRegionFrameKey
 namespace fixy {
 
 template <class... Refused, class T, class Tag, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
-    requires(sizeof...(Refused) == 0) && ::foundation::core::FrameBody<Body, T, Fresh>
+    requires ::foundation::core::NamesNoArgument<Refused...> && ::foundation::core::FrameBody<Body, T, Fresh>
 [[nodiscard]] constexpr ::foundation::core::detail::frame_return_t<
     ::foundation::core::detail::body_result_t<Body&&, ::foundation::core::ViewMut<T, Fresh>>,
     OwnedRegion<T, Tag, Brand>>
