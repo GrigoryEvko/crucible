@@ -1626,12 +1626,14 @@ using StridedIndexRange = detail::StridedIndexRange<Rank, Brand>;
 
 // The arguments of mint_strided_scope: a body that takes the branded view of
 // the scope with no throw, holds no linear value by value (HoldsNoLinearValue
-// of foundation/Linear.h), and gives a value that does not hold the brand.
-// The mint calls the body, and a call is no consume.
+// of foundation/Linear.h), stores no borrow outside the scope
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h), and gives a value
+// that does not hold the brand.  The mint calls the body, and a call is no
+// consume.
 template <class T, std::size_t Rank, class Body, class Brand>
 concept CanMintStridedScope =
     ::foundation::brand::IsBrand<Brand> && std::is_nothrow_invocable_v<Body&&, BrandedStridedView<T, Rank, Brand>>
-    && ::foundation::linear::HoldsNoLinearValue<Body>
+    && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     && !std::is_void_v<std::invoke_result_t<Body&&, BrandedStridedView<T, Rank, Brand>>>
     && !detail::names_brand(^^std::invoke_result_t<Body&&, BrandedStridedView<T, Rank, Brand>>, ^^Brand);
 
@@ -1801,6 +1803,14 @@ template <class... Refused, class T, std::size_t Rank, class Body,
              && std::is_invocable_v<Body&&, BrandedStridedView<T, Rank, Fresh>>
 void mint_strided_scope(StridedView<T, Rank> view, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
+// A body that can store a borrow outside the scope binds to this overload, so
+// the refusal gives its reason.
+template <class... Refused, class T, std::size_t Rank, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ::foundation::linear::HoldsNoLinearValue<Body>
+             && std::is_invocable_v<Body&&, BrandedStridedView<T, Rank, Fresh>> && (!StoresNoBorrowOutside<Body>)
+void mint_strided_scope(StridedView<T, Rank> view, Body&& body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+
 // Calls body with the branded view of the elements of the unique view view,
 // with the fresh brand of the instance of the mint, and gives the result of
 // body: the scope above.  The mint borrows view for the call, so the branded
@@ -1823,6 +1833,14 @@ template <class... Refused, class T, std::size_t Rank, ::foundation::brand::IsBr
     requires(sizeof...(Refused) == 0) && (!::foundation::linear::HoldsNoLinearValue<Body>)
              && std::is_invocable_v<Body&&, BrandedStridedView<T, Rank, Fresh>>
 void mint_strided_scope(StridedViewMut<T, Rank, Brand>& view, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A body that can store a borrow outside the scope binds to this overload, so
+// the refusal gives its reason.
+template <class... Refused, class T, std::size_t Rank, ::foundation::brand::IsBrand Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ::foundation::linear::HoldsNoLinearValue<Body>
+             && std::is_invocable_v<Body&&, BrandedStridedView<T, Rank, Fresh>> && (!StoresNoBorrowOutside<Body>)
+void mint_strided_scope(StridedViewMut<T, Rank, Brand>& view, Body&& body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 // A const unique view writes nothing, so it gives no writer to a scope.  A
 // moved unique view is no borrow of the writer that the caller keeps.
