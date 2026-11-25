@@ -21,9 +21,9 @@ namespace eff = ::foundation::effects;
 
 int main() {
     const ::fixy::BgDrainCtx bg{eff::testing::bg()};
-    ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
+    auto [out, out_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<crucible::TraceRing::Entry, 1>);
     crucible::test::with_ring_consumer([&](crucible::TraceRing::Consumer& ring) noexcept {
-        out.with_mut([&](auto run) noexcept -> void {
+        out.with_mut(out_key, [&](auto run) noexcept -> void {
             (void)crucible::TraceRing::drain_pure(bg.in_row<eff::Row<>>(), ring, std::move(run));
         });
     });

@@ -15,8 +15,8 @@ using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effe
 
 [[maybe_unused]] void attempt(IoBlockCtx const& ctx,
                               fixy::net::SocketHandle<fixy::net::socket_kind::NetlinkRoute> const& socket) {
-    foundation::core::FixedArray<std::byte, 4> buffer{};
-    buffer.with_mut([&ctx, &socket](auto run) noexcept {
+    auto [buffer, buffer_key] = foundation::core::mint_keyed_owner(foundation::core::fixed_array_owner<std::byte, 4>);
+    buffer.with_mut(buffer_key, [&ctx, &socket](auto run) noexcept {
         [[maybe_unused]] auto received = fixy::net::receive_bytes(ctx, socket.ref(), std::move(run));
     });
 }

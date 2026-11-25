@@ -4,8 +4,8 @@
 #include <foundation/core/Array.h>
 
 int main() {
-    ::foundation::core::FixedArray<unsigned char, 4> storage{};
-    storage.with_mut([](auto run) noexcept {
+    auto [storage, storage_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<unsigned char, 4>);
+    storage.with_mut(storage_key, [](auto run) noexcept {
         auto const& shared = run;
         auto bytes = ::foundation::core::byte_view(shared);
         static_cast<void>(bytes);

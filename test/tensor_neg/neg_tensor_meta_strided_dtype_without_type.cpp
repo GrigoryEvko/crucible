@@ -16,9 +16,9 @@ struct FloatPair {
 }  // namespace
 
 int main() {
-    ::fixy::FixedArray<FloatPair, 4> values{};
+    auto [values, values_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<FloatPair, 4>);
     ::crucible::TensorMeta const meta{};
-    return values.with_mut([&meta](auto run) noexcept -> int {
+    return values.with_mut(values_key, [&meta](auto run) noexcept -> int {
         return static_cast<int>(::crucible::strided_view_of(meta, std::move(run)).is_ok());
     });
 }

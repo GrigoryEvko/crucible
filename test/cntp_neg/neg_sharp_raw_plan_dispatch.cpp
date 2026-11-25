@@ -16,13 +16,13 @@ namespace shp = crucible::cntp::_wip::sharp;
 
 int main() {
     ::foundation::core::FixedArray<float, 1> const input{1.0f};
-    ::foundation::core::FixedArray<float, 1> output{};
+    auto [output, output_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<float, 1>);
     const crucible::NumericalRecipe recipe{};
     const shp::SharpFabricPlan plan{
         .fabric_switch = {},
         .participant_count = shp::admit_sharp_participant_count(8).expect("8 participants is positive"),
     };
-    return output.with_mut([&](auto run) noexcept -> int {
+    return output.with_mut(output_key, [&](auto run) noexcept -> int {
         auto result = shp::dispatch_sharp_allreduce(
             input.view(), std::move(run), recipe, shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
         return result.is_ok() ? 0 : 1;

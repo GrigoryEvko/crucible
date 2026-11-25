@@ -32,13 +32,13 @@ struct StageOf<::foundation::core::Walk<S>> {
 
 int main() {
     namespace core = ::foundation::core;
-    core::FixedArray<int, 4> values{1, 2, 3, 4};
+    auto [values, values_key] = core::mint_keyed_owner(core::fixed_array_owner<int, 4>, core::FixedArray<int, 4>{1, 2, 3, 4});
     using Dynamic = ResultOf<decltype(&core::View<int const>::walk)>::type;
     using Fixed = ResultOf<decltype(&core::View<int const, 4>::walk)>::type;
     using Pairs = core::Result<core::Walk<core::detail::ZipStage<StageOf<Dynamic>::type, StageOf<Fixed>::type, Held>>,
                                core::LengthMismatch>;
     using Pick = Pairs (Dynamic::*)(Fixed&&) && noexcept;
-    return values.with_mut([](auto run) noexcept -> int {
+    return values.with_mut(values_key, [](auto run) noexcept -> int {
         core::View<int const> const dynamic = run.view();
         return (dynamic.walk().*static_cast<Pick>(&Dynamic::try_zip))(run.view().walk()).is_ok() ? 0 : 1;
     });

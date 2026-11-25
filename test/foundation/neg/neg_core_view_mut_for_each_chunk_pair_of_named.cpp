@@ -5,9 +5,9 @@
 #include <foundation/core/Array.h>
 
 int main() {
-    ::foundation::core::FixedArray<int, 8> array{};
+    auto [array, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 8>);
     ::foundation::core::FixedArray<int, 8> const source{};
-    array.with_mut([&source](auto out) noexcept {
+    array.with_mut(key, [&source](auto out) noexcept {
         auto rests = ::foundation::core::for_each_chunk_pair<4>(out, ::foundation::core::View<int const>{source.view()},
                                                                 [](auto part, auto other) noexcept {
                                                                     static_cast<void>(part);

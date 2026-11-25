@@ -28,9 +28,9 @@ int main() {
                     .expect("a SHARP switch makes a plan");
 
     ::foundation::core::FixedArray<float, 1> const input{1.0f};
-    ::foundation::core::FixedArray<float, 1> output{};
+    auto [output, output_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<float, 1>);
     const crucible::NumericalRecipe recipe{};
-    return output.with_mut([&input, &recipe, plan](auto run) noexcept -> int {
+    return output.with_mut(output_key, [&input, &recipe, plan](auto run) noexcept -> int {
         auto result = shp::dispatch_sharp_allreduce(
             input.view(), std::move(run), recipe, shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
         return result.is_ok() ? 0 : 1;

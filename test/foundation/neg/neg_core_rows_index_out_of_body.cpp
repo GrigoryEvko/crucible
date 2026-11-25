@@ -9,12 +9,12 @@
 #include <utility>
 
 int main() {
-    ::foundation::core::FixedArray<float, 4> values{};
+    auto [values, values_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<float, 4>);
     ::foundation::core::FixedArray<std::size_t, 1> const sizes{4};
     ::foundation::core::FixedArray<std::size_t, 1> const strides{1};
     // The outer lambda states its result, so with_mut reads no body of it,
     // and the walk of rows gives the only error.
-    bool const is_written = values.with_mut([&](auto run) noexcept -> bool {
+    bool const is_written = values.with_mut(values_key, [&](auto run) noexcept -> bool {
         auto out = ::foundation::core::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0)
                        .expect("a dense row");
         return ::foundation::core::mint_strided_rows(out,

@@ -6,8 +6,8 @@
 #include <foundation/core/Region.h>
 
 int main() {
-    ::foundation::core::FixedArray<int, 4> storage{};
-    return storage.with_mut([](auto run) noexcept -> int {
+    auto [storage, storage_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>);
+    return storage.with_mut(storage_key, [](auto run) noexcept -> int {
         auto bytes = ::foundation::core::byte_view(run.view());
         return static_cast<int>(bytes.size());
     });

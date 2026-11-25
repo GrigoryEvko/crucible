@@ -6,8 +6,8 @@
 #include <foundation/core/AtomicCells.h>
 
 int main() {
-    ::foundation::core::FixedArray<int, 4> array{};
-    return array.with_mut([](auto run) noexcept {
+    auto [array, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>);
+    return array.with_mut(key, [](auto run) noexcept {
         ::foundation::core::View<int, 4> const shared = ::foundation::core::share_atomic_cells(run);
         return static_cast<int>(shared.size());
     });

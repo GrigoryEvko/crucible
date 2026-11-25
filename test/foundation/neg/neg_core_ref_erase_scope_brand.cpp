@@ -10,8 +10,8 @@
 #include <foundation/core/Ref.h>
 
 int main() {
-    ::foundation::core::FixedArray<int, 2> storage{1, 2};
-    return storage.with_mut([](auto numbers) noexcept -> int {
+    auto [storage, storage_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 2>, ::foundation::core::FixedArray<int, 2>{1, 2});
+    return storage.with_mut(storage_key, [](auto numbers) noexcept -> int {
         return ::foundation::core::mint_branded_scope(numbers.view(), [](auto scope) noexcept {
             int sum = 0;
             for (auto [index, element] : scope.enumerate()) {

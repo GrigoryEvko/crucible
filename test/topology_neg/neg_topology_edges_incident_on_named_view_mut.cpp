@@ -15,8 +15,8 @@ int main() {
     ::fixy::ColdInitCtx ctx{::foundation::effects::testing::init()};
     auto const graph = topology::mint_topology_graph(ctx, ::fixy::View<cog::CogIdentity const>{},
                                                      ::fixy::View<topology::TopologyEdge const>{});
-    ::fixy::FixedArray<topology::EdgeId, 4> incident{};
-    return incident.with_mut([&graph](auto run) noexcept -> int {
+    auto [incident, incident_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<topology::EdgeId, 4>);
+    return incident.with_mut(incident_key, [&graph](auto run) noexcept -> int {
         return static_cast<int>(graph.edges_incident_on(topology::NodeId{0}, run));
     });
 }

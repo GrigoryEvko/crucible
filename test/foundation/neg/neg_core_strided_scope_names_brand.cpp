@@ -7,10 +7,10 @@
 #include <cstddef>
 
 int main() {
-    ::foundation::core::FixedArray<int, 4> storage{1, 2, 3, 4};
+    auto [storage, storage_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>, ::foundation::core::FixedArray<int, 4>{1, 2, 3, 4});
     ::foundation::core::FixedArray<std::size_t, 1> const sizes{4};
     ::foundation::core::FixedArray<std::size_t, 1> const strides{1};
-    return storage.with_mut([&](auto values) noexcept -> int {
+    return storage.with_mut(storage_key, [&](auto values) noexcept -> int {
         auto const line =
             ::foundation::core::mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("it fits");
         return static_cast<int>(

@@ -6,8 +6,8 @@
 #include <foundation/core/DataAddress.h>
 
 int main() {
-    ::foundation::core::FixedArray<int, 8> storage{};
-    return storage.with_mut([](auto numbers) noexcept -> int {
+    auto [storage, storage_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 8>);
+    return storage.with_mut(storage_key, [](auto numbers) noexcept -> int {
         static_cast<void>(::foundation::core::mint_run_address(numbers, 1));
         return 0;
     });

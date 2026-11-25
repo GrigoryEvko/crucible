@@ -6,9 +6,9 @@
 #include <crucible/TensorMeta.h>
 
 int main() {
-    ::fixy::FixedArray<float, 4> values{};
+    auto [values, values_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, 4>);
     ::crucible::TensorMeta const meta{};
-    return values.with_mut([&meta](auto run) noexcept -> int {
+    return values.with_mut(values_key, [&meta](auto run) noexcept -> int {
         auto const& shared = run;
         return static_cast<int>(::crucible::strided_view_of(meta, shared).is_ok());
     });

@@ -14,8 +14,8 @@ struct CountedSlot {
 }  // namespace
 
 int main() {
-    ::foundation::core::FixedArray<CountedSlot, 4> array{};
-    return array.with_mut([](auto run) noexcept {
+    auto [array, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<CountedSlot, 4>);
+    return array.with_mut(key, [](auto run) noexcept {
         ::foundation::core::View<CountedSlot, 4> const shared = ::foundation::core::share_atomic_cells(run);
         return static_cast<int>(shared.size());
     });

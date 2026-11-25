@@ -31,10 +31,10 @@ int main() {
     shp::SharpContext context = shp::mint_sharp_context(init, plan).expect("the plan asks for the backend");
 
     ::foundation::core::FixedArray<float, 1> const input{1.0f};
-    ::foundation::core::FixedArray<float, 1> output{};
+    auto [output, output_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<float, 1>);
     const crucible::NumericalRecipe recipe{};
     shp::SharpReducer reducer{std::move(context)};
-    return output.with_mut([&reducer, &init, &input, &recipe, plan](auto run) noexcept -> int {
+    return output.with_mut(output_key, [&reducer, &init, &input, &recipe, plan](auto run) noexcept -> int {
         auto result = reducer.allreduce_via_sharp(init, input.view(), std::move(run), recipe,
                                                   shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
         return result.is_ok() ? 0 : 1;

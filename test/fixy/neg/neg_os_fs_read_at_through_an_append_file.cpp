@@ -18,8 +18,8 @@ using WriteAppend = fixy::atom::fs::mode<fs::open_mode::WriteAppend>;
 int main() {
     IoBlockCtx ctx{eff::testing::test()};
     fs::FileOf<WriteAppend> const file{};
-    foundation::core::FixedArray<std::byte, 4> buffer{};
-    buffer.with_mut([&ctx, &file](auto run) noexcept {
+    auto [buffer, buffer_key] = foundation::core::mint_keyed_owner(foundation::core::fixed_array_owner<std::byte, 4>);
+    buffer.with_mut(buffer_key, [&ctx, &file](auto run) noexcept {
         [[maybe_unused]] auto read = fs::read_full_at(ctx, file.ref(), std::move(run), fs::FileOffset{0});
     });
     return 0;

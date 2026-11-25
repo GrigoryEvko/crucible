@@ -7,8 +7,8 @@
 #include <utility>
 
 int main() {
-    ::foundation::core::FixedArray<int, 4> array{1, 2, 3, 4};
-    array.with_mut([](auto out) noexcept {
+    auto [array, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>, ::foundation::core::FixedArray<int, 4>{1, 2, 3, 4});
+    array.with_mut(key, [](auto out) noexcept {
         auto parts = ::foundation::core::split_at(out, 2);
         static_cast<void>(parts);
     });

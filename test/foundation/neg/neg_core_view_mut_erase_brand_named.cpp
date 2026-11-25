@@ -8,8 +8,8 @@
 #include <utility>
 
 int main() {
-    ::foundation::core::FixedArray<int, 4> values{1, 2, 3, 4};
+    auto [values, values_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>, ::foundation::core::FixedArray<int, 4>{1, 2, 3, 4});
     auto const count =
-        values.with_mut([](auto run) noexcept -> std::size_t { return ::foundation::core::erase_brand(run).size(); });
+        values.with_mut(values_key, [](auto run) noexcept -> std::size_t { return ::foundation::core::erase_brand(run).size(); });
     return static_cast<int>(count);
 }

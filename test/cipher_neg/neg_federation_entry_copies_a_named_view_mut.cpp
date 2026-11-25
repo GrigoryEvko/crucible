@@ -14,8 +14,8 @@
 #include <cstddef>
 
 int main() {
-    ::fixy::FixedArray<std::byte, 64> buffer{};
-    buffer.with_mut([](auto run) noexcept {
+    auto [buffer, buffer_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::byte, 64>);
+    buffer.with_mut(buffer_key, [](auto run) noexcept {
         namespace fed = ::crucible::cipher::federation;
         // Must fail: the call copies the named ViewMut.
         auto written =

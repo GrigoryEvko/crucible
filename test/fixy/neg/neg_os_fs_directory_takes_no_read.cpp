@@ -15,8 +15,8 @@ using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effe
 int main() {
     IoBlockCtx ctx{eff::testing::test()};
     fs::DirectoryHandle const dir{};
-    foundation::core::FixedArray<std::byte, 4> bytes{};
-    bytes.with_mut([&ctx, &dir](auto run) noexcept {
+    auto [bytes, bytes_key] = foundation::core::mint_keyed_owner(foundation::core::fixed_array_owner<std::byte, 4>);
+    bytes.with_mut(bytes_key, [&ctx, &dir](auto run) noexcept {
         [[maybe_unused]] auto read = fs::read_full(ctx, dir.ref(), std::move(run));
     });
     return 0;

@@ -9,11 +9,11 @@
 #include <utility>
 
 int main() {
-    ::foundation::core::FixedArray<int, 4> first{1, 2, 3, 4};
-    ::foundation::core::FixedArray<int, 4> second{5, 6, 7, 8};
-    auto const count = first.with_mut([&second](auto first_run) noexcept -> std::size_t {
+    auto [first, first_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>, ::foundation::core::FixedArray<int, 4>{1, 2, 3, 4});
+    auto [second, second_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>, ::foundation::core::FixedArray<int, 4>{5, 6, 7, 8});
+    auto const count = first.with_mut(first_key, [&second, &second_key](auto first_run) noexcept -> std::size_t {
         using FirstRun = decltype(first_run);
-        return second.with_mut([](auto second_run) noexcept -> std::size_t {
+        return second.with_mut(second_key, [](auto second_run) noexcept -> std::size_t {
             FirstRun forged = ::foundation::core::erase_brand(std::move(second_run));
             return forged.size();
         });
