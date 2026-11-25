@@ -66,6 +66,7 @@
 #include <foundation/core/Grow.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Ref.h>
+#include <foundation/core/SegmentList.h>
 #include <foundation/core/SlotMap.h>
 #include <foundation/core/SmallList.h>
 #include <foundation/effects/Effect.h>
@@ -90,6 +91,7 @@ using ::foundation::core::Hole;
 using ::foundation::core::MaskedArray;
 using ::foundation::core::Option;
 using ::foundation::core::Ref;
+using ::foundation::core::SegmentList;
 using ::foundation::core::View;
 
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
@@ -250,6 +252,7 @@ struct BoxProbe {
 struct HeapArrayTag {};
 struct MaskedArrayTag {};
 struct GrowListTag {};
+struct SegmentListTag {};
 struct SlotMapTag {};
 
 // The domain of the keys of the probe of a SlotMap.
@@ -304,6 +307,12 @@ template <>
 struct Inner<GrowListTag> {
     using brand_type = InnerBrand<GrowListTag>;
     GrowList<Elem<GrowListTag>> child = ::foundation::core::mint_grow_list<Elem<GrowListTag>>(8);
+};
+
+template <>
+struct Inner<SegmentListTag> {
+    using brand_type = InnerBrand<SegmentListTag>;
+    SegmentList<Elem<SegmentListTag>> child{};
 };
 
 // The count of the slots of a map of the probe.
@@ -477,6 +486,38 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
                 0, [](Elem<Tag>&) noexcept { return false; }, [] noexcept { return true; }));
             through(source).append(kAlloc, Elem<Tag>{}).expect("a moved-from list keeps its maximum");
             CRUCIBLE_FATAL_INVARIANT(through(source).size() == 1);
+        }
+        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
+    }
+};
+
+// A SegmentList lends only const elements, and a const element is no source of
+// a move, so the child move of ElementArms has no road here either.
+struct SegmentListProbe : ElementArms<SegmentListProbe> {
+    using Tag = SegmentListTag;
+    using Owner = SegmentList<Elem<Tag>>;
+
+    static Owner make(unsigned count) {
+        Owner list{};
+        for (unsigned appended = 0; appended < count; ++appended) {
+            list.append(kAlloc, Elem<Tag>{});
+        }
+        return list;
+    }
+
+    static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<SegmentList<LinearElement>>()); }
+
+    // Empty: a moved-from SegmentList gives no element and no segment, and an
+    // append takes a new segment.
+    static void empty() {
+        {
+            Owner source = make(2);
+            Owner const target{static_cast<Owner&&>(through(source))};
+            CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
+            CRUCIBLE_FATAL_INVARIANT(through(source).size() == 0 && through(source).get(0).is_none());
+            CRUCIBLE_FATAL_INVARIANT(through(source).last().is_none() && through(source).segments().size() == 0);
+            through(source).append(kAlloc, Elem<Tag>{});
+            CRUCIBLE_FATAL_INVARIANT(through(source).size() == 1 && target.size() == 2);
         }
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
@@ -1125,8 +1166,8 @@ struct ProbeList {
 };
 
 using AllProbes = ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe,
-                            HeapTextProbe, SmallListProbe, AlignedBytesProbe, HeapBitSetProbe, SlotMapProbe,
-                            SwissTableBufferProbe, OwnedMmapProbe, OwnedThreadProbe, OwnedRegionProbe>;
+                            HeapTextProbe, SegmentListProbe, SmallListProbe, AlignedBytesProbe, HeapBitSetProbe,
+                            SlotMapProbe, SwissTableBufferProbe, OwnedMmapProbe, OwnedThreadProbe, OwnedRegionProbe>;
 
 static_assert(AllProbes::gaps == 0,
               "an owner state of the core has no probe in this file, or a probe names an owner off the core, an owner "

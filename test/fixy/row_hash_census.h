@@ -1006,6 +1006,8 @@ inline constexpr StatedZero kZeros[] = {
      "a door of FixedArray and HeapArray to the body of get of a run and to the stage of enumerate(): static "
      "members only, never a value"},
     {^^::foundation::core::ListRefDoor, "a door of FixedList to the door of a Ref: static members only, never a value"},
+    {^^::foundation::core::SegmentRefDoor,
+     "a door of SegmentList to the door of a Ref: static members only, never a value"},
     {^^::foundation::core::BrandedRefDoor,
      "a door of the cursor of a branded view to the door of a Ref: static members only, never a value"},
     {^^::foundation::core::WalkRefDoor,
@@ -1348,6 +1350,14 @@ inline constexpr StatedZero kZeros[] = {
      "an inline list of at most N elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::GrowList,
      "a list of elements on the heap that grows: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::SegmentList,
+     "an append-only list of elements in segments on the heap: it holds storage and makes no claim about what the "
+     "elements hold"},
+    {^^::foundation::core::SegmentCursor,
+     "the position of a loop over a segment list: it lives inside the loop, and it is never a value in a signature"},
+    {^^::foundation::core::SegmentRunCursor,
+     "the position of a loop over the segments of a segment list: it lives inside the loop, and it is never a value "
+     "in a signature"},
     {^^::foundation::core::WindowStack,
      "an inline stack of elements that lends windows: it holds storage and makes no claim about what the elements "
      "hold"},

@@ -122,9 +122,10 @@ concept GivesOwnerOperations = std::is_trivially_copyable_v<State> && std::is_no
 template <class State>
 concept OwnerState = MarksOwnerState<State> && GivesOwnerOperations<State>;
 
-// The mark of an owner that is no class on OwnerCore and that holds its
-// storage through pointers: no door of the class stores a pointer or a
-// borrow that a caller gives.  The store check of a frame body
+// The mark of an owner that holds its storage through pointers: a class that is
+// not on OwnerCore, or one on OwnerCore whose members move no element, such as a
+// SegmentList.  No door of the class stores a pointer or a borrow that a caller
+// gives.  The store check of a frame body
 // (foundation/core/CaptureStore.h) reads its type arguments and no member.
 // Each member that is not const keeps each object that a borrow of a caller
 // can name, until the end of the owner.  So the kind stale-borrow of the rule

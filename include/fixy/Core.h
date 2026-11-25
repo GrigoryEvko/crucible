@@ -56,6 +56,7 @@
 #include <foundation/core/Report.h>
 #include <foundation/core/RunSet.h>
 #include <foundation/core/Scalar.h>
+#include <foundation/core/SegmentList.h>
 #include <foundation/core/Side.h>
 #include <foundation/core/SlotMap.h>
 #include <foundation/core/SmallList.h>
@@ -276,6 +277,7 @@ using ::foundation::core::reborrow;
 using ::foundation::core::RunOf;
 using ::foundation::core::RunOverlap;
 using ::foundation::core::RunSet;
+using ::foundation::core::SegmentList;
 using ::foundation::core::SlotKey;
 using ::foundation::core::SlotMap;
 using ::foundation::core::SmallList;

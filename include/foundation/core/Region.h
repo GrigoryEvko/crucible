@@ -400,8 +400,9 @@ class ArrayRefDoor;
 // with the brand of the call of the verb.  View, ViewMut, and the stage and
 // the cursor of enumerate() are its friends.  The doors of Array.h and List.h
 // reach element_at_, and the door of Array.h reaches enumerate_stage_, for
-// their owners.  A home owner row of utils/rule-table.txt keeps this
-// definition in this header.
+// their owners.  The door of SegmentList.h reaches lend_ for an element whose
+// position the list compared with its count.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
 class RegionRefDoor final : ::foundation::NoObject<RegionRefDoor> {
     template <class T, std::size_t Extent>
         requires ViewElement<T> && ViewExtent<T, Extent>
@@ -415,6 +416,7 @@ class RegionRefDoor final : ::foundation::NoObject<RegionRefDoor> {
     friend class detail::EnumerateCursor;
     friend class ArrayRefDoor;
     friend class ListRefDoor;
+    friend class SegmentRefDoor;
 
     // The element of a run with its index, as a Ref of the brand.
     template <::foundation::brand::IsBrand Brand, RefTarget T>

@@ -2931,6 +2931,9 @@ foundation_neg_compile_test(neg_core_ref_door_lookalike
 foundation_neg_compile_test(neg_core_slot_map_ref_door_private
   "static constexpr foundation::core::Ref<T, Brand> foundation::core::SlotMapRefDoor::lend_\\(T&\\) \\[with Brand = ArenaBrand; T = int\\]. is private within this context"
   "SlotMap\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_segment_ref_door_private
+  "static constexpr foundation::core::Ref<T, Brand> foundation::core::SegmentRefDoor::lend_\\(T&\\) \\[with Brand = ArenaBrand; T = int\\]. is private within this context"
+  "SegmentList\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_ref_of_static_local
   "the address of .local. is not a valid template argument because it does not have static storage duration"
   "no matching function for call to .ref_of_static<local>\\(\\).")
@@ -3534,12 +3537,12 @@ endif()
 # The spare storage of the growable owners (the spare storage of
 # foundation/core/Heap.h).  Each program reads a slot of its owner that holds
 # no element: a GrowList and a GrowText after a clear, a SmallList on the heap
-# after take_last, and a SlotMap after remove.  Each passes only on the text
-# of the report of AddressSanitizer, and only a build with AddressSanitizer
-# registers them.
+# after take_last, a SegmentList past its count, and a SlotMap after remove.
+# Each passes only on the text of the report of AddressSanitizer, and only a
+# build with AddressSanitizer registers them.
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
-  foreach(_poison_test test_core_grow_list_poison test_core_grow_text_poison test_core_small_list_poison
-                       test_core_slot_map_poison)
+  foreach(_poison_test test_core_grow_list_poison test_core_grow_text_poison test_core_segment_list_poison
+                       test_core_small_list_poison test_core_slot_map_poison)
     foundation_test(${_poison_test})
     set_tests_properties(${_poison_test} PROPERTIES PASS_REGULAR_EXPRESSION "AddressSanitizer: use-after-poison")
   endforeach()
@@ -5066,6 +5069,75 @@ foundation_neg_compile_test(neg_core_grow_list_two_mutable_views
   "binding reference of type .int&. to .const int. discards qualifiers"
   "neg_core_grow_list_two_mutable_views\\.cpp:17:")
 
+# A SegmentList agrees with an oracle around each edge of its segments, keeps
+# each element at its address across appends and a move of the list, builds a
+# pinned element in place, drains a linear element to its consumer, and lets
+# two threads read it through the typed thread door.
+foundation_test(test_core_segment_list)
+
+# An append takes the allocation capability, a list does not copy, and append
+# refuses an element whose address is its identity.
+foundation_neg_compile_test(neg_core_segment_list_append_without_allocation_marker
+  "no matching function for call to .foundation::core::SegmentList<int>::append\\(foundation::effects::cap::IO, int\\)."
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_segment_list_append_with_without_allocation_marker
+  "no matching function for call to .foundation::core::SegmentList<int>::append_with\\(foundation::effects::cap::IO,"
+  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
+foundation_neg_compile_test(neg_core_segment_list_copied
+  "use of deleted function .foundation::core::SegmentList<T>::SegmentList\\(const foundation::core::SegmentList<T>&\\)"
+  "a copy of a SegmentList allocates, and no allocation capability shows at a copy")
+foundation_neg_compile_test(neg_core_segment_list_append_of_pinned_element
+  "use of deleted function .void foundation::core::SegmentList<T>::append\\(Marker, const T&\\) &"
+  "append moves the value into its slot, and this element does not move: build it in place with append_with")
+# append_with takes a make that gives the element type, holds no linear value
+# and does not change the list.  The rule borrow-match reads the body of make.
+foundation_neg_compile_test(neg_core_segment_list_make_of_other_type
+  "no matching function for call to .foundation::core::SegmentList<long int>::append_with\\(foundation::core::Alloc,"
+  "the expression .is_same_v<_Tp, _Up> \\[with _Tp = int; _Up = long int\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_segment_list_make_with_linear_capture
+  "use of deleted function .void foundation::core::SegmentList<T>::append_with\\(Marker, Make&&\\) &"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_segment_list_append_in_make
+  "this arm of a borrow match writes the sum that the match reads .mutating-call list."
+  "the payload that the arm borrows can end while the arm holds its reference")
+# A read of a temporary list gives nothing, a function gives back no borrow of
+# a local list, and a function of a walk keeps no View of a segment.
+foundation_neg_compile_test(neg_core_segment_list_get_of_temporary
+  "use of deleted function .void foundation::core::SegmentList<T>::get\\(std::size_t\\) &&"
+  "an element of a temporary SegmentList dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_segment_list_segments_of_temporary
+  "use of deleted function .void foundation::core::SegmentList<T>::segments\\(\\) &&"
+  "a walk of a temporary SegmentList dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_segment_list_returned_ref_of_local
+  "neg_core_segment_list_returned_ref_of_local\\.cpp:14:[0-9]+: error: this function gives back a borrow of the local list"
+  "and that object ends with the frame of the function")
+foundation_neg_compile_test(neg_core_segment_list_returned_run_of_local
+  "neg_core_segment_list_returned_run_of_local\\.cpp:14:[0-9]+: error: this function gives back a borrow of the local list"
+  "and that object ends with the frame of the function")
+foundation_neg_compile_test(neg_core_segment_list_run_kept_past_the_walk
+  "no matching function for call to .foundation::core::Walk<foundation::core::detail::SegmentRunStage<int> >::any_of"
+  "required for the satisfaction of .StoresNoBorrowOutside<Fn>.")
+# A drain takes a list that the caller moves, and its body takes each element
+# by value.
+foundation_neg_compile_test(neg_core_segment_list_drain_of_named
+  "use of deleted function .void foundation::core::SegmentList<T>::drain\\(Body&&\\) &"
+  "drain gives each element away and ends the list: drain std::move\\(list\\)")
+foundation_neg_compile_test(neg_core_segment_list_drain_by_reference
+  "use of deleted function .void foundation::core::SegmentList<T>::drain\\(Body&&\\) &&"
+  "the body of drain takes each element by value, so it names no object that drain ends")
+# A drain and an assignment end each borrow of an element.  An append ends none
+# in a list that states owns_its_storage{}, as the test reads, and a list of
+# borrows does not state it.
+foundation_neg_compile_test(neg_core_segment_list_ref_after_drain
+  "neg_core_segment_list_ref_after_drain\\.cpp:17:[0-9]+: error: this use reads a borrow of list in element after a call of foundation::core::SegmentList::drain with list"
+  "neg_core_segment_list_ref_after_drain\\.cpp:16:")
+foundation_neg_compile_test(neg_core_segment_list_run_after_assignment
+  "neg_core_segment_list_run_after_assignment\\.cpp:14:[0-9]+: error: this use reads a borrow of list in run after an assignment of list"
+  "neg_core_segment_list_run_after_assignment\\.cpp:13:")
+foundation_neg_compile_test(neg_core_segment_list_ref_across_append_of_borrows
+  "neg_core_segment_list_ref_across_append_of_borrows\\.cpp:19:[0-9]+: error: this use reads a borrow of list in element after a call of foundation::core::SegmentList::append with list"
+  "neg_core_segment_list_ref_across_append_of_borrows\\.cpp:18:")
+
 # A BitSet and a HeapBitSet set, reset and test each index, walk the indexes
 # in their order, and agree with a model of plain flags at counts that end
 # inside a word, at a word and past a word.  An id past the count of a heap
@@ -6320,7 +6392,7 @@ foreach(_death_test
     test_aligned_bytes test_core_array test_core_bit_set test_core_box test_core_branded test_core_bump_arena test_core_choice
     test_core_enum_match test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_lend_count test_core_link test_core_list
     test_core_masked_array test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
-    test_core_slot_map test_core_small_list test_core_sort test_core_walk test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
+    test_core_segment_list test_core_slot_map test_core_small_list test_core_sort test_core_walk test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
     test_singleton_root test_swiss_table_buffer test_swiss_table_buffer_ignore test_thread_local_ref
     test_core_window_stack)
   target_link_libraries(${_death_test} PRIVATE fixy)
