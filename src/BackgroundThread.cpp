@@ -669,13 +669,18 @@ void BackgroundThread::release_meta_log(PublishStage const& stage, uint64_t meta
 //
 // The arena moves out of the parts for the build of the node and the plan,
 // and back in before the parts move to the store.  The Box holds the arena on
-// the heap, so neither move moves a node.  Then one exchange of the store
-// moves the region memory into the slot, and the region becomes visible
-// after it.
+// the heap, so neither move moves a node.  The push into the uncompiled queue
+// gives the QueuedRegion of the region.  Then one exchange of the store moves
+// the region memory into the slot, and the region becomes visible after it.
+// Only the publish stage reads the queue, so no reader of the queue finds the
+// region between the push and the exchange.
+//
+// Complexity: O(S) for S slots of the store, for the search of a free slot
+// and for the sweep, with the marks (sweep_regions_).
 void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                                       StreamPoint reset_point) {
     ::fixy::Option<size_t> free_slot = ::fixy::find_if(
-        region_store_.view(), [](RegionMemory const& memory) noexcept { return memory.node.is_none(); });
+        region_store_.view(), [](RegionMemory const& memory) noexcept { return memory.queued.node().is_none(); });
     if (free_slot.is_none()) [[unlikely]] {
         ++regions_dropped_full_;
         return;
@@ -709,12 +714,11 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     // back holds nothing.
     static_cast<void>(region_store_.exchange(
         free_position, RegionMemory{.parts = std::move(parts),
-                                    .node = RegionLink::some(region),
+                                    .queued = uncompiled_regions_.push(stage, region),
                                     .published = PublishedRegion{.region = const_published, .reset_point = reset_point},
                                     .left_generation = NOT_LEFT}));
     last_published_ = const_published;
 
-    uncompiled_regions_.push(*region);
     active_region_.store_release(RegionLink::some(region));
     owner_marks_ = RegionMarks{};
     // The callback gets a proof of its own, which dies with the call, and
@@ -733,12 +737,18 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
 // that found the region out of the view of the foreground.  That write names
 // each region that the foreground can still read, so the foreground reads no
 // region that the write does not name.  With no foreground, the sweep
-// releases a region with no holder at once.  Complexity: O(S * H) for S slots
-// and H held regions.
+// releases a region with no holder at once.
+//
+// The sweep runs after each publish, and it reads each slot of the store.  The
+// uncompiled queue answers in O(1) (UncompiledRegionQueue::holds), and only a
+// region that left the queue reads the marks.  Complexity: O(S + L * M) for S
+// slots, L regions that left the queue and M marks.  With no foreground, the
+// sweep after the last publish released each other region that left the queue,
+// so L is at most one.
 //
 // The sweep reads each slot through the View of the const store, and then
 // writes the step for the slot through the element door of the store.
-void BackgroundThread::sweep_regions_(PublishStage const&) noexcept {
+void BackgroundThread::sweep_regions_(PublishStage const& stage) noexcept {
     // The write of the sweep to one slot.
     enum class SweepStep : uint8_t {
         None,  // a free slot, or a region that a holder names or that waits for a write of the foreground
@@ -751,13 +761,14 @@ void BackgroundThread::sweep_regions_(PublishStage const&) noexcept {
         const RegionMemory& memory =
             *region_store_.view().get(position).expect("the position is below the count of the store");
         SweepStep step = SweepStep::None;
-        for (DagRef<RegionNode> const node : memory.node) {
+        for (DagRef<RegionNode> const node : memory.queued.node()) {
             const ConstRegionLink region = ConstRegionLink::some(node);
             if (::fixy::same_target(region, last_published_) || ::fixy::same_target(region, owner_marks_.handed)) {
                 step = SweepStep::Keep;
             } else if (owner_marks_.has_foreground && memory.left_generation == NOT_LEFT) {
                 step = SweepStep::MarkLeft;
-            } else if (!is_held_(region) && !(owner_marks_.has_foreground && generation <= memory.left_generation)) {
+            } else if (!is_held_(stage, memory.queued)
+                       && !(owner_marks_.has_foreground && generation <= memory.left_generation)) {
                 step = SweepStep::Release;
             }
         }
@@ -784,21 +795,18 @@ void BackgroundThread::sweep_regions_(PublishStage const&) noexcept {
     }
 }
 
-bool BackgroundThread::is_held_(ConstRegionLink region) const noexcept {
+bool BackgroundThread::is_held_(PublishStage const& stage, QueuedRegion const& queued) const noexcept {
+    if (uncompiled_regions_.holds(stage, queued)) return true;
     for (const ConstRegionLink& held :
          owner_marks_.held.view().window(0, owner_marks_.count).expect("the marks hold at most CAP regions")) {
-        if (::fixy::same_target(held, region)) return true;
-    }
-    const uint32_t queued = uncompiled_regions_.size();
-    for (uint32_t age = 0; age < queued; ++age) {
-        if (::fixy::same_target(uncompiled_regions_.slot_at_(age), region)) return true;
+        if (::fixy::same_target(held, queued.node())) return true;
     }
     return false;
 }
 
 void BackgroundThread::keep_region(PublishStage const&, ConstRegionLink region) noexcept {
     ::fixy::Option<size_t> kept = ::fixy::find_if(region_store_.view(), [region](RegionMemory const& memory) noexcept {
-        return memory.node.is_some() && ::fixy::same_target(memory.node, region);
+        return memory.queued.node().is_some() && ::fixy::same_target(memory.queued.node(), region);
     });
     if (kept.is_none()) return;
     region_store_.with_element(
@@ -810,7 +818,7 @@ void BackgroundThread::keep_region(PublishStage const&, ConstRegionLink region) 
 uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
     uint32_t count = 0;
     for (const RegionMemory& memory : region_store_) {
-        if (memory.node.is_some()) ++count;
+        if (memory.queued.node().is_some()) ++count;
     }
     return count;
 }

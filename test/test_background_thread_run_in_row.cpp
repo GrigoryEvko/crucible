@@ -176,7 +176,7 @@ void test_uncompiled_queue_is_bounded() {
         };
 
         for (uint64_t i = 0; i < CAP; ++i) {
-            queue.push(*region_at(i).expect("each link holds a node"));
+            static_cast<void>(queue.push(stage, region_at(i).expect("each link holds a node")));
             CRUCIBLE_TEST_ASSERT(kTest, queue.total() == i + 1);
             CRUCIBLE_TEST_ASSERT(kTest, queue.size() == i + 1);
             CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(queue.at(stage, 0), region_at(i)) && "age 0 is the newest");
@@ -184,7 +184,7 @@ void test_uncompiled_queue_is_bounded() {
 
         // One past the bound: the total keeps counting, the retention does not.
         for (uint64_t i = CAP; i < OVERRUN; ++i)
-            queue.push(*region_at(i).expect("each link holds a node"));
+            static_cast<void>(queue.push(stage, region_at(i).expect("each link holds a node")));
 
         CRUCIBLE_TEST_ASSERT(kTest, queue.total() == OVERRUN);
         CRUCIBLE_TEST_ASSERT(kTest, queue.size() == CAP && "retention must stop at the bound");
@@ -225,8 +225,8 @@ void test_uncompiled_queue_refuses_past_its_capacity() {
                     crucible::RegionLink{
                         *regions.get(i).expect("a test reads an element at or past the count of its array")}
                         .expect("each link holds a node");
-                three.push(*node);
-                none.push(*node);
+                static_cast<void>(three.push(stage, node));
+                static_cast<void>(none.push(stage, node));
             }
             CRUCIBLE_TEST_ASSERT(kTest, three.total() == 8 && three.size() == 3);
             for (uint32_t age = 0; age < 3; ++age) {
@@ -238,6 +238,60 @@ void test_uncompiled_queue_refuses_past_its_capacity() {
             CRUCIBLE_TEST_ASSERT(kTest, none.total() == 8 && none.size() == 0);
             ::fixy::check::pass(kTest, "  uncompiled_queue_refuses_past_its_capacity: PASSED\n");
         });
+}
+
+// True when a walk of the slots of the queue finds the region.  It is the
+// oracle of UncompiledRegionQueue::holds.  Complexity: O(Q) for Q slots.
+bool walk_finds(BackgroundThread::UncompiledRegionQueue const& queue, BackgroundThread::PublishStage const& stage,
+                crucible::RegionLink region) {
+    for (uint32_t age = 0; age < queue.size(); ++age) {
+        if (::fixy::same_target(queue.at(stage, age), region)) return true;
+    }
+    return false;
+}
+
+// The answer of the queue for each push, with a push after each check.  The
+// region of the push with capacity - 1 pushes after it is held, and the one
+// with capacity pushes after it left the queue.
+void check_queue_against_its_walk(BackgroundThread::PublishStage const& stage,
+                                  ::fixy::Quantity<::fixy::unit::Element, uint32_t> capacity) {
+    constexpr uint32_t PUSHES = 2u * crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE + 5u;
+    const auto alloc = ::foundation::effects::testing::test().alloc;
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
+    BackgroundThread::UncompiledRegionQueue queue{alloc, capacity};
+    ::fixy::FixedArray<BackgroundThread::QueuedRegion, PUSHES> pushes{};
+    for (const ::fixy::Index<PUSHES> position : pushes.indices()) {
+        CRUCIBLE_TEST_ASSERT(kTest, !queue.holds(stage, pushes.at(position)) && "no queue holds the region of no push");
+        static_cast<void>(
+            pushes.exchange(position, queue.push(stage, crucible::mint_dag_node<crucible::RegionNode>(alloc, arena))));
+        uint32_t held = 0;
+        for (const ::fixy::Index<PUSHES> earlier : pushes.indices()) {
+            if (earlier.raw() > position.raw()) break;
+            BackgroundThread::QueuedRegion const& queued = pushes.at(earlier);
+            const bool is_held = queue.holds(stage, queued);
+            CRUCIBLE_TEST_ASSERT(kTest, is_held == walk_finds(queue, stage, queued.node()));
+            CRUCIBLE_TEST_ASSERT(kTest, is_held == (position.raw() - earlier.raw() < capacity.raw()));
+            held += is_held ? 1u : 0u;
+        }
+        CRUCIBLE_TEST_ASSERT(kTest, held == queue.size());
+    }
+}
+
+// The count of a push answers what a walk of the slots answers, for each push
+// and past the capacity of the queue.  A queue of zero holds no region.
+void test_uncompiled_queue_answers_as_its_walk() {
+    crucible::test::TraceRig rig{};
+    BackgroundThread owner{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
+    owner.run_on_publish_stage(
+        [](BackgroundThread::PublishStageView&, BackgroundThread::PublishStage const& stage) noexcept {
+            using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
+            check_queue_against_its_walk(stage, Count{0});
+            check_queue_against_its_walk(stage, Count{1});
+            check_queue_against_its_walk(stage, Count{3});
+            check_queue_against_its_walk(stage, Count{crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE});
+        });
+    ::fixy::check::pass(kTest, "  uncompiled_queue_answers_as_its_walk:      PASSED\n");
 }
 
 }  // namespace
@@ -261,6 +315,7 @@ int main() {
     // which every group above deliberately avoids.
     test_uncompiled_queue_is_bounded();
     test_uncompiled_queue_refuses_past_its_capacity();
+    test_uncompiled_queue_answers_as_its_walk();
     test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     test_reset_drops_inflight_regions();
     test_reset_applies_at_its_point();
@@ -277,7 +332,8 @@ int main() {
     test_scalars_of_an_op_with_no_tensors();
     test_publish_adds_no_block_to_the_region_arena();
     test_scratch_bytes_beside_a_publish_job();
+    test_store_releases_what_left_the_queue();
 
-    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 30 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 32 groups, all passed\n");
     return 0;
 }

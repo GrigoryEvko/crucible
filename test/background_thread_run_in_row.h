@@ -35,8 +35,8 @@ void test_long_run_keeps_its_scratch();
 void test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx const& test);
 
 // The release of the metadata log, the copy of its records that a built
-// graph holds, the bytes of the arena of a published region, and the bytes of
-// the scratch arenas beside a job
+// graph holds, the bytes of the arena of a published region, the bytes of the
+// scratch arenas beside a job, and the regions that the store releases
 // (test_background_thread_run_in_row_meta.cpp).
 void test_overflow_build_leaves_tail();
 void test_unrecorded_nest_refuses_the_build();
@@ -47,5 +47,6 @@ void test_build_and_release_pass_two_to_the_32();
 void test_scalars_of_an_op_with_no_tensors();
 void test_publish_adds_no_block_to_the_region_arena();
 void test_scratch_bytes_beside_a_publish_job();
+void test_store_releases_what_left_the_queue();
 
 }  // namespace test_background_thread_run_in_row

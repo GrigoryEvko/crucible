@@ -829,15 +829,55 @@ public:
         }
     };
 
+    class UncompiledRegionQueue;
+
+    // One push into the uncompiled queue, or none: the node of the region, and
+    // the count of the pushes before it.  Only UncompiledRegionQueue::push
+    // builds one with a node, no code copies it, and a move leaves the source
+    // with none.  So one push gives one QueuedRegion.  The memory of a
+    // published region holds the QueuedRegion of that region in place of a
+    // link to its node.  So each region of the store came from one push, and
+    // its count is the count that the push gave.
+    class QueuedRegion {
+    public:
+        QueuedRegion() noexcept = default;
+        QueuedRegion(QueuedRegion&& other) noexcept : node_{other.node_}, pushes_before_{other.pushes_before_} {
+            other.node_ = RegionLink{};
+        }
+        QueuedRegion& operator=(QueuedRegion&& other) noexcept {
+            const RegionLink node = other.node_;
+            const uint64_t pushes_before = other.pushes_before_;
+            other.node_ = RegionLink{};
+            node_ = node;
+            pushes_before_ = pushes_before;
+            return *this;
+        }
+        QueuedRegion(QueuedRegion const&) = delete("one push gives one QueuedRegion");
+        QueuedRegion& operator=(QueuedRegion const&) = delete("one push gives one QueuedRegion");
+        ~QueuedRegion() = default;
+
+        // The node of the region, in the arena of the region, or none.
+        [[nodiscard]] RegionLink node() const noexcept { return node_; }
+
+    private:
+        friend class UncompiledRegionQueue;
+        explicit QueuedRegion(DagRef<RegionNode> node, uint64_t pushes_before) noexcept
+            : node_{RegionLink::some(node)}, pushes_before_{pushes_before} {}
+
+        RegionLink node_{};
+        uint64_t pushes_before_ = 0;
+    };
+
 private:
     // The left generation of a region that is the last published region or
     // the handed region.
     static constexpr uint64_t NOT_LEFT = UINT64_MAX;
 
-    // The memory of one published region: its parts, and the link of its
-    // RegionNode.  The publish stage makes the node in the arena of the
-    // parts, and the MemoryPlan there too when the region has slots.  A slot
-    // of the store with no node is free.
+    // The memory of one published region: its parts, and its push into the
+    // uncompiled queue, which holds the link of its RegionNode.  The publish
+    // stage makes the node in the arena of the parts, and the MemoryPlan there
+    // too when the region has slots.  A slot of the store with no push is
+    // free.
     //
     // The node and the plan live in the arena of the parts and point into
     // its runs.  The type is private, and the publish stage is its one
@@ -847,9 +887,8 @@ private:
     // of them.
     struct RegionMemory {
         BuiltRegion parts;
-        // The node of the region, in the arena of the parts.  No node marks a
-        // free slot of the store.
-        RegionLink node{};
+        // The push of the region.  No push marks a free slot of the store.
+        QueuedRegion queued{};
         // The record that the region callback gets, and that the owner can
         // publish to its foreground.
         PublishedRegion published{};
@@ -884,10 +923,10 @@ private:
     // publish stage after each publish.  The body tells the rule.
     void sweep_regions_(PublishStage const& stage) noexcept;
 
-    // True when the uncompiled queue or the marks of the owner name region.
-    // Only the sweep of the publish stage asks it, so it reads the slots of
-    // the queue with the proof of the sweep.
-    [[nodiscard]] bool is_held_(ConstRegionLink region) const noexcept;
+    // True when the uncompiled queue or the marks of the owner name the region
+    // of the push.  Complexity: O(M) for M marks, which are at most
+    // RegionMarks::CAP.
+    [[nodiscard]] bool is_held_(PublishStage const& stage, QueuedRegion const& queued) const noexcept;
 
 public:
     // Regions that have been published but not compiled.  This is the
@@ -905,11 +944,16 @@ public:
     // further behind than that is not catching up, and the regions it missed
     // describe shapes the model has already moved past.
     //
-    // The publish stage is the sole writer, and only it reaches push through
-    // a BackgroundThread.  Each thread can read total(), size() and
-    // capacity().  at() reads a slot that the publish stage writes, so it
-    // takes the publish-stage proof.  The region store keeps each region that
-    // the queue holds, so the queue keeps at most capacity() regions alive.
+    // The publish stage is the sole writer, and push takes its proof.  Each
+    // thread can read total(), size() and capacity().  at() and holds() read
+    // what the publish stage writes, so they take the publish-stage proof.  The
+    // region store keeps each region that the queue holds, so the queue keeps
+    // at most capacity() regions alive.
+    //
+    // No door takes a region out.  The queue holds the region of a push until
+    // capacity() more pushes came after it, and the count of the pushes goes
+    // on after a stop and a start.  So the count that a push gives tells when
+    // its region left the queue (holds), with no walk of the slots.
     class UncompiledRegionQueue {
     public:
         // A queue that keeps the capacity newest regions, in slots that the
@@ -919,14 +963,26 @@ public:
                               ::fixy::Quantity<::fixy::unit::Element, uint32_t> capacity) noexcept
             : slots_{::fixy::mint_heap_array(allocation, capacity.raw(), RegionLink{})} {}
 
-        void push(RegionNode& region) noexcept {
+        // Adds the region and gives its push.  The sweep after the push
+        // releases the region that the slot held before.
+        [[nodiscard]] QueuedRegion push(PublishStage const& /*stage*/, DagRef<RegionNode> region) noexcept {
+            const uint64_t pushes_before = total_.peek_relaxed();
             const uint64_t capacity = slots_.size();
             if (capacity != 0) {
-                // The exchange takes the link by value and calls no body.  The
-                // region store keeps the region that the slot held before.
-                static_cast<void>(slots_.exchange(total_.peek_relaxed() % capacity, ::fixy::some(::fixy::to(region))));
+                // The exchange takes the link by value and calls no body.
+                static_cast<void>(slots_.exchange(pushes_before % capacity, RegionLink::some(region)));
             }
             (void)total_.bump();
+            return QueuedRegion{region, pushes_before};
+        }
+
+        // True while the queue holds the region of the push: fewer than
+        // capacity() pushes came after it.  No queue holds the region of no
+        // push.  Complexity: O(1).
+        [[nodiscard]] bool holds(PublishStage const& /*stage*/, QueuedRegion const& queued) const noexcept {
+            if (queued.node_.is_none()) return false;
+            const uint64_t pushes_after = total_.peek_relaxed() - queued.pushes_before_ - 1u;
+            return pushes_after < slots_.size();
         }
 
         // Every region ever published, including the ones the bound
@@ -952,16 +1008,6 @@ public:
         // the publish-stage proof: a job of run_on_publish_stage holds it,
         // and so does its caller while no publish stage runs.
         [[nodiscard]] RegionLink at(PublishStage const& /*stage*/, uint32_t age) const noexcept {
-            return slot_at_(age);
-        }
-
-    private:
-        // The sweep of the publish stage reads the slots through slot_at_,
-        // with the proof of the sweep.
-        friend struct BackgroundThread;
-
-        // The read of at(), for a caller that holds the publish stage.
-        [[nodiscard]] RegionLink slot_at_(uint32_t age) const noexcept {
             CRUCIBLE_PRE(age < size());
             const uint64_t seen = total_.get();
             const uint64_t capacity = slots_.size();
@@ -969,9 +1015,11 @@ public:
                         .expect("a count modulo the capacity is below it");
         }
 
+    private:
         ::fixy::HeapArray<RegionLink> slots_;
         // The publish stage is the one writer of the count (the writer of a
-        // COUNTER of fixy/Mutation.h), so push reads it with relaxed order.
+        // COUNTER of fixy/Mutation.h), so push and holds read it with relaxed
+        // order.
         struct TotalWriter final {};
         ::fixy::AtomicMonotonic<uint64_t, ::fixy::SoleWriterProof<UncompiledRegionQueue, TotalWriter>> total_ =
             ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::SoleWriterProof<UncompiledRegionQueue, TotalWriter>>(0);

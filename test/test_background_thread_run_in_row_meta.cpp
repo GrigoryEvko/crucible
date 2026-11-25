@@ -710,4 +710,57 @@ void test_scratch_bytes_beside_a_publish_job() {
     ::fixy::check::pass(kTest, "  scratch_bytes_beside_a_publish_job:        PASSED\n");
 }
 
+// With no foreground, the store keeps the regions of the uncompiled queue and
+// the last published region, and no other region.  A region that left the
+// queue leaves the store at the sweep of that publish.  Each publish runs in a
+// job, so the test counts the store after each one.  It also reads the content
+// hash of each region of the queue, so a region that the sweep released too
+// early is a use after free under the address sanitizer.
+void test_store_releases_what_left_the_queue() {
+    using namespace meta_rig;
+    using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
+    seal_global_tables();
+
+    const auto bg = ::foundation::effects::testing::bg();
+    const ::fixy::FixedArray<uint32_t, 3> capacities{0u, 1u, 3u};
+    for (const uint32_t capacity : capacities) {
+        crucible::test::RigLog metalog{};
+        crucible::test::RigRing ring{};
+        crucible::PipelineLimits limits{};
+        limits.region_store = Count{8};
+        limits.uncompiled_queue = Count{capacity};
+        BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side(), limits};
+
+        constexpr uint32_t PUBLISHES = 20;
+        ::fixy::FixedArray<crucible::ContentHash, PUBLISHES> hashes{};
+        for (const ::fixy::Index<PUBLISHES> publish : hashes.indices()) {
+            Work work;
+            work.push_op_with_scalars(0, static_cast<int64_t>(publish.raw()), 7);
+            BackgroundThread::BuiltRegion region = work.build_region(bt, *metalog.view());
+            hashes.set(publish, region.content_hash());
+            const auto publish_and_check = [&](BackgroundThread::PublishStageView& owner,
+                                               BackgroundThread::PublishStage const& stage) noexcept {
+                owner.publish_region(bg, stage, std::move(region), BackgroundThread::StreamPoint{});
+                const uint32_t published = static_cast<uint32_t>(publish.raw()) + 1u;
+                const uint32_t queued = ::fixy::min(published, capacity);
+                CRUCIBLE_TEST_ASSERT(kTest, owner.region_count(stage) == ::fixy::max(queued, 1u)
+                                                && "the store keeps the queue and the last region only");
+                CRUCIBLE_TEST_ASSERT(kTest, owner.uncompiled_regions().size() == queued);
+                for (uint32_t age = 0; age < queued; ++age) {
+                    const ::fixy::Index<PUBLISHES> pushed =
+                        ::fixy::Index<PUBLISHES>::check(publish.raw() - age)
+                            .expect("the queue holds at most the published regions");
+                    const crucible::DagRef<crucible::RegionNode> node =
+                        owner.uncompiled_regions().at(stage, age).expect("a slot below the size holds a region");
+                    CRUCIBLE_TEST_ASSERT(kTest, node->content_hash == hashes.at(pushed));
+                }
+                CRUCIBLE_TEST_ASSERT(kTest, owner.regions_dropped_full(stage) == 0u);
+            };
+            bt.run_on_publish_stage(publish_and_check);
+        }
+    }
+
+    ::fixy::check::pass(kTest, "  store_releases_what_left_the_queue:        PASSED\n");
+}
+
 }  // namespace test_background_thread_run_in_row

@@ -493,7 +493,8 @@ void test_long_run_keeps_its_scratch() {
     });
     CRUCIBLE_TEST_ASSERT(kTest, dropped == 0 && "a full region store discarded a published region");
     CRUCIBLE_TEST_ASSERT(::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
-                         stored <= bt.uncompiled_regions().capacity() + 1);
+                         stored == bt.uncompiled_regions().capacity()
+                             && "the store keeps the regions of the queue, the last one included");
 
     ::fixy::check::pass(kTest,
                         "  long_run_keeps_its_scratch:                "

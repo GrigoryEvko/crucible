@@ -2273,6 +2273,14 @@ crucible_neg_compile_test(neg_background_thread_build_scratch_without_a_proof
 crucible_neg_compile_test(neg_background_thread_publish_scratch_with_the_quiescence_proof
   "cannot convert .fixy::thread::QuiescenceProof<crucible::BackgroundThread>. to .const crucible::BackgroundThread::PublishStage&."
   "initializing argument 1 of")
+# The sweep releases a region when the count of its push left the uncompiled
+# queue, so only a push gives the count, and no code copies it.
+crucible_neg_compile_test(neg_queued_region_built_outside_push
+  "crucible::BackgroundThread::QueuedRegion::QueuedRegion\\(crucible::DagRef<crucible::RegionNode>, uint64_t\\). is private within this context"
+  "neg_queued_region_built_outside_push\\.cpp:18:[0-9]+: error:")
+crucible_neg_compile_test(neg_queued_region_copied
+  "use of deleted function .crucible::BackgroundThread::QueuedRegion::QueuedRegion\\(const crucible::BackgroundThread::QueuedRegion&\\)"
+  "one push gives one QueuedRegion")
 # A BackgroundThread takes its two sides in its constructor, so start takes no
 # side, and no start after stop names another ring or log.
 crucible_neg_compile_test(neg_background_thread_start_takes_no_sides
