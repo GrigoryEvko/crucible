@@ -330,8 +330,9 @@ void with_two_splits(Body& body, First&&... first) noexcept {
     }
 }
 
-// The text of the fatal invariant that a token of a second split breaks.
-constexpr ::fixy::TextView kForeignToken{"fatal invariant failed: token.split_ == identity_"};
+// The text of the fatal invariant that a token of a second split and an
+// emptied token break.
+constexpr ::fixy::TextView kForeignToken{"fatal invariant failed: token.split_.names(identity_)"};
 
 // The tokens of two splits of one mint site have one type, so the types of
 // the doors do not tell the splits apart.  The Identity of the split does:
@@ -453,6 +454,168 @@ void foreign_token_on_a_second_thread_ends_the_process(::fixy::TestRunnerCtx con
             with_two_splits(body);
         },
         kForeignToken);
+}
+
+// The door of a side that takes its token by move.
+struct OpensProducer {
+    template <class Split, class Token>
+    void operator()(Split& split, Token&& token) const noexcept {
+        auto back = with_producer(split, std::move(token), [](ProducerEnd<CellLog>& end) noexcept {
+            for (std::uint64_t item = 0; item < kItems; ++item)
+                CellLog::write(end);
+        });
+        static_cast<void>(back);
+    }
+};
+struct OpensConsumer {
+    template <class Split, class Token>
+    void operator()(Split& split, Token&& token) const noexcept {
+        auto back = with_consumer(split, std::move(token), [](ConsumerEnd<CellLog>& end) noexcept {
+            static_cast<void>(CellLog::try_read(end));
+        });
+        static_cast<void>(back);
+    }
+};
+
+// The doors of a side that borrow its token.
+struct BorrowsProducer {
+    template <class Split, class Token>
+    void operator()(Split& split, Token& token) const noexcept {
+        with_producer(split, token, [](ProducerEnd<CellLog>& end) noexcept { CellLog::write(end); });
+    }
+};
+struct BorrowsConsumer {
+    template <class Split, class Token>
+    void operator()(Split& split, Token& token) const noexcept {
+        with_consumer(split, token,
+                      [](ConsumerEnd<CellLog>& end) noexcept { static_cast<void>(CellLog::try_read(end)); });
+    }
+};
+
+// Two parameters name one token, so the rule use-after-move does not see that
+// the old name moved.  Each function below ends the process: at the door that
+// gets the old name, and else at its own end.
+//
+// The token moves out under the first name, and the door opens the side under
+// the old one.
+template <class Split, class Token, class Opens>
+[[noreturn]] void open_under_the_old_name(Split& split, Token& token, Token& old_name, Opens opens) noexcept {
+    Token moved{std::move(token)};
+    opens(split, old_name);
+    static_cast<void>(moved);
+    ::fixy::fatal("the old name of a token opened its side");
+}
+template <class Split, class Token, class Opens>
+[[noreturn]] void move_under_the_old_name(Split& split, Token& token, Token& old_name, Opens opens) noexcept {
+    Token moved{std::move(token)};
+    opens(split, std::move(old_name));
+    static_cast<void>(moved);
+    ::fixy::fatal("the old name of a token opened its side");
+}
+
+// One thread opens the side with the token that moved out, and a second thread
+// opens it with the token of the old name.  With a token that a move leaves
+// full, the two threads would write one end.
+template <class Split, class Token, class Opens>
+[[noreturn]] void open_on_two_threads(Split& split, Token& token, Token& old_name, Opens) noexcept {
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    auto moved = [&split, held = std::move(token)]() mutable noexcept { Opens{}(split, std::move(held)); };
+    auto old = [&split, held = std::move(old_name)]() mutable noexcept { Opens{}(split, std::move(held)); };
+    using Refused = ::fixy::thread::RefusedStart<decltype(moved), decltype(old)>;
+    ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(moved), std::move(old))
+        .match([](::foundation::core::Unit) noexcept {},
+               [](Refused refusal) noexcept {
+                   auto [moved_body, old_body] = std::move(refusal.parts);
+                   ::foundation::linear::end_unrun_body(std::move(moved_body),
+                                                        ::foundation::linear::UnrunReason::start_refused);
+                   ::foundation::linear::end_unrun_body(std::move(old_body),
+                                                        ::foundation::linear::UnrunReason::start_refused);
+               });
+    ::fixy::fatal("two threads opened one side");
+}
+
+// Runs the body with a split and its two tokens.
+template <class Body>
+void with_split(Body body) noexcept {
+    auto [split, producer_token, consumer_token] =
+        ::fixy::concurrent::mint_spsc_split<CellLog>(::foundation::effects::testing::test().alloc);
+    body(split, producer_token, consumer_token);
+}
+
+// A move empties a token, so the old name of a moved token opens no side.  Each
+// violation runs in a child process, which ends by the abort of the fatal
+// invariant at the door.
+void old_name_of_a_moved_token_ends_the_process(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            with_split([](auto& split, auto& producer, auto&) noexcept {
+                move_under_the_old_name(split, producer, producer, OpensProducer{});
+            });
+        },
+        kForeignToken);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            with_split([](auto& split, auto&, auto& consumer) noexcept {
+                move_under_the_old_name(split, consumer, consumer, OpensConsumer{});
+            });
+        },
+        kForeignToken);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            with_split([](auto& split, auto& producer, auto&) noexcept {
+                open_under_the_old_name(split, producer, producer, BorrowsProducer{});
+            });
+        },
+        kForeignToken);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            with_split([](auto& split, auto&, auto& consumer) noexcept {
+                open_under_the_old_name(split, consumer, consumer, BorrowsConsumer{});
+            });
+        },
+        kForeignToken);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            with_split([](auto& split, auto& producer, auto&) noexcept {
+                open_on_two_threads(split, producer, producer, OpensProducer{});
+            });
+        },
+        kForeignToken);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            with_split([](auto& split, auto&, auto& consumer) noexcept {
+                open_on_two_threads(split, consumer, consumer, OpensConsumer{});
+            });
+        },
+        kForeignToken);
+}
+
+// A token that moved out opens its side, and it opens the side again when it
+// comes back from a door.
+int check_moved_token() {
+    auto [split, producer_token, consumer_token] =
+        ::fixy::concurrent::mint_spsc_split<CellLog>(::foundation::effects::testing::test().alloc);
+    auto moved = std::move(producer_token);
+    auto back = with_producer(split, std::move(moved), [](ProducerEnd<CellLog>& end) noexcept { CellLog::write(end); });
+    back = with_producer(split, std::move(back), [](ProducerEnd<CellLog>& end) noexcept { CellLog::write(end); });
+    producer_token = std::move(back);
+    with_producer(split, producer_token, [](ProducerEnd<CellLog>& end) noexcept { CellLog::write(end); });
+    return with_consumer(split, consumer_token,
+                         [](ConsumerEnd<CellLog>& end) noexcept {
+                             int count = 0;
+                             while (CellLog::try_read(end))
+                                 ++count;
+                             return count;
+                         })
+                == 3
+             ? 0
+             : 1;
 }
 
 // The proofs of the two sides of a held split, and the door that makes them.
@@ -747,8 +910,10 @@ int main() {
     if (int rc = check_two_threads(); rc != 0) return 40 + rc;
     if (int rc = check_held_two_threads(); rc != 0) return 50 + rc;
     if (int rc = check_held_ends(); rc != 0) return 60 + rc;
+    if (int rc = check_moved_token(); rc != 0) return 70 + rc;
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     token_of_a_second_split_ends_the_process(test);
     foreign_token_on_a_second_thread_ends_the_process(test);
+    old_name_of_a_moved_token_ends_the_process(test);
     return 0;
 }

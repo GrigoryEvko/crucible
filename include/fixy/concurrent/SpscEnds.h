@@ -45,9 +45,12 @@
 //   Only the mint builds a token: its constructor is private, and the door of
 //   the mint and the split are its friends.  A token is linear and does not
 //   copy, so one side has one holder.  It moves, so its holder can give it to
-//   the body of another thread.  It holds no resource, so the end of its scope
-//   is its door.  Two threads never read one token through a reference to
-//   const.
+//   the body of another thread.  A move empties the source (UniqueIdentity of
+//   foundation/core/Identity.h), so the old name of a moved token, such as a
+//   second parameter that names one object, ends the process at a door.  The
+//   rule use-after-move does not see each such name.  It holds no resource, so
+//   the end of its scope is its door.  Two threads never read one token
+//   through a reference to const.
 //
 // Doors
 //   A body borrows an end through a frame door of the split, for the time of
@@ -529,8 +532,9 @@ public:
         constexpr explicit producer_token(::foundation::core::Identity split) noexcept : split_{split} {}
 
         // The Identity of the split of the mint, which no code builds from
-        // bytes (its seal).
-        ::foundation::core::Identity split_;
+        // bytes (its seal).  A move of the token empties it, so the old name
+        // of a moved token opens no side.
+        ::foundation::core::UniqueIdentity split_;
 
     public:
         producer_token(producer_token const&) = delete("a side token is the authority over one side: a copy would "
@@ -550,7 +554,7 @@ public:
 
         constexpr explicit consumer_token(::foundation::core::Identity split) noexcept : split_{split} {}
 
-        ::foundation::core::Identity split_;
+        ::foundation::core::UniqueIdentity split_;
 
     public:
         consumer_token(consumer_token const&) = delete("a side token is the authority over one side: a copy would "
@@ -583,13 +587,13 @@ public:
     // doors and the producer token of this split.  Complexity: O(1), one
     // compare of a word.
     [[nodiscard]] constexpr producer_end& producer_end_(SpscFrameKey const& /*key*/, producer_token& token) & noexcept {
-        CRUCIBLE_FATAL_INVARIANT(token.split_ == identity_);
+        CRUCIBLE_FATAL_INVARIANT(token.split_.names(identity_));
         return producer_;
     }
 
     // The consumer end, for a frame door, in the form of the producer end.
     [[nodiscard]] constexpr consumer_end& consumer_end_(SpscFrameKey const& /*key*/, consumer_token& token) & noexcept {
-        CRUCIBLE_FATAL_INVARIANT(token.split_ == identity_);
+        CRUCIBLE_FATAL_INVARIANT(token.split_.names(identity_));
         return consumer_;
     }
 
@@ -735,13 +739,16 @@ constexpr auto with_producer(SpscSplit<Owner, Brand>& split, ProducerToken<Owner
                                                   ProducerToken<Owner, Brand>> {
     using Given = std::invoke_result_t<Body&&, ProducerEnd<Owner>&>;
     SpscFrameKey const key{};
-    ProducerEnd<Owner>& end = split.producer_end_(key, token);
+    // The frame holds the token while the body runs, so no name of the caller
+    // opens the side.
+    ProducerToken<Owner, Brand> held{std::move(token)};
+    ProducerEnd<Owner>& end = split.producer_end_(key, held);
     if constexpr (std::is_void_v<Given>) {
         static_cast<Body&&>(body)(end);
-        return std::move(token);
+        return held;
     } else {
         return ::foundation::core::detail::frame_return_t<Given, ProducerToken<Owner, Brand>>{
-            static_cast<Body&&>(body)(end), std::move(token)};
+            static_cast<Body&&>(body)(end), std::move(held)};
     }
 }
 
@@ -760,13 +767,14 @@ constexpr auto with_consumer(SpscSplit<Owner, Brand>& split, ConsumerToken<Owner
                                                   ConsumerToken<Owner, Brand>> {
     using Given = std::invoke_result_t<Body&&, ConsumerEnd<Owner>&>;
     SpscFrameKey const key{};
-    ConsumerEnd<Owner>& end = split.consumer_end_(key, token);
+    ConsumerToken<Owner, Brand> held{std::move(token)};
+    ConsumerEnd<Owner>& end = split.consumer_end_(key, held);
     if constexpr (std::is_void_v<Given>) {
         static_cast<Body&&>(body)(end);
-        return std::move(token);
+        return held;
     } else {
         return ::foundation::core::detail::frame_return_t<Given, ConsumerToken<Owner, Brand>>{
-            static_cast<Body&&>(body)(end), std::move(token)};
+            static_cast<Body&&>(body)(end), std::move(held)};
     }
 }
 
