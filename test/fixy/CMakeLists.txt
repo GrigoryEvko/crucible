@@ -7643,6 +7643,12 @@ fixy_neg_compile_test(neg_thread_run_beside_reads_through_a_const_borrow
 fixy_neg_compile_test(neg_thread_run_beside_reads_an_unsealed_list
   "static assertion failed: run_beside: the body captures .read_list. \\(field [_a-z]+, type const foundation::core::SegmentList<int>&\\)"
   "The caller runs at the same time as the body")
+fixy_neg_compile_test(neg_thread_run_beside_holds_a_prefix
+  "static assertion failed: run_beside: the body captures .held. \\(field [_a-z]+, type foundation::core::SegmentPrefix<const int>\\)"
+  "its type is not SendableBeside")
+fixy_neg_compile_test(neg_thread_two_bodies_append_to_a_live_list
+  "static assertion failed: run_joined: the body captures .proof. \\(field [_a-z]+, type const foundation::SoleWriterProof<LogWriter, AppendRole>&\\)"
+  "Two threads read it at the same time, and its type is not Shareable")
 fixy_neg_compile_test(neg_thread_run_beside_each_writes_a_plain_int
   "static assertion failed: run_beside_each: the body captures .count. \\(field [_a-z]+, type int&\\)"
   "The caller runs at the same time as the body")

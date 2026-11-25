@@ -6,6 +6,8 @@
 //   SegmentList<T>      the elements in the order of the appends, in segments
 //                       on the heap.  The caller states no maximum count, and
 //                       a list holds no storage before the first append
+//   SegmentPrefix<T const>
+//                       the first elements of a list, for a read (the prefix)
 //
 // Operations
 //   size()              the count of the elements
@@ -55,6 +57,22 @@
 //   minus the slots of segment 0.  So the position plus the slots of segment 0
 //   has its top bit at the bit of the segment, and the bits below are the
 //   offset in the segment.  The read has no division and no loop.
+//
+// Prefix
+//   A SegmentPrefix borrows the directory of a list, and it holds a count.  It
+//   has the reads of a list: size(), get, last, the loop, walk() and
+//   segments().  Each read of a SegmentList is a read of the prefix of all its
+//   elements, and each read of a LiveList (foundation/core/LiveList.h) is a
+//   read of a prefix too, so the two lists have one code for a read.
+//
+//   A prefix reads the elements below its count and the words of the directory
+//   that name their segments, and no other word of the list: not the count, not
+//   the tail and not the end of the tail.  Each of those words of the directory
+//   and each of those elements has its last write before the list gives the
+//   prefix.  So an append changes nothing that a prefix reads, on the same
+//   thread and on another one.  A prefix borrows the directory, so a move and
+//   the end of its list end it.  A SegmentList moves, and it gives no prefix to
+//   its caller.  A LiveList does not move.
 //
 // Borrows
 //   No operation moves an element or ends it before the list ends, and no
@@ -157,18 +175,26 @@ class SegmentRunStage;
 
 }  // namespace detail
 
-// The door of a SegmentList to the door of a Ref of the Region family
+// The element of a prefix: the const form of an element that a list holds.
+template <class Const>
+concept PrefixElement = std::is_const_v<Const> && OwnedElement<std::remove_const_t<Const>>;
+
+template <class Const>
+    requires PrefixElement<Const>
+class SegmentPrefix;
+
+// The door of a prefix to the door of a Ref of the Region family
 // (RegionRefDoor of foundation/core/Region.h).  Its one member is private,
-// and SegmentList is its one friend.  The invariant: each position below the
-// count of a list names a live element, and no operation moves or ends an
-// element before the list ends.  So the list lends an element after it
-// compares the position with the count, and the brand is the fresh brand of
+// and SegmentPrefix is its one friend.  The invariant: each position below the
+// count of a prefix names a live element, and no operation moves or ends an
+// element before the list ends.  So the prefix lends an element after it
+// compares the position with its count, and the brand is the fresh brand of
 // the public call.  A home owner row of utils/rule-table.txt keeps this
 // definition in this header.
 class SegmentRefDoor final : ::foundation::NoObject<SegmentRefDoor> {
-    template <class T>
-        requires OwnedElement<T>
-    friend class SegmentList;
+    template <class Const>
+        requires PrefixElement<Const>
+    friend class SegmentPrefix;
 
     // An element of a list, as a Ref of the brand.
     template <::foundation::brand::IsBrand Brand, RefTarget T>
@@ -276,11 +302,14 @@ struct SegmentListState {
     std::size_t count = 0;
 
 private:
-    // The readers of a slot: the list, the cursor of its loop and the stage of
-    // its walk.
+    // The readers of a slot: the list, its prefix, the cursor of its loop and
+    // the stage of its walk.
     template <class U>
         requires OwnedElement<U>
     friend class ::foundation::core::SegmentList;
+    template <class Const>
+        requires PrefixElement<Const>
+    friend class ::foundation::core::SegmentPrefix;
     friend class ::foundation::core::SegmentCursor<T>;
     friend class ::foundation::core::detail::SegmentElementStage<T>;
 
@@ -384,6 +413,12 @@ public:
 };
 
 }  // namespace owner
+
+// The part of the writer of a LiveList (foundation/core/LiveList.h), which is
+// a friend of SegmentList.  A home owner row of utils/rule-table.txt keeps its
+// definition in that header.
+template <class T, class Writer>
+class LiveSegments;
 
 }  // namespace detail
 
@@ -496,8 +531,8 @@ public:
 
 namespace detail {
 
-// The root stage of the walk of the elements of a list (the stages of
-// foundation/core/Walk.h): one counted loop for each segment.  A list gives
+// The root stage of the walk of the elements of a prefix (the stages of
+// foundation/core/Walk.h): one counted loop for each segment.  A prefix gives
 // the walk of each of its elements, and only limited_ and skipped_ give a part
 // of a walk.
 template <class T>
@@ -517,10 +552,8 @@ public:
     static constexpr std::size_t extent = dynamic_extent;
     static constexpr bool cursor_borrows_stage = false;
 
-    constexpr explicit SegmentElementStage(SegmentList<T> const& list CRUCIBLE_LIFETIMEBOUND) noexcept
-        : state_{__builtin_addressof(list.state_)}, window_{0, list.size()} {}
-    explicit SegmentElementStage(SegmentList<T> const&&) =
-        delete("a walk of a temporary SegmentList dangles at the end of the full expression");
+    constexpr explicit SegmentElementStage(SegmentPrefix<T const> prefix) noexcept
+        : state_{prefix.state_}, window_{0, prefix.size()} {}
 
     template <class Sink>
     [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
@@ -572,15 +605,15 @@ public:
     }
 };
 
-// The root stage of the walk of the segments of a list: each element is the
-// View of the elements of one segment.  A list gives the walk of each of its
+// The root stage of the walk of the segments of a prefix: each element is the
+// View of the elements of one segment.  A prefix gives the walk of each of its
 // segments, and only limited_ and skipped_ give a part of a walk.
 template <class T>
 class SegmentRunStage final {
     using State = owner::SegmentListState<T>;
 
     State const* state_ = nullptr;
-    // The elements of the list at the start of the walk.
+    // The elements of the prefix.
     std::size_t count_ = 0;
     SegmentWindow segments_{};
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
@@ -594,10 +627,8 @@ public:
     static constexpr std::size_t extent = dynamic_extent;
     static constexpr bool cursor_borrows_stage = false;
 
-    constexpr explicit SegmentRunStage(SegmentList<T> const& list CRUCIBLE_LIFETIMEBOUND) noexcept
-        : state_{__builtin_addressof(list.state_)}, count_{list.size()}, segments_{0, list.segment_count_()} {}
-    explicit SegmentRunStage(SegmentList<T> const&&) =
-        delete("a walk of a temporary SegmentList dangles at the end of the full expression");
+    constexpr explicit SegmentRunStage(SegmentPrefix<T const> prefix) noexcept
+        : state_{prefix.state_}, count_{prefix.size()}, segments_{0, prefix.segment_count_()} {}
 
     template <class Sink>
     [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
@@ -641,6 +672,108 @@ public:
 };
 
 }  // namespace detail
+
+// The first elements of a list, for a read (the prefix).  It refers to const
+// elements as a View of const does, so it copies, and two threads read one
+// prefix when they can read the element.  Only a SegmentList and a LiveList
+// build one.
+template <class Const>
+    requires PrefixElement<Const>
+class [[nodiscard]][[= ::foundation::transfer::refers{}]] SegmentPrefix final {
+    using T = std::remove_const_t<Const>;
+    using State = detail::owner::SegmentListState<T>;
+
+    State const* state_ = nullptr;
+    std::size_t count_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    friend class SegmentList<T>;
+    friend class detail::SegmentElementStage<T>;
+    friend class detail::SegmentRunStage<T>;
+
+    // The first count elements of the list of a state.  The caller proves that
+    // count is at most the count of that list, and that each write of those
+    // elements and of the words of the directory that name their segments
+    // happens before the reads of the prefix.
+    CRUCIBLE_INLINE constexpr SegmentPrefix(State const& state, std::size_t count) noexcept
+        : state_{__builtin_addressof(state)}, count_{count} {}
+
+    // The bodies of get and last, with the brand of the public call.
+    template <::foundation::brand::IsBrand Brand>
+    [[nodiscard]] CRUCIBLE_INLINE constexpr Option<Ref<Const, Brand>> lend_(std::size_t position) const noexcept {
+        if (position >= size()) [[unlikely]] {
+            return Option<Ref<Const, Brand>>{none};
+        }
+        return Option<Ref<Const, Brand>>::some(SegmentRefDoor::lend_<Brand>(State::element_(*state_, position)));
+    }
+    template <::foundation::brand::IsBrand Brand>
+    [[nodiscard]] CRUCIBLE_INLINE constexpr Option<Ref<Const, Brand>> lend_last_() const noexcept {
+        std::size_t const count = size();
+        if (count == 0) [[unlikely]] {
+            return Option<Ref<Const, Brand>>{none};
+        }
+        return Option<Ref<Const, Brand>>::some(SegmentRefDoor::lend_<Brand>(State::element_(*state_, count - 1)));
+    }
+
+    // The count of the segments of the prefix.
+    [[nodiscard]] constexpr std::size_t segment_count_() const noexcept {
+        std::size_t const count = size();
+        return count == 0 ? 0 : detail::segment_place_<T>(count - 1).segment + 1;
+    }
+
+    // The stage of the walk of each element.
+    [[nodiscard]] constexpr detail::SegmentElementStage<T> stage_() const noexcept {
+        return detail::SegmentElementStage<T>{*this};
+    }
+
+public:
+    using element_type = Const;
+
+    // The count of the elements of the prefix.  The directory has no slot past
+    // its last segment, so the optimizer reads that bound in each build.
+    [[nodiscard]] CRUCIBLE_INLINE constexpr std::size_t size() const noexcept {
+        std::size_t const count = count_;
+        [[assume(count <= detail::directory_slots_<T>)]];
+        return count;
+    }
+
+    // The element at position, for a read, as an Option of a Ref with the
+    // fresh brand of the call, or no value at or past size().  The pack
+    // refuses each explicit argument, and the result type holds the brand in
+    // undeducible_brand_t.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr Option<Ref<Const, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    get(std::size_t position) const noexcept {
+        return this->template lend_<Fresh>(position);
+    }
+
+    // The last element, for a read, in the form of get, or no value for an
+    // empty prefix.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr Option<Ref<Const, ::foundation::brand::undeducible_brand_t<Fresh>>> last() const noexcept {
+        return this->template lend_last_<Fresh>();
+    }
+
+    // The walk of the elements, in the order of the appends: the head of a
+    // chain of foundation/core/Walk.h.  It borrows the list, and not this
+    // prefix.
+    [[nodiscard]] constexpr Walk<detail::SegmentElementStage<T>> walk() const noexcept {
+        return Walk<detail::SegmentElementStage<T>>{stage_()};
+    }
+
+    // The walk of the segments, in the order of the appends: each step gives
+    // the View of the elements of one segment.  It borrows the list, and a
+    // View that it gives borrows the elements.
+    [[nodiscard]] constexpr Walk<detail::SegmentRunStage<T>> segments() const noexcept {
+        return Walk<detail::SegmentRunStage<T>>{detail::SegmentRunStage<T>{*this}};
+    }
+
+    // The loop `for (T const& element : prefix)`.
+    [[nodiscard]] constexpr SegmentCursor<T> begin() const noexcept { return stage_().begin_(); }
+    [[nodiscard]] constexpr SegmentCursor<T> end() const noexcept { return stage_().end_(); }
+};
 
 // An element that append moves into its slot: it moves with no throw, and its
 // address is not its identity (foundation/Pinned.h).  An element that is not
@@ -701,9 +834,10 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
     using State = detail::owner::SegmentListState<T>;
     using Core = OwnerCore<State, SegmentList>;
 
-    friend class detail::SegmentElementStage<T>;
     friend class detail::SegmentRunStage<T>;
     friend class SegmentRunCursor<T>;
+    template <class U, class Writer>
+    friend class detail::LiveSegments;
 
     // The elements of one segment of the first count elements of a state, as
     // a View.  The caller proves that the segment holds one of them.  The
@@ -718,10 +852,10 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
         return View<T const>{SegmentList::run_key_(), first, rest < slots ? rest : slots};
     }
 
-    // The count of the segments of the list.
-    [[nodiscard]] constexpr std::size_t segment_count_() const noexcept {
-        std::size_t const count = size();
-        return count == 0 ? 0 : detail::segment_place_<T>(count - 1).segment + 1;
+    // The first count elements of the list.  The caller proves what the
+    // constructor of a prefix asks.
+    [[nodiscard]] CRUCIBLE_INLINE constexpr SegmentPrefix<T const> prefix_(std::size_t count) const noexcept {
+        return SegmentPrefix<T const>{this->state_, count};
     }
 
     // Allocates the next segment, and makes it the tail.  The list has no free
@@ -772,12 +906,48 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
         return claim;
     }
 
-    // Counts the element in the claimed slot.
-    CRUCIBLE_INLINE void settle_(Claim const& claim) noexcept {
+    // Counts the first count elements of the claimed slots.
+    CRUCIBLE_INLINE void settle_(Claim const& claim, std::size_t count) noexcept {
         State& state = this->state_;
-        state.tail = claim.slot + 1;
+        state.tail = claim.slot + count;
         state.tail_end = claim.end;
-        ++state.count;
+        state.count += count;
+    }
+
+    // Moves value into the slot after the last element.
+    CRUCIBLE_INLINE void append_moved_(T&& value) noexcept {
+        if constexpr (std::is_trivially_move_constructible_v<T>) {
+            T* const slot = free_slot_();
+            ::new(static_cast<void*>(slot)) T(static_cast<T&&>(value));
+            this->state_.tail = slot + 1;
+            ++this->state_.count;
+        } else {
+            Claim const claim = claim_slot_();
+            ::new(static_cast<void*>(claim.slot)) T(static_cast<T&&>(value));
+            settle_(claim, 1);
+        }
+    }
+
+    // Copies each element of run after the last element, in order.
+    // Complexity: one copy for each element, and one compare for each segment
+    // that the copies reach.
+    void append_copies_(View<T const> run) noexcept
+        requires std::is_nothrow_copy_constructible_v<T>
+    {
+        T const* source = first_of_(detail::BaseLayerRead{}, run);
+        std::size_t left = run.size();
+        while (left != 0) {
+            Claim const claim = claim_slot_();
+            std::size_t const room = static_cast<std::size_t>(claim.end - claim.slot);
+            std::size_t const count = left < room ? left : room;
+            detail::unpoison_slots_(claim.slot, count);
+            for (std::size_t offset = 0; offset != count; ++offset) {
+                ::new(static_cast<void*>(claim.slot + offset)) T(source[offset]);
+            }
+            settle_(claim, count);
+            source += count;
+            left -= count;
+        }
     }
 
     // Gives each element of a list that its caller gave up to body by value,
@@ -830,16 +1000,7 @@ public:
     template <class Marker>
         requires AllocationCapability<Marker> && MovedSegmentElement<T>
     void append(Marker /*allocation*/, T value) & noexcept {
-        if constexpr (std::is_trivially_move_constructible_v<T>) {
-            T* const slot = free_slot_();
-            ::new(static_cast<void*>(slot)) T(static_cast<T&&>(value));
-            this->state_.tail = slot + 1;
-            ++this->state_.count;
-        } else {
-            Claim const claim = claim_slot_();
-            ::new(static_cast<void*>(claim.slot)) T(static_cast<T&&>(value));
-            settle_(claim);
-        }
+        append_moved_(static_cast<T&&>(value));
     }
     template <class Marker>
         requires AllocationCapability<Marker> && (!MovedSegmentElement<T>)
@@ -856,7 +1017,7 @@ public:
     [[= ::foundation::linear::borrow_match{}]] void append_with(Marker /*allocation*/, Make&& make) & noexcept {
         Claim const claim = claim_slot_();
         ::new(static_cast<void*>(claim.slot)) T(make(std::size_t{this->state_.count}));
-        settle_(claim);
+        settle_(claim, 1);
     }
     template <class Marker, class Make>
         requires AllocationCapability<Marker> && std::is_invocable_v<Make&, std::size_t>
@@ -871,10 +1032,7 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
     get(std::size_t position) const& noexcept {
-        if (position >= size()) [[unlikely]] {
-            return Option<Ref<T const, Fresh>>{none};
-        }
-        return Option<Ref<T const, Fresh>>::some(SegmentRefDoor::lend_<Fresh>(State::element_(this->state_, position)));
+        return prefix_(size()).template lend_<Fresh>(position);
     }
     void
     get(std::size_t) && = delete("an element of a temporary SegmentList dangles at the end of the full expression");
@@ -887,12 +1045,7 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
     last() const& noexcept {
-        std::size_t const count = size();
-        if (count == 0) [[unlikely]] {
-            return Option<Ref<T const, Fresh>>{none};
-        }
-        return Option<Ref<T const, Fresh>>::some(
-            SegmentRefDoor::lend_<Fresh>(State::element_(this->state_, count - 1)));
+        return prefix_(size()).template lend_last_<Fresh>();
     }
     void last() && = delete("an element of a temporary SegmentList dangles at the end of the full expression");
     void last() const&& = delete("an element of a temporary SegmentList dangles at the end of the full expression");
@@ -900,7 +1053,7 @@ public:
     // The walk of the elements, in the order of the appends: the head of a
     // chain of foundation/core/Walk.h.  It borrows the list object.
     [[nodiscard]] constexpr Walk<detail::SegmentElementStage<T>> walk() const& noexcept {
-        return Walk<detail::SegmentElementStage<T>>{stage_()};
+        return prefix_(size()).walk();
     }
     void walk() && = delete("a walk of a temporary SegmentList dangles at the end of the full expression");
     void walk() const&& = delete("a walk of a temporary SegmentList dangles at the end of the full expression");
@@ -909,14 +1062,14 @@ public:
     // the View of the elements of one segment.  It borrows the list object.  A
     // View that it gives borrows the elements.
     [[nodiscard]] constexpr Walk<detail::SegmentRunStage<T>> segments() const& noexcept {
-        return Walk<detail::SegmentRunStage<T>>{detail::SegmentRunStage<T>{*this}};
+        return prefix_(size()).segments();
     }
     void segments() && = delete("a walk of a temporary SegmentList dangles at the end of the full expression");
     void segments() const&& = delete("a walk of a temporary SegmentList dangles at the end of the full expression");
 
     // The loop `for (T const& element : list)`.
-    [[nodiscard]] constexpr SegmentCursor<T> begin() const& noexcept { return stage_().begin_(); }
-    [[nodiscard]] constexpr SegmentCursor<T> end() const& noexcept { return stage_().end_(); }
+    [[nodiscard]] constexpr SegmentCursor<T> begin() const& noexcept { return prefix_(size()).begin(); }
+    [[nodiscard]] constexpr SegmentCursor<T> end() const& noexcept { return prefix_(size()).end(); }
     void begin() && = delete("a cursor of a temporary SegmentList points into storage that the full expression frees");
     void end() && = delete("a cursor of a temporary SegmentList points into storage that the full expression frees");
     void
@@ -952,12 +1105,6 @@ public:
         if (this->state_.count != 0) [[unlikely]] {
             fatal(why);
         }
-    }
-
-private:
-    // The stage of the walk of each element.
-    [[nodiscard]] constexpr detail::SegmentElementStage<T> stage_() const noexcept {
-        return detail::SegmentElementStage<T>{*this};
     }
 };
 

@@ -1,6 +1,6 @@
-// A unit of the base that is not a SegmentList calls the door of a SegmentList
-// to the door of a Ref, and makes a Ref of a brand that it names to an object
-// of its own.  SegmentList is the one friend of the door, so its member is
+// A unit of the base that is not a SegmentPrefix calls the door of a prefix to
+// the door of a Ref, and makes a Ref of a brand that it names to an object of
+// its own.  SegmentPrefix is the one friend of the door, so its member is
 // private here.
 
 #include <foundation/core/SegmentList.h>

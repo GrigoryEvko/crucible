@@ -1007,7 +1007,7 @@ inline constexpr StatedZero kZeros[] = {
      "members only, never a value"},
     {^^::foundation::core::ListRefDoor, "a door of FixedList to the door of a Ref: static members only, never a value"},
     {^^::foundation::core::SegmentRefDoor,
-     "a door of SegmentList to the door of a Ref: static members only, never a value"},
+     "a door of SegmentPrefix to the door of a Ref: static members only, never a value"},
     {^^::foundation::core::BrandedRefDoor,
      "a door of the cursor of a branded view to the door of a Ref: static members only, never a value"},
     {^^::foundation::core::WalkRefDoor,
@@ -1353,6 +1353,12 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::SegmentList,
      "an append-only list of elements in segments on the heap: it holds storage and makes no claim about what the "
      "elements hold"},
+    {^^::foundation::core::SegmentPrefix,
+     "the first elements of a segment list, for a read: it borrows the list and makes no claim about what the "
+     "elements hold"},
+    {^^::foundation::core::LiveList,
+     "an append-only list that one writer appends to and many readers read: it holds storage and makes no claim "
+     "about what the elements hold"},
     {^^::foundation::core::SegmentCursor,
      "the position of a loop over a segment list: it lives inside the loop, and it is never a value in a signature"},
     {^^::foundation::core::SegmentRunCursor,

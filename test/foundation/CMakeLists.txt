@@ -5114,6 +5114,50 @@ foundation_neg_compile_test(neg_core_sealed_of_linear_list
   "template constraint failure for .template<class T>  requires  SealableObject<T> class foundation::core::Sealed."
   "required for the satisfaction of .DroppablePayload<T>. \\[with T = foundation::core::SegmentList<")
 
+# A LiveList agrees with an oracle around each edge of its segments for each of
+# its appends, and one writer appends while three readers compare each prefix
+# with the oracle.
+foundation_test(test_core_live_list)
+
+# An append takes the proof of the one writer, and a proof of another owner names
+# another writer.  The list does not move.  test/fixy has the fixtures of the
+# thread doors.
+foundation_neg_compile_test(neg_core_live_list_append_without_proof
+  "no matching function for call to .foundation::core::LiveList<int, foundation::SoleWriterProof<LogWriter, AppendRole> >::append\\(foundation::core::Alloc, int\\)."
+  "neg_core_live_list_append_without_proof\\.cpp:14:")
+foundation_neg_compile_test(neg_core_live_list_second_writer
+  "no matching function for call to .foundation::core::LiveList<int, foundation::SoleWriterProof<FirstWriter, AppendRole> >::append\\(foundation::SoleWriterProof<SecondWriter, AppendRole>,"
+  "neg_core_live_list_second_writer\\.cpp:25:")
+foundation_neg_compile_test(neg_core_live_list_moved
+  "use of deleted function .foundation::core::LiveList<T, Writer>::LiveList\\(const foundation::core::LiveList<T, Writer>&\\)"
+  "a LiveList does not copy and does not move: a reader on another thread reads its directory")
+# A make holds no linear value and does not change the list.  The rule
+# borrow-match reads the body of make.
+foundation_neg_compile_test(neg_core_live_list_append_in_make
+  "this arm of a borrow match writes the sum that the match reads .mutating-call list."
+  "the payload that the arm borrows can end while the arm holds its reference")
+foundation_neg_compile_test(neg_core_live_list_make_with_linear_capture
+  "use of deleted function .void foundation::core::LiveList<T, Writer>::append_with\\(const Writer&, Marker, Make&&\\) &"
+  "the body holds a linear value by value, and the door calls it with no consume")
+# A temporary list gives no prefix, and a function gives back no borrow of a
+# local list, also through a prefix.
+foundation_neg_compile_test(neg_core_live_list_prefix_of_temporary
+  "use of deleted function .void foundation::core::LiveList<T, Writer>::prefix\\(\\) &&"
+  "a prefix of a temporary LiveList dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_live_list_returned_prefix_of_local
+  "neg_core_live_list_returned_prefix_of_local\\.cpp:16:[0-9]+: error: this function gives back a borrow of the local list"
+  "and that object ends with the frame of the function")
+foundation_neg_compile_test(neg_core_live_list_returned_ref_of_local
+  "neg_core_live_list_returned_ref_of_local\\.cpp:17:[0-9]+: error: this function gives back a borrow of the local list"
+  "and that object ends with the frame of the function")
+# An element holds no borrow, and the end of a list drops it.
+foundation_neg_compile_test(neg_core_live_list_of_borrowing_element
+  "template constraint failure for .template<class T, class Writer>  requires .LiveListElement<T>. && .LiveListWriter<Writer>. class foundation::core::LiveList."
+  "required for the satisfaction of .SendableOwned<T>. \\[with T = foundation::core::View<const int")
+foundation_neg_compile_test(neg_core_live_list_of_linear_element
+  "template constraint failure for .template<class T, class Writer>  requires .LiveListElement<T>. && .LiveListWriter<Writer>. class foundation::core::LiveList."
+  "required for the satisfaction of .DroppablePayload<T>. \\[with T = .*End\\]")
+
 # A BitSet and a HeapBitSet set, reset and test each index, walk the indexes
 # in their order, and agree with a model of plain flags at counts that end
 # inside a word, at a word and past a word.  An id past the count of a heap
@@ -6377,7 +6421,7 @@ foreach(_death_test
     test_aligned_bytes test_core_array test_core_bit_set test_core_box test_core_branded test_core_bump_arena test_core_choice
     test_core_enum_match test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_lend_count test_core_link test_core_list
     test_core_masked_array test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
-    test_core_segment_list test_core_slot_map test_core_small_list test_core_sort test_core_walk test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
+    test_core_live_list test_core_segment_list test_core_slot_map test_core_small_list test_core_sort test_core_walk test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
     test_singleton_root test_swiss_table_buffer test_swiss_table_buffer_ignore test_thread_local_ref
     test_core_window_stack)
   target_link_libraries(${_death_test} PRIVATE fixy)

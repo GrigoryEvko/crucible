@@ -513,7 +513,8 @@ home owner foundation::core::ForeignTextDoor include/foundation/core/Region.h | 
 home owner foundation::core::RegionRefDoor include/foundation/core/Region.h | the door of the Region family to the door of a Ref: RefDoor befriends it, and its one definition lends an element of a run only to View, ViewMut, the stage and the cursor of enumerate(), and the door of SegmentList.h, gives the body of get only to the first four and to the doors of Array.h and List.h, and builds the root stage of enumerate() only for View and the door of Array.h
 home owner foundation::core::ArrayRefDoor include/foundation/core/Array.h | the door of FixedArray and HeapArray to the body of get of a run and to the root stage of enumerate(): RegionRefDoor befriends it, and its one definition gives the two only to the two arrays
 home owner foundation::core::ListRefDoor include/foundation/core/List.h | the door of a FixedList to the body of get of a run: RegionRefDoor befriends it, and its one definition lends a live element of a list only to FixedList
-home owner foundation::core::SegmentRefDoor include/foundation/core/SegmentList.h | the door of a SegmentList to the door of a Ref: RegionRefDoor befriends it, and its one definition lends an element whose position the list compared with its count only to SegmentList
+home owner foundation::core::SegmentRefDoor include/foundation/core/SegmentList.h | the door of a prefix of a segment list to the door of a Ref: RegionRefDoor befriends it, and its one definition lends an element whose position the prefix compared with its count only to SegmentPrefix
+home owner foundation::core::detail::LiveSegments include/foundation/core/LiveList.h | the part of the writer of a live list: SegmentList befriends this class template, and its one definition appends only with a key that a proof of the one writer opens, and builds a prefix of a count that the list published
 home owner foundation::core::BrandedRefDoor include/foundation/core/Branded.h | the door of the cursor of an enumerate loop over a branded view to the door of a Ref: RefDoor befriends it, and its one definition lends an element below the count of the view only to BrandedEnumerateCursor
 home owner foundation::core::WalkRefDoor include/foundation/core/Walk.h | the door of the stage of a zip to the door of a Ref: RefDoor befriends it, and its one definition lends an element of a stage of the zip only to ZipStage
 home owner foundation::core::OneOfRefDoor include/foundation/core/OneOf.h | the door of a OneOf to the door of a Ref: RefDoor befriends it, and its one definition lends the active alternative only to OneOf
@@ -1131,8 +1132,9 @@ witness <foundation/core/Grow.h> no-match | foundation::core::HeapText | foundat
 # segments that an append allocated.  Its public constructors give the empty
 # list and take a list by move.
 witness <foundation/core/SegmentList.h> no-match | foundation::core::SegmentList<int> | foundation::core::SegmentList<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
-# The cursors of a loop over a list come only from the list and from a walk of
-# it, so no pointer that a caller holds becomes a run of elements.
+# A prefix and the cursors of a loop over a list come only from a list and from
+# a walk of it, so no pointer that a caller holds becomes a run of elements.
+witness <foundation/core/SegmentList.h> no-match | foundation::core::SegmentPrefix<int const> | foundation::core::SegmentPrefix<int const>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 witness <foundation/core/SegmentList.h> no-match | foundation::core::SegmentCursor<int> | foundation::core::SegmentCursor<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 witness <foundation/core/SegmentList.h> no-match | foundation::core::SegmentRunCursor<int> | foundation::core::SegmentRunCursor<int>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 # A BitSet has no constructor from a word, and its seal refuses a byte image:

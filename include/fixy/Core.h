@@ -43,6 +43,7 @@
 #include <foundation/core/LendCount.h>
 #include <foundation/core/Link.h>
 #include <foundation/core/List.h>
+#include <foundation/core/LiveList.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/OneOf.h>
 #include <foundation/core/Owner.h>
@@ -257,6 +258,7 @@ using ::foundation::core::IndexCount;
 using ::foundation::core::IndexRange;
 using ::foundation::core::is_window_of;
 using ::foundation::core::LengthMismatch;
+using ::foundation::core::LiveList;
 using ::foundation::core::MaskedArray;
 using ::foundation::core::mint_branded_scope;
 using ::foundation::core::mint_foreign_view;
@@ -280,6 +282,7 @@ using ::foundation::core::RunOverlap;
 using ::foundation::core::RunSet;
 using ::foundation::core::Sealed;
 using ::foundation::core::SegmentList;
+using ::foundation::core::SegmentPrefix;
 using ::foundation::core::SlotKey;
 using ::foundation::core::SlotMap;
 using ::foundation::core::SmallList;
