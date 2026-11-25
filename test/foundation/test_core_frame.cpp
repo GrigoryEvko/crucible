@@ -4,7 +4,8 @@
 // the result of a body that gives a value in a Record.  While the body runs,
 // the name that the caller moved from holds no storage.  The door of a sum
 // writes the active alternative in place.  The frames of two call sites have
-// two brands, and a ViewMut keeps the call ABI of two registers.
+// two brands.  A move of a ViewMut, and each door that takes one by rvalue
+// reference, leaves no run under the old name.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -305,10 +306,10 @@ template <class Run, class Expected>
 }
 
 // The frames of two call sites have two brands, and each unique borrow of a
-// frame has the brand of that frame.  A ViewMut does not copy, its move and
-// its end are trivial, and its assignment is not, so the ABI passes it in two
-// registers and std::bit_cast builds none.  The ViewMut of a FixedArray has
-// the fixed extent of the array, and the ABI passes it in one register.
+// frame has the brand of that frame.  A ViewMut does not copy, its end is
+// trivial, and its move empties the source, so std::bit_cast builds none.  The
+// ViewMut of a FixedArray has the fixed extent of the array, and it holds one
+// pointer.
 void test_brands_and_shape() {
     auto [outer, outer_key] =
         ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 2>, FixedArray<int, 2>{1, 2});
@@ -318,11 +319,13 @@ void test_brands_and_shape() {
             using Outer = std::remove_cvref_t<decltype(outer_view)>;
             using Inner = std::remove_cvref_t<decltype(inner_view)>;
             static_assert(!std::is_same_v<typename Outer::brand_type, typename Inner::brand_type>);
-            static_assert(!std::is_copy_constructible_v<Inner> && std::is_trivially_move_constructible_v<Inner>);
+            static_assert(!std::is_copy_constructible_v<Inner> && std::is_nothrow_move_constructible_v<Inner>);
+            static_assert(!std::is_trivially_move_constructible_v<Inner>);
             static_assert(std::is_trivially_destructible_v<Inner> && !std::is_trivially_copyable_v<Inner>);
             static_assert(sizeof(Inner) == 2 * sizeof(void*));
             static_assert(Outer::extent == 2 && sizeof(Outer) == sizeof(void*));
-            static_assert(!std::is_copy_constructible_v<Outer> && std::is_trivially_move_constructible_v<Outer>);
+            static_assert(!std::is_copy_constructible_v<Outer> && std::is_nothrow_move_constructible_v<Outer>);
+            static_assert(!std::is_trivially_move_constructible_v<Outer>);
             for (int& element : inner_view) {
                 element += sum_of(outer_view);
             }
@@ -402,7 +405,9 @@ struct TwiceOp final {
 // The door write_each over inputs of two other frames takes the loop of
 // restrict pointers, and over a View or an input of the frame of the output
 // the loop of plain pointers.  The two loops give the same values, and an
-// input of a different count gives LengthMismatch and writes nothing.
+// input of a different count gives LengthMismatch and writes nothing.  A View
+// that names the run of the output writes it in place.  The old name of the
+// output names no run, so it is an input of no element.
 void test_write_each() {
     HeapArray<int> left = ::foundation::core::mint_heap_array(allocation(), 100, 3);
     HeapArray<int> right = ::foundation::core::mint_heap_array_with<int>(
@@ -432,11 +437,28 @@ void test_write_each() {
                          holds_each(out, [](std::size_t position) noexcept { return 2 * static_cast<int>(position); }));
 
     out = with_mut(std::move(out), [](auto out_view) noexcept {
-        ::foundation::core::write_each(std::move(through(out_view)), TwiceOp{}, out_view)
-            .expect("the run has its own count");
+        View<int const> const input = out_view.view();
+        ::foundation::core::write_each(std::move(out_view), TwiceOp{}, input).expect("the run has its own count");
     });
     CRUCIBLE_TEST_ASSERT(kTest,
                          holds_each(out, [](std::size_t position) noexcept { return 4 * static_cast<int>(position); }));
+
+    out = with_mut(std::move(out), [](auto out_view) noexcept {
+        bool const is_refused =
+            ::foundation::core::write_each(std::move(through(out_view)), TwiceOp{}, out_view).is_err();
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused);
+    });
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         holds_each(out, [](std::size_t position) noexcept { return 4 * static_cast<int>(position); }));
+
+    out = with_mut(std::move(out), [](auto out_view) noexcept {
+        auto [low, high] = split_at(std::move(out_view), 50).expect("the half of the run is inside it");
+        ::foundation::core::write_each(std::move(low), TwiceOp{}, high).expect("the two halves have one count");
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(out, [](std::size_t position) noexcept {
+                             return position < 50 ? 8 * static_cast<int>(position + 50)
+                                                  : 4 * static_cast<int>(position);
+                         }));
 
     HeapArray<int> shorter = ::foundation::core::mint_heap_array(allocation(), 10, 7);
     shorter = with_mut(std::move(shorter), [&right](auto out_view) noexcept {
@@ -469,10 +491,23 @@ void test_copy_between_frames() {
         kTest, holds_each(again, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; }));
 
     again = with_mut(std::move(again), [](auto again_view) noexcept {
-        ::foundation::core::copy(std::move(through(again_view)), again_view).expect("the run has its own count");
+        View<int const> const input = again_view.view();
+        ::foundation::core::copy(std::move(again_view), input).expect("the run has its own count");
+    });
+    again = with_mut(std::move(again), [](auto again_view) noexcept {
+        bool const is_refused = ::foundation::core::copy(std::move(through(again_view)), again_view).is_err();
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused);
     });
     CRUCIBLE_TEST_ASSERT(
         kTest, holds_each(again, [](std::size_t position) noexcept { return static_cast<int>(position) * 5; }));
+
+    again = with_mut(std::move(again), [](auto again_view) noexcept {
+        auto [low, high] = split_at(std::move(again_view), 25).expect("the half of the run is inside it");
+        ::foundation::core::copy(std::move(low), high).expect("the two halves have one count");
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(again, [](std::size_t position) noexcept {
+                             return static_cast<int>(position < 25 ? position + 25 : position) * 5;
+                         }));
 
     HeapArray<int> shorter = ::foundation::core::mint_heap_array(allocation(), 5, 1);
     shorter = with_mut(std::move(shorter), [&again](auto shorter_view) noexcept {
@@ -634,6 +669,181 @@ void test_copy_of_fixed_extent() {
                          holds_each(target, [](std::size_t position) noexcept { return position == 2 ? 9 : 2; }));
 }
 
+// ── The old name of a ViewMut ─────────────────────────────────────────
+
+// Gives Door one ViewMut of ten elements through two parameters, so the rule
+// use-after-move does not see that the second one moved.  Door consumes the
+// first one.
+template <auto Door>
+void check_old_name() {
+    HeapArray<int> run = ::foundation::core::mint_heap_array(allocation(), 10, 1);
+    run = with_mut(std::move(run), [](auto whole) noexcept { Door(whole, whole); });
+}
+
+// The same for a ViewMut of the fixed extent 6, with the View of the run of
+// the frame in front.
+template <auto Door>
+void check_old_name_of_a_fixed_extent() {
+    HeapArray<int> run = ::foundation::core::mint_heap_array(allocation(), 10, 1);
+    run = with_mut(std::move(run), [](auto whole) noexcept {
+        View<int const> const elements = whole.view();
+        auto part = ::foundation::core::take_window<6>(std::move(whole), 2).expect("six elements fit");
+        Door(elements, part, part);
+    });
+}
+
+// True when a ViewMut names no element of the run of its frame.  A ViewMut of
+// a fixed extent keeps its extent, so its count tells nothing.
+template <class Run>
+[[nodiscard]] bool names_none_of(View<int const> elements, Run const& run) noexcept {
+    return offset_of(elements, View<int const>{run.view()}).is_none();
+}
+
+// A move, and each door that takes a ViewMut by rvalue reference or by value,
+// leaves no element under the old name.  A door that gives no value leaves none
+// either.  A self move keeps the run.
+void test_old_name_of_a_dynamic_extent() {
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        auto const moved = std::move(view);
+        CRUCIBLE_TEST_ASSERT(kTest, moved.size() == 10 && old_name.size() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, old_name.get(0).is_none() && old_name.view().size() == 0);
+        for ([[maybe_unused]] int const element : old_name)
+            CRUCIBLE_TEST_ASSERT(kTest, false);
+    }>();
+    check_old_name<[](auto& view, auto& same) noexcept {
+        view = std::move(same);
+        CRUCIBLE_TEST_ASSERT(kTest, view.size() == 10 && sum_of(view) == 10);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        auto [low, high] = split_at(std::move(view), 4).expect("the offset is inside the run");
+        CRUCIBLE_TEST_ASSERT(kTest, old_name.size() == 0);
+        [](auto& target, auto& source, auto& source_name) noexcept {
+            target = std::move(source);
+            CRUCIBLE_TEST_ASSERT(kTest, target.size() == 6 && source_name.size() == 0);
+        }(low, high, high);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        bool const is_refused = split_at(std::move(view), 11).is_none();
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused && old_name.size() == 0);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        auto chunks = split_chunks(std::move(view), 4);
+        CRUCIBLE_TEST_ASSERT(kTest, chunks.size() == 3 && old_name.size() == 0);
+        [](auto& source, auto& source_name) noexcept {
+            auto moved = std::move(source);
+            CRUCIBLE_TEST_ASSERT(kTest, moved.size() == 3 && source_name.size() == 0 && source_name.next().is_none());
+            [](auto& target, auto& other, auto& other_name) noexcept {
+                target = std::move(other);
+                CRUCIBLE_TEST_ASSERT(kTest, target.size() == 3 && other_name.size() == 0);
+            }(source, moved, moved);
+        }(chunks, chunks);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        auto const part = ::foundation::core::take_window(std::move(view), 1, 2).expect("two elements fit");
+        CRUCIBLE_TEST_ASSERT(kTest, part.size() == 2 && old_name.size() == 0);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        bool const is_refused = ::foundation::core::take_window(std::move(view), 9, 2).is_none();
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused && old_name.size() == 0);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        auto const part = ::foundation::core::take_window<3>(std::move(view), 7).expect("three elements fit");
+        CRUCIBLE_TEST_ASSERT(kTest, sum_of(part) == 3 && old_name.size() == 0);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        auto const rest = ::foundation::core::for_each_chunk<4>(std::move(view), [&old_name](auto part) noexcept {
+            CRUCIBLE_TEST_ASSERT(kTest, part.size() == 4 && old_name.size() == 0);
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, rest.size() == 2 && old_name.size() == 0);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        auto const front = ::foundation::core::take_prefix_up_to(std::move(view), 3);
+        CRUCIBLE_TEST_ASSERT(kTest, front.size() == 3 && old_name.size() == 0);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        auto const erased = ::foundation::core::erase_brand(std::move(view));
+        CRUCIBLE_TEST_ASSERT(kTest, erased.size() == 10 && old_name.size() == 0);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        FixedArray<int, 10> const other{};
+        auto const [rest, other_rest] = ::foundation::core::for_each_chunk_pair<4>(
+            std::move(view), View<int const>{other.view()}, [&old_name](auto part, auto other_part) noexcept {
+                CRUCIBLE_TEST_ASSERT(kTest, part.size() == other_part.size() && old_name.size() == 0);
+            });
+        CRUCIBLE_TEST_ASSERT(kTest, rest.size() == 2 && other_rest.size() == 2 && old_name.size() == 0);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        auto const back = ::foundation::core::reborrow(std::move(view), [&old_name](auto lent) noexcept {
+            CRUCIBLE_TEST_ASSERT(kTest, lent.size() == 10 && old_name.size() == 0);
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, back.size() == 10 && old_name.size() == 0);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        ::foundation::core::fill(std::move(view), 3);
+        CRUCIBLE_TEST_ASSERT(kTest, old_name.size() == 0);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        FixedArray<int, 10> const source{};
+        ::foundation::core::copy(std::move(view), View<int const>{source.view()}).expect("ten elements");
+        CRUCIBLE_TEST_ASSERT(kTest, old_name.size() == 0);
+    }>();
+    check_old_name<[](auto& view, auto& old_name) noexcept {
+        FixedArray<int, 10> const source{};
+        ::foundation::core::write_each(std::move(view), TwiceOp{}, View<int const>{source.view()})
+            .expect("ten elements");
+        CRUCIBLE_TEST_ASSERT(kTest, old_name.size() == 0);
+    }>();
+    HeapArray<unsigned char> bytes =
+        ::foundation::core::mint_heap_array(allocation(), 5, static_cast<unsigned char>(1));
+    bytes = with_mut(std::move(bytes), [](auto whole) noexcept {
+        [](auto& view, auto& old_name) noexcept {
+            auto const storage = ::foundation::core::byte_view(std::move(view));
+            CRUCIBLE_TEST_ASSERT(kTest, storage.size() == 5 && old_name.size() == 0);
+        }(whole, whole);
+    });
+}
+
+// The old name of a fixed extent names no element of the run, and the target
+// names the part that the window gave.
+void test_old_name_of_a_fixed_extent() {
+    check_old_name_of_a_fixed_extent<[](View<int const> elements, auto& view, auto& old_name) noexcept {
+        auto const moved = std::move(view);
+        CRUCIBLE_TEST_ASSERT(kTest, !names_none_of(elements, moved) && names_none_of(elements, old_name));
+    }>();
+    check_old_name_of_a_fixed_extent<[](View<int const> elements, auto& view, auto& same) noexcept {
+        view = std::move(same);
+        CRUCIBLE_TEST_ASSERT(kTest, !names_none_of(elements, view));
+    }>();
+    check_old_name_of_a_fixed_extent<[](View<int const> elements, auto& view, auto& old_name) noexcept {
+        using Dynamic = ViewMut<int, typename std::remove_cvref_t<decltype(view)>::brand_type>;
+        Dynamic const dynamic{std::move(view)};
+        CRUCIBLE_TEST_ASSERT(kTest, !names_none_of(elements, dynamic) && names_none_of(elements, old_name));
+    }>();
+    check_old_name_of_a_fixed_extent<[](View<int const> elements, auto& view, auto& old_name) noexcept {
+        auto const [low, high] = split_at<2>(std::move(view));
+        CRUCIBLE_TEST_ASSERT(kTest, !names_none_of(elements, low) && !names_none_of(elements, high));
+        CRUCIBLE_TEST_ASSERT(kTest, names_none_of(elements, old_name));
+    }>();
+    check_old_name_of_a_fixed_extent<[](View<int const> elements, auto& view, auto& old_name) noexcept {
+        auto const part = ::foundation::core::take_window<2>(std::move(view), 1).expect("two elements fit");
+        CRUCIBLE_TEST_ASSERT(kTest, !names_none_of(elements, part) && names_none_of(elements, old_name));
+    }>();
+    check_old_name_of_a_fixed_extent<[](View<int const> elements, auto& view, auto& old_name) noexcept {
+        auto const erased = ::foundation::core::erase_brand(std::move(view));
+        CRUCIBLE_TEST_ASSERT(kTest, !names_none_of(elements, erased) && names_none_of(elements, old_name));
+    }>();
+    check_old_name_of_a_fixed_extent<[](View<int const> elements, auto& view, auto& old_name) noexcept {
+        auto const back = ::foundation::core::reborrow(std::move(view), [elements, &old_name](auto lent) noexcept {
+            CRUCIBLE_TEST_ASSERT(kTest, !names_none_of(elements, lent) && names_none_of(elements, old_name));
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, !names_none_of(elements, back) && names_none_of(elements, old_name));
+    }>();
+    check_old_name_of_a_fixed_extent<[](View<int const> elements, auto& view, auto& old_name) noexcept {
+        ::foundation::core::fill(std::move(view), 3);
+        CRUCIBLE_TEST_ASSERT(kTest, names_none_of(elements, old_name));
+    }>();
+}
+
 }  // namespace
 
 int main() {
@@ -672,5 +882,7 @@ int main() {
     test_for_each_chunk();
     test_for_each_chunk_pair();
     test_copy_of_fixed_extent();
+    test_old_name_of_a_dynamic_extent();
+    test_old_name_of_a_fixed_extent();
     return 0;
 }

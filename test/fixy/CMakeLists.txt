@@ -7580,6 +7580,11 @@ fixy_neg_compile_test(neg_parallel_pointwise_of_two_frames_of_one_array
   "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
   "a FixedArray with no key opens no frame, because another name of the array could open a second frame")
 
+# The old name of a moved ViewMut names no run, so no door that trusts two
+# brands gets one run two times: the copy, write_each, the pointwise walk, and
+# the parallel pointwise walk and scan.
+fixy_test(test_unique_view_moves)
+
 # test_os_thread_tasks starts threads through the door of
 # fixy/os/ThreadTasks.h with each option, and reads each option back from
 # the thread that it started.  test_concurrent_permission_fork runs the fork

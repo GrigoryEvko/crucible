@@ -386,16 +386,19 @@ static_assert(!classify_overlap_accepts<View<int>, View<long>>);
 
 // ── The unique view ───────────────────────────────────────────────────
 
-// A ViewMut holds a pointer and a count.  It does not copy, its move and its
-// end are trivial, so the ABI passes it in two registers, and its assignment
-// is not, so std::bit_cast builds none.  Only a frame door builds one: no
-// constructor takes a pointer, a count or a View with no key.  Its View and
-// its Refs read the run, also from a ViewMut that is not const, and the loop
-// over a ViewMut that is not const writes it.
+// A ViewMut holds a pointer and a count.  It does not copy, and its end is
+// trivial.  Its moves empty the source, so no move is trivial, and
+// std::bit_cast builds none.  Only a frame door builds one: no constructor
+// takes a pointer, a count or a View with no key.  Its View and its Refs read
+// the run, also from a ViewMut that is not const, and the loop over a ViewMut
+// that is not const writes it.
 struct UniqueBrand final {};
 static_assert(sizeof(ViewMut<int, UniqueBrand>) == 2 * sizeof(void*));
 static_assert(!std::is_copy_constructible_v<ViewMut<int, UniqueBrand>>);
-static_assert(std::is_trivially_move_constructible_v<ViewMut<int, UniqueBrand>>);
+static_assert(std::is_nothrow_move_constructible_v<ViewMut<int, UniqueBrand>>);
+static_assert(std::is_nothrow_move_assignable_v<ViewMut<int, UniqueBrand>>);
+static_assert(!std::is_trivially_move_constructible_v<ViewMut<int, UniqueBrand>>);
+static_assert(!std::is_trivially_move_assignable_v<ViewMut<int, UniqueBrand>>);
 static_assert(std::is_trivially_destructible_v<ViewMut<int, UniqueBrand>>);
 static_assert(!std::is_trivially_copyable_v<ViewMut<int, UniqueBrand>>);
 static_assert(!std::is_constructible_v<ViewMut<int, UniqueBrand>, int*, std::size_t>);
@@ -409,8 +412,8 @@ static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> con
 static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand>&>().view()), View<int const>>);
 static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> const&>().view()), View<int const>>);
 
-// A ViewMut of a fixed extent holds a pointer alone, so the ABI passes it in
-// one register, and its View has the fixed extent.  It converts to the
+// A ViewMut of a fixed extent holds a pointer alone, its moves empty the
+// source too, and its View has the fixed extent.  It converts to the
 // ViewMut of a dynamic extent when it moves in, and no conversion gives a
 // fixed extent.  A split takes its ViewMut by move and gives parts of the
 // brand of the parent: two parts of a dynamic extent in an Option, two parts
@@ -419,7 +422,9 @@ static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> con
 // the refusals of a named and of a const ViewMut.
 static_assert(sizeof(ViewMut<int, UniqueBrand, 4>) == sizeof(void*));
 static_assert(!std::is_copy_constructible_v<ViewMut<int, UniqueBrand, 4>>);
-static_assert(std::is_trivially_move_constructible_v<ViewMut<int, UniqueBrand, 4>>);
+static_assert(std::is_nothrow_move_constructible_v<ViewMut<int, UniqueBrand, 4>>);
+static_assert(!std::is_trivially_move_constructible_v<ViewMut<int, UniqueBrand, 4>>);
+static_assert(!std::is_trivially_move_assignable_v<ViewMut<int, UniqueBrand, 4>>);
 static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand, 4>&>().view()), View<int const, 4>>);
 static_assert(std::is_convertible_v<ViewMut<int, UniqueBrand, 4>&&, ViewMut<int, UniqueBrand>>);
 static_assert(!std::is_constructible_v<ViewMut<int, UniqueBrand>, ViewMut<int, UniqueBrand, 4>&>);
@@ -433,6 +438,8 @@ static_assert(std::is_same_v<decltype(split_chunks(std::declval<ViewMut<int, Uni
 static_assert(std::is_same_v<decltype(std::declval<ViewMutChunks<int, UniqueBrand>&>().next()),
                              Option<ViewMut<int, UniqueBrand>>>);
 static_assert(!std::is_copy_constructible_v<ViewMutChunks<int, UniqueBrand>>);
+static_assert(!std::is_trivially_move_constructible_v<ViewMutChunks<int, UniqueBrand>>
+              && !std::is_trivially_move_assignable_v<ViewMutChunks<int, UniqueBrand>>);
 
 // The doors of a kernel.  A ViewMut and a View are inputs, and only a ViewMut
 // of a different brand proves that its run does not overlap the output.  An

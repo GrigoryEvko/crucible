@@ -135,6 +135,12 @@
 //   storage of a heap owner.  A View has no brand, so it proves no
 //   difference either.
 //
+//   A door can lend the run of a ViewMut again with a brand of its own, as the
+//   region scope door does.  The ViewMut moves into the frame of that door, and
+//   the move leaves no run under its old name (the unique view of
+//   foundation/core/Region.h).  So one run has one brand at a time, also for a
+//   second name of the ViewMut that the rule use-after-move does not see.
+//
 //   A body keeps no borrow of its frame after the frame.  The store check of
 //   the door (StoresNoBorrowOutside of foundation/core/CaptureStore.h) refuses a
 //   body that can write a borrow into an object that it reaches through a
@@ -145,9 +151,12 @@
 //
 // A RefMut holds one address.  It does not copy.  A move leaves the source
 // with its address, and the rule use-after-move refuses a later use of the
-// source.  The move constructor and the destructor are trivial, so the ABI
-// passes a RefMut in a register.  The seal makes the move assignment
-// user-provided, so std::bit_cast builds no RefMut.
+// source.  That rule does not see each second name of a moved RefMut, so no
+// door trusts the brand of a RefMut as the proof that two objects differ.  A
+// door that would trust it needs the emptied source of a ViewMut first.  The
+// move constructor and the destructor are trivial, so the ABI passes a RefMut
+// in a register.  The seal makes the move assignment user-provided, so
+// std::bit_cast builds no RefMut.
 //
 // Loan key
 //   An owner that lends its run in place stays reachable in the body of its
@@ -371,7 +380,9 @@ template <class T>
 concept UniqueTarget = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>;
 
 // The unique borrow of one object that a frame door holds, such as the
-// payload of a sum.  The brand is the brand of the frame.
+// payload of a sum.  The brand is the brand of the frame.  No door trusts it as
+// the proof that two objects differ, because a move leaves the source with its
+// address (the head of this header).
 template <class T, ::foundation::brand::IsBrand Brand>
     requires UniqueTarget<T>
 class [[nodiscard]] RefMut final {

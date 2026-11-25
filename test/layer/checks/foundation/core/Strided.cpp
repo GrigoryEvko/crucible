@@ -80,12 +80,15 @@ struct GivesCountWithToken final {
 static_assert(!CanMintStridedScope<int, 2, GivesCountWithToken, CheckBrand>);
 
 // A unique view holds the parts of a view and nothing more.  It moves and
-// does not copy, and no plain view becomes a unique view.
+// does not copy, and no plain view becomes a unique view.  Its moves empty the
+// source, so no move is trivial.
 static_assert(sizeof(StridedViewMut<int, 2, CheckBrand>) == sizeof(StridedView<int, 2>));
 static_assert(!std::is_trivially_copyable_v<StridedViewMut<int, 2, CheckBrand>>);
 static_assert(!std::is_copy_constructible_v<StridedViewMut<int, 2, CheckBrand>>);
 static_assert(!std::is_copy_assignable_v<StridedViewMut<int, 2, CheckBrand>>);
 static_assert(std::is_nothrow_move_constructible_v<StridedViewMut<int, 2, CheckBrand>>);
+static_assert(!std::is_trivially_move_constructible_v<StridedViewMut<int, 2, CheckBrand>>
+              && !std::is_trivially_move_assignable_v<StridedViewMut<int, 2, CheckBrand>>);
 static_assert(!std::is_constructible_v<StridedViewMut<int, 2, CheckBrand>, StridedView<int, 2>>);
 static_assert(!std::is_default_constructible_v<StridedViewMut<int, 2, CheckBrand>>);
 

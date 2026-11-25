@@ -333,6 +333,11 @@ namespace detail {
 template <class T, class Brand, std::size_t Extent>
 [[nodiscard]] constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcept;
 
+// The run of view, which view gives up: a door that takes a ViewMut by rvalue
+// reference reads the run here, so no name of the caller keeps it.
+template <class T, class Brand, std::size_t Extent>
+[[nodiscard]] constexpr View<T, Extent> take_run_(ViewMut<T, Brand, Extent>& view) noexcept;
+
 // The door of View and ViewMut to the key of a cursor (the doors of the key
 // of foundation/core/Cursor.h).  Its one member is private, and View and
 // ViewMut are its friends, so no other code of the base builds a cursor over
@@ -1186,10 +1191,15 @@ public:
 // The unique borrow of the run of an owner that a frame door holds
 // (foundation/core/Frame.h).  The brand is the brand of the frame.  A
 // ViewMut does not copy, so a body cannot hold two ViewMuts of one frame.  A
-// move leaves the source with its run, and the rule use-after-move refuses a
-// later use of the source.  The move constructor and the destructor are
-// trivial, so the ABI passes a ViewMut in two registers, and a ViewMut of a
-// fixed extent in one.  The seal makes the move assignment user-provided, so
+// move gives the run to the target and leaves the source with none, and so
+// does each door that takes a ViewMut by rvalue reference.  So a second name
+// of a moved ViewMut, such as a second reference parameter that names one
+// object, names no run, and the alias proof of two brands holds (the alias
+// proof of Frame.h).  The rule use-after-move does not see each such name.
+// The source of a dynamic extent has no element.  The source of a fixed extent
+// keeps its extent, and its first address is null.  An assignment drops the
+// old run of the target, and a self move keeps the run.  The move constructor
+// is user-provided, so the ABI passes a ViewMut by value in memory, and
 // std::bit_cast builds no ViewMut.
 //
 //   size(), for (x : view)   as a View gives them
@@ -1278,6 +1288,15 @@ class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] ViewMut final {
         requires ViewElement<U> && (!std::is_const_v<U>) && ViewExtent<U, OtherExtent>
     friend class ViewMut;
 
+    template <class U, class OtherBrand, std::size_t OtherExtent>
+    friend constexpr View<U, OtherExtent> detail::take_run_(ViewMut<U, OtherBrand, OtherExtent>& view) noexcept;
+
+    // Gives up the run.  A ViewMut of a dynamic extent then has no element.
+    constexpr void give_up_() noexcept {
+        first_ = nullptr;
+        if constexpr (Extent == dynamic_extent) count_.count = 0;
+    }
+
 public:
     using element_type = T;
     using brand_type = Brand;
@@ -1295,13 +1314,22 @@ public:
     // in, so the run keeps one writer.
     template <std::size_t OtherExtent>
         requires(Extent == dynamic_extent && OtherExtent != dynamic_extent)
-    constexpr ViewMut(ViewMut<T, Brand, OtherExtent>&& other) noexcept : first_{other.first_}, count_{OtherExtent} {}
+    constexpr ViewMut(ViewMut<T, Brand, OtherExtent>&& other) noexcept : first_{other.first_}, count_{OtherExtent} {
+        other.give_up_();
+    }
 
     ViewMut(ViewMut const&) = delete("a ViewMut is the one writer of its run: a copy would be a second writer");
     ViewMut& operator=(ViewMut const&) = delete("a ViewMut is the one writer of its run: a copy would be a second "
                                                 "writer");
-    constexpr ViewMut(ViewMut&&) noexcept = default;
-    constexpr ViewMut& operator=(ViewMut&&) noexcept = default;
+    constexpr ViewMut(ViewMut&& other) noexcept : first_{other.first_}, count_{other.count_} { other.give_up_(); }
+    constexpr ViewMut& operator=(ViewMut&& other) noexcept {
+        T* const first = other.first_;
+        detail::ViewCount<Extent> const count = other.count_;
+        other.give_up_();
+        first_ = first;
+        count_ = count;
+        return *this;
+    }
     ~ViewMut() = default;
 
     // The pointer of the first element, for the free operations of the base
@@ -1382,7 +1410,7 @@ public:
 // next part, from the first element, and no value after the last part.  Each
 // call gives each part one time, so the range gives no second writer of a
 // part.  The range does not copy, and it holds the borrow of the run that is
-// left.
+// left.  A move leaves the source with no part.
 template <class T, ::foundation::brand::IsBrand Brand>
 class [[nodiscard]] ViewMutChunks final {
     T* next_ = nullptr;
@@ -1398,8 +1426,22 @@ public:
 
     ViewMutChunks(ViewMutChunks const&) = delete("a copy of the range would give each part a second time");
     ViewMutChunks& operator=(ViewMutChunks const&) = delete("a copy of the range would give each part a second time");
-    constexpr ViewMutChunks(ViewMutChunks&&) noexcept = default;
-    constexpr ViewMutChunks& operator=(ViewMutChunks&&) noexcept = default;
+    constexpr ViewMutChunks(ViewMutChunks&& other) noexcept
+        : next_{other.next_}, rest_{other.rest_}, width_{other.width_} {
+        other.next_ = nullptr;
+        other.rest_ = 0;
+    }
+    constexpr ViewMutChunks& operator=(ViewMutChunks&& other) noexcept {
+        T* const next = other.next_;
+        std::size_t const rest = other.rest_;
+        std::size_t const width = other.width_;
+        other.next_ = nullptr;
+        other.rest_ = 0;
+        next_ = next;
+        rest_ = rest;
+        width_ = width;
+        return *this;
+    }
     ~ViewMutChunks() = default;
 
     // The count of the parts that next() still gives.
@@ -1424,7 +1466,7 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 [[nodiscard]] constexpr Option<Record<ViewMut<T, Brand>, ViewMut<T, Brand>>> split_at(ViewMut<T, Brand, Extent>&& whole,
                                                                                       std::size_t offset) noexcept {
     using Parts = Record<ViewMut<T, Brand>, ViewMut<T, Brand>>;
-    View<T> const run{detail::run_of_(whole)};
+    View<T> const run{detail::take_run_(whole)};
     std::size_t const count = run.size();
     if (offset > count) [[unlikely]] {
         return Option<Parts>{none};
@@ -1445,7 +1487,7 @@ template <std::size_t Offset, class T, ::foundation::brand::IsBrand Brand, std::
     requires(Extent != dynamic_extent && Offset > 0 && Offset < Extent)
 [[nodiscard]] constexpr Record<ViewMut<T, Brand, Offset>, ViewMut<T, Brand, Extent - Offset>>
 split_at(ViewMut<T, Brand, Extent>&& whole) noexcept {
-    View<T, Extent> const run = detail::run_of_(whole);
+    View<T, Extent> const run = detail::take_run_(whole);
     return Record<ViewMut<T, Brand, Offset>, ViewMut<T, Brand, Extent - Offset>>{
         ViewMut<T, Brand, Offset>{RegionFrameKeyDoor::key_(), run.template prefix<Offset>()},
         ViewMut<T, Brand, Extent - Offset>{RegionFrameKeyDoor::key_(), run.template suffix<Extent - Offset>()}};
@@ -1462,7 +1504,7 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
     if (width == 0) [[unlikely]] {
         fatal("a split of a ViewMut into chunks of zero elements");
     }
-    return ViewMutChunks<T, Brand>{RegionFrameKeyDoor::key_(), View<T>{detail::run_of_(whole)}, width};
+    return ViewMutChunks<T, Brand>{RegionFrameKeyDoor::key_(), View<T>{detail::take_run_(whole)}, width};
 }
 
 // The count elements of the run of whole from offset, as a ViewMut of a
@@ -1475,7 +1517,7 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 [[nodiscard]] constexpr Option<ViewMut<T, Brand>> take_window(ViewMut<T, Brand, Extent>&& whole, std::size_t offset,
                                                               std::size_t count) noexcept {
-    Option<View<T>> part = View<T>{detail::run_of_(whole)}.window(offset, count);
+    Option<View<T>> part = View<T>{detail::take_run_(whole)}.window(offset, count);
     if (part.is_none()) [[unlikely]] {
         return Option<ViewMut<T, Brand>>{none};
     }
@@ -1491,7 +1533,7 @@ template <std::size_t Count, class T, ::foundation::brand::IsBrand Brand, std::s
     requires ViewExtent<T, Count> && (Count != dynamic_extent)
 [[nodiscard]] constexpr Option<ViewMut<T, Brand, Count>> take_window(ViewMut<T, Brand, Extent>&& whole,
                                                                      std::size_t offset) noexcept {
-    Option<View<T, Count>> part = detail::run_of_(whole).template window<Count>(offset);
+    Option<View<T, Count>> part = detail::take_run_(whole).template window<Count>(offset);
     if (part.is_none()) [[unlikely]] {
         return Option<ViewMut<T, Brand, Count>>{none};
     }
@@ -1508,7 +1550,7 @@ template <std::size_t Count, class T, ::foundation::brand::IsBrand Brand, std::s
 template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent, class Body>
     requires ViewExtent<T, Width> && (Width != dynamic_extent) && ChunkBody<Body, T, Brand, Width>
 [[nodiscard]] constexpr ViewMut<T, Brand> for_each_chunk(ViewMut<T, Brand, Extent>&& whole, Body body) noexcept {
-    View<T> const run{detail::run_of_(whole)};
+    View<T> const run{detail::take_run_(whole)};
     auto const parts = run.template chunks<Width>();
     for (View<T, Width> const part : parts) {
         body(ViewMut<T, Brand, Width>{RegionFrameKeyDoor::key_(), part});
@@ -1525,7 +1567,7 @@ template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::s
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 [[nodiscard]] constexpr ViewMut<T, Brand> take_prefix_up_to(ViewMut<T, Brand, Extent>&& whole,
                                                             std::size_t count) noexcept {
-    return ViewMut<T, Brand>{RegionFrameKeyDoor::key_(), View<T>{detail::run_of_(whole)}.prefix_up_to(count)};
+    return ViewMut<T, Brand>{RegionFrameKeyDoor::key_(), View<T>{detail::take_run_(whole)}.prefix_up_to(count)};
 }
 
 // The erased writer of a run: the ViewMut of the same run and extent on
@@ -1550,7 +1592,7 @@ namespace detail {
 
 template <class T, class Brand, std::size_t Extent>
 [[nodiscard]] constexpr auto erased_run_mut_(ViewMut<T, Brand, Extent>&& view) noexcept {
-    return ViewMut<T, ::foundation::brand::DefaultBrand, Extent>{RegionFrameKeyDoor::key_(), run_of_(view)};
+    return ViewMut<T, ::foundation::brand::DefaultBrand, Extent>{RegionFrameKeyDoor::key_(), take_run_(view)};
 }
 
 }  // namespace detail
@@ -1589,7 +1631,7 @@ for_each_chunk_pair(ViewMut<T, Brand, Extent>&& first, View<U> second, Body body
         body(ViewMut<T, Brand, Width>{key, part}, other);
     };
     auto const [first_rest, second_rest] =
-        detail::for_each_chunk_pair_<Width>(View<T>{detail::run_of_(first)}, second, lend);
+        detail::for_each_chunk_pair_<Width>(View<T>{detail::take_run_(first)}, second, lend);
     return Record<ViewMut<T, Brand>, View<U>>{ViewMut<T, Brand>{key, first_rest}, second_rest};
 }
 
@@ -1676,16 +1718,17 @@ give_run_back_(FrameKey const& key, Owner&& held, View<T, Extent> run, Body&& bo
 // and gives view back after the body: alone for a body that gives void, and
 // after the result in a Record for each other body.  The parent moves into
 // the frame of the door, so the caller holds no name for it while the body
-// runs, as a split takes its parent by move.  So the body holds the one
-// writer of the run, and it can give it to a door that takes a ViewMut by
-// value, such as fill, copy or write_each.  The result of the body leaves
-// the frame under the rule of each frame door (FrameResult of Choice.h).
+// runs, as a split takes its parent by move.  A const reference to the parent
+// can stay with the caller, and the move leaves the parent of that name with
+// no run.  So the body holds the one writer of the run, and it can give it to
+// a door that takes a ViewMut by value, such as fill, copy or write_each.  The
+// result of the body leaves the frame under the rule of each frame door
+// (FrameResult of Choice.h).
 //
 // The ViewMut of the body has the brand of the parent, and not a fresh
-// brand.  A const reference to the parent can stay with the caller, and the
-// move leaves the parent with its run.  A fresh brand would make the doors
-// read the two as two runs, and a copy between them would take the memcpy
-// on one run.  One brand takes the memmove, which is correct for each pair.
+// brand.  A fresh brand would make each reborrow a frame of its own type, and
+// no body needs the proof.  One brand takes the memmove and the loop of plain
+// pointers, which are correct for each pair of runs.
 
 namespace detail {
 
@@ -1705,6 +1748,13 @@ constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcep
     }
 }
 
+template <class T, class Brand, std::size_t Extent>
+constexpr View<T, Extent> take_run_(ViewMut<T, Brand, Extent>& view) noexcept {
+    View<T, Extent> const run = run_of_(view);
+    view.give_up_();
+    return run;
+}
+
 }  // namespace detail
 
 template <class T, class Brand, std::size_t Extent, class Body>
@@ -1712,8 +1762,11 @@ template <class T, class Brand, std::size_t Extent, class Body>
 [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>,
                                                ViewMut<T, Brand, Extent>>
 reborrow(ViewMut<T, Brand, Extent>&& view, Body&& body) noexcept {
-    View<T, Extent> const run = detail::run_of_(view);
-    return detail::give_run_back_<Brand>(RegionFrameKeyDoor::key_(), std::move(view), run, static_cast<Body&&>(body));
+    // The frame holds the parent while the body runs, so no name of the caller
+    // reaches the run in that time.
+    ViewMut<T, Brand, Extent> held{std::move(view)};
+    View<T, Extent> const run = detail::run_of_(held);
+    return detail::give_run_back_<Brand>(RegionFrameKeyDoor::key_(), std::move(held), run, static_cast<Body&&>(body));
 }
 
 template <class T, class Brand, std::size_t Extent, class Body>
@@ -2849,7 +2902,7 @@ byte_view(View<T, Extent> run) noexcept {
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
     requires std::same_as<T, unsigned char>
 [[nodiscard]] ViewMut<std::byte, Brand, Extent> byte_view(ViewMut<T, Brand, Extent>&& run) noexcept {
-    return ViewMut<std::byte, Brand, Extent>{RegionFrameKeyDoor::key_(), byte_view(detail::run_of_(run))};
+    return ViewMut<std::byte, Brand, Extent>{RegionFrameKeyDoor::key_(), byte_view(detail::take_run_(run))};
 }
 
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>

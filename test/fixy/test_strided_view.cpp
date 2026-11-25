@@ -656,6 +656,71 @@ void erased_writer_writes(::fixy::TestRunnerCtx const& test) noexcept {
     pass(test, "  erased_writer_writes: PASSED\n");
 }
 
+// Gives door one unique view of a 3 x 4 matrix through two parameters, so the
+// rule use-after-move does not see that the second one moved.  The sizes and
+// the strides of a fixed extent give a view of rank 2, and the ones of a
+// dynamic extent give a view of a dynamic rank.
+template <std::size_t Extent, class Door>
+void check_old_name(Door door) noexcept {
+    ::fixy::FixedArray<std::size_t, 2> const sizes{3, 4};
+    ::fixy::FixedArray<std::size_t, 2> const strides{4, 1};
+    static_cast<void>(::fixy::build_fixed_array<int, 12>([&sizes, &strides, door](auto run) noexcept {
+        ::fixy::View<std::size_t const, Extent> const shape{sizes.view()};
+        ::fixy::View<std::size_t const, Extent> const steps{strides.view()};
+        auto unique = ::fixy::mint_strided_view_mut(std::move(run), shape, steps, 0).expect("the matrix fits");
+        door(unique, unique);
+    }));
+}
+
+// A move, and each door that takes a unique view by rvalue reference, leaves no
+// element under the old name.  A self move keeps the elements.  The mint of a
+// unique view leaves no run under the name of its ViewMut.
+void old_name_of_a_unique_view(::fixy::TestRunnerCtx const& test) noexcept {
+    auto const move_out = [&test](auto& view, auto& old_name) noexcept {
+        auto const moved = std::move(view);
+        CRUCIBLE_TEST_ASSERT(test, moved.count() == 12 && moved.rank() == 2);
+        CRUCIBLE_TEST_ASSERT(test, old_name.count() == 0 && old_name.view().count() == 0);
+    };
+    check_old_name<2>(move_out);
+    check_old_name<::fixy::dynamic_extent>(move_out);
+    auto const move_over = [&test](auto& view, auto& old_name) noexcept {
+        auto moved = std::move(view);
+        [&test](auto& target, auto& source, auto& source_name) noexcept {
+            target = std::move(source);
+            CRUCIBLE_TEST_ASSERT(test, target.count() == 12 && source_name.count() == 0);
+        }(old_name, moved, moved);
+        [&test](auto& target, auto& same) noexcept {
+            target = std::move(same);
+            CRUCIBLE_TEST_ASSERT(test, target.count() == 12);
+        }(old_name, old_name);
+    };
+    check_old_name<2>(move_over);
+    check_old_name<::fixy::dynamic_extent>(move_over);
+    check_old_name<2>([&test](auto& view, auto& old_name) noexcept {
+        auto const columns = std::move(view).transpose(::fixy::index<0>(), ::fixy::index<1>());
+        CRUCIBLE_TEST_ASSERT(test, columns.count() == 12 && old_name.count() == 0);
+    });
+    auto const erase = [&test](auto& view, auto& old_name) noexcept {
+        auto const erased = ::fixy::erase_brand(std::move(view));
+        CRUCIBLE_TEST_ASSERT(test, erased.count() == 12 && old_name.count() == 0);
+    };
+    check_old_name<2>(erase);
+    check_old_name<::fixy::dynamic_extent>(erase);
+
+    static_cast<void>(::fixy::build_fixed_array<int, 12>([&test](auto run) noexcept {
+        ::fixy::View<int const> const elements = run.view();
+        [&test, elements](auto& view, auto& old_name) noexcept {
+            ::fixy::FixedArray<std::size_t, 1> const sizes{12};
+            ::fixy::FixedArray<std::size_t, 1> const strides{1};
+            auto const unique =
+                ::fixy::mint_strided_view_mut(std::move(view), sizes.view(), strides.view(), 0).expect("it fits");
+            CRUCIBLE_TEST_ASSERT(test, unique.count() == 12);
+            CRUCIBLE_TEST_ASSERT(test, ::fixy::offset_of(elements, ::fixy::View<int const>{old_name.view()}).is_none());
+        }(run, run);
+    }));
+    pass(test, "  old_name_of_a_unique_view: PASSED\n");
+}
+
 // A cursor of a scope never leaves its loop: a read and a step with no index
 // left end the process in each build.
 void read_past_the_end() noexcept {
@@ -1089,6 +1154,7 @@ int main() {
     unique_door_cases(test);
     unique_view_writes(test);
     erased_writer_writes(test);
+    old_name_of_a_unique_view(test);
     expect_dies(test, read_past_the_end,
                 ::fixy::TextView{"a read through the end cursor of a loop over the indexes of a strided view"});
     expect_dies(test, step_past_the_end,

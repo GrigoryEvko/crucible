@@ -535,6 +535,22 @@ class[[= ::foundation::transfer::refers{}]] StridedView {
         requires ViewElement<U> && StridedRank<OtherRank>
     friend class StridedView;
 
+    template <class U, std::size_t OtherRank, ::foundation::brand::IsBrand OtherBrand>
+        requires ViewElement<U> && (!std::is_const_v<U>) && StridedRank<OtherRank>
+    friend class StridedViewMut;
+
+    // Gives up the elements.  A view with an axis then has no element, and a
+    // view of rank 0 names none.
+    constexpr void give_up_() noexcept {
+        first_ = nullptr;
+        if constexpr (Rank == dynamic_rank) {
+            lanes_.rank_ = 1;
+        }
+        if constexpr (Rank != 0) {
+            lanes_.sizes[0] = 0;
+        }
+    }
+
     template <class U, std::size_t RunExtent, class S, std::size_t SizesExtent, class D, std::size_t StridesExtent>
         requires CanMintStridedView<S, SizesExtent, D, StridesExtent>
     friend constexpr Option<StridedView<U, detail::minted_rank<SizesExtent, StridesExtent>>>
@@ -968,8 +984,13 @@ template <class Lanes>
 // brand of the frame, so two unique views of two brands name runs that do not
 // overlap (the alias proof in foundation/core/Frame.h).  The erased view of
 // erase_brand has the brand DefaultBrand, which proves no such difference.  A
-// StridedViewMut does not copy.  A move leaves the source with its parts, and
-// the rule use-after-move refuses a later use of the source.
+// StridedViewMut does not copy.  A move gives the elements to the target and
+// leaves the source with none, and so does each door that takes a unique view
+// by rvalue reference.  So a second name of a moved view names no element, and
+// the alias proof holds.  The rule use-after-move does not see each such name.
+// The source of a static rank above 0 keeps its rank, and one of its sizes is
+// 0.  The source of a dynamic rank has one axis of no element.  The source of
+// rank 0 has no axis, so its count stays 1, and it names no element.
 //
 //   rank(), count(), sizes(), strides(), size(axis), stride(axis), is_dense()
 //                       as the StridedView of the same parts gives them
@@ -1013,6 +1034,13 @@ class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] StridedViewMut 
     // of a unique view, so its result keeps that proof of the elements.
     constexpr explicit StridedViewMut(StridedView<T, Rank> view) noexcept : view_{view} {}
 
+    // The plain view, which this view gives up.
+    [[nodiscard]] constexpr StridedView<T, Rank> take_view_() noexcept {
+        StridedView<T, Rank> const view = view_;
+        view_.give_up_();
+        return view;
+    }
+
 public:
     using element_type = T;
     using brand_type = Brand;
@@ -1023,8 +1051,12 @@ public:
         "a second writer");
     StridedViewMut& operator=(StridedViewMut const&) = delete("a StridedViewMut is the one writer of its elements: a "
                                                               "copy would be a second writer");
-    constexpr StridedViewMut(StridedViewMut&&) noexcept = default;
-    constexpr StridedViewMut& operator=(StridedViewMut&&) noexcept = default;
+    constexpr StridedViewMut(StridedViewMut&& other) noexcept : view_{other.take_view_()} {}
+    constexpr StridedViewMut& operator=(StridedViewMut&& other) noexcept {
+        StridedView<T, Rank> const view = other.take_view_();
+        view_ = view;
+        return *this;
+    }
     ~StridedViewMut() = default;
 
     [[nodiscard]] constexpr std::size_t rank() const noexcept { return view_.rank(); }
@@ -1060,7 +1092,9 @@ public:
     [[nodiscard]] constexpr StridedViewMut transpose(Axis first, Axis second) && noexcept
         requires(Rank != dynamic_rank && Rank > 0)
     {
-        return StridedViewMut{view_.transpose(first, second)};
+        StridedView<T, Rank> const view = view_.transpose(first, second);
+        view_.give_up_();
+        return StridedViewMut{view};
     }
 };
 
@@ -1112,7 +1146,7 @@ namespace detail {
 
 template <class T, std::size_t Rank, class Brand>
 constexpr auto erased_view_mut_(StridedViewMut<T, Rank, Brand>&& view) noexcept {
-    return StridedViewMut<T, Rank, ::foundation::brand::DefaultBrand>{view.view_};
+    return StridedViewMut<T, Rank, ::foundation::brand::DefaultBrand>{view.take_view_()};
 }
 
 }  // namespace detail
