@@ -1818,7 +1818,7 @@ public:
         requires ::foundation::effects::CtxAdmits<Ctx, run_required_row>
     void run_in_row(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof, Ctx const& ctx) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(proof.holds_part(thread_) && proof.is_quiescent());
+        expect_own_proof_(proof);
         claim_pipeline_run_();
         run_pipeline_(ctx);
         end_pipeline_run_(ctx);
@@ -1840,12 +1840,19 @@ private:
         }
     }
 
-    // Ends the process unless the proof names this object, no pipeline
-    // thread of start() runs, and no run of the pipeline is active.  A door
-    // that writes or reads the state of a stage with no pipeline asks it.
+    // Ends the process unless the proof names this object and no pipeline
+    // thread of start() runs.  The proof of another object has the same type,
+    // so the check runs in each build, under each contract semantic.
+    void expect_own_proof_(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
+        CRUCIBLE_FATAL_INVARIANT(proof.holds_part(thread_) && proof.is_quiescent());
+    }
+
+    // Ends the process unless the proof is right (expect_own_proof_) and no
+    // run of the pipeline is active.  A door that writes or reads the state of
+    // a stage with no pipeline asks it.
     void expect_quiescent_(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
-        CRUCIBLE_PRE(proof.holds_part(thread_) && proof.is_quiescent());
-        CRUCIBLE_PRE(pipeline_run_.load_acquire() == PipelineRun::stopped);
+        expect_own_proof_(proof);
+        CRUCIBLE_FATAL_INVARIANT(pipeline_run_.load_acquire() == PipelineRun::stopped);
     }
 
 public:

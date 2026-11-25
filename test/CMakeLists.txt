@@ -316,6 +316,11 @@ crucible_test(test_vigil_idle_wait)
 crucible_test(test_vigil_detector_snapshot)
 crucible_test(test_background_thread_refused_ops)
 crucible_test(test_background_thread_start_stop)
+# The checks of a proof of quiescence hold under the ignore semantic, where a
+# CRUCIBLE_PRE is only an assumption.
+crucible_test(test_background_thread_quiescence)
+crucible_test(test_background_thread_quiescence_ignore test_background_thread_quiescence.cpp)
+crucible_contract_ignore_target(test_background_thread_quiescence_ignore)
 crucible_test(test_background_thread_flush)
 # A flush that waits with no end fails the test at the time limit.
 set_tests_properties(test_background_thread_flush PROPERTIES TIMEOUT 120)
