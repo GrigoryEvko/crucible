@@ -3602,6 +3602,12 @@ foundation_neg_compile_test(neg_core_store_capture_reaches_an_incomplete_class
   "a capture of the body reaches a class, and the definition of that class is not visible in this unit"
   "static assertion failed: .anonymous.::Hidden"
   "no matching function for call to .foundation::core::GrowList<int>::with_view")
+# The store check of a frame body reads the element of an array, so a capture
+# of an array of a class that the unit only declares stops the build.
+foundation_neg_compile_test(neg_core_store_capture_reaches_an_array_of_an_incomplete_class
+  "a capture of the body reaches a class, and the definition of that class is not visible in this unit"
+  "static assertion failed: .anonymous.::Hidden"
+  "no matching function for call to .foundation::core::GrowList<int>::with_view")
 # The value door build_at of a FixedArray builds an element in its place, so
 # its function holds no state and no argument reaches the array.
 foundation_neg_compile_test(neg_core_fixed_array_build_at_fn_with_state

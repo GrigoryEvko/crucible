@@ -70,6 +70,7 @@
 //       its type arguments too, in its own region.  A type argument that is
 //       an incomplete class, such as a tag that a unit only declares, holds no
 //       value
+//     * an array gives its element in the region of the array
 //   A function pointer, a pointer to member, a scalar and an enumeration are
 //   no borrow slot.
 //
@@ -297,8 +298,7 @@ consteval void push_members_(StoreWalk& walk, TypeParts const& parts, StoreRegio
             continue;
         }
         if (std::meta::is_array_type(type)) {
-            std::meta::info const element = ::foundation::reflect::bare_type(std::meta::remove_all_extents(type));
-            walk.push(StoreNode{element, std::meta::info{}, region, node.may_read});
+            walk.push(indirect_node_(std::meta::remove_all_extents(type), region));
             continue;
         }
         if (!is_class_or_union_(type)) continue;

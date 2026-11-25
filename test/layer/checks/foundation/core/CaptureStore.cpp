@@ -193,6 +193,17 @@ struct Callback {
 static_assert(!is_refused<OwnerOfInts>() && !is_refused<ArenaOfEpoch>() && are_outer_borrows_admitted());
 static_assert(!is_refused<TaggedValue>() && !is_refused<Callback>());
 
+// An array gives its element in the region of the array, also behind a
+// reference or a pointer, and the element is a complete class or the check
+// stops the build.  So a capture of an array of plain objects passes, and an
+// array of objects with a View is a borrow slot where the body writes it.  The
+// fixture neg_core_store_capture_reaches_an_array_of_an_incomplete_class pins
+// the refusal of an incomplete element.
+static_assert(!stores_borrow_in_(^^Tagged<UndeclaredTag> (&)[3]) && !stores_borrow_in_(^^Tagged<UndeclaredTag>[3]));
+static_assert(stores_borrow_in_(^^Holder (&)[3]) && !stores_borrow_in_(^^Holder const (&)[3]));
+static_assert(!stores_borrow_in_(^^Holder[3]) && stores_borrow_in_(^^Holder (*)[3]));
+static_assert(!stores_borrow_in_(^^Tagged<int> const (*)[3]));
+
 // A named class of a body is a borrow slot of its own: the caller reads its
 // members after the call.  The same class with no name passes, and a const
 // named class writes nothing.
