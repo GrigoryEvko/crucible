@@ -50,6 +50,11 @@
 //         borrow.cpp       the family borrow match: each write of an arm of
 //                          a borrow match to the sum that the match reads,
 //                          for the rule borrow-match
+//         route.cpp        the family borrow route: how a borrow of one type
+//                          reaches an object of another type
+//         live.cpp         the family live borrow: each use of a borrow after
+//                          an event that can end its object, for the kind
+//                          stale-borrow of the rule view-escape
 //
 // Rule table
 //     utils/rule-table.txt gives the layers of the base, the headers that
@@ -319,6 +324,10 @@
 //                           const and its constant initializer holds only
 //                           addresses of objects of static storage (the
 //                           statics)
+//     stale-borrow          a use of a name that holds a borrow, after an event
+//                           that can end the borrowed object: a move, an
+//                           assignment, a call or the end of a scope
+//                           (live.cpp)
 //     The rule proof-routes (expression.cpp, the proof routes):
 //     union                 a union definition
 //     pointer-cast          a cast to a pointer or a reference to a proof type
@@ -731,6 +740,7 @@
 #include <cstring>
 #include <functional>
 #include <initializer_list>
+#include <map>
 #include <set>
 #include <string>
 #include <string_view>
@@ -1314,6 +1324,7 @@ enum class Kind : std::uint8_t {
     escaped_borrow,
     stored_borrow,
     static_borrow,
+    stale_borrow,
     unrostered_witness,
     route_union,
     route_pointer_cast,
@@ -1668,6 +1679,8 @@ inline const char* kind_name(Kind kind) {
             return "stored-borrow";
         case Kind::static_borrow:
             return "static-borrow";
+        case Kind::stale_borrow:
+            return "stale-borrow";
         case Kind::unrostered_witness:
             return "unrostered-witness";
         case Kind::route_union:
@@ -1930,6 +1943,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::escaped_borrow:
         case Kind::stored_borrow:
         case Kind::static_borrow:
+        case Kind::stale_borrow:
             return Rule::view_escape;
         case Kind::unrostered_witness:
             return Rule::witness_roster;
@@ -2061,9 +2075,10 @@ inline Rule rule_of(Kind kind) {
 // scope brand of the rule brand-escape (the scope brands of linear.cpp), the
 // end of a linear sum with a payload of the rule must-consume (the sums of
 // linear.cpp), a bit copy into the tag of a sum (the closed tags of
-// library.cpp), and a return or a store of a borrow of an object that ends
-// with the frame of the rule view-escape (escape.cpp).  No enforce mode
-// changes such a finding, and an opt-out region covers it.
+// library.cpp), and each finding of the rule view-escape: a return or a store
+// of a borrow of an object that ends with the frame (escape.cpp), and a use of
+// a stale borrow (live.cpp).  No enforce mode changes such a finding, and an
+// opt-out region covers it.
 inline bool is_each_mode_kind(Kind kind) {
     switch (kind) {
         case Kind::forged_tag:
@@ -2095,6 +2110,7 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::escaped_borrow:
         case Kind::stored_borrow:
         case Kind::static_borrow:
+        case Kind::stale_borrow:
             return true;
         default:
             return false;
@@ -2256,6 +2272,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"view-escape", "escaped-borrow"},
     {"view-escape", "stored-borrow"},
     {"view-escape", "static-borrow"},
+    {"view-escape", "stale-borrow"},
     {"witness-roster", "unrostered-witness"},
     {"proof-routes", "union"},
     {"proof-routes", "pointer-cast"},
@@ -3293,11 +3310,13 @@ void report_open_regions();
 // annotation, or the pattern of its template or of its most general template
 // does, as the pattern of a member template of a class template does.  Each
 // is linear in the attributes.  is_std_move_cast() is true for std::move,
-// std::forward, std::move_if_noexcept and std::forward_like.
+// std::forward, std::move_if_noexcept and std::forward_like, and
+// is_std_as_const() for std::as_const.
 tree annotation_class(tree attribute);
 bool carries_base_annotation(tree attributes, tree name, tree space);
 bool function_carries_base_annotation(tree function, tree name, tree space);
 bool is_std_move_cast(tree function);
+bool is_std_as_const(tree function);
 
 // library.cpp: the names, the library and the admitted list.
 enum class Library : std::uint8_t {
@@ -3465,6 +3484,84 @@ void report_borrow_match(const Finding& finding);
 // error of one finding that no region opts out.
 void register_view_escape(const char* plugin_name);
 void report_view_escape(const Finding& finding);
+
+// escape.cpp: the facts of a type that the rule reads (the borrow), for the
+// families borrow route and live borrow.  holds_borrow() is true when a value of
+// TYPE can hold a borrow.  held_owner_arguments() gives the count of the type
+// arguments that the values of an owner of the base hold, or -1 for a class that
+// is no such owner.  is_borrow_class() is true for a class that states refers{},
+// refers_unique{} or refers_deep{}, is_storage_owner() for a class of the base
+// that states owns_its_storage{}, and is_outside_owner() for an owner of the base
+// that releases nothing at its end (the runs outside).  In a wide reading an
+// incomplete class can hold a borrow (set_wide_borrows).
+bool holds_borrow(tree type);
+int held_owner_arguments(tree type);
+bool is_borrow_class(tree type);
+bool is_storage_owner(tree type);
+bool is_outside_owner(tree type);
+void set_wide_borrows(bool is_wide);
+
+// route.cpp: the family borrow route, how a borrow of one type reaches an object
+// of another type.
+
+// The TYPE_UID of each type of a set, in their order.
+using TypeSet = std::vector<unsigned>;
+
+// How a result reaches an argument (the reach).
+enum class Reach : std::uint8_t {
+    none,  // the result cannot name an object of the argument
+    through,  // the result names what the argument borrows
+    into,  // the result names the argument, a part of it or an object that it owns
+};
+
+// The reach of a result into an argument, the owners of the argument that have a
+// target behind them, and the targets with an end.
+struct BorrowRoute {
+    Reach reach = Reach::none;
+    TypeSet route;
+    TypeSet targets;
+};
+
+// An owner, the types behind its pointers, whether it keeps each block until its
+// own end, and whether no code can move or assign it then.  BEHIND lives until the
+// next begin_route_reading().
+struct OwnerClass {
+    unsigned id = 0;
+    const TypeSet* behind = nullptr;
+    bool keeps_blocks = false;
+    bool is_fixed = false;
+};
+
+// Starts the reading of one body, which is wide or not.  A reference to an answer
+// of an earlier reading ends here.
+void begin_route_reading(bool is_wide);
+bool have_common_type(const TypeSet& first, const TypeSet& second);
+void add_types(TypeSet& set, const TypeSet& added);
+// The type TYPE with no array and no qualifier.
+tree element_class(tree type);
+// True for a pointer and for a reference.
+bool is_indirect_type(tree type);
+const BorrowRoute& borrow_route(tree result, tree held);
+// The class TYPE and each part of it by value that has an end.
+const TypeSet& ended_parts(tree type);
+// Each class with an end that an object of TYPE holds in a member of a union.
+const TypeSet& ended_cells(tree type);
+// True when a value of TYPE can hold an object of HELD: TYPE itself, a part by
+// value or a type argument, at each depth.
+bool can_hold_object(tree type, tree held);
+// True for a class that states owns_its_storage{}: each member that is not const
+// keeps the objects of its blocks.
+bool keeps_its_blocks(tree type);
+// Each owner that an object of TYPE is or owns.
+const std::vector<OwnerClass>& owner_classes(tree type);
+
+// live.cpp: the family live borrow, the kind stale-borrow of the rule view-escape.
+// finish_live_borrows() judges each use of a borrow after a call that can end it,
+// after the parse, and report_stale_borrow() gives the error of one finding that
+// no region opts out.
+void register_live_borrows(const char* plugin_name);
+void finish_live_borrows();
+void report_stale_borrow(const Finding& finding);
 
 // declaration.cpp: the walk of the returns of escape.cpp gives each parameter
 // by a const reference that a return borrows, and the end of the parse judges

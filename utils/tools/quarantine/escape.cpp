@@ -1496,6 +1496,39 @@ void on_collection(void*, void*) {
 
 }  // namespace
 
+bool holds_borrow(tree type) { return can_hold_borrow(type); }
+
+int held_owner_arguments(tree type) {
+    type = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(type)) {
+        return -1;
+    }
+    if (is_base_storage_owner(type)) {
+        return 0;
+    }
+    bool const is_first_owner =
+        carries_mark(type, escape_names.by_arguments) || carries_mark(type, escape_names.payload_cell);
+    if (!is_first_owner && !is_owner_core_class(type)) {
+        return -1;
+    }
+    tree info = CLASSTYPE_TEMPLATE_INFO(type);
+    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    return arguments == NULL_TREE ? 0 : (is_first_owner ? 1 : TREE_VEC_LENGTH(arguments));
+}
+
+bool is_borrow_class(tree type) {
+    type = TYPE_MAIN_VARIANT(type);
+    return CLASS_TYPE_P(type)
+        && (carries_mark(type, escape_names.refers) || carries_mark(type, escape_names.refers_unique)
+            || carries_mark(type, escape_names.refers_deep));
+}
+
+bool is_storage_owner(tree type) { return is_base_storage_owner(type); }
+
+bool is_outside_owner(tree type) { return outside_run_core(type) != NULL_TREE; }
+
+void set_wide_borrows(bool is_wide) { open_answer = is_wide ? OpenAnswer::each : OpenAnswer::no; }
+
 void check_static_borrow(tree decl, const std::string& entity) {
     if (!holds_unstatic_borrow(TREE_TYPE(decl)) || has_static_constant_initializer(decl)) {
         return;
@@ -1507,6 +1540,10 @@ void check_static_borrow(tree decl, const std::string& entity) {
 }
 
 void report_view_escape(const Finding& finding) {
+    if (finding.kind == Kind::stale_borrow) {
+        report_stale_borrow(finding);
+        return;
+    }
     if (finding.kind == Kind::static_borrow) {
         error_at(finding.spelling,
                  "an object of static or thread storage duration holds a borrow that names no object of static "

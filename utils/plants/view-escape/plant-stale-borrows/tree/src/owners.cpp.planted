@@ -1,0 +1,127 @@
+// Each use of a borrow after the end of its object is a finding, for owners that
+// are no plain array: an arena in a Box, a block of bytes, a slot map, a nested
+// array, a keyed array, a frozen text, two locks and a region.
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/OwnedRegion.h>
+#include <fixy/os/SharedLocked.h>
+#include <fixy/os/SpinLock.h>
+#include <foundation/AlignedBytes.h>
+#include <foundation/core/BumpArena.h>
+#include <foundation/core/Grow.h>
+#include <foundation/core/Ref.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/permissions/Permission.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+namespace perm = ::foundation::permissions;
+
+using Alloc = ::foundation::effects::Alloc;
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, unsigned long>;
+using Items = ::fixy::HeapArray<int>;
+using Nested = ::fixy::HeapArray<Items>;
+
+struct[[= ::foundation::brand::arena_family_brand{}]] Family final {};
+using Arena = fc::BumpArena<Family>;
+
+struct RegionTag final {
+    using permission_row = ::foundation::effects::Row<>;
+    using scope_door = ::fixy::RegionScopeDoor;
+};
+struct LockTag final {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct SlotTag final {};
+
+struct Holder {
+    Items items{};
+};
+
+template <class Owner>
+void move_away_and_end(Owner& owner) noexcept {
+    Owner const taken{std::move(owner)};
+    static_cast<void>(taken);
+}
+
+int object_of_an_arena(Alloc alloc) noexcept {
+    auto arena = fc::mint_box<Arena>(alloc, Bytes{4096});
+    auto const ref = arena->make<int>(alloc, 7);
+    move_away_and_end(arena);
+    return *ref;
+}
+
+unsigned long run_of_an_arena(Alloc alloc) noexcept {
+    auto arena = fc::mint_box<Arena>(alloc, Bytes{4096});
+    auto const run = arena->array(alloc, 4UL, 7);
+    arena = fc::mint_box<Arena>(alloc, Bytes{4096});
+    return run.view().size();
+}
+
+unsigned long block_of_bytes(::foundation::AlignedBytes block) noexcept {
+    auto const view = std::as_const(block).view();
+    block.reset();
+    return view.size();
+}
+
+unsigned long value_of_a_map(Alloc alloc) noexcept {
+    auto map =
+        ::fixy::mint_slot_map<Items, SlotTag>(alloc, ::fixy::Quantity<::fixy::unit::Element, unsigned>{4});
+    auto const key = map.insert(Items{}).expect("the map has room");
+    auto const view = map.get(key).expect("the map holds the value")->view();
+    static_cast<void>(map.remove(key));
+    return view.size();
+}
+
+unsigned long element_of_an_array(Nested nested) noexcept {
+    auto const view = nested.get(0).expect("the array holds an element")->view();
+    static_cast<void>(nested.exchange(0, Items{}));
+    return view.size();
+}
+
+unsigned long keyed_array() noexcept {
+    auto [keyed, key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<Holder, 2>);
+    auto const view = keyed.at(::fixy::index<0>()).items.view();
+    keyed.with_element(key, ::fixy::index<0>(), [](Holder& holder) noexcept { holder.items = Items{}; });
+    return view.size();
+}
+
+unsigned long frozen_text(::fixy::GrowText first, ::fixy::GrowText second) noexcept {
+    auto frozen = ::fixy::freeze(std::move(first));
+    auto const view = frozen.view();
+    frozen = ::fixy::freeze(std::move(second));
+    return view.size();
+}
+
+unsigned long spin_lock(::fixy::TestRunnerCtx const& ctx) noexcept {
+    ::fixy::spin::BlockingLocked<Items, LockTag> locked{Items{}};
+    Items local{};
+    auto const view = local.view();
+    locked.with(ctx, [&local](Items& held) noexcept { held = std::move(local); });
+    locked.with(ctx, [](Items& held) noexcept { held = Items{}; });
+    return view.size();
+}
+
+unsigned long shared_lock(::fixy::TestRunnerCtx const& ctx) noexcept {
+    auto root = perm::mint_permission_root<LockTag>();
+    ::fixy::SharedLocked<Items, LockTag, typename decltype(root)::brand_type> shared{std::move(root), Items{}};
+    Items local{};
+    auto const view = local.view();
+    static_cast<void>(shared.with_write(ctx, [&local](Items& held) noexcept { held = std::move(local); }).is_some());
+    return view.size();
+}
+
+unsigned long view_beside_a_region(Items items) noexcept {
+    unsigned long count = 0;
+    auto const view = items.view();
+    static_cast<void>(::fixy::with_region<RegionTag>(std::move(items), [&count, view](auto region) noexcept {
+        count = view.size();
+        return region;
+    }));
+    return count;
+}
+
+}  // namespace planted

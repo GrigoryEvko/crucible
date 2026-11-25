@@ -126,6 +126,10 @@ concept OwnerState = MarksOwnerState<State> && GivesOwnerOperations<State>;
 // storage through pointers: no door of the class stores a pointer or a
 // borrow that a caller gives.  The store check of a frame body
 // (foundation/core/CaptureStore.h) reads its type arguments and no member.
+// Each member that is not const keeps each object that a borrow of a caller
+// can name, until the end of the owner.  So the kind stale-borrow of the rule
+// view-escape reads a call of a member as no end of a borrow.  An EpochArena
+// ends the objects of an epoch, and only the frame of that epoch can name them.
 struct owns_its_storage final {};
 
 // A state whose release gives nothing back, such as the run of a region that

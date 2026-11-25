@@ -1,0 +1,117 @@
+# Each use of a borrow after the end of its object is an error in each mode.
+#
+# The unit stale has the events: the end of a scope (49), an assignment (56), a move
+# of the bytes (63), a move into a call (70), a call by a reference (77), a call with
+# no body (84), a frame beside a closure (90), a change on one path (100), a clear of
+# a list (107) and a change of a sum (114).  An owner takes the storage along and
+# then ends: a local (124), an aggregate (134), an Option (144), a call that gives a
+# different owner (151), and a window of a View (159).  The places are a member (170),
+# a parameter (177), a reference (185), a Ref (193), an instance of a template (201),
+# a closure that captures the owner (211), the body of a closure (219), a loop (228)
+# and the range of a loop (239).  The opt-out region turns the use on line 249 into
+# opted-out.
+#
+# The unit owners has owners that are no plain array.  The unit marked has a class
+# that keeps its blocks and that a caller can move (46), and a class that no code can
+# move.  The unit early has a class that the unit completes after the body that reads
+# it (27), and a class that the unit never completes (39).  The second compile of the
+# unit stale shows that a parse with no object gives the same errors.
+
+compile stale src/stale.cpp
+flag stale -freflection
+exit stale fail
+finding stale view-escape stale-borrow src/stale.cpp:49:12 | borrow of items in view after the end of the scope of items
+finding stale view-escape stale-borrow src/stale.cpp:56:12 | borrow of items in view after an assignment of items
+finding stale view-escape stale-borrow src/stale.cpp:63:24 | borrow of pair in element after a move of pair
+finding stale view-escape stale-borrow src/stale.cpp:70:12 | borrow of items in view after a call of planted::sink with a temporary
+finding stale view-escape stale-borrow src/stale.cpp:77:12 | borrow of items in view after a call of planted::replace_through_a_callee with items
+finding stale view-escape stale-borrow src/stale.cpp:84:12 | borrow of items in view after a call of planted::replace_out_of_line with items, which reaches a function with no body in this unit
+finding stale view-escape stale-borrow src/stale.cpp:90:25 | borrow of items in a closure of foundation::core::with_mut after a move of items
+finding stale view-escape stale-borrow src/stale.cpp:100:12 | borrow of items in view after an assignment of items
+finding stale view-escape stale-borrow src/stale.cpp:107:12 | borrow of list in view after a call of foundation::core::FixedList::clear with list
+finding stale view-escape stale-borrow src/stale.cpp:114:12 | borrow of sum in ref after an assignment of sum
+finding stale view-escape stale-borrow src/stale.cpp:124:12 | borrow of items in view after an assignment of taken
+finding stale view-escape stale-borrow src/stale.cpp:134:12 | borrow of items in view after the end of the scope of holder
+finding stale view-escape stale-borrow src/stale.cpp:144:12 | borrow of items in view after the end of the scope of held
+finding stale view-escape stale-borrow src/stale.cpp:151:12 | borrow of items in view after a call of planted::replace_by_value with a temporary
+finding stale view-escape stale-borrow src/stale.cpp:159:12 | borrow of items in window after an assignment of items
+finding stale view-escape stale-borrow src/stale.cpp:170:16 | borrow of this->items_ in view after an assignment of this->items_
+finding stale view-escape stale-borrow src/stale.cpp:177:12 | borrow of holder.items in view after an assignment of holder.items
+finding stale view-escape stale-borrow src/stale.cpp:185:12 | borrow of items in view after an assignment of items
+finding stale view-escape stale-borrow src/stale.cpp:193:12 | borrow of items in view after an assignment of items
+finding stale view-escape stale-borrow src/stale.cpp:201:12 | borrow of items in view after an assignment of items
+finding stale view-escape stale-borrow src/stale.cpp:211:12 | borrow of items in view after a call of a closure that captures items
+finding stale view-escape stale-borrow src/stale.cpp:219:16 | borrow of items in view after an assignment of items
+finding stale view-escape stale-borrow src/stale.cpp:228:18 | borrow of items in view after an assignment of items
+finding stale view-escape stale-borrow src/stale.cpp:239:28 | borrow of list in items after a call of foundation::core::FixedList::clear with list
+finding stale quarantine region src/stale.cpp:248:1 | PROBE: the test reads a view after the end of its array
+finding stale quarantine opted-out src/stale.cpp:249:12 | stale-borrow borrow of items in view after an assignment of items
+error stale src/stale.cpp:49 | this use reads a borrow of items in view after the end of the scope of items
+error stale src/stale.cpp:56 | this use reads a borrow of items in view after an assignment of items
+error stale src/stale.cpp:63 | this use reads a borrow of pair in element after a move of pair
+error stale src/stale.cpp:70 | this use reads a borrow of items in view after a call of planted::sink with a temporary
+error stale src/stale.cpp:77 | this use reads a borrow of items in view after a call of planted::replace_through_a_callee with items
+error stale src/stale.cpp:84 | this use reads a borrow of items in view after a call of planted::replace_out_of_line with items, which reaches a function with no body in this unit
+error stale src/stale.cpp:90 | this use reads a borrow of items in a closure of foundation::core::with_mut after a move of items
+error stale src/stale.cpp:100 | this use reads a borrow of items in view after an assignment of items
+error stale src/stale.cpp:107 | this use reads a borrow of list in view after a call of foundation::core::FixedList::clear with list
+error stale src/stale.cpp:114 | this use reads a borrow of sum in ref after an assignment of sum
+error stale src/stale.cpp:124 | this use reads a borrow of items in view after an assignment of taken
+error stale src/stale.cpp:134 | this use reads a borrow of items in view after the end of the scope of holder
+error stale src/stale.cpp:144 | this use reads a borrow of items in view after the end of the scope of held
+error stale src/stale.cpp:151 | this use reads a borrow of items in view after a call of planted::replace_by_value with a temporary
+error stale src/stale.cpp:159 | this use reads a borrow of items in window after an assignment of items
+error stale src/stale.cpp:170 | this use reads a borrow of this->items_ in view after an assignment of this->items_
+error stale src/stale.cpp:177 | this use reads a borrow of holder.items in view after an assignment of holder.items
+error stale src/stale.cpp:185 | this use reads a borrow of items in view after an assignment of items
+error stale src/stale.cpp:193 | this use reads a borrow of items in view after an assignment of items
+error stale src/stale.cpp:201 | this use reads a borrow of items in view after an assignment of items
+error stale src/stale.cpp:211 | this use reads a borrow of items in view after a call of a closure that captures items
+error stale src/stale.cpp:219 | this use reads a borrow of items in view after an assignment of items
+error stale src/stale.cpp:228 | this use reads a borrow of items in view after an assignment of items
+error stale src/stale.cpp:239 | this use reads a borrow of list in items after a call of foundation::core::FixedList::clear with list
+text stale | the borrowed object can end here, so the use reads dead storage
+text stale | take the borrow again after the change, or change the owner after the last use of the borrow
+text stale | PROBE: reason
+
+compile syntax src/stale.cpp out=no stage=syntax errors=stale notes=stale
+flag syntax -freflection
+exit syntax fail
+
+compile owners src/owners.cpp
+flag owners -freflection
+exit owners fail
+finding owners view-escape stale-borrow src/owners.cpp:54:13 | borrow of arena in ref after a call of planted::move_away_and_end with arena
+finding owners view-escape stale-borrow src/owners.cpp:61:12 | borrow of arena in run after an assignment of arena
+finding owners view-escape stale-borrow src/owners.cpp:67:12 | borrow of block in view after a call of foundation::AlignedBytes::reset with block
+finding owners view-escape stale-borrow src/owners.cpp:76:12 | borrow of map in view after a call of foundation::core::SlotMap::remove with map
+finding owners view-escape stale-borrow src/owners.cpp:82:12 | borrow of nested in view after a call of foundation::core::HeapArray::exchange with nested
+finding owners view-escape stale-borrow src/owners.cpp:89:12 | borrow of keyed in view after a call of foundation::core::FixedArray::with_element with keyed
+finding owners view-escape stale-borrow src/owners.cpp:96:12 | borrow of frozen in view after an assignment of frozen
+finding owners view-escape stale-borrow src/owners.cpp:105:12 | borrow of local in view after a call of a closure that captures local
+finding owners view-escape stale-borrow src/owners.cpp:114:12 | borrow of local in view after a call of a closure that captures local
+finding owners view-escape stale-borrow src/owners.cpp:120:53 | borrow of items in a closure of fixy::with_region after a move of items
+error owners src/owners.cpp:54 | this use reads a borrow of arena in ref after a call of planted::move_away_and_end with arena
+error owners src/owners.cpp:61 | this use reads a borrow of arena in run after an assignment of arena
+error owners src/owners.cpp:67 | this use reads a borrow of block in view after a call of foundation::AlignedBytes::reset with block
+error owners src/owners.cpp:76 | this use reads a borrow of map in view after a call of foundation::core::SlotMap::remove with map
+error owners src/owners.cpp:82 | this use reads a borrow of nested in view after a call of foundation::core::HeapArray::exchange with nested
+error owners src/owners.cpp:89 | this use reads a borrow of keyed in view after a call of foundation::core::FixedArray::with_element with keyed
+error owners src/owners.cpp:96 | this use reads a borrow of frozen in view after an assignment of frozen
+error owners src/owners.cpp:105 | this use reads a borrow of local in view after a call of a closure that captures local
+error owners src/owners.cpp:114 | this use reads a borrow of local in view after a call of a closure that captures local
+error owners src/owners.cpp:120 | this use reads a borrow of items in a closure of fixy::with_region after a move of items
+
+compile marked src/marked.cpp
+flag marked -freflection
+exit marked fail
+finding marked view-escape stale-borrow src/marked.cpp:46:12 | borrow of blocks in view after a call of planted::change with blocks, which reaches a function with no body in this unit
+error marked src/marked.cpp:46 | this use reads a borrow of blocks in view after a call of planted::change with blocks, which reaches a function with no body in this unit
+
+compile early src/early.cpp
+flag early -freflection
+exit early fail
+finding early view-escape stale-borrow src/early.cpp:27:12 | borrow of later in view after a call of planted::change with later
+finding early view-escape stale-borrow src/early.cpp:39:12 | borrow of never in view after a call of planted::change with never, which reaches a function with no body in this unit
+error early src/early.cpp:27 | this use reads a borrow of later in view after a call of planted::change with later
+error early src/early.cpp:39 | this use reads a borrow of never in view after a call of planted::change with never, which reaches a function with no body in this unit

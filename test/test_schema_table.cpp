@@ -4,6 +4,7 @@
 
 #include "padding_bytes.h"
 #include <fixy/Core.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstdint>
@@ -162,10 +163,12 @@ static void test_same_name_registers_once() {
     const InternedSchemaName held = t.lookup(H(0x42)).expect("the hash is registered");
     reg(t, mv, S(H(0x42), "first"));
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 1);
-    CRUCIBLE_TEST_ASSERT(kTest, held.value().view() == ::fixy::TextView{"first"});
     const InternedSchemaName again = t.lookup(H(0x42)).expect("the hash is registered");
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test reads a name of a lookup after a registration, which keeps the name")
+    CRUCIBLE_TEST_ASSERT(kTest, held.value().view() == ::fixy::TextView{"first"});
     CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::foreign_c_str(again.value())
                                     == ::foundation::core::foreign_c_str(held.value()));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     ::fixy::check::pass(kTest, "  test_same_name_registers_once:  PASSED\n");
 }
 
@@ -657,7 +660,9 @@ static void test_late_table_holds_many_names() {
         if (i == 0) first = late.lookup(hash_at(0));
     }
     CRUCIBLE_TEST_ASSERT(kTest, late.count() == kNames);
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test reads a name of a lookup after a registration, which keeps the name")
     CRUCIBLE_TEST_ASSERT(kTest, eq(first, "op_0"));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     for (uint32_t i = 0; i < kNames; ++i) {
         const ::fixy::FixedText<16> name = op_name(i);
         CRUCIBLE_TEST_ASSERT(kTest, eq(late.lookup(hash_at(i)), name.view()));

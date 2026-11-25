@@ -1,4 +1,4 @@
-"""view-escape — a function keeps no borrow of an object that ends with its frame.
+"""view-escape — no code keeps or reads a borrow of an object that ended.
 
 Rule
     The quarantine plugin of utils/tools/quarantine/ reads each return of each
@@ -10,17 +10,22 @@ Rule
     that outlives the frame: the object of a parameter by reference, a member
     of the object of a member function, or an object of static or thread
     storage (escape.cpp, the stores).  A later read of the store reads a dead
-    stack frame.  The rule reads those finding lines in the sections of the
-    objects of the target all of one build (assay.guard.engines.plugin.runner,
-    the sections).  The same line from two objects counts one time.
+    stack frame.  The kind static-borrow is an object of static or thread
+    storage whose type holds a borrow with no brand of static storage.  The
+    kind stale-borrow is a use of a name after an event that ends the object
+    that the name borrows: a move, an assignment, a call or the end of a scope
+    (live.cpp, the ends).  The rule reads those finding lines in the sections
+    of the objects of the target all of one build
+    (assay.guard.engines.plugin.runner, the sections).  The same line from two
+    objects counts one time.
 
     A View with a brand or a lifetime parameter would carry the fact in its
     type.  C++ gives neither, so the plugin holds it.
 
-    The rule has no ledger, and each finding is an error.  A return or a store
-    in an opt-out region is a finding of the kind opted-out of the rule
-    quarantine, and the ledger of that rule counts it.  Each problem of the
-    census of the runner is an error too.
+    The rule has no ledger, and each finding is an error.  A return, a store,
+    an object or a use in an opt-out region is a finding of the kind opted-out
+    of the rule quarantine, and the ledger of that rule counts it.  Each
+    problem of the census of the runner is an error too.
 
 Usage
     guard check --rule view-escape --build-dir DIR [--warnings-dir DIR]
@@ -33,13 +38,32 @@ from assay.core import report as check_report
 from assay.guard.engines.plugin import runner
 
 RULE = "view-escape"
-# The kind of a store (the rule).
-STORED_KIND = "stored-borrow"
+# The message of each kind (the rule).
+MESSAGES = {
+    "escaped-borrow": (
+        "a function returns a borrow of an object that ends with its frame ({entity}), so a read of the result reads "
+        "a dead stack frame.  Return a value that owns its storage, or take the object by a reference that "
+        "CRUCIBLE_LIFETIMEBOUND marks"
+    ),
+    "stored-borrow": (
+        "a function stores a borrow of an object that ends with its frame ({entity}), so a later read of the store "
+        "reads a dead stack frame.  Store a value that owns its storage, or a borrow of an object that outlives the "
+        "store"
+    ),
+    "static-borrow": (
+        "an object of static or thread storage holds a borrow that names no object of static storage ({entity}), so "
+        "a read of the object can read dead storage.  Keep the borrow in an object of automatic storage, or take a "
+        "Ref of a static object through ref_of_static"
+    ),
+    "stale-borrow": (
+        "a use reads a borrow of an object that ended ({entity}), so it reads dead storage.  Take the borrow again "
+        "after the change, or change the owner after the last use of the borrow"
+    ),
+}
 
 
 def findings(context: runner.PluginContext) -> list[check_report.Finding]:
-    """Give one error for each return or store of a borrow of an object that ends with its frame, and one error for
-    each problem of the census.
+    """Give one error for each return, store, object and use of the rule, and one error for each problem of the census.
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -48,17 +72,6 @@ def findings(context: runner.PluginContext) -> list[check_report.Finding]:
     census = context.census()
     found = census.errors(RULE)
     for item in census.of_rule(RULE):
-        if item.kind == STORED_KIND:
-            message = (
-                f"a function stores a borrow of an object that ends with its frame ({item.entity}), so a later "
-                f"read of the store reads a dead stack frame.  Store a value that owns its storage, or a borrow of "
-                f"an object that outlives the store"
-            )
-        else:
-            message = (
-                f"a function returns a borrow of an object that ends with its frame ({item.entity}), so a read of "
-                f"the result reads a dead stack frame.  Return a value that owns its storage, or take the object "
-                f"by a reference that CRUCIBLE_LIFETIMEBOUND marks"
-            )
+        message = MESSAGES[item.kind].format(entity=item.entity)
         found.append(check_report.Finding("error", item.file, item.line, RULE, message, item.kind, item.entity))
     return found

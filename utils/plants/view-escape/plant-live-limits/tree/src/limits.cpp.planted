@@ -1,0 +1,79 @@
+// Findings of the kind stale-borrow with no read of dead storage: the limits of
+// the place analysis.  A join takes each end of its branches.  A door of a class
+// gives a loan of its whole object.  Each element of an array is one place.  A swap
+// in a callee reads as the end of its two owners.  A call that gives the old owner
+// back to a local ends the borrow of its source.
+#include <foundation/core/Array.h>
+#include <foundation/core/List.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+using View = fc::View<int const>;
+using List = fc::FixedList<Items, 4>;
+using Pair = fc::FixedArray<Items, 2>;
+
+class Two {
+public:
+    View first() const& noexcept { return first_.view(); }
+    void replace_second() noexcept { second_ = Items{}; }
+
+private:
+    Items first_{};
+    Items second_{};
+};
+
+void swap_owners(Items& first, Items& second) noexcept {
+    Items held = std::move(first);
+    first = std::move(second);
+    second = std::move(held);
+}
+
+unsigned long paths_that_exclude_each_other(bool is_replaced) noexcept {
+    Items items{};
+    auto const view = items.view();
+    if (is_replaced) {
+        items = Items{};
+    }
+    return is_replaced ? 0 : view.size();
+}
+
+unsigned long different_element() noexcept {
+    Pair pair{};
+    auto const view = pair.at(fc::index<0>()).view();
+    pair.set(fc::index<1>(), Items{});
+    return view.size();
+}
+
+unsigned long different_member(Two& two) noexcept {
+    auto const view = two.first();
+    two.replace_second();
+    return view.size();
+}
+
+unsigned long swap_in_a_callee() noexcept {
+    Items first{};
+    Items second{};
+    auto const view = first.view();
+    swap_owners(first, second);
+    return view.size();
+}
+
+unsigned long old_owner_in_a_local(List list) noexcept {
+    auto const view = list.get(0).expect("the list holds an element")->view();
+    Items const held = list.exchange(fc::index<0>(), Items{});
+    return view.size() + held.size();
+}
+
+unsigned long removed_owner_in_a_local(List list) noexcept {
+    auto const view = list.get(0).expect("the list holds an element")->view();
+    auto const held = list.remove(fc::index<0>());
+    return view.size() + (held.is_some() ? 1 : 0);
+}
+
+}  // namespace planted

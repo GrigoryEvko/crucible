@@ -1,0 +1,78 @@
+// Reads of dead storage that the kind stale-borrow does not see.  No line of this
+// unit names the rule view-escape.  Each function pins one limit: a call that keeps
+// a borrow in a different argument, a container of borrows, the result of a generic
+// closure, a call that consumes an owner beside a plain argument that borrows it,
+// and a member that keeps a borrow.
+#include <foundation/core/Array.h>
+#include <foundation/core/List.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+using View = fc::View<int const>;
+
+struct Kept {
+    View view{};
+};
+
+void keep(Kept& kept, View view) noexcept { kept.view = view; }
+
+unsigned long consume(Items&& items, View view) noexcept {
+    Items taken = std::move(items);
+    taken = Items{};
+    return view.size();
+}
+
+unsigned long keep_in_a_different_argument() noexcept {
+    Kept kept{};
+    Items items{};
+    keep(kept, items.view());
+    items = Items{};
+    return kept.view.size();
+}
+
+unsigned long container_of_borrows() noexcept {
+    fc::FixedList<View, 2> views{};
+    Items items{};
+    static_cast<void>(views.append(items.view()).is_ok());
+    items = Items{};
+    return views.get(0).expect("the list holds a view")->size();
+}
+
+unsigned long result_of_a_generic_closure() noexcept {
+    Items items{};
+    auto const borrow = [&items](auto) noexcept { return items.view(); };
+    auto const view = borrow(0);
+    items = Items{};
+    return view.size();
+}
+
+unsigned long owner_beside_a_plain_argument() noexcept {
+    Items items{};
+    auto const view = items.view();
+    return consume(std::move(items), view);
+}
+
+class Cursor {
+public:
+    void start(Items const& items) noexcept { view_ = items.view(); }
+    unsigned long count() const noexcept { return view_.size(); }
+
+private:
+    View view_{};
+};
+
+unsigned long borrow_in_a_member() noexcept {
+    Cursor cursor{};
+    Items items{};
+    cursor.start(items);
+    items = Items{};
+    return cursor.count();
+}
+
+}  // namespace planted

@@ -15,6 +15,7 @@
 #include <fixy/check/Check.h>
 #include <fixy/os/OwnedThread.h>
 #include <fixy/os/ThreadTasks.h>
+#include <foundation/Quarantine.h>
 
 #include <atomic>
 #include <cstdio>
@@ -196,7 +197,9 @@ void a_reset_with_a_proof_of_before_the_start_ends_the_process() noexcept {
     ::fixy::thread::QuiescenceProof<SignalOwner> const before_the_start = owner.quiescence_for(owner);
     SignalOwner::StarterKey key = owner.claim_starter();
     owner.start_waiting_thread(key);
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a reset with a proof of before the start of the thread ends the process")
     owner.stop.reset_in_quiescent_context(before_the_start);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 // The key of one owner goes to one thread.  A second thread that claims the

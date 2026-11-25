@@ -16,6 +16,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Grow.h>
 #include <foundation/effects/Effect.h>
 
@@ -133,12 +134,14 @@ void freeze_from_callee() noexcept {
 void end_from_callee() noexcept {
     core::FixedList<core::GrowList<int>, 1> held{};
     static_cast<void>(held.append(small_list()));
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the end of a growable owner in the body of its frame ends the process")
     for (core::GrowList<int> const& list : std::as_const(held).view()) {
         static_cast<void>(list.with_view([&held](core::View<int const> view) noexcept {
             drop(held);
             return view.size();
         }));
     }
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 // A callee of a frame door takes the lent list into the frame of with_mut.

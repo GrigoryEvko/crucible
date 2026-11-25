@@ -1,0 +1,9 @@
+# No use reads a dead object, and no line names the rule view-escape: a use before
+# the change, a borrow that the function takes again, a change on a path that
+# returns, a move that keeps the storage, a frame that gives the owner back, a call
+# by a const reference, a change of a different owner, and a call with an arena
+# that keeps its blocks.
+
+compile live src/live.cpp
+flag live -freflection
+exit live pass

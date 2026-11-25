@@ -1,0 +1,20 @@
+# Each limit of the place analysis is an error with no read of dead storage: a
+# change on a path that excludes the use (43), a change of a different element (50)
+# and of a different member (56) through a door, a swap in a callee (64), and the
+# old owner that an exchange (70) or a remove (76) gives to a local.
+
+compile limits src/limits.cpp
+flag limits -freflection
+exit limits fail
+finding limits view-escape stale-borrow src/limits.cpp:43:30 | borrow of items in view after an assignment of items
+finding limits view-escape stale-borrow src/limits.cpp:50:12 | borrow of pair in view after a call of foundation::core::FixedArray::set with pair
+finding limits view-escape stale-borrow src/limits.cpp:56:12 | borrow of two in view after a call of planted::Two::replace_second with two
+finding limits view-escape stale-borrow src/limits.cpp:64:12 | borrow of first in view after a call of planted::swap_owners with first
+finding limits view-escape stale-borrow src/limits.cpp:70:12 | borrow of list in view after a call of foundation::core::FixedList::exchange with list
+finding limits view-escape stale-borrow src/limits.cpp:76:12 | borrow of list in view after a call of foundation::core::FixedList::remove with list
+error limits src/limits.cpp:43 | this use reads a borrow of items in view after an assignment of items
+error limits src/limits.cpp:50 | this use reads a borrow of pair in view after a call of foundation::core::FixedArray::set with pair
+error limits src/limits.cpp:56 | this use reads a borrow of two in view after a call of planted::Two::replace_second with two
+error limits src/limits.cpp:64 | this use reads a borrow of first in view after a call of planted::swap_owners with first
+error limits src/limits.cpp:70 | this use reads a borrow of list in view after a call of foundation::core::FixedList::exchange with list
+error limits src/limits.cpp:76 | this use reads a borrow of list in view after a call of foundation::core::FixedList::remove with list

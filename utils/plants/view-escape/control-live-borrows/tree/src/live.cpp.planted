@@ -1,0 +1,205 @@
+// No use of a borrow in this unit reads a dead object, and no line names the rule
+// view-escape.  Each function is the twin of a function of plant-stale-borrows, or
+// a form that keeps the borrowed object.
+#include <foundation/core/Array.h>
+#include <foundation/core/BumpArena.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Frame.h>
+#include <foundation/core/List.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+#include <foundation/effects/Effect.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Alloc = ::foundation::effects::Alloc;
+using Items = fc::HeapArray<int>;
+using View = fc::View<int const>;
+using List = fc::FixedList<Items, 4>;
+using Pair = fc::FixedArray<Items, 2>;
+
+struct[[= ::foundation::brand::arena_family_brand{}]] Family final {};
+using Arena = fc::BumpArena<Family>;
+
+struct Holder {
+    Items items{};
+    Items others{};
+};
+
+Items pass(Items items) noexcept { return items; }
+
+unsigned long count_of(Items const& items) noexcept { return items.size(); }
+
+void read_out_of_line(Items const& items) noexcept;
+
+void use_the_arena(Arena& arena) noexcept;
+
+void write_in_place(Items& items) noexcept {
+    items = fc::with_mut(std::move(items), [](auto) noexcept {});
+}
+
+// ── The uses before the end ──
+
+unsigned long use_before_the_end() noexcept {
+    Items items{};
+    auto const view = items.view();
+    unsigned long const count = view.size();
+    items = Items{};
+    return count;
+}
+
+unsigned long borrow_again_after_the_change() noexcept {
+    Items items{};
+    auto view = items.view();
+    items = Items{};
+    view = items.view();
+    return view.size();
+}
+
+unsigned long change_on_a_path_that_ends(bool is_replaced) noexcept {
+    Items items{};
+    auto const view = items.view();
+    if (is_replaced) {
+        items = Items{};
+        return 0;
+    }
+    return view.size();
+}
+
+unsigned long borrow_in_each_pass_of_a_loop(int count) noexcept {
+    unsigned long total = 0;
+    Items items{};
+    for (int step = 0; step < count; ++step) {
+        auto const view = items.view();
+        total += view.size();
+        items = Items{};
+    }
+    return total;
+}
+
+unsigned long change_before_a_break(List& list) noexcept {
+    unsigned long total = 0;
+    for (Items const& items : list) {
+        total += items.size();
+        list.clear();
+        break;
+    }
+    return total;
+}
+
+void drop_of_a_stale_name() noexcept {
+    Items items{};
+    auto const view = items.view();
+    items = Items{};
+    static_cast<void>(view);
+}
+
+// ── The storage that stays ──
+
+unsigned long move_of_the_owner() noexcept {
+    Items items{};
+    auto const view = items.view();
+    Items const taken = std::move(items);
+    return view.size() + taken.size();
+}
+
+unsigned long move_through_a_call() noexcept {
+    Items items{};
+    auto const view = items.view();
+    items = pass(std::move(items));
+    return view.size();
+}
+
+unsigned long move_into_an_aggregate() noexcept {
+    Items items{};
+    auto const view = items.view();
+    Holder const holder{.items = std::move(items), .others = Items{}};
+    return view.size() + holder.items.size();
+}
+
+unsigned long move_into_an_option() noexcept {
+    Items items{};
+    auto const view = items.view();
+    fc::Option<Items> const held = fc::Option<Items>::some(std::move(items));
+    return view.size() + (held.is_some() ? 1 : 0);
+}
+
+unsigned long move_into_a_list(List& list) noexcept {
+    Items items{};
+    auto const view = items.view();
+    static_cast<void>(list.append(std::move(items)).is_ok());
+    items = Items{};
+    return view.size();
+}
+
+unsigned long move_of_an_array_of_owners() noexcept {
+    Pair pair{};
+    auto const view = pair.at(fc::index<0>()).view();
+    Pair const taken = std::move(pair);
+    pair = Pair{};
+    return view.size() + taken.view().size();
+}
+
+unsigned long frame_in_a_callee() noexcept {
+    Items items{};
+    auto const view = items.view();
+    write_in_place(items);
+    return view.size();
+}
+
+unsigned long reference_to_the_owner_itself() noexcept {
+    Items items{};
+    auto const ref = fc::to(items);
+    items = Items{};
+    return ref->size();
+}
+
+unsigned long clear_of_small_values() noexcept {
+    fc::FixedList<int, 4> list{};
+    auto const view = list.view();
+    list.clear();
+    return view.size();
+}
+
+// ── The calls that end nothing ──
+
+unsigned long call_by_a_const_reference() noexcept {
+    Items items{};
+    auto const view = items.view();
+    read_out_of_line(items);
+    return view.size() + count_of(items);
+}
+
+unsigned long change_of_a_different_owner() noexcept {
+    Items first{};
+    Items second{};
+    auto const view = first.view();
+    second = Items{};
+    return view.size();
+}
+
+unsigned long change_of_a_different_member(Holder& holder) noexcept {
+    auto const view = holder.items.view();
+    holder.others = Items{};
+    return view.size();
+}
+
+int call_with_an_arena(Alloc alloc, Arena& arena) noexcept {
+    auto const ref = arena.make<int>(alloc, 7);
+    use_the_arena(arena);
+    static_cast<void>(arena.array(alloc, 4UL, 1));
+    return *ref;
+}
+
+unsigned long closure_that_reads() noexcept {
+    Items items{};
+    auto const view = items.view();
+    auto const read = [&items]() noexcept { return items.size(); };
+    return read() + view.size();
+}
+
+}  // namespace planted

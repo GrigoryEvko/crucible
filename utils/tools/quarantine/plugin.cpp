@@ -789,6 +789,7 @@ void walk_unit() {
     walk_owner();
     finish_linear_rules();
     finish_borrow_matches();
+    finish_live_borrows();
     finish_base_namespace();
     walk_fresh_brands();
     finish_door_gates();
@@ -945,6 +946,12 @@ bool function_carries_base_annotation(tree function, tree name, tree space) {
         && carries_base_annotation(DECL_ATTRIBUTES(general_pattern), name, space);
 }
 
+// True for a function of the namespace std itself.
+static bool is_std_function(tree function) {
+    tree scope = CP_DECL_CONTEXT(function);
+    return scope != NULL_TREE && TREE_CODE(scope) == NAMESPACE_DECL && DECL_NAMESPACE_STD_P(scope);
+}
+
 bool is_std_move_cast(tree function) {
     static tree const move = get_identifier("move");
     static tree const forward = get_identifier("forward");
@@ -954,11 +961,14 @@ bool is_std_move_cast(tree function) {
         return false;
     }
     tree name = DECL_NAME(function);
-    if (name != move && name != forward && name != move_if_noexcept && name != forward_like) {
-        return false;
-    }
-    tree scope = CP_DECL_CONTEXT(function);
-    return scope != NULL_TREE && TREE_CODE(scope) == NAMESPACE_DECL && DECL_NAMESPACE_STD_P(scope);
+    return (name == move || name == forward || name == move_if_noexcept || name == forward_like)
+        && is_std_function(function);
+}
+
+bool is_std_as_const(tree function) {
+    static tree const as_const = get_identifier("as_const");
+    return function != NULL_TREE && TREE_CODE(function) == FUNCTION_DECL && DECL_NAME(function) == as_const
+        && is_std_function(function);
 }
 
 // The report of the unit.  CAN_ADD_DEPENDENCIES is true at PLUGIN_FINISH_UNIT,
@@ -1278,6 +1288,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_closed_tags(plugin_info->base_name);
     register_borrow_match(plugin_info->base_name);
     register_view_escape(plugin_info->base_name);
+    register_live_borrows(plugin_info->base_name);
     register_unit_facts(plugin_info->base_name);
     register_expressions(plugin_info->base_name);
     register_niche_access(plugin_info->base_name);

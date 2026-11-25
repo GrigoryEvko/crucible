@@ -1,0 +1,8 @@
+# The rule does not see these reads of dead storage, and no line names the rule
+# view-escape: a call that keeps a borrow in a different argument, a container of
+# borrows, the result of a generic closure, a call that consumes an owner beside a
+# plain argument that borrows it, and a member that keeps a borrow.
+
+compile limits src/limits.cpp
+flag limits -freflection
+exit limits pass

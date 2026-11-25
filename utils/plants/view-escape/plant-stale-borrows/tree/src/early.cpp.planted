@@ -1,0 +1,53 @@
+// A body that names a class before its definition waits for the end of the unit.
+// So the use after the change of an object of Later is a finding, and the change
+// of an object of Plain, which owns nothing, ends no borrow.  No line of the unit
+// completes the class Never, so each call can end an object of it.
+#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+struct Later;
+struct Plain;
+struct Never;
+
+fc::View<int const> view_of(Later const& later) noexcept;
+fc::View<int const> view_of(Plain const& plain) noexcept;
+fc::View<int const> view_of(Never const& never) noexcept;
+
+void change(Later& later) noexcept;
+void change(Plain& plain) noexcept;
+void change(Never& never) noexcept;
+
+unsigned long reads_later(Later& later) noexcept {
+    auto const view = view_of(later);
+    change(later);
+    return view.size();
+}
+
+unsigned long reads_plain(Plain& plain) noexcept {
+    auto const view = view_of(plain);
+    change(plain);
+    return view.size();
+}
+
+unsigned long reads_never(Never& never) noexcept {
+    auto const view = view_of(never);
+    change(never);
+    return view.size();
+}
+
+struct Later {
+    fc::HeapArray<int> items{};
+};
+
+struct Plain {
+    fc::FixedArray<int, 4> values{};
+};
+
+void change(Later& later) noexcept { later.items = fc::HeapArray<int>{}; }
+void change(Plain& plain) noexcept { plain = Plain{}; }
+
+}  // namespace planted

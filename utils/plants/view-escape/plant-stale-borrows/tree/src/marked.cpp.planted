@@ -1,0 +1,55 @@
+// A class of the base that keeps its blocks and that a caller can move: a callee
+// with no body can take its value away, so a call of that callee ends a borrow of
+// its storage.  No code can move the second class, so the call ends nothing.  Only
+// a class in a namespace of the base can state the mark.
+#include <foundation/core/Array.h>
+#include <foundation/core/Owner.h>
+#include <foundation/core/Region.h>
+
+namespace foundation::core {
+
+class[[= owns_its_storage{}]] MovableBlocks final {
+public:
+    View<int const> view() const& noexcept { return items_.view(); }
+
+private:
+    HeapArray<int> items_{};
+};
+
+class[[= owns_its_storage{}]] FixedBlocks final {
+public:
+    FixedBlocks() noexcept = default;
+    FixedBlocks(FixedBlocks const&) = delete("the blocks keep their place");
+    FixedBlocks(FixedBlocks&&) = delete("the blocks keep their place");
+    FixedBlocks& operator=(FixedBlocks const&) = delete("the blocks keep their place");
+    FixedBlocks& operator=(FixedBlocks&&) = delete("the blocks keep their place");
+    ~FixedBlocks() = default;
+    View<int const> view() const& noexcept { return items_.view(); }
+
+private:
+    HeapArray<int> items_{};
+};
+
+}  // namespace foundation::core
+
+namespace planted {
+
+using ::foundation::core::FixedBlocks;
+using ::foundation::core::MovableBlocks;
+
+void change(MovableBlocks& blocks) noexcept;
+void change(FixedBlocks& blocks) noexcept;
+
+unsigned long movable_blocks(MovableBlocks& blocks) noexcept {
+    auto const view = blocks.view();
+    change(blocks);
+    return view.size();
+}
+
+unsigned long fixed_blocks(FixedBlocks& blocks) noexcept {
+    auto const view = blocks.view();
+    change(blocks);
+    return view.size();
+}
+
+}  // namespace planted

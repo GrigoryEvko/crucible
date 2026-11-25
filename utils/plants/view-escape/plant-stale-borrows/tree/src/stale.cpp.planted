@@ -1,0 +1,253 @@
+// Each use of a borrow after the end of its object is a finding.  The first part
+// has the events that end an object: the end of a scope, an assignment, a move, a
+// call and a change on one path.  The second part has the owners that take the
+// storage along before the end.  The third part has a member, a parameter, an
+// instance of a template, a closure and a loop.  The opt-out region turns one use
+// into opted-out.
+#include <foundation/Quarantine.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Frame.h>
+#include <foundation/core/List.h>
+#include <foundation/core/OneOf.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+using View = fc::View<int const>;
+using List = fc::FixedList<Items, 4>;
+using Pair = fc::FixedArray<Items, 2>;
+
+struct Holder {
+    Items items{};
+};
+
+void sink(Items items) noexcept { static_cast<void>(items.size()); }
+
+void replace_in_place(Items& items) noexcept { items = Items{}; }
+
+void replace_through_a_callee(Items& items) noexcept { replace_in_place(items); }
+
+void replace_out_of_line(Items& items) noexcept;
+
+Items replace_by_value(Items items) noexcept { return Items{fc::HeapArray<int>{}}; }
+
+// ── The events ──
+
+unsigned long end_of_a_scope() noexcept {
+    View view{};
+    {
+        Items const items{};
+        view = items.view();
+    }
+    return view.size();
+}
+
+unsigned long assignment() noexcept {
+    Items items{};
+    auto const view = items.view();
+    items = Items{};
+    return view.size();
+}
+
+unsigned long move_of_the_bytes() noexcept {
+    Pair pair{};
+    auto const& element = pair.at(fc::index<0>());
+    Pair const taken = std::move(pair);
+    return element.size() + taken.view().size();
+}
+
+unsigned long move_into_a_call() noexcept {
+    Items items{};
+    auto const view = items.view();
+    sink(std::move(items));
+    return view.size();
+}
+
+unsigned long call_by_reference() noexcept {
+    Items items{};
+    auto const view = items.view();
+    replace_through_a_callee(items);
+    return view.size();
+}
+
+unsigned long call_with_no_body() noexcept {
+    Items items{};
+    auto const view = items.view();
+    replace_out_of_line(items);
+    return view.size();
+}
+
+unsigned long frame_beside_a_closure(Items items) noexcept {
+    unsigned long count = 0;
+    auto const view = items.view();
+    items = fc::with_mut(std::move(items), [view, &count](auto) noexcept { count = view.size(); });
+    return count;
+}
+
+unsigned long change_on_one_path(bool is_replaced) noexcept {
+    Items items{};
+    auto const view = items.view();
+    if (is_replaced) {
+        items = Items{};
+    }
+    return view.size();
+}
+
+unsigned long clear_of_a_list() noexcept {
+    List list{};
+    auto const view = list.get(0).expect("the list holds an element")->view();
+    list.clear();
+    return view.size();
+}
+
+unsigned long change_of_a_sum() noexcept {
+    fc::OneOf<Items, int> sum{Items{}};
+    auto const ref = sum.template get<Items>().expect("the sum holds the items");
+    sum = fc::OneOf<Items, int>{1};
+    return ref->size();
+}
+
+// ── The owners that take the storage along ──
+
+unsigned long end_of_the_new_owner() noexcept {
+    Items items{};
+    auto const view = items.view();
+    Items taken = std::move(items);
+    taken = Items{};
+    return view.size();
+}
+
+unsigned long end_of_an_aggregate() noexcept {
+    Items items{};
+    auto const view = items.view();
+    {
+        Holder const holder{.items = std::move(items)};
+        static_cast<void>(holder.items.size());
+    }
+    return view.size();
+}
+
+unsigned long end_of_an_option() noexcept {
+    Items items{};
+    auto const view = items.view();
+    {
+        fc::Option<Items> const held = fc::Option<Items>::some(std::move(items));
+        static_cast<void>(held.is_some());
+    }
+    return view.size();
+}
+
+unsigned long different_owner_from_a_call() noexcept {
+    Items items{};
+    auto const view = items.view();
+    items = replace_by_value(std::move(items));
+    return view.size();
+}
+
+unsigned long loan_of_a_loan() noexcept {
+    Items items{};
+    auto const view = items.view();
+    auto const window = view.window(0, 0).expect("the view holds no element");
+    items = Items{};
+    return window.size();
+}
+
+// ── The places ──
+
+struct Keeper {
+    Items items_{};
+
+    unsigned long member() noexcept {
+        auto const view = items_.view();
+        items_ = Items{};
+        return view.size();
+    }
+};
+
+unsigned long parameter(Holder& holder) noexcept {
+    auto const view = holder.items.view();
+    holder.items = Items{};
+    return view.size();
+}
+
+unsigned long reference_to_the_owner() noexcept {
+    Items items{};
+    Items& other = items;
+    auto const view = items.view();
+    other = Items{};
+    return view.size();
+}
+
+unsigned long through_a_ref() noexcept {
+    Items items{};
+    auto const other = fc::to(items);
+    auto const view = items.view();
+    *other = Items{};
+    return view.size();
+}
+
+template <class Owner>
+unsigned long instance_of_a_template() noexcept {
+    Owner items{};
+    auto const view = items.view();
+    items = Owner{};
+    return view.size();
+}
+
+unsigned long run_the_instance() noexcept { return instance_of_a_template<Items>(); }
+
+unsigned long closure() noexcept {
+    Items items{};
+    auto const view = items.view();
+    auto const replace = [&items]() noexcept { items = Items{}; };
+    replace();
+    return view.size();
+}
+
+unsigned long body_of_a_closure() noexcept {
+    return [](auto seed) noexcept {
+        Items items{};
+        auto const view = items.view();
+        items = Items{};
+        return view.size() + seed;
+    }(0UL);
+}
+
+unsigned long change_in_a_loop(int count) noexcept {
+    unsigned long total = 0;
+    Items items{};
+    auto const view = items.view();
+    for (int step = 0; step < count; ++step) {
+        total += view.size();
+        items = Items{};
+    }
+    return total;
+}
+
+unsigned long range_of_a_loop() noexcept {
+    unsigned long total = 0;
+    List list{};
+    for (Items const& items : list) {
+        list.clear();
+        total += items.size();
+    }
+    return total;
+}
+
+unsigned long opted_out() noexcept {
+    Items items{};
+    auto const view = items.view();
+    items = Items{};
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test reads a view after the end of its array")
+    return view.size();
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+}
+
+}  // namespace planted

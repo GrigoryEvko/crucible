@@ -12,6 +12,7 @@
 #include <foundation/AlignedBytes.h>
 
 #include <foundation/Platform.h>
+#include <foundation/Quarantine.h>
 #include <foundation/alloc/Layout.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Ref.h>
@@ -281,6 +282,7 @@ void test_nested_windows_find_no_block() {
     FixedList<ByteWindow, 2> const windows = make_windows(kFirst16, kAt64Of32);
     ::foundation::core::View<std::uint8_t const> const before = block.view();
     int inner_runs = 0;
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the body reads the bytes of its block through a View from before the frame")
     auto [outer, back] = with_mut_windows<float>(
         std::move(block), windows, [&block, &windows, &inner_runs, before](auto& views) noexcept {
             auto [inner, inner_back] =
@@ -297,6 +299,7 @@ void test_nested_windows_find_no_block() {
                 before.window<4>(0).expect("four bytes fit").at(::foundation::core::index<3>()) != 0;
             return is_refused && is_written;
         });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     CRUCIBLE_FATAL_INVARIANT(outer.is_ok_and([](bool const& is_held) noexcept { return is_held; }));
     CRUCIBLE_FATAL_INVARIANT(inner_runs == 0 && block.size() == 0 && back.size() == 256);
 }

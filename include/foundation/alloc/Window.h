@@ -120,6 +120,7 @@
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Text.h>
@@ -234,7 +235,21 @@ private:
 // the window out again, so one window has one set of words.  The words start
 // at zero: no chunk claimed, no extent committed, and each section of records
 // at its first byte.  The end of the source ends the window.
-class ChunkSource final {
+//
+// The source states owns_its_storage{} of foundation/core/Owner.h.  It takes
+// no pointer and no borrow of a caller, and each member keeps each page of
+// the window and each record until the end of the source:
+//   claim_chunk              moves the claim index, one word
+//   commit_extent_of         gives pages read and write access
+//   commit_slab_records_of   gives pages read and write access
+//   start_chunk_meta, start_slab_meta
+//                            give pages read and write access and construct
+//                            one record
+//   set_owner                writes one entry of the chunk map.  It moves and
+//                            ends nothing, so a read of the map can see a
+//                            different entry and never ended memory
+// No member decommits, grows, moves or unmaps a page.
+class[[= ::foundation::core::owns_its_storage{}]] ChunkSource final {
 public:
     explicit ChunkSource(Window&& window) noexcept : window_{static_cast<Window&&>(window)} {}
     explicit ChunkSource(Window const&) = delete("a source takes its window by move, so one window has one set of "
