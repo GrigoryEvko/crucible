@@ -1,0 +1,7 @@
+# No call of an arm ends an owner of the receiver, and no line names the rule
+# borrow-match: a read in a callee or in a closure, the end of a different owner, the
+# end of an owner of a different type of the holder, and a call after the match.
+
+compile calls src/calls.cpp
+flag calls -freflection
+exit calls pass

@@ -1474,9 +1474,10 @@ struct NoPayload final {};
 
 // Lend count
 //     A borrow match gives an arm a reference into the payload.  The rule
-//     borrow-match reads one body, so a write in a callee of the arm or
-//     through a second reference escapes it.  The owning storage counts the
-//     borrow matches that lend its payload.  A write that ends the payload
+//     borrow-match refuses a write in the arm, and a call of the arm that ends
+//     an owner of the sum.  A write through a second reference escapes it.  The
+//     owning storage counts the borrow matches that lend its payload, in each
+//     build, also one without the plugin.  A write that ends the payload
 //     while the count is not zero ends the process, in each build.  The count
 //     is mutable, because a match takes a const reference, and its changes
 //     are relaxed atomic steps, so two threads can match one sum.  It holds

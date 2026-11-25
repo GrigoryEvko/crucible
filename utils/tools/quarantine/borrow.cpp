@@ -61,7 +61,13 @@
 //                      holds it
 //       mutating-call  a call of a member function of the receiver whose object
 //                      parameter is not const
-//     The entity of a finding is the kind of the write and the receiver.
+//       ending-call    a call that gives the receiver, or an object that holds
+//                      it, to a parameter by a reference that is not const or
+//                      to a capture of a closure, and that ends an owner of the
+//                      receiver (the effects of live.cpp).  A callee with no
+//                      body in the unit can end it
+//     The entity of a finding is the kind of the write and the receiver, and for
+//     an ending call the callee too.
 //
 // Calls
 //     The front end gives a call as a CALL_EXPR, but a call whose result is a
@@ -87,17 +93,18 @@
 //     for the calls.  The place of a finding is the place of the write.
 //
 // Limits
-//     The rule reads the body of the arm only.  A write in a function that the
-//     arm calls, such as a free function that takes the sum by a reference that
-//     is not const, a write through a pointer or a second reference parameter
-//     to the sum, and an arm that a function of a different unit or a
-//     parameter of the caller gives, give no finding.  The control
-//     control-known-gaps of utils/plants/borrow-match/ pins each of them.  The
-//     owning storage of a sum (foundation/core/Choice.h) counts the borrow
-//     matches that lend its payload, and a write of the sum while a match
-//     lends the payload ends the process, in each build.  A cursor counts no
-//     lend, so an owning Option has no loop, and the limits of the body of a
-//     loop over a niche or a plain Option are those of an arm.
+//     A write in a callee of the arm is a finding when it ends an owner of the
+//     receiver.  A callee that changes a payload with no end, such as an int,
+//     gives no finding.  A write through a pointer or a second reference
+//     parameter to the sum, an arm that a function of a different unit or a
+//     parameter of the caller gives, and a receiver behind a call, such as the
+//     operator-> of a Box, give no finding.  The control control-known-gaps of
+//     utils/plants/borrow-match/ pins each of them.  The owning storage of a sum
+//     (foundation/core/Choice.h) counts the borrow matches that lend its
+//     payload, and a write of the sum while a match lends the payload ends the
+//     process, in each build.  A cursor counts no lend, so an owning Option has
+//     no loop, and the limits of the body of a loop over a niche or a plain
+//     Option are those of an arm.
 //
 // Errors
 //     Each finding is a compile error in each build and each mode
@@ -132,6 +139,7 @@ enum class WriteKind : std::uint8_t {
     assignment,
     move,
     mutating_call,
+    ending_call,
 };
 
 const char* write_kind_name(WriteKind kind) {
@@ -142,14 +150,29 @@ const char* write_kind_name(WriteKind kind) {
             return "move";
         case WriteKind::mutating_call:
             return "mutating-call";
+        case WriteKind::ending_call:
+            return "ending-call";
     }
     return "write";
 }
 
+// A write of an arm (the writes).  An ending call has the parameter or the capture
+// that takes the object, and the name of its callee.  IS_OBJECT tells that the call
+// is a member function of that object.
 struct ArmWrite {
     Path target;
     WriteKind kind = WriteKind::assignment;
     location_t location = UNKNOWN_LOCATION;
+    Taking taking;
+    std::string callee;
+    bool is_object = false;
+};
+
+// The receiver of a borrow match, and the key of the owners that it is or owns
+// (owner_key of live.cpp).
+struct Receiver {
+    Path path;
+    unsigned owners = kOwnsNothing;
 };
 
 // The arm of one call: the TYPE_UID of its closure, and the path of the object
@@ -161,7 +184,7 @@ struct CallArm {
 };
 
 struct MatchCall {
-    Path receiver;
+    Receiver receiver;
     std::vector<CallArm> arms;
 };
 
@@ -173,11 +196,10 @@ struct Names {
 
 Names names;
 
-// A write of the body of a loop to the sum that the loop reads (the loop):
-// its place, and the entity of its finding.
+// A write of the body of a loop to the sum that the loop reads (the loop).
 struct LoopWrite {
-    location_t location = UNKNOWN_LOCATION;
-    std::string entity;
+    ArmWrite write;
+    Receiver receiver;
 };
 
 // The writes of each arm that holds a reference, by the TYPE_UID of its
@@ -386,12 +408,19 @@ struct ArmWalk {
     location_t last_location = UNKNOWN_LOCATION;
 };
 
-void record_write(ArmWalk& walk, Path path, WriteKind kind, tree node) {
+// Records a write of PATH at NODE, and gives the record, or null for a path with no
+// root or a write with no place.
+ArmWrite* record_write(ArmWalk& walk, Path path, WriteKind kind, tree node) {
     location_t location = EXPR_HAS_LOCATION(node) ? EXPR_LOCATION(node) : walk.last_location;
     if (path.root == kNoRoot || location == UNKNOWN_LOCATION) {
-        return;
+        return nullptr;
     }
-    walk.writes->push_back(ArmWrite{std::move(path), kind, location});
+    ArmWrite write;
+    write.target = std::move(path);
+    write.kind = kind;
+    write.location = location;
+    walk.writes->push_back(std::move(write));
+    return &walk.writes->back();
 }
 
 // True when the type TYPE of an object parameter lets the function change the
@@ -401,11 +430,81 @@ bool is_mutable_object_parameter(tree type) {
         && !TYPE_READONLY(TREE_TYPE(type));
 }
 
+// The argument NODE of a call with each wrapper, address and temporary taken
+// off: the CONSTRUCTOR of a lambda expression or of a braced object, or the
+// variable that names the arm.
+tree arm_object(tree node) {
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = strip_wrappers(node);
+        if (TREE_CODE(node) == ADDR_EXPR) {
+            node = TREE_OPERAND(node, 0);
+            continue;
+        }
+        if (TREE_CODE(node) == TARGET_EXPR) {
+            node = TARGET_EXPR_INITIAL(node);
+            continue;
+        }
+        break;
+    }
+    return node;
+}
+
+// True for a field of a pointer or a reference type.
+bool is_indirect_field(tree field) {
+    return field != NULL_TREE && TREE_CODE(field) == FIELD_DECL && TREE_TYPE(field) != NULL_TREE
+        && (TYPE_PTR_P(TREE_TYPE(field)) || TYPE_REF_P(TREE_TYPE(field)));
+}
+
+// Records each object that CALL gives to CALLEE by a reference that is not const or
+// by a capture of a closure (the writes).
+void record_taken_objects(ArmWalk& walk, tree call, tree callee) {
+    if (fndecl_built_in_p(callee)) {
+        return;
+    }
+    bool const is_member = DECL_LANG_SPECIFIC(callee) != nullptr && DECL_OBJECT_MEMBER_FUNCTION_P(callee);
+    bool const is_constructor = is_member && DECL_CONSTRUCTOR_P(callee);
+    tree parameter = TYPE_ARG_TYPES(TREE_TYPE(callee));
+    for (int index = 0; index < argument_count(call); ++index) {
+        tree type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
+        parameter = parameter != NULL_TREE ? TREE_CHAIN(parameter) : NULL_TREE;
+        if (index == 0 && is_constructor) {
+            continue;
+        }
+        tree argument = argument_at(call, index);
+        if (is_mutable_object_parameter(type) && !(TYPE_REF_P(type) && TYPE_REF_IS_RVALUE(type))) {
+            ArmWrite* write = record_write(walk, pointee_path(argument, walk.closure, 0), WriteKind::ending_call, call);
+            if (write != nullptr) {
+                write->taking = taking_of_parameter(callee, static_cast<std::size_t>(index), TREE_TYPE(type));
+                write->callee = qualified_name(callee);
+                write->is_object = index == 0 && is_member;
+            }
+        }
+        tree object = arm_object(argument);
+        if (object == NULL_TREE || TREE_CODE(object) != CONSTRUCTOR || !CLASS_TYPE_P(TREE_TYPE(object))
+            || !LAMBDA_TYPE_P(TYPE_MAIN_VARIANT(TREE_TYPE(object)))) {
+            continue;
+        }
+        unsigned position = 0;
+        tree field = NULL_TREE;
+        tree value = NULL_TREE;
+        FOR_EACH_CONSTRUCTOR_ELT(CONSTRUCTOR_ELTS(object), position, field, value) {
+            if (!is_indirect_field(field)) {
+                continue;
+            }
+            ArmWrite* write = record_write(walk, pointee_path(value, walk.closure, 0), WriteKind::ending_call, call);
+            if (write != nullptr) {
+                write->taking = taking_of_capture(TYPE_UID(TYPE_MAIN_VARIANT(TREE_TYPE(object))), DECL_UID(field));
+                write->callee = qualified_name(callee);
+            }
+        }
+    }
+}
+
 // CALL is a CALL_EXPR, or the AGGR_INIT_EXPR of a call whose result is a
 // class with a destructor or a copy that is not trivial (the calls).
 void record_call_write(ArmWalk& walk, tree call) {
     tree callee = cp_get_callee_fndecl_nofold(call);
-    if (callee == NULL_TREE || argument_count(call) < 1) {
+    if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL || argument_count(call) < 1) {
         return;
     }
     if (is_std_move_cast(callee)) {
@@ -415,6 +514,7 @@ void record_call_write(ArmWalk& walk, tree call) {
         }
         return;
     }
+    record_taken_objects(walk, call, callee);
     if (DECL_LANG_SPECIFIC(callee) == nullptr || !DECL_OBJECT_MEMBER_FUNCTION_P(callee) || DECL_CONSTRUCTOR_P(callee)) {
         return;
     }
@@ -499,17 +599,24 @@ using Pointees = std::unordered_map<int, Path>;
 // initializer before a later call that names the variable.
 struct CallWalk {
     std::unordered_map<int, Pointees> named;
-    std::unordered_map<int, Path> cursors;
+    std::unordered_map<int, Receiver> cursors;
 };
 
 // The receiver of a call of a borrow match: the object of its first argument,
 // the object parameter of a member or the reference parameter of a free
 // door.  A receiver that ends with the dereference of a pointer is spelled
 // with a star.
-Path receiver_of(tree call) {
-    Path receiver = pointee_path(strip_identity_calls(argument_at(call, 0)), NULL_TREE, 0);
-    if (ends_with_arrow(receiver.text)) {
-        receiver.text = "*" + receiver.text.substr(0, receiver.text.size() - 2);
+Receiver receiver_of(tree call) {
+    tree object = strip_identity_calls(argument_at(call, 0));
+    Receiver receiver;
+    receiver.path = pointee_path(object, NULL_TREE, 0);
+    std::string& text = receiver.path.text;
+    if (ends_with_arrow(text)) {
+        text = "*" + text.substr(0, text.size() - 2);
+    }
+    tree type = object != NULL_TREE ? TREE_TYPE(object) : NULL_TREE;
+    if (receiver.path.root != kNoRoot && is_indirect_type(type)) {
+        receiver.owners = owner_key(TREE_TYPE(type));
     }
     return receiver;
 }
@@ -543,8 +650,8 @@ void record_cursor(CallWalk& walk, tree left, tree right) {
     if (call == NULL_TREE) {
         return;
     }
-    Path receiver = receiver_of(call);
-    if (receiver.root != kNoRoot) {
+    Receiver receiver = receiver_of(call);
+    if (receiver.path.root != kNoRoot) {
         walk.cursors[static_cast<int>(DECL_UID(left))] = std::move(receiver);
     }
 }
@@ -561,8 +668,7 @@ Pointees pointees_of(tree constructor) {
     tree field = NULL_TREE;
     tree value = NULL_TREE;
     FOR_EACH_CONSTRUCTOR_ELT(CONSTRUCTOR_ELTS(constructor), position, field, value) {
-        if (field == NULL_TREE || TREE_CODE(field) != FIELD_DECL || TREE_TYPE(field) == NULL_TREE
-            || !(TYPE_PTR_P(TREE_TYPE(field)) || TYPE_REF_P(TREE_TYPE(field)))) {
+        if (!is_indirect_field(field)) {
             continue;
         }
         Path pointee = pointee_path(value, NULL_TREE, 0);
@@ -571,25 +677,6 @@ Pointees pointees_of(tree constructor) {
         }
     }
     return pointees;
-}
-
-// The argument NODE of a call with each wrapper, address and temporary taken
-// off: the CONSTRUCTOR of a lambda expression or of a braced object, or the
-// variable that names the arm.
-tree arm_object(tree node) {
-    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
-        node = strip_wrappers(node);
-        if (TREE_CODE(node) == ADDR_EXPR) {
-            node = TREE_OPERAND(node, 0);
-            continue;
-        }
-        if (TREE_CODE(node) == TARGET_EXPR) {
-            node = TARGET_EXPR_INITIAL(node);
-            continue;
-        }
-        break;
-    }
-    return node;
 }
 
 // Records the initializer of a local variable of an arm class: a braced
@@ -613,8 +700,7 @@ void record_initializer(CallWalk& walk, tree left, tree right) {
     }
     tree object = strip_wrappers(TREE_OPERAND(left, 0));
     tree field = TREE_OPERAND(left, 1);
-    if (object == NULL_TREE || !VAR_P(object) || !is_arm_class(TREE_TYPE(object)) || TREE_CODE(field) != FIELD_DECL
-        || TREE_TYPE(field) == NULL_TREE || !(TYPE_PTR_P(TREE_TYPE(field)) || TYPE_REF_P(TREE_TYPE(field)))) {
+    if (object == NULL_TREE || !VAR_P(object) || !is_arm_class(TREE_TYPE(object)) || !is_indirect_field(field)) {
         return;
     }
     Path pointee = pointee_path(right, NULL_TREE, 0);
@@ -627,7 +713,7 @@ void record_initializer(CallWalk& walk, tree left, tree right) {
 void record_call(const CallWalk& walk, tree call) {
     MatchCall record;
     record.receiver = receiver_of(call);
-    if (record.receiver.root == kNoRoot) {
+    if (record.receiver.path.root == kNoRoot) {
         return;
     }
     for (int index = 1; index < argument_count(call); ++index) {
@@ -680,8 +766,8 @@ tree walk_cursors(tree* node_pointer, int* walk_subtrees, void* data) {
 // The state of the search for a cursor in the increment or the condition of
 // a loop: the cursors of the walk, and the receiver of the first one found.
 struct CursorSearch {
-    const std::unordered_map<int, Path>* cursors = nullptr;
-    const Path* receiver = nullptr;
+    const std::unordered_map<int, Receiver>* cursors = nullptr;
+    const Receiver* receiver = nullptr;
 };
 
 tree find_cursor(tree* node_pointer, int* walk_subtrees, void* data) {
@@ -706,7 +792,7 @@ tree find_cursor(tree* node_pointer, int* walk_subtrees, void* data) {
 
 // The receiver of the loop LOOP when its increment or its condition names a
 // cursor of a loop door, or null (the loop).
-const Path* loop_receiver(CallWalk& walk, tree loop) {
+const Receiver* loop_receiver(CallWalk& walk, tree loop) {
     tree init = FOR_INIT_STMT(loop);
     if (init != NULL_TREE) {
         cp_walk_tree_without_duplicates(&init, walk_cursors, &walk);
@@ -724,12 +810,12 @@ const Path* loop_receiver(CallWalk& walk, tree loop) {
     return search.receiver;
 }
 
-bool reaches(const Path& written, WriteKind kind, const Path& receiver);
+bool reaches(const Path& written, const ArmWrite& write, const Path& receiver);
 
 // Records each write of the body of a loop over a sum to that sum (the loop).
 // Complexity: linear in the body, times the length of a path.
 void record_loop(CallWalk& walk, tree loop) {
-    const Path* receiver = loop_receiver(walk, loop);
+    const Receiver* receiver = loop_receiver(walk, loop);
     tree body = FOR_BODY(loop);
     if (receiver == nullptr || body == NULL_TREE) {
         return;
@@ -740,9 +826,8 @@ void record_loop(CallWalk& walk, tree loop) {
     arm_walk.last_location = EXPR_LOCATION(loop);
     cp_walk_tree_without_duplicates(&body, walk_arm_writes, &arm_walk);
     for (ArmWrite& write : writes) {
-        if (reaches(write.target, write.kind, *receiver)) {
-            loop_writes.push_back(
-                LoopWrite{write.location, std::string("loop ") + write_kind_name(write.kind) + " " + receiver->text});
+        if (reaches(write.target, write, receiver->path)) {
+            loop_writes.push_back(LoopWrite{std::move(write), *receiver});
         }
     }
 }
@@ -808,17 +893,42 @@ Path resolve(const ArmWrite& write, const CallArm& arm) {
     return resolved;
 }
 
-// True when the write of the kind KIND to WRITTEN reaches RECEIVER (the
-// writes): an assignment or a move of the receiver or of an object that holds
-// it, or a mutating call of the receiver itself.
-bool reaches(const Path& written, WriteKind kind, const Path& receiver) {
+// True when WRITE, which names WRITTEN in the frame of the call, reaches RECEIVER
+// (the writes): an assignment or a move of the receiver or of an object that holds
+// it, a mutating call of the receiver itself, or a call that takes one of them.  A
+// member function of the receiver itself is a mutating call and no ending call.
+bool reaches(const Path& written, const ArmWrite& write, const Path& receiver) {
     if (written.root == kNoRoot || written.root != receiver.root || written.steps.size() > receiver.steps.size()) {
         return false;
     }
-    if (kind == WriteKind::mutating_call && written.steps.size() != receiver.steps.size()) {
+    bool const is_receiver = written.steps.size() == receiver.steps.size();
+    if (write.kind == WriteKind::mutating_call && !is_receiver) {
+        return false;
+    }
+    if (write.kind == WriteKind::ending_call && write.is_object && is_receiver) {
         return false;
     }
     return std::equal(written.steps.begin(), written.steps.end(), receiver.steps.begin());
+}
+
+// Adds the finding of WRITE, which reaches RECEIVER, with PREFIX before its entity.
+// An ending call is a finding when it ends an owner of the receiver.
+void add_write(const ArmWrite& write, const Receiver& receiver, const char* prefix) {
+    std::string entity = std::string(prefix) + write_kind_name(write.kind) + " " + receiver.path.text;
+    if (write.kind == WriteKind::ending_call) {
+        CallEnd const end = call_end(write.taking, receiver.owners);
+        if (end == CallEnd::none) {
+            return;
+        }
+        entity += " in " + write.callee;
+        if (end == CallEnd::unseen) {
+            entity += ", which reaches a function with no body in this unit";
+        }
+    }
+    Place place = place_of(write.location, Scope::quarantine);
+    if (place.file != nullptr) {
+        add_finding(Kind::borrow_match, nullptr, place, entity);
+    }
 }
 
 // The join of the arms and the calls (the join).  Complexity: linear in the
@@ -831,22 +941,14 @@ void finish_borrow_matches_now() {
                 continue;
             }
             for (const ArmWrite& write : found->second) {
-                if (!reaches(resolve(write, arm), write.kind, call.receiver)) {
-                    continue;
-                }
-                Place place = place_of(write.location, Scope::quarantine);
-                if (place.file != nullptr) {
-                    add_finding(Kind::borrow_match, nullptr, place,
-                                std::string(write_kind_name(write.kind)) + " " + call.receiver.text);
+                if (reaches(resolve(write, arm), write, call.receiver.path)) {
+                    add_write(write, call.receiver, "");
                 }
             }
         }
     }
-    for (const LoopWrite& write : loop_writes) {
-        Place place = place_of(write.location, Scope::quarantine);
-        if (place.file != nullptr) {
-            add_finding(Kind::borrow_match, nullptr, place, write.entity);
-        }
+    for (const LoopWrite& loop : loop_writes) {
+        add_write(loop.write, loop.receiver, "loop ");
     }
     match_calls.clear();
     arm_writes.clear();
@@ -897,7 +999,8 @@ void report_borrow_match(const Finding& finding) {
              finding.entity.c_str());
     inform(finding.spelling,
            "the borrow match gives the arm a reference into the sum, and an assignment, a move or a mutating call of "
-           "the sum ends or changes the payload that the reference names");
+           "the sum ends or changes the payload that the reference names, and so does a call that ends an owner of "
+           "the sum");
     inform(finding.spelling,
            "match the rvalue, %<std::move(sum).match(...)%>, which moves the payload out first, or change the sum "
            "after the match");

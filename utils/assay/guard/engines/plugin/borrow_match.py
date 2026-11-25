@@ -4,7 +4,8 @@ Rule
     The quarantine plugin of utils/tools/quarantine/ gives a finding of the
     kind borrow-match for each assignment, move or mutating call of the
     receiver of a borrow match in an arm that holds a reference into the
-    payload, in each build and each mode (borrow.cpp).  A borrow match carries
+    payload, and for each call that ends an owner of the receiver, in each
+    build and each mode (borrow.cpp).  A borrow match carries
     the annotation foundation::linear::borrow_match of
     include/foundation/Linear.h, such as the match of a const Option, Result or
     OneOf.  The body of a range loop over a sum is an arm too, when the loop
@@ -12,7 +13,8 @@ Rule
     with "loop".  The rule reads those finding lines in the sections of the objects
     of the target all of one build (assay.guard.engines.plugin.runner, the
     sections).  The same line from two objects counts one time.  The entity of
-    a finding is the kind of the write and the receiver.
+    a finding is the kind of the write and the receiver, and for a call that
+    ends an owner the callee too.
 
     The rule has no ledger, and each finding is an error.  A write in an
     opt-out region is a finding of the kind opted-out of the rule quarantine,

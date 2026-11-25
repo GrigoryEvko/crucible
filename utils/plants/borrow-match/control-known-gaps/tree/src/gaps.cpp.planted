@@ -1,11 +1,17 @@
-// The rule reads the body of the arm only.  These writes still end the
-// payload that the arm borrows, and the rule does not see them: a write in a
-// free function that the arm calls with the sum, a write through a second
-// reference parameter to the same sum, and a write in an arm that the caller
-// gives as a parameter.  A write through a pointer to the sum does not
-// compile: the arm captures the pointer by reference, and the store check of
-// the borrow match refuses an arm that reaches a pointer that it can write.
+// These writes still end or change the payload that the arm borrows, and the rule
+// does not see them: a write of a payload with no end in a function that the arm
+// calls, a write through a second reference parameter to the same sum, a write in
+// an arm that the caller gives as a parameter, and the end of the holder of a
+// receiver that stands behind the operator-> of a Box.  That last one waits for the
+// loans of the receiver beside the captures of the arm.  A write through a pointer
+// to the sum does not compile: the arm captures the pointer by reference, and the
+// store check of the borrow match refuses an arm that reaches a pointer that it can
+// write.
+#include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
+
+#include <utility>
 
 namespace planted {
 
@@ -25,6 +31,29 @@ int second_reference(Option<int>& held, Option<int>& alias) {
 template <class Arm>
 int given_arm(Option<int>& held, Arm const& arm) {
     return held.match(arm, [] { return 0; });
+}
+
+struct Block {
+    ::foundation::core::HeapArray<int> array{};
+};
+
+template <class Owner>
+void move_away_and_end(Owner& owner) noexcept {
+    Owner const taken{std::move(owner)};
+    static_cast<void>(taken);
+}
+
+int receiver_behind_a_box(::foundation::core::Box<Block> box) noexcept {
+    auto& held = box->array;
+    int read = 0;
+    std::as_const(held).with_element(
+        0,
+        [&box, &read](int const& element) noexcept {
+            move_away_and_end(box);
+            read = element;
+        },
+        [] noexcept {});
+    return read;
 }
 
 int calls(Option<int>& source) {

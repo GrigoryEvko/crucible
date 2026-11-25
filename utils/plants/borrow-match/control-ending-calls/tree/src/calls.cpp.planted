@@ -1,0 +1,86 @@
+// No call of an arm here ends an owner of the receiver, and no line names the rule
+// borrow-match: a callee that reads the sum, also by a reference that is not const,
+// a callee that ends a different owner, a callee that ends an owner of a different
+// type of the holder, a closure that reads the sum, and a call after the match.
+#include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+using Names = fc::HeapArray<long>;
+using fc::Option;
+
+struct Holder {
+    Option<Items> held = Option<Items>::some(Items{});
+    Names names{};
+
+    void drop_names() noexcept { names = Names{}; }
+
+    unsigned long member() noexcept {
+        return held.match(
+            [this](Items const& items) noexcept {
+                drop_names();
+                return items.size();
+            },
+            [] noexcept { return 0UL; });
+    }
+};
+
+bool is_full(Option<Items> const& held) noexcept { return held.is_some(); }
+
+bool is_full_in_place(Option<Items>& held) noexcept { return held.is_some(); }
+
+void clear(Option<Items>& held) noexcept { held = fc::none; }
+
+template <class Body>
+bool run(Body body) noexcept {
+    return body();
+}
+
+unsigned long read_in_a_callee() noexcept {
+    Option<Items> held = Option<Items>::some(Items{});
+    return held.match(
+        [&held](Items const& items) noexcept {
+            return items.size() + (is_full(held) ? 1UL : 0UL) + (is_full_in_place(held) ? 1UL : 0UL);
+        },
+        [] noexcept { return 0UL; });
+}
+
+unsigned long different_owner() noexcept {
+    Option<Items> held = Option<Items>::some(Items{});
+    Option<Items> other = Option<Items>::some(Items{});
+    return held.match(
+        [&other](Items const& items) noexcept {
+            clear(other);
+            return items.size();
+        },
+        [] noexcept { return 0UL; });
+}
+
+unsigned long read_in_a_closure() noexcept {
+    Option<Items> held = Option<Items>::some(Items{});
+    return held.match(
+        [&held](Items const& items) noexcept {
+            return items.size() + (run([&held] noexcept { return held.is_some(); }) ? 1UL : 0UL);
+        },
+        [] noexcept { return 0UL; });
+}
+
+unsigned long call_after_the_match() noexcept {
+    Option<Items> held = Option<Items>::some(Items{});
+    unsigned long const size =
+        held.match([](Items const& items) noexcept { return items.size(); }, [] noexcept { return 0UL; });
+    clear(held);
+    return size;
+}
+
+unsigned long calls(Holder& holder) noexcept {
+    return read_in_a_callee() + different_owner() + read_in_a_closure() + call_after_the_match() + holder.member();
+}
+
+}  // namespace planted

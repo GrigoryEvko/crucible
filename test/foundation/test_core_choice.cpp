@@ -589,11 +589,13 @@ void replace_result(::foundation::core::Result<Handle, Refusal>& target) noexcep
         [] noexcept { return 0; });
 }
 
-// The rule borrow-match reads one body, so a write of the sum in a callee of
-// the arm, or through a second reference, escapes it.  The owning storage
-// counts the lend of the borrow match, and a write that ends the payload in
-// that time ends the process.  Each Option lives in the body of its death
-// test, which runs in a child.
+// The owning storage counts the lend of the borrow match, and a write that
+// ends the payload in that time ends the process.  A write through a second
+// reference escapes the rule borrow-match.  The rule refuses a write in a
+// callee of the arm, and a build without the plugin compiles it.  So the
+// PROBE regions keep those calls: the stop at run time is the subject of the
+// test.  Each Option lives in the body of its death test, which runs in a
+// child.
 void test_lent_write_aborts() {
     expect_dies(
         test_context(),
@@ -601,7 +603,9 @@ void test_lent_write_aborts() {
             Option<Handle> held = Option<Handle>::some(Handle{71});
             static_cast<void>(held.match(
                 [&held](Handle const& handle) noexcept {
+                    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                     clear_handle(held);
+                    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                     return handle.value;
                 },
                 [] noexcept { return 0; }));
@@ -626,7 +630,9 @@ void test_lent_write_aborts() {
             ::foundation::core::Result<Handle, Refusal> held{Handle{75}};
             static_cast<void>(held.match(
                 [&held](Handle const& handle) noexcept {
+                    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                     replace_result(held);
+                    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                     return handle.value;
                 },
                 [](Refusal const&) noexcept { return 0; }));
@@ -998,14 +1004,17 @@ void test_result_combinators() {
 
 // A test reads its part through a const reference and counts the lend, as
 // the borrow match does.  A write that ends the payload while holds runs
-// ends the process.
+// ends the process.  That stop is the subject of the test, so the PROBE
+// regions keep the calls that the rule borrow-match refuses.
 void test_combinator_lend_aborts() {
     expect_dies(
         test_context(),
         [] noexcept {
             Option<Handle> held = Option<Handle>::some(Handle{76});
             static_cast<void>(held.is_some_and([&held](Handle const& handle) noexcept {
+                CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                 clear_handle(held);
+                CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                 return handle.value == 76;
             }));
         },
@@ -1017,7 +1026,9 @@ void test_combinator_lend_aborts() {
         [] noexcept {
             Result<Handle, Refusal> held{Handle{77}};
             static_cast<void>(held.is_ok_and([&held](Handle const& handle) noexcept {
+                CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                 replace_result(held);
+                CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                 return handle.value == 77;
             }));
         },
@@ -1355,13 +1366,16 @@ void test_named_option_doors_abort() {
         },
         ::foundation::core::TextView{
             "foundation: fatal: Option::fill got the empty value of the niche of its payload"});
+    // The replace of a lent payload stops at run time, which this test reads.
     expect_dies(
         test_context(),
         [] noexcept {
             Option<Handle> held = Option<Handle>::some(Handle{78});
             static_cast<void>(held.match(
                 [&held](Handle const& handle) noexcept {
+                    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                     replace_handle(held);
+                    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                     return handle.value;
                 },
                 [] noexcept { return 0; }));

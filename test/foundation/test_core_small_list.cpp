@@ -256,7 +256,8 @@ constexpr ::foundation::core::TextView kLentChange{
     "its storage"};
 
 // The calls from a function that the body of a frame calls.  The rule
-// borrow-match refuses each such call in the body itself.
+// borrow-match refuses each such call in the body itself, and a callee that
+// ends the storage or the list.
 [[gnu::noipa]] void append_to(SmallList<std::uint64_t, 4>& list) noexcept {
     list.append(allocation(), 9).expect("the list is below its maximum");
 }
@@ -276,14 +277,18 @@ constexpr ::foundation::core::TextView kLentChange{
 }
 
 // An append, a take and a move while a frame door lends the elements end the
-// process, also when the inline slots have room.
+// process, also when the inline slots have room.  That stop is the subject of
+// the test, so the PROBE regions keep the two calls that the rule
+// borrow-match refuses.
 void test_lent_list_refuses_changes(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
             SmallList<std::uint64_t, 4> list = list_of_two();
             static_cast<void>(list.with_view([&list](View<std::uint64_t const> run) noexcept {
+                CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a list stops a change in a callee of the frame")
                 append_to(list);
+                CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                 return run.size();
             }));
         },
@@ -303,7 +308,9 @@ void test_lent_list_refuses_changes(::fixy::TestRunnerCtx const& test) {
         [] noexcept {
             SmallList<std::uint64_t, 4> list = list_of_two();
             static_cast<void>(list.with_view([&list](View<std::uint64_t const> run) noexcept {
+                CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a list stops a change in a callee of the frame")
                 move_from(list);
+                CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                 return run.size();
             }));
         },

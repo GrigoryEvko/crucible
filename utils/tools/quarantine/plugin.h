@@ -3563,6 +3563,45 @@ void register_live_borrows(const char* plugin_name);
 void finish_live_borrows();
 void report_stale_borrow(const Finding& finding);
 
+// live.cpp: the effects of the calls, which the family borrow match reads too.
+
+// The key of a type that owns nothing.  No TYPE_UID has this value.
+constexpr unsigned kOwnsNothing = ~0U;
+
+// A call that takes an object: the parameter or the capture that it gives, and the
+// key of the owners that a call with no body can end (owner_key).
+struct Taking {
+    std::uint64_t key = 0;
+    unsigned callee = 0;  // the DECL_UID of the function, or 0 for a closure or an unknown function
+    bool is_capture = false;
+    unsigned owners = kOwnsNothing;
+
+    bool operator<(const Taking& other) const {
+        return std::tie(key, callee, is_capture, owners)
+             < std::tie(other.key, other.callee, other.is_capture, other.owners);
+    }
+};
+
+// How a call ends an object.
+enum class CallEnd : std::uint8_t {
+    none,
+    body,  // a body that the call reaches ends the object
+    unseen,  // the call reaches a function with no body in the unit, which can end it
+};
+
+// The key of the owners that an object of TYPE is or owns and that a call can end.
+// The owners are right after the parse.
+unsigned owner_key(tree type);
+// The call of CALLEE that gives an object of HELD to the parameter INDEX.  CALLEE is
+// null for an unknown function.
+Taking taking_of_parameter(tree callee, std::size_t index, tree held);
+// The call of a closure that captures an object in FIELD.
+Taking taking_of_capture(unsigned closure, unsigned field);
+// How the call of TAKING ends an owner of TYPES, or of the key OWNERS, after the
+// parse and before finish_live_borrows().
+CallEnd call_end(const Taking& taking, const TypeSet& types);
+CallEnd call_end(const Taking& taking, unsigned owners);
+
 // declaration.cpp: the walk of the returns of escape.cpp gives each parameter
 // by a const reference that a return borrows, and the end of the parse judges
 // it (the borrowed parameters of declaration.cpp).

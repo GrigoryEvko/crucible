@@ -1,0 +1,33 @@
+# Each call of an arm that ends an owner of the receiver is an error in each mode: by
+# a reference (line 51), through a callee of two levels (61), with no body in the
+# unit (71), through an object that holds the receiver (80), by a member function of
+# that object (89), through a capture of a closure that the call gets (99), of a
+# OneOf (109), and in the arm of an array (121).  The opt-out region turns the call
+# on line 133 into opted-out.
+
+compile calls src/calls.cpp
+flag calls -freflection
+exit calls fail
+finding calls borrow-match borrow-match src/calls.cpp:51:18 | ending-call held in planted::clear
+finding calls borrow-match borrow-match src/calls.cpp:61:24 | ending-call held in planted::clear_twice
+finding calls borrow-match borrow-match src/calls.cpp:71:30 | ending-call held in planted::clear_out_of_line, which reaches a function with no body in this unit
+finding calls borrow-match borrow-match src/calls.cpp:80:25 | ending-call holder.held in planted::clear_holder
+finding calls borrow-match borrow-match src/calls.cpp:89:18 | ending-call this->held in planted::Holder::clear
+finding calls borrow-match borrow-match src/calls.cpp:99:16 | ending-call held in planted::run
+finding calls borrow-match borrow-match src/calls.cpp:109:20 | ending-call held in planted::replace
+finding calls borrow-match borrow-match src/calls.cpp:121:20 | ending-call items in planted::replace
+finding calls quarantine region src/calls.cpp:132:1 | PROBE: the test ends the sum in a callee of the arm
+finding calls quarantine opted-out src/calls.cpp:133:18 | borrow-match ending-call held in planted::clear
+error calls src/calls.cpp:51 | this arm of a borrow match writes the sum that the match reads (ending-call held in planted::clear)
+error calls src/calls.cpp:61 | this arm of a borrow match writes the sum that the match reads (ending-call held in planted::clear_twice)
+error calls src/calls.cpp:71 | this arm of a borrow match writes the sum that the match reads (ending-call held in planted::clear_out_of_line, which reaches a function with no body in this unit)
+error calls src/calls.cpp:80 | this arm of a borrow match writes the sum that the match reads (ending-call holder.held in planted::clear_holder)
+error calls src/calls.cpp:89 | this arm of a borrow match writes the sum that the match reads (ending-call this->held in planted::Holder::clear)
+error calls src/calls.cpp:99 | this arm of a borrow match writes the sum that the match reads (ending-call held in planted::run)
+error calls src/calls.cpp:109 | this arm of a borrow match writes the sum that the match reads (ending-call held in planted::replace)
+error calls src/calls.cpp:121 | this arm of a borrow match writes the sum that the match reads (ending-call items in planted::replace)
+text calls | a call that ends an owner of the sum
+
+compile syntax src/calls.cpp out=no stage=syntax errors=calls notes=calls
+flag syntax -freflection
+exit syntax fail

@@ -1,12 +1,15 @@
 // The deaths of the lend count of foundation/core/Grow.h.  A frame door
-// lends the storage of a growable owner to its body.  The rule borrow-match
-// reads the body, so each change below comes from a function that the body
-// calls, which the rule does not read.  Each such change ends the process in
+// lends the storage of a growable owner to its body.  Each change below comes
+// from a function that the body calls.  Each such change ends the process in
 // each build: an append, also when the storage has room, a clear, a move, a
 // freeze and the end of the owner.  The move of the owner into the frame of
 // with_mut (foundation/core/Frame.h) is such a move.  More than 255 lends of
 // one owner end the process too, and append_self refuses a window outside
 // its text.
+//
+// The rule borrow-match refuses a callee that ends an owner of the lent
+// storage.  The stop at run time is the subject of the test, so a PROBE
+// region keeps each such call: the append, the move and the freeze.
 //
 // Each death runs in a child process through expect_dies of the Check
 // family, which requires SIGABRT and the text of the refusal.  The controls
@@ -95,7 +98,9 @@ constexpr ::fixy::TextView kLentChange{
 void append_from_callee() noexcept {
     core::GrowList<int> list = small_list();
     static_cast<void>(list.with_view([&list](core::View<int const> view) noexcept {
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count stops a change of a growable owner in a callee of a frame")
         append_to(list);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         return view.size();
     }));
 }
@@ -113,22 +118,28 @@ void clear_from_callee() noexcept {
 
 void move_from_callee() noexcept {
     core::GrowList<int> list = small_list();
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count stops a change of a growable owner in a callee of a frame")
     static_cast<void>(
         list.with_view([&list](core::View<int const> view) noexcept { return move_out(list) + view.size(); }));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 void text_append_from_callee() noexcept {
     core::GrowText text = small_text();
     static_cast<void>(text.with_view([&text](::fixy::TextView characters) noexcept {
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count stops a change of a growable owner in a callee of a frame")
         append_to(text);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         return characters.size();
     }));
 }
 
 void freeze_from_callee() noexcept {
     core::GrowText text = small_text();
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count stops a change of a growable owner in a callee of a frame")
     static_cast<void>(text.with_view(
         [&text](::fixy::TextView characters) noexcept { return freeze_text(text) + characters.size(); }));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 void end_from_callee() noexcept {

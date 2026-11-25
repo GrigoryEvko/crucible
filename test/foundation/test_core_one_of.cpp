@@ -259,8 +259,9 @@ struct Handle {
 void replace_reading(OneOf<Handle, Refusal>& target) noexcept { target = OneOf<Handle, Refusal>{Refusal::full}; }
 
 // The borrow match of an owning OneOf counts its lend, so a move assignment
-// in a callee of the arm, which the rule borrow-match does not see, ends the
-// process.  After the match, the same assignment keeps its value.  The write
+// in a callee of the arm ends the process.  That stop is the subject of the
+// test, so the PROBE region keeps the call, which the rule borrow-match
+// refuses.  After the match, the same assignment keeps its value.  The write
 // in the match runs in a child through expect_dies of the Check family.
 void test_lent_alternative_write_aborts(TestRunnerCtx const& test) {
     expect_dies(
@@ -269,7 +270,9 @@ void test_lent_alternative_write_aborts(TestRunnerCtx const& test) {
             OneOf<Handle, Refusal> held{Handle{81}};
             static_cast<void>(held.match(
                 [&held](Handle const& handle) noexcept {
+                    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                     replace_reading(held);
+                    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                     return handle.value;
                 },
                 [](Refusal const&) noexcept { return 0; }));

@@ -89,7 +89,10 @@
 //     argument that borrows it is no end: the product gives an arena and a pointer
 //     into it to one object (Vigil.h, keep_load_), and the split mints take a Box and
 //     the Ref of its object (SpscEnds.h).  The place-based checker owns that form.
-//     The control control-live-limits pins each form.
+//     A callee with no body that takes a class which the unit never completes ends
+//     only a loan whose route or targets hold that class.  So an end through such a
+//     class, of an owner that it reaches by a path that the unit cannot see, is no
+//     finding.  The control control-live-limits pins each form.
 
 #include "plugin.h"
 
@@ -271,20 +274,6 @@ std::uint64_t capture_key(unsigned closure, unsigned field) {
     return (std::uint64_t{1} << 63) | (static_cast<std::uint64_t>(closure) << 32) | field;
 }
 
-// A call that takes an object: the parameter that it gives, and the owners that
-// the type of the parameter owns, which a call with no body can end.
-struct Taking {
-    std::uint64_t key = 0;
-    unsigned callee = 0;  // the DECL_UID of the function, or 0 for a closure or an unknown function
-    bool is_capture = false;
-    unsigned type = ~0U;  // the key of taken_owners
-
-    bool operator<(const Taking& other) const {
-        return std::tie(key, callee, is_capture, type)
-             < std::tie(other.key, other.callee, other.is_capture, other.type);
-    }
-};
-
 // The effect of a body on a parameter or on a capture (the effects).
 struct Effect {
     TypeSet ended;
@@ -337,9 +326,6 @@ std::unordered_map<unsigned, TypeSet> taken_owners;
 // The end of the borrow of each finding, by the place of its use.
 std::unordered_map<location_t, location_t> end_locations;
 
-// The key of a type that owns nothing.  No TYPE_UID has this value.
-constexpr unsigned kOwnsNothing = ~0U;
-
 // Keeps the owners of the class HELD that a call can end.  Returns false when the
 // walk could not read a part of a class.
 bool keep_taken_owners(tree held) {
@@ -364,19 +350,6 @@ void close_taken_owners(tree held) {
         keep_taken_owners(held);
         begin_route_reading(false);
     }
-}
-
-// The key of the owners of the object type HELD that a call takes.
-unsigned taken_type(tree held) {
-    held = element_class(held);
-    if (held == NULL_TREE || !RECORD_OR_UNION_TYPE_P(held)) {
-        return kOwnsNothing;
-    }
-    unsigned const id = TYPE_UID(held);
-    if (taken_owners.count(id) == 0 && !keep_taken_owners(held)) {
-        check_at_end(CheckSubject{held, NULL_TREE}, [held] { close_taken_owners(held); });
-    }
-    return id;
 }
 
 // ── The walk of one body ────────────────────────────────────────────────
@@ -2030,22 +2003,10 @@ private:
         bool is_assignment = false;
     };
 
-    // The taking of the parameter INDEX of CALLEE.
-    Taking taking_of(tree callee, std::size_t index, tree held) const {
-        Taking taking;
-        taking.type = taken_type(held);
-        if (callee != NULL_TREE) {
-            tree function = DECL_CLONED_FUNCTION_P(callee) ? DECL_CLONED_FUNCTION(callee) : callee;
-            taking.callee = DECL_UID(function);
-            taking.key = parameter_key(function, static_cast<int>(index));
-        }
-        return taking;
-    }
-
     void end_by_call(const CallFacts& facts, const Argument& argument, std::size_t index, int place) {
         End end = make_end(EndKind::call, place);
         end.callee = facts.callee;
-        end.taking = taking_of(facts.callee, index, argument.held);
+        end.taking = taking_of_parameter(facts.callee, index, argument.held);
         is_rvalue_end_ = argument.is_rvalue;
         end_loans(place, end, argument.held, argument.through);
         is_rvalue_end_ = false;
@@ -2099,7 +2060,7 @@ private:
             int const place = loans_[loan].place;
             End end = make_end(EndKind::call, place);
             end.callee = facts.callee;
-            end.taking = taking_of(facts.callee, index, argument.held);
+            end.taking = taking_of_parameter(facts.callee, index, argument.held);
             if (!state_.is_reachable) {
                 continue;
             }
@@ -2179,7 +2140,7 @@ private:
         }
         End end = make_end(EndKind::call, place);
         end.callee = facts.callee;
-        end.taking = taking_of(facts.callee, index, argument.held);
+        end.taking = taking_of_parameter(facts.callee, index, argument.held);
         if (!facts.is_constructor) {
             is_rvalue_end_ = true;
             end_loans(place, end, argument.held, NULL_TREE);
@@ -2222,8 +2183,7 @@ private:
         }
         End end = make_end(EndKind::call, loan.place);
         end.is_closure = true;
-        end.taking.key = capture_key(loan.closure, loan.field);
-        end.taking.is_capture = true;
+        end.taking = taking_of_capture(loan.closure, loan.field);
         if (state_.is_reachable) {
             for (std::size_t other = 0; other < loans_.size(); ++other) {
                 const Loan& known = loans_[other];
@@ -2431,7 +2391,7 @@ struct TakingEnds {
 
 void collect_ends(const Taking& taking, TakingEnds& ends, std::set<std::uint64_t>& seen) {
     if (!taking.is_capture && read_functions.count(taking.callee) == 0) {
-        auto owners = taken_owners.find(taking.type);
+        auto owners = taken_owners.find(taking.owners);
         if (owners != taken_owners.end()) {
             add_types(ends.unseen, owners->second);
         }
@@ -2469,18 +2429,62 @@ std::string judged_text(const JudgedEnd& end) {
     if (end.kind != EndKind::call) {
         return end.text;
     }
-    const TakingEnds& ends = ends_of(end.taking);
-    if (have_common_type(end.types, ends.ended)) {
-        return end.text;
-    }
-    // After an error of the unit, a function with no record can have a body.
-    if (!seen_error() && have_common_type(end.types, ends.unseen)) {
-        return end.text + ", which reaches a function with no body in this unit";
+    switch (call_end(end.taking, end.types)) {
+        case CallEnd::body:
+            return end.text;
+        case CallEnd::unseen:
+            return end.text + ", which reaches a function with no body in this unit";
+        case CallEnd::none:
+            break;
     }
     return std::string();
 }
 
 }  // namespace
+
+unsigned owner_key(tree type) {
+    type = element_class(type);
+    if (type == NULL_TREE || !RECORD_OR_UNION_TYPE_P(type)) {
+        return kOwnsNothing;
+    }
+    unsigned const id = TYPE_UID(type);
+    if (taken_owners.count(id) == 0 && !keep_taken_owners(type)) {
+        check_at_end(CheckSubject{type, NULL_TREE}, [type] { close_taken_owners(type); });
+    }
+    return id;
+}
+
+Taking taking_of_parameter(tree callee, std::size_t index, tree held) {
+    Taking taking;
+    taking.owners = owner_key(held);
+    if (callee != NULL_TREE) {
+        tree function = DECL_CLONED_FUNCTION_P(callee) ? DECL_CLONED_FUNCTION(callee) : callee;
+        taking.callee = DECL_UID(function);
+        taking.key = parameter_key(function, static_cast<int>(index));
+    }
+    return taking;
+}
+
+Taking taking_of_capture(unsigned closure, unsigned field) {
+    Taking taking;
+    taking.key = capture_key(closure, field);
+    taking.is_capture = true;
+    return taking;
+}
+
+CallEnd call_end(const Taking& taking, const TypeSet& types) {
+    const TakingEnds& ends = ends_of(taking);
+    if (have_common_type(types, ends.ended)) {
+        return CallEnd::body;
+    }
+    // After an error of the unit, a function with no record can have a body.
+    return !seen_error() && have_common_type(types, ends.unseen) ? CallEnd::unseen : CallEnd::none;
+}
+
+CallEnd call_end(const Taking& taking, unsigned owners) {
+    auto found = taken_owners.find(owners);
+    return found != taken_owners.end() ? call_end(taking, found->second) : CallEnd::none;
+}
 
 void finish_live_borrows() {
     for (const StaleUse& use : stale_uses) {
