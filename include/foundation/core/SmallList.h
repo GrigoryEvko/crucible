@@ -42,11 +42,20 @@
 //   An append can move each element: the append past Inline moves them to the
 //   heap, and each growth moves them to larger storage.  A move of the list
 //   moves the inline elements too.  So a View or a Ref of an element that
-//   outlives one call would dangle after the next append or move, as it would
-//   for a GrowList.  The list gives no View, no Ref and no cursor out of a
-//   frame.  The frame doors count their lends (foundation/core/LendCount.h): an
-//   append, a take, a clear, a move and the end of the list while a door lends
-//   the elements end the process, in each build.
+//   outlives one call would dangle after the next append or move.  The list
+//   gives no View, no Ref and no cursor out of a frame.  The frame doors count
+//   their lends (foundation/core/LendCount.h): an append, a take, a clear, a
+//   move and the end of the list while a door lends the elements end the
+//   process, in each build.
+//
+// Growable contiguous run
+//   A SmallList is the one owner whose elements are in one contiguous run that
+//   grows.  with_view gives one View of all the elements, with_mut writes them,
+//   and the list has take_last, clear and a maximum.  It holds only the elements
+//   of the next section.  No owner gives such a run of other elements.  A
+//   SegmentList (foundation/core/SegmentList.h) holds them in segments, and no
+//   append moves one, so it gives a Ref and a cursor.  A count that is known at
+//   the start is a HeapArray, and a bounded count is a FixedList.
 //
 // Element
 //   The element is trivially copyable and trivially destructible, and its
@@ -55,7 +64,7 @@
 //   state, so a move of the list copies their bytes.  An element with a move
 //   of its own, such as a Box or a linear handle, needs an owner core that
 //   moves the inline elements one by one.  A list of such elements is a
-//   GrowList.  The bound of the alignment keeps the state free of padding.
+//   SegmentList.  The bound of the alignment keeps the state free of padding.
 //
 // The state of a list holds no pointer into its own inline elements, because
 // a move copies the state to a different address.  The first element is the
