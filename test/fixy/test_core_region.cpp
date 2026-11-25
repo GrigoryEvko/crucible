@@ -613,6 +613,34 @@ consteval bool classify_overlap_agrees_in_constant_evaluation() {
 }
 static_assert(classify_overlap_agrees_in_constant_evaluation());
 
+// shares_bytes compares the bytes of two runs of any two element types: it is
+// true for the bytes of one element of a run, at each end of them too, and
+// false for an adjacent run, for a run of another owner and for an empty run.
+void test_shares_bytes() {
+    fixy::FixedArray<std::uint64_t, 4> words{};
+    fixy::FixedArray<std::uint32_t, 4> other_storage{};
+    fixy::View<std::uint64_t const> const run = words.view();
+    fixy::View<std::byte const> const third = fixy::bytes(words.at(fixy::index<2>()));
+    fixy::View<std::uint64_t const> const head = run.window(0, 2).expect("two words fit");
+    fixy::View<std::uint64_t const> const tail = run.window(3, 1).expect("one word fits");
+    fixy::View<std::uint64_t const> const middle = run.window(2, 1).expect("one word fits");
+    CRUCIBLE_FATAL_INVARIANT(fixy::shares_bytes(third, run) && fixy::shares_bytes(run, third));
+    CRUCIBLE_FATAL_INVARIANT(fixy::shares_bytes(third, middle) && fixy::shares_bytes(middle, third));
+    CRUCIBLE_FATAL_INVARIANT(fixy::shares_bytes(third.window(7, 1).expect("the last byte fits"), middle));
+    CRUCIBLE_FATAL_INVARIANT(fixy::shares_bytes(third.window(0, 1).expect("the first byte fits"), middle));
+    CRUCIBLE_FATAL_INVARIANT(!fixy::shares_bytes(third, head) && !fixy::shares_bytes(head, third));
+    CRUCIBLE_FATAL_INVARIANT(!fixy::shares_bytes(third, tail) && !fixy::shares_bytes(tail, third));
+    CRUCIBLE_FATAL_INVARIANT(!fixy::shares_bytes(third, other_storage.view()));
+    CRUCIBLE_FATAL_INVARIANT(!fixy::shares_bytes(third.window(4, 0).expect("an empty window fits"), run));
+    CRUCIBLE_FATAL_INVARIANT(!fixy::shares_bytes(run, third.window(4, 0).expect("an empty window fits")));
+    CRUCIBLE_FATAL_INVARIANT(!fixy::shares_bytes(fixy::View<std::byte const>{}, fixy::View<std::uint64_t const>{}));
+    // The two queries agree for one element type.
+    CRUCIBLE_FATAL_INVARIANT(fixy::shares_bytes(head, run.window(1, 2).expect("two words fit")));
+    CRUCIBLE_FATAL_INVARIANT(fixy::classify_overlap(head, run.window(1, 2).expect("two words fit"))
+                             == fixy::RunOverlap::Shared);
+    CRUCIBLE_FATAL_INVARIANT(!fixy::shares_bytes(head, tail));
+}
+
 // The property: for random windows of two pages, a window is present
 // exactly when it fits, it starts at its offset, and copy then gives
 // equal runs.  A plain loop over the positions is the model.
@@ -662,6 +690,7 @@ int main() {
     test_cyclic_cursor();
     test_offset_of_an_element();
     test_classify_overlap();
+    test_shares_bytes();
     test_agrees_with_plain_model();
     return 0;
 }

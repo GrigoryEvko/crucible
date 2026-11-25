@@ -233,34 +233,21 @@ template <class In, class Brand>
     }
 }
 
-// The highest offset of an element of lanes that hold an element.  The
-// invariant of a view bounds it by max_strided_count, so no sum wraps.
-template <class Lanes>
-[[nodiscard]] constexpr std::size_t span_of_(Lanes const& lanes) noexcept {
-    std::size_t span = 0;
-    for (std::size_t axis = 0; axis < lanes.rank(); ++axis) {
-        span += (lanes.sizes[axis] - 1) * lanes.strides[axis];
-    }
-    return span;
-}
-
 // The relation of an input of the elements E to an output of the elements
 // T, for views of equal sizes that hold an element, in the answers of
-// classify_overlap of foundation/core/Region.h.  The address ranges are
-// compared as integers, so two views of different objects give no undefined
-// compare of pointers.  The in-place form needs the same element type, the
-// same first element and the same stride on each axis of a size above one.
-// O(rank).
+// classify_overlap of foundation/core/Region.h.  The compare of the bytes is
+// the compare of classify_overlap (ByteRange), so two views of different
+// objects give no undefined compare of pointers.  The in-place form needs the
+// same element type, the same first element and the same stride on each axis
+// of a size above one.  O(rank).
 template <class T, class E, class Lanes>
 [[nodiscard]] RunOverlap relation_of_(T const* out_first, Lanes const& out_lanes, E const* in_first,
                                       Lanes const& in_lanes) noexcept {
-    std::uintptr_t const out_low = __builtin_bit_cast(std::uintptr_t, out_first);
-    std::uintptr_t const out_high = out_low + (span_of_(out_lanes) + 1) * sizeof(T);
-    std::uintptr_t const in_low = __builtin_bit_cast(std::uintptr_t, in_first);
-    std::uintptr_t const in_high = in_low + (span_of_(in_lanes) + 1) * sizeof(E);
-    if (in_high <= out_low || out_high <= in_low) return RunOverlap::Disjoint;
+    ByteRange const out_bytes = strided_bytes_of_(out_first, out_lanes);
+    ByteRange const in_bytes = strided_bytes_of_(in_first, in_lanes);
+    if (!out_bytes.meets(in_bytes)) return RunOverlap::Disjoint;
     if constexpr (std::same_as<T, E>) {
-        bool is_same_layout = in_low == out_low;
+        bool is_same_layout = out_bytes.starts_with(in_bytes);
         for (std::size_t axis = 0; axis < out_lanes.rank(); ++axis) {
             is_same_layout =
                 is_same_layout && (out_lanes.sizes[axis] <= 1 || out_lanes.strides[axis] == in_lanes.strides[axis]);

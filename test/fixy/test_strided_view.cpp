@@ -413,6 +413,30 @@ void reshape_cases(::fixy::TestRunnerCtx const& test) noexcept {
     pass(test, "  reshape_cases: PASSED\n");
 }
 
+// shares_bytes of a strided view counts each byte from its first element to
+// its last one: the elements 10, 13, 16 and 19 of a run reach from element 10
+// to element 19.  A view with no element and a run with no element share no
+// byte.
+void shares_bytes_from_the_first_element_to_the_last(::fixy::TestRunnerCtx const& test) noexcept {
+    Run const run = make_run();
+    ::fixy::View<std::uint32_t const> const all{run.view()};
+    ::fixy::FixedArray<std::size_t, 1> const sizes{4};
+    ::fixy::FixedArray<std::size_t, 1> const none{0};
+    ::fixy::FixedArray<std::size_t, 1> const strides{3};
+    ::fixy::StridedView<std::uint32_t const, 1> const strided =
+        ::fixy::mint_strided_view(all, sizes.view(), strides.view(), 10).expect("the view fits the run");
+    ::fixy::StridedView<std::uint32_t const, 1> const empty =
+        ::fixy::mint_strided_view(all, none.view(), strides.view(), 10).expect("an empty view fits the run");
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::shares_bytes(strided, all));
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::shares_bytes(strided, all.window(10, 1).expect("the window fits")));
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::shares_bytes(strided, all.window(19, 1).expect("the window fits")));
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::shares_bytes(strided, all.window(11, 2).expect("the window fits")));
+    CRUCIBLE_TEST_ASSERT(test, !::fixy::shares_bytes(strided, all.window(0, 10).expect("the window fits")));
+    CRUCIBLE_TEST_ASSERT(test, !::fixy::shares_bytes(strided, all.window(20, 5).expect("the window fits")));
+    CRUCIBLE_TEST_ASSERT(test, !::fixy::shares_bytes(strided, all.window(12, 0).expect("the window fits")));
+    CRUCIBLE_TEST_ASSERT(test, !::fixy::shares_bytes(empty, all));
+}
+
 // A view of rank zero holds one element, and a view with a size of zero
 // holds none.
 void rank_zero_and_empty(::fixy::TestRunnerCtx const& test) noexcept {
@@ -1160,6 +1184,7 @@ int main() {
     walk_reads_of_each_mix(test);
     door_refusals(test);
     reshape_cases(test);
+    shares_bytes_from_the_first_element_to_the_last(test);
     rank_zero_and_empty(test);
     mismatch_and_dynamic_axes(test);
     scope_and_parallel(test);

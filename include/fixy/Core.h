@@ -283,6 +283,7 @@ using ::foundation::core::RunSet;
 using ::foundation::core::Sealed;
 using ::foundation::core::SegmentList;
 using ::foundation::core::SegmentPrefix;
+using ::foundation::core::shares_bytes;
 using ::foundation::core::SlotKey;
 using ::foundation::core::SlotMap;
 using ::foundation::core::SmallList;

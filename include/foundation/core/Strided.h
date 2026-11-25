@@ -894,7 +894,37 @@ constexpr StridedLanes<Rank> const& strided_lanes_of_(StridedView<T, Rank> const
     return view.lanes_;
 }
 
+// The highest offset of an element of lanes that hold an element.  The
+// invariant of a view bounds it by max_strided_count, so no sum wraps.
+template <class Lanes>
+[[nodiscard]] constexpr std::size_t span_of_(Lanes const& lanes) noexcept {
+    std::size_t span = 0;
+    for (std::size_t axis = 0; axis < lanes.rank(); ++axis) {
+        span += (lanes.sizes[axis] - 1) * lanes.strides[axis];
+    }
+    return span;
+}
+
+// The bytes from the first element to the last one of lanes that hold an
+// element, with the element at the zero index at first.  O(rank).
+template <class T, class Lanes>
+[[nodiscard]] ByteRange strided_bytes_of_(T const* first, Lanes const& lanes) noexcept {
+    return ByteRange{BaseLayerRead{}, first, span_of_(lanes) + 1};
+}
+
 }  // namespace detail
+
+// True when the elements of a strided view share a byte with a run, for each
+// two element types.  The answer counts each byte from the first element to
+// the last one, also a byte that no index names, so it can be true for a view
+// and a run that interleave and share no element.  A view of no element shares
+// no byte.  O(rank).
+template <class Left, std::size_t Rank, class Right, std::size_t RightExtent>
+[[nodiscard]] bool shares_bytes(StridedView<Left, Rank> const& left, View<Right, RightExtent> right) noexcept {
+    if (left.count() == 0 || right.size() == 0) return false;
+    return detail::strided_bytes_of_(detail::strided_first_of_(left), detail::strided_lanes_of_(left))
+        .meets(detail::ByteRange{detail::BaseLayerRead{}, first_of_(detail::BaseLayerRead{}, right), right.size()});
+}
 
 // ── The door ────────────────────────────────────────────────────────────
 

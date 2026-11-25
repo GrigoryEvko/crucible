@@ -103,14 +103,14 @@
 //     leaves it with no byte.  So a region of another tag shares no byte with
 //     the written region, and the runner compares nothing.  For each other
 //     input the runner compares the bytes of its run with the bytes of the
-//     region one time, on the calling thread, before the split.  A byte that
-//     the two share ends the process, and the text names the input.  A brand
-//     takes no place of the compare.  The brand of a region is the scope
-//     brand of its door, so the brand of an input is always a different one,
-//     and no brand tells that a ViewMut input and the region are apart.  A
-//     ViewMut that moved into a region leaves its old name with no element
-//     (foundation/core/Region.h), so the old name as an input takes the
-//     compare and gives no element.
+//     region one time (shares_bytes of foundation/core/Region.h), on the
+//     calling thread, before the split.  A byte that the two share ends the
+//     process, and the text names the input.  A brand takes no place of the
+//     compare.  The brand of a region is the scope brand of its door, so the
+//     brand of an input is always a different one, and no brand tells that a
+//     ViewMut input and the region are apart.  A ViewMut that moved into a
+//     region leaves its old name with no element (foundation/core/Region.h),
+//     so the old name as an input takes the compare and gives no element.
 //
 //     A compare of two runs says nothing of an object that an element names
 //     and that lies in neither run.  So each element of an input is
@@ -150,6 +150,7 @@
 #include <foundation/os/Errno.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
+#include <foundation/reflect/Annotation.h>
 #include <foundation/reflect/Instance.h>
 #include <foundation/reflect/TypeComponents.h>
 #include <foundation/reflect/TypeList.h>
@@ -488,7 +489,8 @@ namespace detail {
 [[nodiscard]] consteval bool holds_its_objects_(std::meta::info element) {
     std::meta::info const bare = ::foundation::reflect::bare_type(element);
     std::meta::info const statement = ^^::foundation::transfer::sendable;
-    bool const is_stated = std::meta::is_class_type(bare) && ::foundation::transfer::detail::states(bare, statement);
+    bool const is_stated = std::meta::is_class_type(bare) && std::meta::is_complete_type(bare)
+                        && ::foundation::reflect::carries_annotation(bare, statement);
     return is_stated || !::foundation::core::detail::holds_borrow_(bare);
 }
 
@@ -510,41 +512,6 @@ namespace detail {
     if (!std::meta::has_template_arguments(type) || std::meta::template_of(type) != region) return false;
     return std::meta::dealias(::foundation::core::detail::template_argument_at(type, 1)) == std::meta::dealias(tag);
 }
-
-// The addresses of the bytes of a run, as integers, so a compare of the runs of
-// two objects is no undefined compare of pointers.  A View bounds its bytes by
-// __PTRDIFF_MAX__, and an object ends below the top of the address space, so
-// no sum overflows.
-class ByteRange final {
-    std::uintptr_t first_ = 0;
-    std::uintptr_t past_ = 0;
-
-public:
-    template <class T, std::size_t Extent>
-    explicit ByteRange(::foundation::core::View<T, Extent> run) noexcept
-        : first_{__builtin_bit_cast(std::uintptr_t, first_of_(::foundation::core::detail::BaseLayerRead{}, run))},
-          past_{first_ + run.size() * sizeof(T)} {}
-
-    // A strided run counts each byte from its first element to its last one.
-    // Complexity: O(rank).
-    template <class T, std::size_t Rank>
-    explicit ByteRange(::foundation::core::StridedView<T, Rank> const& run) noexcept {
-        if (run.count() == 0) return;
-        ::foundation::core::detail::StridedLanes<Rank> const& lanes =
-            ::foundation::core::detail::strided_lanes_of_(run);
-        std::size_t elements = 1;
-        for (std::size_t axis = 0; axis < lanes.rank(); ++axis) {
-            elements += (lanes.sizes[axis] - 1) * lanes.strides[axis];
-        }
-        first_ = __builtin_bit_cast(std::uintptr_t, ::foundation::core::detail::strided_first_of_(run));
-        past_ = first_ + elements * sizeof(T);
-    }
-
-    // True when the two runs share a byte.  A run of no byte shares none.
-    [[nodiscard]] bool shares_a_byte_with(ByteRange other) const noexcept {
-        return first_ < past_ && other.first_ < other.past_ && first_ < other.past_ && other.first_ < past_;
-    }
-};
 
 // The run of an input, as a view of const elements: what each body reads.
 // The call stays in the base, and a body gets only its result.
@@ -805,7 +772,7 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
                           "element of the region names an object past its own bytes, so a shard can write a byte that "
                           "the compare does not see.  Give the loop a region of values, or inputs that are regions "
                           "of another tag");
-            if (detail::ByteRange{run}.shares_a_byte_with(detail::ByteRange{written})) [[unlikely]] {
+            if (::foundation::core::shares_bytes(run, written)) [[unlikely]] {
                 refuse_shared_input_(position);
             }
         }

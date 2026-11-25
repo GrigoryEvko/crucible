@@ -52,6 +52,9 @@
 //                     how the runs of two Views share storage: Disjoint,
 //                     InPlace or Shared, for a door that reads one run and
 //                     writes the other on two threads
+//   shares_bytes(left, right)
+//                     true when the runs of two Views share a byte, for each
+//                     two element types
 //
 // A View<T> converts to a View<T const>, and a View<T, N> converts to a
 // View<T>.  No conversion adds a const or removes it the other way, and no
@@ -1950,6 +1953,46 @@ template <class Whole, std::size_t WholeExtent>
 void offset_of(View<Whole, WholeExtent>, std::type_identity_t<Whole> const&&) =
     delete("a temporary is no element of a View, so it has no position in one");
 
+namespace detail {
+
+// The addresses of the bytes of a run that holds an element, as integers.  A
+// compare of two of them is the one compare of the bytes of two runs: of
+// classify_overlap and shares_bytes below, and of the strided views of
+// foundation/core/Strided.h.  A compare of the pointers of two objects is
+// undefined, and a compare of the integers is not.  The door of a View bounds
+// its bytes by __PTRDIFF_MAX__, and an object ends below the top of the address
+// space, so no sum overflows.
+class ByteRange final {
+    std::uintptr_t first_ = 0;
+    std::uintptr_t past_ = 0;
+
+public:
+    // The bytes of count elements from first, for a count above zero.
+    template <class T>
+    ByteRange(BaseLayerRead const& /*tag*/, T const* first, std::size_t count) noexcept
+        : first_{__builtin_bit_cast(std::uintptr_t, first)}, past_{first_ + count * sizeof(T)} {}
+
+    // True when the two runs share a byte.  The two runs can swap.
+    [[nodiscard]] bool meets(ByteRange other) const noexcept { return first_ < other.past_ && other.first_ < past_; }
+
+    // True when the two runs start at one byte.  The two runs can swap.
+    [[nodiscard]] bool starts_with(ByteRange other) const noexcept { return first_ == other.first_; }
+};
+
+}  // namespace detail
+
+// True when the runs of two Views share a byte, for each two element types.  A
+// run of no element shares no byte.  A door that reads one run while a thread
+// writes the other asks this function one time, before the threads start.  The
+// two Views can swap.  Complexity: O(1).
+template <class Left, std::size_t LeftExtent, class Right, std::size_t RightExtent>
+[[nodiscard]] bool shares_bytes(View<Left, LeftExtent> left, View<Right, RightExtent> right) noexcept {
+    if (left.size() == 0 || right.size() == 0) return false;
+    using Read = detail::BaseLayerRead;
+    return detail::ByteRange{Read{}, first_of_(Read{}, left), left.size()}.meets(
+        detail::ByteRange{Read{}, first_of_(Read{}, right), right.size()});
+}
+
 // How an input shares storage with an output: the answer of classify_overlap
 // for two runs, and of the plan of the pointwise walk of
 // foundation/core/Pointwise.h for two strided views.
@@ -1970,8 +2013,8 @@ enum class RunOverlap : std::uint8_t {
 // foundation/core/Frame.h), and a door that reads one run while a thread
 // writes the other asks this function one time, before the threads start.
 //
-// At run time the function compares the two address ranges as integers, as
-// offset_of does, so two Views of different objects give Disjoint and no
+// At run time the function compares the bytes of the two runs
+// (detail::ByteRange), so two Views of different objects give Disjoint and no
 // undefined compare of pointers: O(1).  A constant evaluation reads no
 // address as a word.  It compares the first address of each run with the
 // address of each element of the other run: O(left.size() + right.size()).
@@ -1994,15 +2037,10 @@ template <class Left, std::size_t LeftExtent, class Right, std::size_t RightExte
         }
         return RunOverlap::Disjoint;
     } else {
-        std::uintptr_t const left_start = __builtin_bit_cast(std::uintptr_t, left_first);
-        std::uintptr_t const right_start = __builtin_bit_cast(std::uintptr_t, right_first);
-        // The door of a View bounds its bytes by __PTRDIFF_MAX__, and an
-        // object ends below the top of the address space, so no sum
-        // overflows.
-        std::uintptr_t const left_end = left_start + left.size() * sizeof(Left);
-        std::uintptr_t const right_end = right_start + right.size() * sizeof(Right);
-        if (left_end <= right_start || right_end <= left_start) return RunOverlap::Disjoint;
-        if (left_start == right_start && left.size() == right.size()) return RunOverlap::InPlace;
+        detail::ByteRange const left_bytes{detail::BaseLayerRead{}, left_first, left.size()};
+        detail::ByteRange const right_bytes{detail::BaseLayerRead{}, right_first, right.size()};
+        if (!left_bytes.meets(right_bytes)) return RunOverlap::Disjoint;
+        if (left_bytes.starts_with(right_bytes) && left.size() == right.size()) return RunOverlap::InPlace;
         return RunOverlap::Shared;
     }
 }
