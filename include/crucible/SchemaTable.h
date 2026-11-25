@@ -755,11 +755,9 @@ private:
     // with no room finds no place.  The check of the room comes before the
     // copy of the name and before the pass below, so a refused name
     // allocates nothing and moves no entry.  An internal name ends the
-    // process at a collision and at a table with no room.  A new hash past
-    // each held hash goes to the end.  Each other new hash takes one pass in
-    // the order of the hashes, which keeps that order: the carried entry
-    // changes place with each entry of a larger hash, so each such entry
-    // moves one place up, and the last one goes to the end.  A move of an
+    // process at a collision and at a table with no room.  A new hash goes
+    // before the first entry of a larger hash, and each such entry moves one
+    // place up, so the entries keep the order of the hashes.  A move of an
     // entry keeps the address of its characters, so a looked-up name stays.
     // The name of a Sanitized name keeps its characters before its first
     // zero.  The count of the table reports at each power of two past
@@ -783,14 +781,10 @@ private:
             report_room_once_();
             return ::fixy::some(SchemaRefusal::full);
         }
-        SchemaEntry carried{.hash = hash, .name = copy_name_(allocation, characters)};
-        if (position != entries_.size()) {
-            for (SchemaEntry& entry : entries_) {
-                if (carried.hash < entry.hash) ::fixy::swap(entry, carried);
-            }
-        }
-        const bool is_pushed = entries_.append(static_cast<SchemaEntry&&>(carried)).is_ok();
-        CRUCIBLE_FATAL_INVARIANT(is_pushed);
+        entries_
+            .insert(::fixy::Index<Capacity>::check(position).expect("a table with room has a place for the entry"),
+                    SchemaEntry{.hash = hash, .name = copy_name_(allocation, characters)})
+            .expect("the test of the room above found a free entry");
         name_bytes_ = ::fixy::ByteCount{name_bytes_.raw() + name_bytes.raw()};
         if (count() > SCHEMA_TABLE_CAP && ::fixy::has_single_bit(count())) [[unlikely]]
             report_growth_();

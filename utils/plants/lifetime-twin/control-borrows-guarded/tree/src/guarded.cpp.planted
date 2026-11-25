@@ -29,7 +29,7 @@ fc::View<int const> same_view(fc::View<int const> const& run) { return run; }
 
 List copy_of(List const& list) { return list; }
 
-fc::View<int> writable_view_of(List& list) { return list.view(); }
+fc::View<int const> named_view_of(List& list) { return list.view(); }
 
 struct Holder {
     friend fc::View<int const> view_of_holder(Holder const& holder) { return holder.list.view(); }
@@ -50,7 +50,7 @@ int read_all() {
     auto const view_of = [](List const& held) noexcept { return held.view(); };
     Holder const holder{};
     return static_cast<int>(marked_view_of(seen).size() + twinned_view_of(seen).size() + same_view(seen.view()).size()
-                            + copy_of(seen).size() + writable_view_of(list).size() + view_of(seen).size()
+                            + copy_of(seen).size() + named_view_of(list).size() + view_of(seen).size()
                             + view_of_holder(holder).size() + deduced_view_of(seen).size()
                             + forwarded(seen).size())
          + floor_of(seen, seen.size() != 0 ? 1 : 0) + floor_of(seen, 2);

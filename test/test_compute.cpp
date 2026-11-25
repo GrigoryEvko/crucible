@@ -52,13 +52,13 @@ template <std::uint64_t Key>
                                     .is_ok());
     auto [drawn, back] = ::foundation::with_mut_windows<float>(std::move(block), windows, [](auto& views) noexcept {
         std::uint64_t draw = 0;
-        for (auto& view : views) {
+        std::move(views).drain([&draw](auto view) noexcept {
             for (float& element : view) {
                 const ::fixy::Philox4x32::Counter word = ::fixy::Philox4x32::generate(draw, Key);
                 element = crucible::Philox::to_uniform(word.at(::fixy::index<0>())) - 0.5f;
                 ++draw;
             }
-        }
+        });
     });
     CRUCIBLE_TEST_ASSERT(kTest, drawn.is_ok());
     return std::move(back);

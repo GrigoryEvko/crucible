@@ -326,7 +326,6 @@ template <auto& Object>
 // defines a second door of the same name.  The door of Region.h also holds the
 // body of each get of a run, and the doors of Array.h and List.h reach it.
 class RegionRefDoor;
-class ListRefDoor;
 class BrandedRefDoor;
 class WalkRefDoor;
 class OneOfRefDoor;
@@ -388,7 +387,6 @@ class RefDoor final : ::foundation::NoObject<RefDoor> {
         -> Ref<std::remove_reference_t<decltype(Object)>, StaticStorageBrand>;
 
     friend class ::foundation::core::RegionRefDoor;
-    friend class ::foundation::core::ListRefDoor;
     friend class ::foundation::core::BrandedRefDoor;
     friend class ::foundation::core::WalkRefDoor;
     friend class ::foundation::core::OneOfRefDoor;

@@ -46,12 +46,12 @@ void check_data_flow(crucible::test::TraceRig& /*rig*/, BackgroundThread const& 
             .with_output_views<std::uint8_t>(cv,
                                              [&pattern](auto& views) noexcept {
                                                  std::size_t count = 0;
-                                                 for (auto& view : views) {
+                                                 std::move(views).drain([&pattern, &count](auto view) noexcept {
                                                      for (std::uint8_t& byte : view) {
                                                          byte = pattern;
                                                          ++count;
                                                      }
-                                                 }
+                                                 });
                                                  return count;
                                              })
             .is_ok_and([](std::size_t const& count) noexcept { return count == kTensorBytes; });
@@ -104,7 +104,7 @@ void check_pool_bounds(crucible::test::TraceRig& /*rig*/, BackgroundThread const
             .with_output_views<std::uint8_t>(cv2,
                                              [](auto& views) noexcept {
                                                  std::size_t count = 0;
-                                                 for (auto& view : views) {
+                                                 for (auto const& view : views) {
                                                      for (std::uint8_t const& byte : view) {
                                                          static_cast<void>(byte);
                                                          ++count;

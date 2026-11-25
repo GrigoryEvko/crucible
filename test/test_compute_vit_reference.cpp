@@ -46,12 +46,12 @@ template <std::uint64_t Key, class ValueOf>
     auto [drawn, drawn_block] =
         ::foundation::with_mut_windows<float>(std::move(block), windows, [&value_of](auto& views) noexcept {
             std::uint64_t draw = 0;
-            for (auto& view : views) {
+            std::move(views).drain([&draw, &value_of](auto view) noexcept {
                 for (float& element : view) {
                     element = value_of(draw_weight<Key>(Draw{draw}));
                     ++draw;
                 }
-            }
+            });
         });
     CRUCIBLE_TEST_ASSERT(kTest, drawn.is_ok());
     return std::move(drawn_block);

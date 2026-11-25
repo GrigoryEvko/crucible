@@ -8,8 +8,8 @@
 struct NamedBrand {};
 
 int main() {
-    foundation::core::FixedList<int, 4> list{};
-    foundation::core::View<int, 4> const view = list.view().window<4>(0).expect("the list lends four slots");
+    foundation::core::View<int, 4> const view =
+        foundation::core::View<int>{}.window<4>(0).expect("the View lends four elements");
     foundation::core::Walk const walk{foundation::core::detail::EnumerateStage<int, 4, NamedBrand, 4>{view}};
     int sum = 0;
     for (auto [index, element] : walk) {

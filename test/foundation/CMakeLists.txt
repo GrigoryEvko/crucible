@@ -5182,9 +5182,6 @@ foundation_neg_compile_test(neg_core_return_erased_ref_of_local
 foundation_neg_compile_test(neg_core_return_view_of_local_list
   "neg_core_return_view_of_local_list\\.cpp:17:[0-9]+: error: this function gives back a borrow of the local list"
   "and that object ends with the frame of the function")
-foundation_neg_compile_test(neg_core_return_view_of_local_list_mut
-  "neg_core_return_view_of_local_list_mut\\.cpp:15:[0-9]+: error: this function gives back a borrow of the local list"
-  "and that object ends with the frame of the function")
 foundation_neg_compile_test(neg_core_return_ref_of_parameter
   "neg_core_return_ref_of_parameter\\.cpp:14:[0-9]+: error: this function gives back a borrow of the parameter list"
   "and that object ends with the frame of the function")
@@ -5401,7 +5398,7 @@ foundation_neg_compile_test(neg_core_strided_index_of_other_scope
   "cannot convert .const foundation::core::StridedIndex<1, foundation::core::<lambda\\(\\)> >. to .const foundation::core::StridedIndex<1, foundation::core::<lambda\\(\\)> >&."
   "initializing argument 1 of .constexpr T& foundation::core::BrandedStridedView<T, Rank, Brand>::at\\(const foundation::core::StridedIndex<Rank, Brand>&\\) const")
 foundation_neg_compile_test(neg_core_strided_walk_other_scope
-  "no matching function for call to .walk\\(main\\(\\)::<lambda\\(auto:7\\)>::<lambda\\(auto:8\\)>::<lambda\\(const int&, const int&\\)>, foundation::core::BrandedStridedView<int, 1, foundation::core::<lambda\\(\\)> >&, foundation::core::BrandedStridedView<int, 1, foundation::core::<lambda\\(\\)> >&\\)."
+  "no matching function for call to .walk\\(main\\(\\)::<lambda\\(auto:7\\)>::<lambda\\(auto:8\\)>::<lambda\\(const int&, const int&\\)>, foundation::core::BrandedStridedView<const int, 1, foundation::core::<lambda\\(\\)> >&, foundation::core::BrandedStridedView<const int, 1, foundation::core::<lambda\\(\\)> >&\\)."
   "deduced conflicting types for parameter .Brand.")
 foundation_neg_compile_test(neg_strided_scope_static_local
   "an object of static or thread storage duration holds a value of a scope brand, so the value outlives the call of its mint"
@@ -5544,7 +5541,7 @@ foundation_neg_compile_test(neg_core_strided_index_count
   "no matching function for call to .foundation::core::BrandedStridedView<const int, 2, foundation::core::<lambda\\(\\)> >::index\\(std::size_t, std::size_t, std::size_t\\)."
   "the expression .sizeof \\.\\.\\. \\(Coordinates \\.\\.\\.\\) == Rank \\[with Coordinates = \\{long unsigned int, long unsigned int, long unsigned int\\}; Rank = 2\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_strided_walk_mixed_ranks
-  "no matching function for call to .walk\\(main\\(\\)::<lambda\\(int&, int&\\)>, const foundation::core::StridedView<int, 2>&, const foundation::core::StridedView<int, 18446744073709551615>&\\)."
+  "no matching function for call to .walk\\(main\\(\\)::<lambda\\(const int&, const int&\\)>, const foundation::core::StridedView<const int, 2>&, const foundation::core::StridedView<const int, 18446744073709551615>&\\)."
   "deduced conflicting values for non-type parameter .Rank. \\(.2. and .18446744073709551615.\\)")
 foundation_neg_compile_test(neg_core_strided_sizes_of_temporary
   "use of deleted function .void foundation::core::StridedView<T, Rank>::sizes\\(\\) const && \\[with T = const int; long unsigned int Rank = 2\\]."
@@ -5644,7 +5641,44 @@ foundation_neg_compile_test(neg_core_pointwise_nan_rule_of_bool
 # linear element has no clear().
 foundation_neg_compile_test(neg_core_fixed_list_append_to_temporary
   "use of deleted function .void foundation::core::FixedList<T, N>::append\\(T\\) && \\[with T = int; long unsigned int N = 4\\]."
-  "an append into a temporary FixedList gives a Ref that dangles at the end of the full expression")
+  "an append into a temporary FixedList puts a value into an object that the full expression ends")
+# A list lends no written element in place: append gives an index, and the
+# loop, view() and get() give const elements.  set, update and drain refuse an
+# element that they would drop or that does not copy, and drain takes the list
+# by move.
+foundation_neg_compile_test(neg_core_fixed_list_append_gives_no_reference
+  "neg_core_fixed_list_append_gives_no_reference\\.cpp:[0-9]+:[0-9]+: error"
+  "no match for .operator\\*. .operand type is .foundation::core::Index<2>.")
+foundation_neg_compile_test(neg_core_fixed_list_written_in_loop
+  "neg_core_fixed_list_written_in_loop\\.cpp:[0-9]+:[0-9]+: error"
+  "binding reference of type .foundation::core::HeapArray<int>&. to .const foundation::core::HeapArray<int>. discards qualifiers")
+foundation_neg_compile_test(neg_core_fixed_list_written_through_view
+  "neg_core_fixed_list_written_through_view\\.cpp:[0-9]+:[0-9]+: error"
+  "assignment of read-only location")
+foundation_neg_compile_test(neg_core_fixed_list_written_through_get
+  "neg_core_fixed_list_written_through_get\\.cpp:[0-9]+:[0-9]+: error"
+  "passing .const foundation::core::HeapArray<int>. as .this. argument discards qualifiers")
+foundation_neg_compile_test(neg_core_fixed_list_set_linear
+  "no matching function for call to .foundation::core::FixedList<.anonymous.::End, 2>::set\\("
+  "DroppablePayload")
+foundation_neg_compile_test(neg_core_fixed_list_update_move_only
+  "use of deleted function .void foundation::core::FixedList<T, N>::update\\(foundation::core::Index<Count>, Body&&\\) &"
+  "update gives the body a copy of the element and assigns the copy back")
+foundation_neg_compile_test(neg_core_fixed_list_update_without_assignment
+  "use of deleted function .void foundation::core::FixedList<T, N>::update\\(foundation::core::Index<Count>, Body&&\\) &"
+  "update gives the body a copy of the element and assigns the copy back")
+foundation_neg_compile_test(neg_core_fixed_list_update_gives_reference
+  "no matching function for call to .foundation::core::FixedList<int, 2>::update\\("
+  "HoldsNoBorrow")
+foundation_neg_compile_test(neg_core_fixed_list_nested_update
+  "this arm of a borrow match writes the sum that the match reads .mutating-call list."
+  "the payload that the arm borrows can end while the arm holds its reference")
+foundation_neg_compile_test(neg_core_fixed_list_drain_of_named_list
+  "use of deleted function .void foundation::core::FixedList<T, N>::drain\\(Body&&\\) &"
+  "drain gives each element away and ends the list: drain std::move\\(list\\)")
+foundation_neg_compile_test(neg_core_fixed_list_drain_linear
+  "no matching function for call to .foundation::core::FixedList<.anonymous.::End, 2>::drain\\("
+  "DroppablePayload")
 foundation_neg_compile_test(neg_core_fixed_list_clear_of_linear
   "no matching function for call to .foundation::core::FixedList<Token, 2>::clear\\(\\)."
   "required for the satisfaction of .DroppablePayload<T>. \\[with T = Token\\]")
@@ -5925,12 +5959,6 @@ foundation_neg_compile_test(neg_core_fixed_array_get_const_brand_from_target_typ
 foundation_neg_compile_test(neg_core_heap_array_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::HeapArray<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
   "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::HeapArray<T, Align>::get\\(std::size_t\\) const &")
-foundation_neg_compile_test(neg_core_fixed_list_append_brand_from_target_type
-  "no matches converting function .append. to type .using Pick = class foundation::core::Result<foundation::core::Ref<int, \\{anonymous\\}::Held>, foundation::core::Full<int> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(int\\) & noexcept."
-  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type>, foundation::core::Full<T> > foundation::core::FixedList<T, N>::append\\(T\\) &")
-foundation_neg_compile_test(neg_core_fixed_list_get_brand_from_target_type
-  "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(std::size_t\\) & noexcept."
-  "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedList<T, N>::get\\(std::size_t\\) &")
 foundation_neg_compile_test(neg_core_fixed_list_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
   "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedList<T, N>::get\\(std::size_t\\) const &")

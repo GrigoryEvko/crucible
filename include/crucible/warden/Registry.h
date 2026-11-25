@@ -127,14 +127,14 @@ private:
     HotRegionRegistry() = default;
     ~HotRegionRegistry() = default;
 
-    // The position of the region that starts at the first byte of range.
-    // The caller holds the lock: it gives the list of the lock.
-    // Complexity: O(regions).
-    [[nodiscard]] static ::fixy::Option<size_t> position_of_(Snapshot const& regions,
-                                                             ::fixy::pages::PageRange range) noexcept {
+    // The index of the region that starts at the first byte of range.  The
+    // caller holds the lock: it gives the list of the lock.  Complexity:
+    // O(regions).
+    [[nodiscard]] static ::fixy::Option<::fixy::Index<max_regions>> index_of_(Snapshot const& regions,
+                                                                              ::fixy::pages::PageRange range) noexcept {
         size_t position = 0;
         for (HotRegion const& region : regions) {
-            if (region.range.has_same_start(range)) return ::fixy::some(position);
+            if (region.range.has_same_start(range)) return ::fixy::Index<max_regions>::check(position);
             ++position;
         }
         return ::fixy::none;
@@ -143,8 +143,8 @@ private:
     // Replaces the region with the first byte of region, or adds region.
     // False when the list is full.  The caller holds the lock.
     [[nodiscard]] static bool store_(Snapshot& regions, HotRegion const& region) noexcept {
-        for (size_t const position : position_of_(regions, region.range)) {
-            *regions.get(position).expect("the search found the region at the position") = region;
+        for (::fixy::Index<max_regions> const index : index_of_(regions, region.range)) {
+            regions.set(index, region);
             return true;
         }
         return regions.append(region).is_ok();
@@ -153,11 +153,9 @@ private:
     // Moves the last region into the place of the withdrawn region.  The
     // caller holds the lock.
     static void remove_(Snapshot& regions, ::fixy::pages::PageRange range) noexcept {
-        for (size_t const position : position_of_(regions, range)) {
+        for (::fixy::Index<max_regions> const index : index_of_(regions, range)) {
             HotRegion const last = regions.take_last().expect("the list holds the region that the search found");
-            if (position < regions.size()) {
-                *regions.get(position).expect("the position is below the size of the list") = last;
-            }
+            if (index.raw() < regions.size()) regions.set(index, last);
         }
     }
 

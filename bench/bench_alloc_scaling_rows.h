@@ -2087,7 +2087,7 @@ void run_workload_rows(bench::Spread const& spread, ::fixy::View<ThreadCount con
     if (rows.size() == 0) return;
     RowResult const& first = *rows.get(0).expect("the test above found a row");
     EfficiencyBase const base{.producers = producers_of<W>(first.threads), .centi_mops = first.centi_mops};
-    for (RowResult& row : rows) {
+    std::move(rows).drain([&base, &record](RowResult&& row) noexcept {
         print_row<W>(row, base);
         double const item_ns = row.windows.median > 0.0 ? 1000.0 / row.windows.median : 0.0;
         add_summary(record, Summary{.allocator = A::kind,
@@ -2097,7 +2097,7 @@ void run_workload_rows(bench::Spread const& spread, ::fixy::View<ThreadCount con
                                     .item_ns = item_ns});
         for (auto const index : row.latency.indices())
             bench::add_report(record.reports, row.latency.exchange(index, bench::Report{}));
-    }
+    });
 }
 
 // ── The rounds ─────────────────────────────────────────────────────────

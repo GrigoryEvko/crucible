@@ -1,8 +1,8 @@
 # Each return of a borrow of an object that ends with the frame is an error in
 # each mode: a Ref of a local (22), the erased Ref of a local (27), the View of
-# a local list for reading (33) and for writing (39), the Ref of an element of
-# a parameter by value (42), and a View that a local takes first (47).  The
-# opt-out region turns the return on line 53 into opted-out.  A forwarding
+# a local list by a const name (33) and by its own name (39), the Ref of an
+# element of a parameter by value (42), and a View that a local takes first
+# (47).  The opt-out region turns the return on line 53 into opted-out.  A forwarding
 # parameter that a temporary binds (59), and a closure that returns a View of
 # its local (66), of its parameter by value (68) or of its capture by value
 # (69), give the same error.
@@ -15,7 +15,7 @@ finding returns view-escape escaped-borrow src/returns.cpp:22:24 | borrow of the
 finding returns view-escape escaped-borrow src/returns.cpp:27:41 | borrow of the local value
 finding returns view-escape escaped-borrow src/returns.cpp:33:37 | borrow of the local list
 finding returns view-escape escaped-borrow src/returns.cpp:39:22 | borrow of the local list
-finding returns view-escape escaped-borrow src/returns.cpp:42:99 | borrow of the parameter list
+finding returns view-escape escaped-borrow src/returns.cpp:42:107 | borrow of the parameter list
 finding returns view-escape escaped-borrow src/returns.cpp:47:12 | borrow of the local list
 finding returns view-escape escaped-borrow src/returns.cpp:59:37 | borrow of the parameter list
 finding returns view-escape escaped-borrow src/returns.cpp:66:41 | borrow of the local list

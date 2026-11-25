@@ -1329,9 +1329,11 @@ constexpr ::fixy::process::ThreadId kOtherTid{7};
 // The planted reading after a window in which the thread 7 waited on its run
 // queue in some arrivals.
 [[nodiscard]] bench::PauseReading with_other_delay(bench::PauseReading reading, bench::ThreadDelay const& delay) {
-    for (bench::ThreadDelay& thread : reading.others) {
-        if (thread.tid == delay.tid) thread = delay;
-    }
+    reading.others = ::fixy::with_mut(std::move(reading.others), [&delay](auto threads) noexcept {
+        for (bench::ThreadDelay& thread : threads) {
+            if (thread.tid == delay.tid) thread = delay;
+        }
+    });
     if (delay.tid != kOtherTid && delay.tid != kMeasuringTid) static_cast<void>(reading.others.append(delay));
     return reading;
 }

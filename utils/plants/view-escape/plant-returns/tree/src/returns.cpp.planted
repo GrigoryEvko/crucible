@@ -1,8 +1,8 @@
 // Each return of a borrow of an object that ends with the frame is a finding:
-// a Ref of a local, the erased Ref of a local, the View of a local list for
-// reading and for writing, the Ref of an element of a parameter by value, a
-// View that a local takes first, and a View of an owner on the heap that a
-// local holds.  The opt-out region turns one return into opted-out.  A
+// a Ref of a local, the erased Ref of a local, the View of a local list by a
+// const name and by its own name, the Ref of an element of a parameter by
+// value, a View that a local takes first, and a View of an owner on the heap that
+// a local holds.  The opt-out region turns one return into opted-out.  A
 // forwarding parameter that a temporary binds, and a closure that returns a
 // View of its local, of its parameter by value or of its capture by value,
 // are findings too.
@@ -33,13 +33,13 @@ fc::View<int const> view_of_local_list() {
     return std::as_const(list).view();
 }
 
-fc::View<int> view_of_local_list_for_writing() {
+fc::View<int const> view_of_local_list_by_its_own_name() {
     fc::FixedList<int, 4> list{};
     static_cast<void>(list.append(4));
     return list.view();
 }
 
-auto ref_of_parameter(fc::FixedList<int, 4> list) { return std::move(list.append(5)).expect("room"); }
+auto ref_of_parameter(fc::FixedList<int, 4> list) { return std::as_const(list).get(0).expect("one element"); }
 
 fc::View<int const> view_through_a_local() {
     fc::FixedList<int, 4> list{};

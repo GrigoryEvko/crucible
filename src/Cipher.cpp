@@ -1292,19 +1292,22 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
 // on the disk, so the code of the cache needs no speed.  A cold body also
 // takes no part of the inline budget of this unit.
 [[gnu::cold]] ::fixy::View<const std::byte> Cipher::cached_bytes(ContentHash hash) const noexcept {
-    // The walk swaps the hit with each entry after it, so the hit becomes
-    // the last entry and the other entries keep their order of use.  No two
-    // entries share a hash.  Complexity: linear in the count of entries.
-    bool is_hit_found = false;
-    for (::fixy::View<CachedObjectBytes, 2> pair : resident_cache_.view().windows<2>()) {
-        is_hit_found = is_hit_found || pair.at(::fixy::index<0>()).hash == hash;
-        if (is_hit_found) ::fixy::swap(pair.at(::fixy::index<0>()), pair.at(::fixy::index<1>()));
+    // The hit moves to the end, so it becomes the last entry and the other
+    // entries keep their order of use.  No two entries share a hash.
+    // Complexity: linear in the count of entries.
+    size_t position = 0;
+    for (const CachedObjectBytes& entry : resident_cache_) {
+        if (entry.hash == hash) break;
+        ++position;
     }
-    // The first entry of the reverse walk is the last entry.  It is the hit,
-    // or the cache holds no entry of the hash.
-    for (const CachedObjectBytes& entry : resident_cache_.view().reverse()) {
-        if (entry.hash != hash) break;
-        return entry.bytes.view();
+    for (::fixy::Index<MAX_RESIDENT_CACHE_ENTRIES> const index :
+         ::fixy::Index<MAX_RESIDENT_CACHE_ENTRIES>::check(position)) {
+        ::fixy::Option<CachedObjectBytes> hit = resident_cache_.remove(index);
+        if (hit.is_none()) break;
+        const ::fixy::Index<MAX_RESIDENT_CACHE_ENTRIES> last =
+            resident_cache_.append(std::move(hit).expect("the test above found the entry"))
+                .expect("the remove above left room for the entry");
+        return resident_cache_.get(last.raw()).expect("the append above put the entry there")->bytes.view();
     }
     return {};
 }
@@ -1318,16 +1321,14 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     }
 
     // The loop leaves at most MAX_RESIDENT_CACHE_ENTRIES - 1 entries, so
-    // the push below stays in the capacity of the cache.  Each pass swaps
-    // the least recent entry to the back, one entry at a time, and takes
-    // it.  Complexity: linear in the count of entries for each pass.
+    // the append below stays in the capacity of the cache.  Each pass takes
+    // the first entry, which is the least recent one.  Complexity: linear in
+    // the count of entries for each pass.
     while (resident_cache_.size() != 0
            && (resident_cache_.size() >= MAX_RESIDENT_CACHE_ENTRIES
                || resident_cache_bytes_ + bytes.size() > MAX_RESIDENT_CACHE_BYTES)) {
-        for (::fixy::View<CachedObjectBytes, 2> pair : resident_cache_.view().windows<2>()) {
-            ::fixy::swap(pair.at(::fixy::index<0>()), pair.at(::fixy::index<1>()));
-        }
-        const CachedObjectBytes evicted = resident_cache_.take_last().expect("the loop runs on a cache with an entry");
+        const CachedObjectBytes evicted =
+            resident_cache_.remove(::fixy::index<0>()).expect("the loop runs on a cache with an entry");
         resident_cache_bytes_ -= evicted.bytes.size();
     }
 

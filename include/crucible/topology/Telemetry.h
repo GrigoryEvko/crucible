@@ -348,7 +348,8 @@ public:
         if (snapshots_.size() < Window) {
             static_cast<void>(snapshots_.append(snapshot));
         } else {
-            *snapshots_.get(next_).expect("a full history holds a snapshot at each position") = snapshot;
+            snapshots_.set(::fixy::Index<Window>::check(next_).expect("the next position is below the window"),
+                           snapshot);
         }
         next_ = static_cast<std::uint16_t>((next_ + 1u) % Window);
         return NicTelemetryError::None;

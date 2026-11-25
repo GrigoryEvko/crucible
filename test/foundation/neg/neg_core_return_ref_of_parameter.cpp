@@ -11,7 +11,7 @@ namespace fc = ::foundation::core;
 
 namespace {
 
-auto ref_of_parameter(fc::FixedList<int, 4> list) { return std::move(list.append(5)).expect("room"); }
+auto ref_of_parameter(fc::FixedList<int, 4> list) { return std::move(list.get(0)).expect("room"); }
 
 }  // namespace
 

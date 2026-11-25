@@ -69,9 +69,33 @@ template <class List>
 concept Clears = requires(List& list) { list.clear(); };
 static_assert(Clears<FixedList<int, 2>> && !Clears<FixedList<LinearToken, 2>>);
 
+// A list lends its elements only for a read: view(), the loop, get() and the
+// iteration verbs give const elements, also on a list that is not const.
+static_assert(std::is_same_v<decltype(std::declval<FixedList<int, 4>&>().view()), View<int const>>);
+static_assert(std::is_same_v<decltype(std::declval<FixedList<int, 4>&>().begin()), ViewCursor<int const>>);
+static_assert(std::is_same_v<decltype(*std::declval<FixedList<int, 4>&>().get(0).expect("")), int const&>);
+static_assert(std::is_same_v<decltype(*std::declval<FixedList<int, 4>&>().reverse().begin()), int const&>);
+static_assert(std::is_same_v<decltype(std::declval<FixedList<int, 4>&>().append(1)), Result<Index<4>, Full<int>>>);
+
+// A linear element has no set, because set ends the old element, and it has
+// exchange.  An element that does not copy has no update.
+template <class List>
+concept Sets = requires(List& list, Index<2> index, typename List::element_type value) {
+    list.set(index, static_cast<typename List::element_type&&>(value));
+};
+template <class List>
+concept Exchanges = requires(List& list, Index<2> index, typename List::element_type value) {
+    static_cast<void>(list.exchange(index, static_cast<typename List::element_type&&>(value)));
+};
+template <class List>
+concept Updates = requires(List& list, Index<2> index) { list.update(index, [](auto&) noexcept {}); };
+static_assert(Sets<FixedList<int, 2>> && Sets<FixedList<Owner, 2>> && !Sets<FixedList<LinearToken, 2>>);
+static_assert(Exchanges<FixedList<int, 2>> && Exchanges<FixedList<LinearToken, 2>>);
+static_assert(Updates<FixedList<int, 2>> && !Updates<FixedList<LinearToken, 2>>);
+
 // An append, a take, a view and a loop of a temporary list are refused.  A
-// list has no subscript, no data() and no indices().  The one verb of an
-// element is append: a list has no push.
+// list has no subscript, no data() and no indices().  The verb that adds at
+// the end is append: a list has no push.
 template <class List>
 concept AppendsToTemporary = requires { std::declval<List>().append(std::declval<typename List::element_type>()); };
 template <class List>
@@ -94,7 +118,7 @@ static_assert(!HasSubscript<FixedList<int, 2>> && !HasIndices<FixedList<int, 2>>
 // value.
 [[nodiscard]] consteval int append_take_get() noexcept {
     FixedList<int, 3> list;
-    int total = *list.append(1).expect("the list has room");
+    int total = *list.get(list.append(1).expect("the list has room").raw()).expect("the list holds an element");
     static_cast<void>(list.append(2).expect("the list has room"));
     static_cast<void>(list.append(3).expect("the list has room"));
     bool const is_refused = list.append(4).is_err();
@@ -109,6 +133,28 @@ static_assert(!HasSubscript<FixedList<int, 2>> && !HasIndices<FixedList<int, 2>>
     return is_refused && is_empty ? total : -1;
 }
 static_assert(append_take_get() == 1 + 2 + 3 + 2 + (1 + 2));
+
+// The value doors in a constant evaluation, for an element with a
+// user-provided end.  Each digit of the result is one element.
+[[nodiscard]] consteval int insert_set_exchange_update_remove() noexcept {
+    FixedList<Owner, 4> list;
+    list.insert(index<0>(), Owner{3}).expect("the list has room");
+    list.insert(index<0>(), Owner{1}).expect("the list has room");
+    list.insert(index<1>(), Owner{2}).expect("the list has room");
+    list.insert(index<3>(), Owner{4}).expect("the list has room");
+    bool const is_refused = list.insert(index<0>(), Owner{9}).is_err();
+    list.set(index<0>(), Owner{5});
+    int const old = list.exchange(index<1>(), Owner{6}).value;
+    list.update(index<2>(), [](Owner& element) noexcept { element.value += 4; });
+    int const removed = list.remove(index<1>()).expect("the list holds an element").value;
+    bool const is_past = list.remove(index<3>()).is_none();
+    int digits = 0;
+    for (Owner const& element : list) {
+        digits = digits * 10 + element.value;
+    }
+    return is_refused && is_past ? digits * 100 + old * 10 + removed : -1;
+}
+static_assert(insert_set_exchange_update_remove() == 57426);
 
 // The copy of a list of an element with a user-provided copy copies each
 // element, and the move gives each element to the target and leaves the

@@ -38,6 +38,7 @@ constexpr std::uint64_t kSeed = 0xC001C0DE000C000CULL;
 constexpr std::uint64_t kCases = 10000;
 
 using Intervals = ::fixy::FixedList<Interval, kMaxIntervals>;
+using IntervalIndex = ::fixy::Index<kMaxIntervals>;
 
 struct IntervalSet {
     Intervals intervals{};
@@ -52,17 +53,14 @@ struct IntervalSet {
     for (Interval const& interval : intervals) {
         if (interval.hi < interval.lo) return false;
         if (interval.lo == interval.hi) continue;
-        Interval carried = interval;
-        // Each interval of occupied with a larger low end moves one place
-        // to the right, and carried takes the free place.
-        for (Interval& placed : occupied.view()) {
-            if (carried.lo < placed.lo) {
-                const Interval moved = placed;
-                placed = carried;
-                carried = moved;
-            }
+        // The interval goes before the first one with a larger low end.
+        std::size_t position = 0;
+        for (Interval const& placed : occupied) {
+            if (interval.lo < placed.lo) break;
+            ++position;
         }
-        static_cast<void>(occupied.append(carried).expect("occupied holds at most the intervals of the set"));
+        occupied.insert(IntervalIndex::check(position).expect("occupied holds fewer intervals than the set"), interval)
+            .expect("occupied holds at most the intervals of the set");
     }
     std::uint64_t end_of_last = 0;
     bool has_last = false;

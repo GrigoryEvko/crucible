@@ -20,7 +20,7 @@ public:
 struct NamedBrand {};
 
 int main() {
-    foundation::core::FixedList<int, 4> list{};
-    foundation::core::View<int, 4> const view = list.view().window<4>(0).expect("the list lends four slots");
+    foundation::core::View<int, 4> const view =
+        foundation::core::View<int>{}.window<4>(0).expect("the View lends four elements");
     return lookalike::RegionFrameKeyDoor::lend<NamedBrand>(view).get(0).is_some();
 }

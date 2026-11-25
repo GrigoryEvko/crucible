@@ -610,8 +610,7 @@ int main() {
                    }),
         bench::run("hash<ListRecord>     (8 of 16 words, 65 bytes)",
                    [&] {
-                       *list_record.words.view().get(0).expect("the list holds a word") =
-                           static_cast<std::uint32_t>(vword);
+                       list_record.words.set(::fixy::index<0>(), static_cast<std::uint32_t>(vword));
                        auto h = ::fixy::hash(list_record).raw();
                        bench::do_not_optimize(h);
                    }),

@@ -21,5 +21,7 @@ int main() {
     auto const dynamic =
         ::foundation::core::mint_strided_view(values.view(), dynamic_sizes, dynamic_strides, 0).expect("it fits");
     return static_cast<int>(
-        ::foundation::core::walk([](int& left, int& right) noexcept { left += right; }, fixed, dynamic).is_ok());
+        ::foundation::core::walk([](int const& left, int const& right) noexcept { static_cast<void>(left + right); },
+                                 fixed, dynamic)
+            .is_ok());
 }

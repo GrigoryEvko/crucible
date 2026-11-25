@@ -392,9 +392,8 @@ void run_level(Level const& level, RowNames names, Placement const& placement,
                  static_cast<std::uint64_t>(rule.pct.p50 + 0.5), rule_ratio / 100, rule_ratio % 100 / 10,
                  rule_ratio % 10);
     bench::add_report(all, std::move(reference));
-    for (bench::Report& measured : reports) {
-        bench::add_report(all, std::move(measured));
-    }
+    std::move(reports).drain(
+        [&all](bench::Report&& measured) noexcept { bench::add_report(all, std::move(measured)); });
     bench::add_report(all, std::move(rule));
 }
 

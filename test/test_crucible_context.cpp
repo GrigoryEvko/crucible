@@ -851,13 +851,13 @@ static void test_slot_views() {
     const auto written = ctx.with_output_views<float>(cv, [](auto& views) noexcept {
         float value = 1.5f;
         std::size_t count = 0;
-        for (auto& view : views) {
+        std::move(views).drain([&value, &count](auto view) noexcept {
             for (float& element : view) {
                 element = value;
                 ++count;
             }
             value += 1.0f;
-        }
+        });
         return count;
     });
     CRUCIBLE_TEST_ASSERT(kTest, written.is_ok_and([](std::size_t const& count) noexcept { return count == 128; }));
@@ -877,12 +877,12 @@ static void test_slot_views() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{2}, cv).is_none());
     const auto in_place = ctx.with_output_views<float>(cv, [](auto& views) noexcept {
         std::size_t matched = 0;
-        for (auto& view : views) {
+        std::move(views).drain([&matched](auto view) noexcept {
             for (float& element : view) {
                 matched += ::fixy::bit_cast<std::uint32_t>(element) == ::fixy::bit_cast<std::uint32_t>(2.5f) ? 1u : 0u;
                 element = 3.5f;
             }
-        }
+        });
         return matched;
     });
     CRUCIBLE_TEST_ASSERT(kTest, in_place.is_ok_and([](std::size_t const& matched) noexcept { return matched == 64; }));

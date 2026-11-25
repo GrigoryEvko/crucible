@@ -202,7 +202,7 @@ void run_box_channel_rows(bench::Spread const& spread, RunRecord& record) {
     using BoxRow = Pair<BaseAdapter>;
     EfficiencyBase const base{.producers = 1,
                               .centi_mops = rows.get(0).expect("the test above found a row")->centi_mops};
-    for (RowResult& row : rows) {
+    std::move(rows).drain([&base, &record](RowResult&& row) noexcept {
         print_row<BoxRow>(row, base);
         double const item_ns = row.windows.median > 0.0 ? 1000.0 / row.windows.median : 0.0;
         add_summary(record, Summary{.allocator = AllocatorKind::base,
@@ -212,7 +212,7 @@ void run_box_channel_rows(bench::Spread const& spread, RunRecord& record) {
                                     .item_ns = item_ns});
         for (auto const index : row.latency.indices())
             bench::add_report(record.reports, row.latency.exchange(index, bench::Report{}));
-    }
+    });
 }
 
 void run_base_rows(bench::Spread const& spread, Arguments const& arguments, RunRecord& record) {

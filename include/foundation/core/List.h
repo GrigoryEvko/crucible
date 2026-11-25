@@ -13,12 +13,27 @@
 //
 // Operations
 //   size()              the count of elements, at most N
-//   append(value)       puts the value after the last element, and gives a Ref
-//                       to it, or Full<T> when the list holds N elements: one
-//                       compare.  An element does not move while the list
-//                       lives and holds it
+//   append(value)       puts the value after the last element, and gives the
+//                       Index<N> of the element, or Full<T> when the list holds
+//                       N elements: one compare
+//   insert(index, value)
+//                       puts the value before the element at the index, or
+//                       after the last element at size(), and moves each later
+//                       element one place up.  It gives Unit, or Full<T>
+//   set(index, value)   puts the value in the place of the element at the index
+//                       and then ends the old element
+//   exchange(index, value)
+//                       as set, and gives the old element back
+//   update(index, body) gives body a copy of the element at the index, assigns
+//                       the copy back, and gives the result of body
+//   remove(index)       moves the element at the index out as an Option<T> and
+//                       moves each later element one place down, or gives no
+//                       value at or past size()
 //   take_last()         moves the last element out as an Option<T>, or gives
 //                       no value for an empty list: one compare
+//   std::move(list).drain(body)
+//                       gives each element to body by value, in order, and ends
+//                       the list
 //   std::move(list).expect_empty(why)
 //                       ends an empty list, and ends the process with why
 //                       when the list still holds an element.  A list of a
@@ -26,11 +41,11 @@
 //   clear()             ends each element.  Only an element that a holder can
 //                       drop has it, because the end of a linear element
 //                       would lose what it proves
-//   view()              the View<T> of the elements.  A View of a temporary
-//                       list is refused
-//   for (x : list)      each element, in order
-//   get(position)       the element at position as an Option of a Ref, or no
-//                       value at or past size(): one compare
+//   view()              the View<T const> of the elements.  A View of a
+//                       temporary list is refused
+//   for (x : list)      each element for a read, in order
+//   get(position)       the element at position for a read, as an Option of a
+//                       Ref, or no value at or past size(): one compare
 //   reverse(), windows<W>() and chunks<W>()
 //                       the iteration verbs of the View of the elements.  No
 //                       type holds the count of a list, so it has no indices()
@@ -40,7 +55,44 @@
 //                       and the door gives the list back
 //                       (foundation/core/Frame.h)
 //
-// Each Ref of one call of append() or get() has the fresh brand of that call.
+// The Ref of one call of get() has the fresh brand of that call.
+//
+// Writers
+//   A door that lends a written element in place would give two writers of one
+//   element: another name of the list, such as a capture, a helper or a Ref,
+//   calls the door again, or ends the element that the first writer holds.  So
+//   a list lends no written element in place, and update gives the body a copy
+//   of the element.  A body that writes or takes many elements takes the list
+//   by move: with_mut and drain hold the list in their frame, so no other name
+//   of the list has an element.  An index at or past size() ends the process
+//   at set, exchange and update, because no type holds the count of a list.
+//
+// Code of the caller in a value door
+//   An element can reach its list, through a static list, a Ref or a guard that
+//   takes itself out of a registry.  So a value door runs the code of an
+//   element only while the list holds a live element in each slot that it
+//   counts.  This code is:
+//     append           the move of the value, before the count takes it
+//     insert, remove   the move and the assignment of each later element, and
+//                      in remove the end of the last one, after the count
+//                      drops it.  A later element is moved from in between
+//     set, exchange    the move and the assignment.  The old element ends
+//                      after the new one is in the slot
+//     update           the copy, the body and the assignment of the copy
+//     take_last        the move, and the end of the moved-from element, after
+//                      the count drops it
+//     clear, the assignment and the end of a list
+//                      the end of each element, after the count drops it
+//   An element with no nothrow assignment, or a linear one, frees a slot for a
+//   moment in insert, remove, set and exchange.  Then the list counts only the
+//   elements before the free slot.
+//   A door ends the process when the code of an element changes the count of
+//   the list while the door moves or assigns an element.  It also does so when
+//   a destructor makes the count larger, because an append or an insert from a
+//   destructor starts an element in the slot whose destructor still runs.  A
+//   destructor can clear the list, or set, take or remove an element of it.
+//   The copy of update holds no slot, so a body that ends the element through a
+//   second name ends the process when the door puts the copy back.
 //
 // A slot past size() holds no element: no code reads it, and the destructor
 // ends only the elements below size().  A list of a trivially copyable
@@ -91,24 +143,16 @@ class FixedListSlotsDoor final : ::foundation::NoObject<FixedListSlotsDoor> {
     }
 };
 
-// The door of a FixedList to the door of a Ref (the doors of the owners above
-// foundation/core/Ref.h) and to the body of each get of a run (RegionRefDoor
-// of foundation/core/Region.h).  Its members are private, and FixedList is
-// its one friend.  The invariant is the invariant of FixedListSlotsDoor: the
-// first count slots hold live elements and no other slot does.  So the
-// element that an append just started and each element below the count is
-// live.  A home owner row of utils/rule-table.txt keeps this definition in
-// this header.
+// The door of a FixedList to the body of each get of a run (RegionRefDoor of
+// foundation/core/Region.h).  Its member is private, and FixedList is its one
+// friend.  The invariant is the invariant of FixedListSlotsDoor: the first
+// count slots hold live elements and no other slot does.  So each element
+// below the count is live.  A home owner row of utils/rule-table.txt keeps
+// this definition in this header.
 class ListRefDoor final : ::foundation::NoObject<ListRefDoor> {
     template <class T, std::size_t N>
         requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && std::is_nothrow_move_constructible_v<T>
     friend class FixedList;
-
-    // The element that an append started, as a Ref of the brand.
-    template <::foundation::brand::IsBrand Brand, RefTarget T>
-    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
-        return detail::RefDoor::lend<Brand>(object);
-    }
 
     // The element at position of the count live elements from the first slot,
     // as an Option of a Ref of the brand, or no value at or past the count.
@@ -191,6 +235,28 @@ public:
 template <class T>
 concept BytewiseListElement = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>;
 
+// An element that moves as its bytes and has no end.  Its assignment can be
+// its own, so the element is not trivially copyable.
+template <class T>
+concept ByteMovedListElement = std::is_trivially_move_constructible_v<T> && std::is_trivially_destructible_v<T>;
+
+// An index with no element, and the count of the list that refuses it.
+struct ListIndexOutside final {
+    std::size_t index = 0;
+    std::size_t count = 0;
+};
+
+// The fatal exit of a value door whose index has no element.
+[[noreturn]] CRUCIBLE_COLD inline void report_list_index_outside_(ListIndexOutside outside) noexcept {
+    fatal("a write at the index {} of a FixedList of {} elements", outside.index, outside.count);
+}
+
+// The fatal exit of a door of a list that the code of an element changed while
+// the door moved or ended an element.
+[[noreturn]] CRUCIBLE_COLD inline void report_list_changed_() noexcept {
+    fatal("the code of an element changed a FixedList while a door of the list moved or ended its elements");
+}
+
 }  // namespace detail
 
 template <class T, std::size_t N>
@@ -211,22 +277,64 @@ class[[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(
     // loses no value that the program can still use.
     [[= ::foundation::linear::drop_door{}]] static constexpr void end_slot_(T& element) noexcept { element.~T(); }
 
-    // Ends each element from the last.  Complexity: O(size()).
-    constexpr void end_each_() noexcept {
-        if constexpr (!std::is_trivially_destructible_v<T>) {
-            for (std::size_t position = count_; position != 0; --position) {
-                end_slot_(*slots_.slot(position - 1));
+    // True when the move, the end, or one of the move, the end and the
+    // assignment of an element can be code of the caller.  A check of the count
+    // has no code for an element with none.
+    static constexpr bool runs_move_code_ = !std::is_trivially_move_constructible_v<T>;
+    static constexpr bool runs_end_code_ = !std::is_trivially_destructible_v<T>;
+    static constexpr bool runs_element_code_ =
+        runs_move_code_ || runs_end_code_ || !std::is_trivially_move_assignable_v<T>;
+
+    // Ends the process when the code of an element changed the count while a
+    // door of the list worked on an element.  RunsCode is true when the door
+    // ran code of an element.
+    template <bool RunsCode = runs_element_code_>
+    constexpr void require_count_(std::size_t count) const noexcept {
+        if constexpr (RunsCode) {
+            if (count_ != count) [[unlikely]] {
+                detail::report_list_changed_();
             }
         }
-        count_ = 0;
+    }
+
+    // Ends the element in the first slot after the elements that the list
+    // counts.  The destructor of the element can reach the list.  An append
+    // or an insert from it would start an element in the slot whose
+    // destructor still runs, so the process ends when the count grew.
+    constexpr void end_dropped_() noexcept {
+        std::size_t const count = size();
+        end_slot_(*slots_.slot(count));
+        if constexpr (runs_end_code_) {
+            if (count_ > count) [[unlikely]] {
+                detail::report_list_changed_();
+            }
+        }
+    }
+
+    // Ends each element from the last.  The list stops to count an element
+    // before the element ends, so the destructor of an element that reaches
+    // the list finds a whole list.  Complexity: O(size()).
+    constexpr void end_each_() noexcept {
+        if constexpr (std::is_trivially_destructible_v<T>) {
+            count_ = 0;
+        } else {
+            while (count_ != 0) {
+                --count_;
+                end_dropped_();
+            }
+        }
     }
 
     // Starts each element of this empty list as a copy of the element at the
     // same position of source.  Complexity: O(source.size()).
     constexpr void copy_each_(FixedList const& source) noexcept {
-        for (std::size_t position = 0; position != source.count_; ++position) {
+        std::size_t const count = source.size();
+        for (std::size_t position = 0; position != count; ++position) {
             ::new(static_cast<void*>(slots_.slot(position))) T(*source.slots_.slot(position));
         }
+        constexpr bool runs_copy_code = !std::is_trivially_copy_constructible_v<T>;
+        require_count_<runs_copy_code>(0);
+        source.template require_count_<runs_copy_code>(count);
         count_ = source.count_;
     }
 
@@ -235,11 +343,180 @@ class[[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(
     // O(source.size()).  A body that moves storage: the move of the list
     // that owns source gives it up.
     [[= ::foundation::linear::moves_own_storage{}]] constexpr void move_each_(FixedList& source) noexcept {
-        for (std::size_t position = 0; position != source.count_; ++position) {
+        std::size_t const count = source.size();
+        for (std::size_t position = 0; position != count; ++position) {
             ::new(static_cast<void*>(slots_.slot(position))) T(static_cast<T&&>(*source.slots_.slot(position)));
         }
+        require_count_<runs_move_code_>(0);
+        source.template require_count_<runs_move_code_>(count);
         count_ = source.count_;
         source.end_each_();
+    }
+
+    // True when an element takes a new value by a nothrow assignment.  Then a
+    // slot holds an element at each step of a value door.  An assignment over
+    // a linear element drops it with no door, so a linear element ends and
+    // starts in its slot.
+    static constexpr bool is_assigned_in_place_ =
+        std::is_nothrow_move_assignable_v<T> && !::foundation::linear::is_linear_type(^^T);
+
+    // Starts value as the element of the free slot.
+    constexpr void start_slot_(std::size_t slot, T&& value) noexcept {
+        ::new(static_cast<void*>(slots_.slot(slot))) T(static_cast<T&&>(value));
+    }
+
+    // The doors of an element with no assignment in place free a slot that the
+    // list counts.  hide_tail_ lets the list count only the elements before the
+    // slot, so the list is whole while code of the caller runs, and it gives
+    // the old count.  show_tail_ restores the count.  It ends the process
+    // when the code of an element changed the list, because the slots after
+    // the first free one hold elements that the list does not count.
+    [[nodiscard]] constexpr std::size_t hide_tail_(std::size_t slot) noexcept {
+        std::size_t const count = size();
+        count_ = static_cast<detail::IndexWord<N>>(slot);
+        return count;
+    }
+    constexpr void show_tail_(std::size_t slot, std::size_t count) noexcept {
+        require_count_(slot);
+        count_ = static_cast<detail::IndexWord<N>>(count);
+    }
+
+    // Puts value in the place of the element of slot, and gives the old
+    // element.  Code of the caller that runs is the move of an element, the
+    // assignment of one, and, with no assignment, the destructor of the
+    // moved-from one.  The list is whole at each of them.  A body that moves
+    // storage: the caller ends the element that it gets.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T replace_slot_(std::size_t slot,
+                                                                                            T&& value) noexcept {
+        if constexpr (is_assigned_in_place_) {
+            std::size_t const count = size();
+            T held(static_cast<T&&>(*slots_.slot(slot)));
+            require_count_(count);
+            *slots_.slot(slot) = static_cast<T&&>(value);
+            require_count_(count);
+            return held;
+        } else {
+            std::size_t const count = hide_tail_(slot);
+            T held(static_cast<T&&>(*slots_.slot(slot)));
+            end_slot_(*slots_.slot(slot));
+            require_count_(slot);
+            start_slot_(slot, static_cast<T&&>(value));
+            show_tail_(slot, count);
+            return held;
+        }
+    }
+
+    // Puts value before the element of slot and moves each element from slot
+    // one place up.  The list has room.  The count takes the new element
+    // last.  A body that moves storage, as replace_slot_.
+    [[= ::foundation::linear::moves_own_storage{}]] constexpr void open_slot_(std::size_t slot, T&& value) noexcept {
+        std::size_t const count = size();
+        if (slot == count) {
+            start_slot_(slot, static_cast<T&&>(value));
+            require_count_(count);
+        } else if constexpr (is_assigned_in_place_) {
+            start_slot_(count, static_cast<T&&>(*slots_.slot(count - 1)));
+            require_count_(count);
+            for (std::size_t later = count - 1; later != slot; --later) {
+                *slots_.slot(later) = static_cast<T&&>(*slots_.slot(later - 1));
+            }
+            *slots_.slot(slot) = static_cast<T&&>(value);
+            require_count_(count);
+        } else {
+            static_cast<void>(hide_tail_(slot));
+            for (std::size_t later = count; later != slot; --later) {
+                start_slot_(later, static_cast<T&&>(*slots_.slot(later - 1)));
+                end_slot_(*slots_.slot(later - 1));
+                require_count_(slot);
+            }
+            start_slot_(slot, static_cast<T&&>(value));
+            show_tail_(slot, count);
+        }
+        ++count_;
+    }
+
+    // Ends the moved-from element of slot and moves each later element one
+    // place down.  The list counts the last element no more before it ends.
+    // A body that moves storage, as replace_slot_.
+    [[= ::foundation::linear::moves_own_storage{}]] constexpr void close_slot_(std::size_t slot) noexcept {
+        std::size_t const count = size();
+        if constexpr (is_assigned_in_place_) {
+            for (std::size_t later = slot; later + 1 != count; ++later) {
+                *slots_.slot(later) = static_cast<T&&>(*slots_.slot(later + 1));
+            }
+            require_count_(count);
+            --count_;
+            end_dropped_();
+        } else {
+            static_cast<void>(hide_tail_(slot));
+            end_slot_(*slots_.slot(slot));
+            require_count_(slot);
+            for (std::size_t later = slot; later + 1 != count; ++later) {
+                start_slot_(later, static_cast<T&&>(*slots_.slot(later + 1)));
+                end_slot_(*slots_.slot(later + 1));
+                require_count_(slot);
+            }
+            show_tail_(slot, count - 1);
+        }
+    }
+
+    // The frame of one call of update: the copy of an element, which the
+    // destructor assigns to the element at the index.  It names the list and
+    // no slot, so a body that ends or moves the elements of the list ends the
+    // process at the index, and it writes no ended element.
+    class ElementUpdate final {
+        FixedList& list_;
+        Index<N> index_;
+        T held_;
+        [[no_unique_address]] detail::LostUpdateOracle<T> oracle_;
+
+    public:
+        constexpr ElementUpdate(FixedList& list, Index<N> index) noexcept
+            : list_{list},
+              index_{index},
+              held_(*list.slots_.slot(index.raw())),
+              oracle_{*list.slots_.slot(index.raw())} {}
+        ElementUpdate(ElementUpdate const&) = delete("the frame of update puts its copy back one time");
+        ElementUpdate& operator=(ElementUpdate const&) = delete("the frame of update puts its copy back one time");
+        constexpr ~ElementUpdate() {
+            list_.require_element_(index_);
+            T& element = *list_.slots_.slot(index_.raw());
+            oracle_.require_unwritten(element);
+            element = static_cast<T&&>(held_);
+        }
+        // The call of the body with the copy.  It gives the result of the body.
+        template <class Body>
+        constexpr auto run(Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
+            return static_cast<Body&&>(body)(held_);
+        }
+    };
+
+    // The index of a live element, from its address.  append passes the pointer
+    // that its placement new gives.  With an index from the count, or with a
+    // pointer read again from the slot, GCC 16 gives a loop of appends a store
+    // with an index register (the probe aligned_bytes_two_windows of
+    // test/shape/core_shapes.cpp).
+    [[nodiscard]] constexpr Index<N> index_of_(T const* element) const noexcept {
+        std::size_t const at = static_cast<std::size_t>(element - first_());
+        [[assume(at < N)]];
+        return Index<N>::check(at).expect("a live element of a list is below its capacity");
+    }
+
+    // Ends the process when index has no element (the writers).
+    constexpr void require_element_(Index<N> index) const noexcept {
+        if (index.raw() >= count_) [[unlikely]] {
+            detail::report_list_index_outside_(detail::ListIndexOutside{.index = index.raw(), .count = count_});
+        }
+    }
+
+    // The refusal of a value by a full list: a linear value goes back to the
+    // caller, and each other value ends.
+    [[nodiscard]] static constexpr Full<T> refused_(T&& value) noexcept {
+        if constexpr (::foundation::linear::is_linear_type(^^T)) {
+            return Full<T>{static_cast<T&&>(value)};
+        } else {
+            return Full<T>{};
+        }
     }
 
 public:
@@ -260,8 +537,15 @@ public:
     constexpr FixedList(FixedList&&) noexcept
         requires detail::BytewiseListElement<T>
     = default;
+    // A move of an element that moves as its bytes and has no end, such as a
+    // ViewMut, copies the bytes of the slots, and the source is then empty.
     constexpr FixedList(FixedList&& other) noexcept
-        requires(!detail::BytewiseListElement<T>)
+        requires(!detail::BytewiseListElement<T> && detail::ByteMovedListElement<T>)
+        : slots_{static_cast<detail::ListSlots<T, N>&&>(other.slots_)}, count_{other.count_} {
+        other.count_ = 0;
+    }
+    constexpr FixedList(FixedList&& other) noexcept
+        requires(!detail::BytewiseListElement<T> && !detail::ByteMovedListElement<T>)
     {
         move_each_(other);
     }
@@ -303,27 +587,93 @@ public:
         return count;
     }
 
-    // Puts value after the last element, and gives a Ref with the fresh brand
-    // of the call, or Full<T> when the list holds N elements.  One compare.
-    // The pack refuses each explicit argument, and the result type holds the
-    // brand in undeducible_brand_t.
-    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-        requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Result<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>, Full<T>>
-    append(T value) & noexcept {
+    // Puts value after the last element, and gives the index of the element,
+    // or Full<T> when the list holds N elements.  One compare.
+    [[nodiscard]] constexpr Result<Index<N>, Full<T>> append(T value) & noexcept {
         if (count_ == N) [[unlikely]] {
-            if constexpr (::foundation::linear::is_linear_type(^^T)) {
-                return err(Full<T>{static_cast<T&&>(value)});
-            } else {
-                return err(Full<T>{});
-            }
+            return err(refused_(static_cast<T&&>(value)));
         }
-        T* const element = ::new(static_cast<void*>(slots_.slot(count_))) T(static_cast<T&&>(value));
+        std::size_t const count = size();
+        T const* const element = ::new(static_cast<void*>(slots_.slot(count_))) T(static_cast<T&&>(value));
+        require_count_<runs_move_code_>(count);
         ++count_;
-        return ListRefDoor::lend_<Fresh>(*element);
+        return index_of_(element);
     }
-    void append(T) && =
-        delete("an append into a temporary FixedList gives a Ref that dangles at the end of the full expression");
+    void append(T) && = delete("an append into a temporary FixedList puts a value into an object that the full "
+                               "expression ends");
+
+    // Puts value before the element at index, or after the last element when
+    // index is size(), and moves each element from index one place up.  A list
+    // of N elements gives Full<T>.  An index past size() ends the process.
+    // Complexity: O(size() - index) moves.
+    [[nodiscard]] constexpr Result<Unit, Full<T>> insert(Index<N> index, T value) & noexcept {
+        if (count_ == N) [[unlikely]] {
+            return err(refused_(static_cast<T&&>(value)));
+        }
+        if (index.raw() > count_) [[unlikely]] {
+            detail::report_list_index_outside_(detail::ListIndexOutside{.index = index.raw(), .count = count_});
+        }
+        open_slot_(index.raw(), static_cast<T&&>(value));
+        return Unit{};
+    }
+
+    // The value doors of one element (the writers): value takes the place of
+    // the element at index.  set ends the old element after the slot holds the
+    // new one, so the element is one that a holder can drop.  exchange gives
+    // the old element back.  An index at or past size() ends the process.
+    // Complexity: O(1), and the cost of the moves.
+    constexpr void set(Index<N> index, T value) & noexcept
+        requires DroppablePayload<T>
+    {
+        require_element_(index);
+        static_cast<void>(replace_slot_(index.raw(), static_cast<T&&>(value)));
+    }
+    [[nodiscard]] constexpr T exchange(Index<N> index, T value) & noexcept {
+        require_element_(index);
+        return replace_slot_(index.raw(), static_cast<T&&>(value));
+    }
+
+    // The update door of one element (the writers): body gets a copy of the
+    // element at index, and then the door puts the copy in the place of the
+    // element.  The door gives the result of body, which holds no borrow.  No
+    // reference of the door names a slot of the list while body runs.  A
+    // nested set or update of the same element loses its write, as in the
+    // update door of a FixedArray (foundation/core/Array.h).  An index at or
+    // past size() ends the process.  Complexity: O(1), and the cost of body,
+    // of one copy and of one move.
+    template <class Body>
+        requires UpdatableElement<T> && is_assigned_in_place_
+              && std::is_invocable_v<Body, T&> && HoldsNoBorrow<detail::body_result_t<Body, T&>>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
+    [[= ::foundation::linear::borrow_match{}]] constexpr auto
+        update(Index<N> index, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
+        require_element_(index);
+        ElementUpdate frame{*this, index};
+        return frame.run(static_cast<Body&&>(body));
+    }
+    template <class Body>
+        requires LinearElementBody<Body, T>
+    void update(Index<N> index, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires(!UpdatableElement<T> || !is_assigned_in_place_)
+                 && std::is_invocable_v<Body, T&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    void update(Index<N> index, Body&& body) & = delete(
+        "update gives the body a copy of the element and assigns the copy back, so the element copies and assigns with "
+        "no throw: take an element that does not with exchange");
+
+    // Moves the element at index out and moves each later element one place
+    // down, or gives no value at or past size().  Complexity:
+    // O(size() - index) moves.
+    [[nodiscard]] constexpr Option<T> remove(Index<N> index) & noexcept {
+        if (index.raw() >= count_) {
+            return Option<T>{none};
+        }
+        std::size_t const count = size();
+        Option<T> result = Option<T>::some(static_cast<T&&>(*slots_.slot(index.raw())));
+        require_count_<runs_move_code_>(count);
+        close_slot_(index.raw());
+        return result;
+    }
 
     // Moves the last element out, or gives no value for an empty list.  One
     // compare.
@@ -331,11 +681,38 @@ public:
         if (count_ == 0) {
             return Option<T>{none};
         }
-        --count_;
-        Option<T> result = Option<T>::some(static_cast<T&&>(*slots_.slot(count_)));
-        end_slot_(*slots_.slot(count_));
-        return result;
+        if constexpr (runs_move_code_ || runs_end_code_) {
+            std::size_t const count = size();
+            Option<T> result = Option<T>::some(static_cast<T&&>(*slots_.slot(count - 1)));
+            require_count_<runs_move_code_>(count);
+            --count_;
+            end_dropped_();
+            return result;
+        } else {
+            --count_;
+            return Option<T>::some(static_cast<T&&>(*slots_.slot(count_)));
+        }
     }
+
+    // Gives each element to body by value, from the first to the last, and ends
+    // the list.  The list moves into the frame of the door, so no other name
+    // has an element while body runs.  Only an element that a holder can drop
+    // has drain(): a body that takes the element by reference would drop a
+    // linear value.  Complexity: O(size()) moves and calls of body.
+    template <class Body>
+        requires DroppablePayload<T> && std::is_nothrow_invocable_r_v<void, Body&, T>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
+    constexpr void drain(Body&& body) && noexcept {
+        FixedList held{static_cast<FixedList&&>(*this)};
+        for (std::size_t position = 0; position != held.count_; ++position) {
+            static_cast<void>(body(static_cast<T&&>(*held.slots_.slot(position))));
+        }
+    }
+    template <class Body>
+        requires(!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&, T>
+    void drain(Body&& body) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+    void drain(Body&& body) & = delete("drain gives each element away and ends the list: drain std::move(list)");
 
     // The end of an empty list that the caller gives up: the process ends
     // with the reason when the list still holds an element.  A list of a
@@ -356,20 +733,12 @@ public:
         end_each_();
     }
 
-    // The View of the elements.  It borrows this list, and an append or a take
-    // ends what it borrows.  The count is at most N, and the first count
-    // slots hold the elements, so the View comes through the door of the
-    // base layer, with no check and no test of a null pointer.  A constant
-    // evaluation of an empty list gives the empty View, because the union
-    // starts no element, and the evaluation forms no pointer into it.
-    [[nodiscard]] constexpr View<T> view() & noexcept {
-        if consteval {
-            if (count_ == 0) {
-                return View<T>{};
-            }
-        }
-        return FixedListSlotsDoor::live_slots_(first_(), size());
-    }
+    // The View of the elements, for a read.  It borrows this list, and a
+    // change of the list ends what it borrows.  The count is at most N, and
+    // the first count slots hold the elements, so the View comes through the
+    // door of the base layer, with no check and no test of a null pointer.  A
+    // constant evaluation of an empty list gives the empty View, because the
+    // union starts no element, and the evaluation forms no pointer into it.
     [[nodiscard]] constexpr View<T const> view() const& noexcept {
         if consteval {
             if (count_ == 0) {
@@ -381,9 +750,19 @@ public:
     void view() && = delete("a view of a temporary FixedList points into an object that the full expression ends");
     void view() const&& = delete("a view of a temporary FixedList points into an object that the full expression ends");
 
-    // The loop `for (T& element : list)`.
-    [[nodiscard]] constexpr ViewCursor<T> begin() & noexcept { return view().begin(); }
-    [[nodiscard]] constexpr ViewCursor<T> end() & noexcept { return view().end(); }
+    // The run of the elements for the frame door with_mut: a View that writes
+    // them.  The key of a frame keeps each caller outside the base out, so
+    // only a frame door gives a View that writes the elements of a list.
+    [[nodiscard]] friend constexpr View<T> frame_run_(detail::FrameKey const& /*key*/, FixedList& list) noexcept {
+        if consteval {
+            if (list.count_ == 0) {
+                return View<T>{};
+            }
+        }
+        return FixedListSlotsDoor::live_slots_(list.first_(), list.size());
+    }
+
+    // The loop `for (T const& element : list)`.
     [[nodiscard]] constexpr ViewCursor<T const> begin() const& noexcept { return view().begin(); }
     [[nodiscard]] constexpr ViewCursor<T const> end() const& noexcept { return view().end(); }
     void begin() && = delete("a cursor of a temporary FixedList points into an object that the full expression ends");
@@ -393,19 +772,10 @@ public:
     void
     end() const&& = delete("a cursor of a temporary FixedList points into an object that the full expression ends");
 
-    // The element at position, as an Option of a Ref with the fresh brand of
-    // the call, or no value at or past size(): one compare.  The pack refuses
-    // each explicit argument, and the result type holds the brand in
+    // The element at position for a read, as an Option of a Ref with the fresh
+    // brand of the call, or no value at or past size(): one compare.  The pack
+    // refuses each explicit argument, and the result type holds the brand in
     // undeducible_brand_t.
-    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-        requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>>
-    get(std::size_t position) & noexcept {
-        if (position >= size()) {
-            return Option<Ref<T, Fresh>>{none};
-        }
-        return ListRefDoor::element_at_<Fresh>(first_(), size(), position);
-    }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
@@ -420,16 +790,10 @@ public:
     get(std::size_t) const&& = delete("an element of a temporary FixedList dangles at the end of the full expression");
 
     // The iteration verbs of the View of the elements.
-    [[nodiscard]] constexpr auto reverse() & noexcept { return view().reverse(); }
     [[nodiscard]] constexpr auto reverse() const& noexcept { return view().reverse(); }
     void
     reverse() const&& = delete("a loop over a temporary FixedList points into an object that the full expression ends");
 
-    template <std::size_t Width>
-        requires ViewExtent<T, Width> && (Width != dynamic_extent) && (Width <= N)
-    [[nodiscard]] constexpr auto windows() & noexcept {
-        return view().template windows<Width>();
-    }
     template <std::size_t Width>
         requires ViewExtent<T, Width> && (Width != dynamic_extent) && (Width <= N)
     [[nodiscard]] constexpr auto windows() const& noexcept {
@@ -439,11 +803,6 @@ public:
     void
     windows() const&& = delete("a loop over a temporary FixedList points into an object that the full expression ends");
 
-    template <std::size_t Width>
-        requires ViewExtent<T, Width> && (Width != dynamic_extent) && (Width <= N)
-    [[nodiscard]] constexpr auto chunks() & noexcept {
-        return view().template chunks<Width>();
-    }
     template <std::size_t Width>
         requires ViewExtent<T, Width> && (Width != dynamic_extent) && (Width <= N)
     [[nodiscard]] constexpr auto chunks() const& noexcept {
@@ -515,7 +874,7 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
     detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
 with_mut(Owner&& owner, Body&& body) noexcept {
     Owner held{static_cast<Owner&&>(owner)};
-    View<typename Owner::element_type> const run = held.view();
+    View<typename Owner::element_type> const run = frame_run_(ListFrameKeyDoor::key_(), held);
     return detail::give_run_back_<Fresh>(ListFrameKeyDoor::key_(), static_cast<Owner&&>(held), run,
                                          static_cast<Body&&>(body));
 }

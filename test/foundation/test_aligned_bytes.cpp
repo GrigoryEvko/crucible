@@ -237,13 +237,13 @@ void test_windows_lend_disjoint_views() {
     auto const written = lend_windows<float>(block, windows, [](auto& views) noexcept {
         float value = 1.5f;
         std::size_t count = 0;
-        for (auto& view : views) {
+        std::move(views).drain([&value, &count](auto view) noexcept {
             for (float& element : view) {
                 element = value;
                 ++count;
             }
             value += 1.0f;
-        }
+        });
         return count;
     });
     CRUCIBLE_FATAL_INVARIANT(written.is_ok_and([](std::size_t const& count) noexcept { return count == 12; }));
@@ -251,8 +251,8 @@ void test_windows_lend_disjoint_views() {
         using ::foundation::core::bit_cast;
         float expected = 1.5f;
         std::size_t count = 0;
-        for (auto& view : views) {
-            for (float& element : view) {
+        for (auto const& view : views) {
+            for (float const& element : view) {
                 count += bit_cast<std::uint32_t>(element) == bit_cast<std::uint32_t>(expected) ? 1u : 0u;
             }
             expected += 1.0f;
@@ -289,10 +289,10 @@ void test_nested_windows_find_no_block() {
             bool const is_refused = inner.match(
                 [](::foundation::core::Unit const&) noexcept { return false; },
                 [](WindowRefusal const& refusal) noexcept { return refusal == WindowRefusal::outside_block; });
-            for (auto& view : views) {
+            std::move(views).drain([](auto view) noexcept {
                 for (float& element : view)
                     element = 1.5f;
-            }
+            });
             bool const is_written =
                 before.window<4>(0).expect("four bytes fit").at(::foundation::core::index<3>()) != 0;
             return is_refused && is_written;
@@ -313,12 +313,12 @@ void test_keyed_windows() {
     FixedList<ByteWindow, 2> const windows = make_windows(kFirst16, kAt64Of32);
     auto [written, back] = with_mut_windows<float>(block, std::move(key), windows, [](auto& views) noexcept {
         std::size_t count = 0;
-        for (auto& view : views) {
+        std::move(views).drain([&count](auto view) noexcept {
             for (float& element : view) {
                 element = 2.0f;
                 ++count;
             }
-        }
+        });
         return count;
     });
     CRUCIBLE_FATAL_INVARIANT(written.is_ok_and([](std::size_t const& count) noexcept { return count == 12; }));
@@ -327,7 +327,7 @@ void test_keyed_windows() {
     CRUCIBLE_FATAL_INVARIANT(refused.is_err());
     auto const lent = with_mut_windows<float>(block, again, windows, [](auto& views) noexcept {
         std::size_t count = 0;
-        for (auto& view : views) {
+        for (auto const& view : views) {
             for (float const element : view) {
                 count += ::foundation::core::bit_cast<std::uint32_t>(element)
                               == ::foundation::core::bit_cast<std::uint32_t>(2.0f)
@@ -400,7 +400,7 @@ void test_static_windows_agree_with_the_list() {
             block, make_windows(pair.at(::foundation::core::index<0>()), pair.at(::foundation::core::index<1>())),
             [](auto& views) noexcept {
                 std::size_t count = 0;
-                for (auto& view : views)
+                for (auto const& view : views)
                     count += view.size();
                 return count;
             });
@@ -421,8 +421,8 @@ void test_static_windows_agree_with_the_list() {
         using ::foundation::core::bit_cast;
         float expected = 1.5f;
         std::size_t count = 0;
-        for (auto& view : views) {
-            for (float& element : view) {
+        for (auto const& view : views) {
+            for (float const& element : view) {
                 count += bit_cast<std::uint32_t>(element) == bit_cast<std::uint32_t>(expected) ? 1u : 0u;
             }
             expected += 1.0f;

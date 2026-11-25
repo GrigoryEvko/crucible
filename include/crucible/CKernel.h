@@ -42,14 +42,20 @@ struct CKernelEntry {
 
 namespace detail {
 
+// The position of the first entry whose schema hash is not below schema_hash
+// in entries, which the schema hashes sort.  Complexity: O(log n).
+[[nodiscard]] constexpr std::size_t kernel_position_(::fixy::View<const CKernelEntry> entries,
+                                                     SchemaHash schema_hash) noexcept {
+    return ::fixy::find_lower_bound_by_key(
+        entries, [](const CKernelEntry& entry) noexcept { return entry.schema_hash.raw(); }, schema_hash.raw());
+}
+
 // The identifier of the entry of schema_hash in entries, which the schema
 // hashes sort, or OPAQUE when no entry holds that hash.  The run-time table
 // and the published table use this one lookup.  Complexity: O(log n).
 [[nodiscard]] constexpr CKernelId find_kernel_id_(::fixy::View<const CKernelEntry> entries,
                                                   SchemaHash schema_hash) noexcept {
-    const std::size_t position = ::fixy::find_lower_bound_by_key(
-        entries, [](const CKernelEntry& entry) noexcept { return entry.schema_hash.raw(); }, schema_hash.raw());
-    return entries.get(position)
+    return entries.get(kernel_position_(entries, schema_hash))
         .map([schema_hash](auto entry) noexcept {
             return entry->schema_hash == schema_hash ? entry->id : CKernelId::OPAQUE;
         })
@@ -173,31 +179,32 @@ public:
 
 private:
     // Runs inside the write section, so no seal and no other writer runs
-    // at the same time.  One pass in the order of the hashes keeps that
-    // order: the carried entry changes place with each entry of a larger
-    // hash, so each such entry moves one place up, and the last one goes to
-    // the end.  Complexity: O(n).
+    // at the same time.  The entries are in the order of the hashes: an entry
+    // of the hash takes the id, and a new entry goes before the first entry of
+    // a larger hash.  Complexity: O(n).
     void write_op_(SchemaHash schema_hash, CKernelId id) {
-        CKernelEntry carried{.schema_hash = schema_hash, .id = id};
-        for (CKernelEntry& entry : entries_) {
-            // Before the first change of place, each entry has a smaller hash
-            // than the new one, so an equal hash is the entry of this hash.
-            if (entry.schema_hash == carried.schema_hash) {
-                entry.id = id;
-                CRUCIBLE_POST(0, classify(schema_hash) == id);
-                return;
-            }
-            if (carried.schema_hash < entry.schema_hash) ::fixy::swap(entry, carried);
-        }
+        const CKernelEntry written{.schema_hash = schema_hash, .id = id};
+        const std::size_t position = detail::kernel_position_(entries_.view(), schema_hash);
+        const bool is_held = entries_.get(position).is_some_and(
+            [schema_hash](auto const& held) noexcept { return held->schema_hash == schema_hash; });
         // A full table ends the process.  A dropped registration leaves
         // classify() at OPAQUE for that one schema, and that shows only much
-        // later, at replay, on the trace that uses it.
-        if (entries_.append(carried).is_err()) [[unlikely]] {
-            ::fixy::fatal("crucible: the kernel table holds CKERNEL_TABLE_CAP schemas.  Raise CKERNEL_TABLE_CAP in "
-                          "crucible/CKernel.h, or register fewer schemas");
+        // later, at replay, on the trace that uses it.  The position past a
+        // full table has no index.
+        const ::fixy::Index<CKERNEL_TABLE_CAP> index =
+            ::fixy::Index<CKERNEL_TABLE_CAP>::check(position).expect(FULL_TABLE);
+        if (is_held) {
+            entries_.set(index, written);
+        } else {
+            entries_.insert(index, written).expect(FULL_TABLE);
         }
         CRUCIBLE_POST(0, classify(schema_hash) == id);
     }
+
+    // The reason of the end of the process at a full table.
+    static constexpr ::fixy::Fmt<> FULL_TABLE{
+        "crucible: the kernel table holds CKERNEL_TABLE_CAP schemas.  Raise CKERNEL_TABLE_CAP in crucible/CKernel.h, or "
+        "register fewer schemas"};
 
     ::fixy::FixedList<CKernelEntry, CKERNEL_TABLE_CAP> entries_{};
     RegistrationSeal seal_;

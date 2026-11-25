@@ -345,7 +345,7 @@ that the axis does not apply to the row.
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_grow_list` | `include/foundation/core/Grow.h` | Y | Y | Y | Y | token | · | HS14: 18 |
 | `mint_grow_text` | `include/foundation/core/Grow.h` | Y | Y | Y | · | token | · | HS14: 5 |
-| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 29 |
+| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 30 |
 | `mint_heap_array_copy` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_heap_array_with` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 3 |
 | `mint_heap_array_written` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 3 |

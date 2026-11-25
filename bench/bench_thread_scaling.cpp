@@ -1316,9 +1316,7 @@ void run_op_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const> co
     for (RowResult const& row : rows) {
         print_row<Kind>(row, base);
     }
-    for (RowResult& row : rows) {
-        bench::add_report(reports, std::move(row.latency));
-    }
+    std::move(rows).drain([&reports](RowResult&& row) noexcept { bench::add_report(reports, std::move(row.latency)); });
 }
 
 // The groups of ops of a run (the groups of ops).

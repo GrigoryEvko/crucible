@@ -601,10 +601,10 @@ void write_output(::fixy::TestRunnerCtx const& test, CrucibleContext& ctx, Cruci
                   Kernel const& kernel) {
     std::size_t outputs = 0;
     const auto written = ctx.with_output_views<float>(cv, [&kernel, &outputs](auto& views) noexcept {
-        for (auto& view : views) {
+        std::move(views).drain([&kernel, &outputs](auto view) noexcept {
             kernel(std::move(view));
             ++outputs;
-        }
+        });
     });
     CRUCIBLE_TEST_ASSERT(test, written.is_ok() && outputs == 1);
 }

@@ -991,9 +991,9 @@ namespace {
     static_cast<void>(windows.append(first).is_ok());
     static_cast<void>(windows.append(second).is_ok());
     auto const write_first = [value](auto& views) noexcept {
-        for (auto& view : views) {
+        std::move(views).drain([value](auto view) noexcept {
             view.get_mut(0).match([value](auto element) noexcept { *element = value; }, []() noexcept {});
-        }
+        });
     };
     auto [written, back] = foundation::with_mut_windows<float>(std::move(block), windows, write_first);
     block = std::move(back);
