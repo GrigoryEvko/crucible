@@ -16,6 +16,12 @@
 //   default element.  The mask keeps each slot inside the storage, so that
 //   bound is a bound of logic and not of safety.
 //
+// Element
+//   Each claim of a full ring ends or replaces the element of its slot, so a
+//   ring holds only an element that a holder can drop (DroppablePayload of
+//   foundation/core/Choice.h).  A claim of a ring of linear elements would end
+//   an older one with no consume.
+//
 // Doors
 //   The ring gives no reference to an element out.  A body borrows one
 //   element for the time of a call, and its result holds no borrow:
@@ -121,7 +127,7 @@ concept CyclicFreshBody =
 // friend, so this declaration stands before the door.  The definition of the
 // ring gives the default argument of its key brand.
 template <typename T, std::size_t N, ::foundation::brand::IsBrand KeyBrand>
-    requires(N > 0 && (N & (N - 1)) == 0)
+    requires(N > 0 && (N & (N - 1)) == 0) && ::foundation::core::DroppablePayload<T>
 class CyclicBuffer;
 
 }  // namespace fixy
@@ -136,7 +142,7 @@ namespace foundation::core {
 // definition in this header.
 class CyclicBufferFrameKeyDoor final : ::foundation::NoObject<CyclicBufferFrameKeyDoor> {
     template <typename T, std::size_t N, ::foundation::brand::IsBrand KeyBrand>
-        requires(N > 0 && (N & (N - 1)) == 0)
+        requires(N > 0 && (N & (N - 1)) == 0) && ::foundation::core::DroppablePayload<T>
     friend class ::fixy::CyclicBuffer;
 
     // The key of the frame doors, for the storage of a ring.
@@ -148,7 +154,7 @@ class CyclicBufferFrameKeyDoor final : ::foundation::NoObject<CyclicBufferFrameK
 namespace fixy {
 
 template <typename T, std::size_t N, ::foundation::brand::IsBrand KeyBrand = ::foundation::core::Unkeyed>
-    requires(N > 0 && (N & (N - 1)) == 0)
+    requires(N > 0 && (N & (N - 1)) == 0) && ::foundation::core::DroppablePayload<T>
 class [[nodiscard]][[= ::foundation::core::loan_key_mark_when<::foundation::core::IsKeyBrand<KeyBrand>>]] CyclicBuffer {
 public:
     using value_type = T;
@@ -507,7 +513,7 @@ public:
 // the brand of the mint, so it builds a ring only inside a mint.  Complexity:
 // O(N) for the value-initialization.
 template <class T, std::size_t N>
-    requires(N > 0 && (N & (N - 1)) == 0)
+    requires(N > 0 && (N & (N - 1)) == 0) && ::foundation::core::DroppablePayload<T>
 struct CyclicBufferOwner final {
     template <::foundation::core::IsKeyBrand Brand>
         requires std::is_nothrow_default_constructible_v<T>
@@ -518,7 +524,7 @@ struct CyclicBufferOwner final {
 };
 
 template <class T, std::size_t N>
-    requires(N > 0 && (N & (N - 1)) == 0)
+    requires(N > 0 && (N & (N - 1)) == 0) && ::foundation::core::DroppablePayload<T>
 inline constexpr CyclicBufferOwner<T, N> cyclic_buffer_owner{};
 
 }  // namespace fixy

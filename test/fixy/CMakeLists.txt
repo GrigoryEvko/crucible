@@ -2251,7 +2251,7 @@ fixy_test(test_cyclic_buffer)
 # a push writes into the slot that it gets.
 fixy_neg_compile_test(neg_cyclic_buffer_capacity_not_a_power_of_two
   "template constraint failure for .template<class T, long unsigned int N, class KeyBrand> +requires \\(IsBrand<KeyBrand>\\) && \\(N > 0"
-  "== 0\\) class fixy::CyclicBuffer.")
+  "== 0 && \\(DroppablePayload<T>\\)\\) class fixy::CyclicBuffer.")
 # The member of the door class of each fixy header above foundation/core/Frame.h
 # gives the key of the frame doors only to the owners of that header, so a unit
 # that is no owner builds no ViewMut of a brand that it names.
@@ -2283,6 +2283,11 @@ fixy_neg_compile_test(neg_cyclic_buffer_body_gives_its_slot_out
 fixy_neg_compile_test(neg_cyclic_buffer_body_keeps_its_slot
   "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::update\\(foundation::core::Index<Count>, Body&&\\) &"
   "a body of a frame door stores no borrow outside the frame")
+# A claim ends or replaces the element of its slot, so a ring holds no element
+# that a holder cannot drop.
+fixy_neg_compile_test(neg_cyclic_buffer_of_a_linear_element
+  "template constraint failure for .template<class T, long unsigned int N, class KeyBrand> +requires \\(IsBrand<KeyBrand>\\) && \\(N > 0"
+  "required for the satisfaction of .DroppablePayload<T>. \\[with T = test_cyclic_buffer_linear_element::Ticket\\]")
 # A CyclicBuffer with no key lends no slot that a body writes: a helper, a Ref
 # and a push in the body ended the element that the body held.  Its value doors
 # refuse an element that does not copy or that can throw at a move, and a keyed
