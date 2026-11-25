@@ -194,9 +194,21 @@ private:
 // One window and its metadata region (the window).  The window owns the two
 // reservations, and its end unmaps them.  A ChunkSource takes it to give its
 // chunks out.
+//
+// A move gives the two reservations to the target and leaves the source with
+// none, and with the empty record.  So a second name of a moved window, such as
+// a second reference parameter that names one object, names no chunk: a
+// set_owner of it ends the process, and a source that takes it claims none.
+// The rule use-after-move does not see each such name.
 class [[nodiscard]] Window final {
 public:
-    Window(Window&&) noexcept = default;
+    Window(Window&& other) noexcept
+        : window_{static_cast<::foundation::os::Reservation&&>(other.window_)},
+          region_{static_cast<::foundation::os::Reservation&&>(other.region_)},
+          layout_{other.layout_},
+          record_{other.record_} {
+        other.record_ = WindowRecord{};
+    }
     Window(Window const&) = delete("a window owns its reservations, and two owners would unmap them two times");
     Window& operator=(Window const&) = delete("a window owns its reservations for its life");
     Window& operator=(Window&&) = delete("a window owns its reservations for its life");

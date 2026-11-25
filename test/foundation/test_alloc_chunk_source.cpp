@@ -11,6 +11,9 @@
 //   - A guard chunk has no owner, and a claim after the last chunk gives none.
 //   - One thread claims the chunks of a second window in the order of their
 //     index, with the guard of each extent skipped.
+//   - A window that moved has the empty record under its old name.  A second
+//     source that takes the old name claims no chunk, and a set_owner of the
+//     old name ends the process, while the window lives and after its end.
 //
 // The test runs in the default and the tsan presets, with no suppression.
 
@@ -29,6 +32,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -143,12 +147,57 @@ void one_thread_claims_in_order(TestRunnerCtx const& test) {
     pass(test, "  one_thread_claims_in_order: PASSED\n");
 }
 
+// Each function below takes one window through two parameters, so the rule
+// use-after-move does not see that the old name moved.
+
+void claim_under_two_names(TestRunnerCtx const& test, alloc::Window& window, alloc::Window& old_name) {
+    alloc::ChunkSource first{std::move(window)};
+    alloc::ChunkSource second{std::move(old_name)};
+    CRUCIBLE_TEST_ASSERT(test, first.claim_chunk().is_some());
+    CRUCIBLE_TEST_ASSERT(test, second.claim_chunk().is_none());
+    CRUCIBLE_TEST_ASSERT(test, second.record().is_empty());
+}
+
+void write_the_map_of_a_live_window(alloc::Window& window, alloc::Window& old_name) noexcept {
+    alloc::ChunkSource source{std::move(window)};
+    old_name.set_owner(alloc::ChunkIndex{0}, alloc::owner_entry_of(alloc::HeapId{7}));
+}
+
+void write_the_map_of_an_ended_window(alloc::Window& window, alloc::Window& old_name) noexcept {
+    { alloc::ChunkSource source{std::move(window)}; }
+    old_name.set_owner(alloc::ChunkIndex{0}, alloc::owner_entry_of(alloc::HeapId{7}));
+}
+
+// The text of the fatal invariant that the empty record of an old name breaks.
+constexpr ::fixy::TextView kNoSuchChunk{"fatal invariant failed: chunk.raw() < record_.chunk_count()"};
+
+void old_name_of_a_window_names_no_chunk(TestRunnerCtx const& test) {
+    alloc::Window window = reserve_test_window();
+    claim_under_two_names(test, window, window);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            alloc::Window live = reserve_test_window();
+            write_the_map_of_a_live_window(live, live);
+        },
+        kNoSuchChunk);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            alloc::Window ended = reserve_test_window();
+            write_the_map_of_an_ended_window(ended, ended);
+        },
+        kNoSuchChunk);
+    pass(test, "  old_name_of_a_window_names_no_chunk: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
     TestRunnerCtx const test{::foundation::effects::testing::test()};
     eight_threads_claim_each_chunk_once(test);
     one_thread_claims_in_order(test);
+    old_name_of_a_window_names_no_chunk(test);
     pass(test, "test_alloc_chunk_source: PASSED\n");
     return 0;
 }
