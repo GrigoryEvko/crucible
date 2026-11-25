@@ -1,0 +1,18 @@
+// A control of use-after-move: one call runs an rvalue of body, body gets a new value before the next call, and each
+// branch runs body one time.
+#include <utility>
+struct Body { Body() = default; Body(Body&&) {} Body& operator=(Body&&) { return *this; } void operator()(int) && {} };
+Body make();
+bool should_run();
+
+void must_accept_move_callee(Body body) {
+    std::move(body)(1);
+    body = make();
+    if (should_run()) {
+        std::move(body)(2);
+    } else {
+        std::move(body)(3);
+    }
+}
+template <class Given>
+void must_accept_forward_callee(Given&& given) { std::forward<Given>(given)(1); }

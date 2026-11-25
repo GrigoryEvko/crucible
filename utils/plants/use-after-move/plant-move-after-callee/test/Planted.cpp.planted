@@ -1,0 +1,6 @@
+// A plant of use-after-move: std::move(body)(1) spends body, and the code after it moves body into take.
+#include <utility>
+struct Body { Body() = default; Body(Body&&) {} void operator()(int) && {} };
+void take(Body&&);
+
+void must_catch_move_after_callee(Body body) { std::move(body)(1); take(std::move(body)); }

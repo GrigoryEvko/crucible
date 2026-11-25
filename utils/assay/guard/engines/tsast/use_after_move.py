@@ -5,7 +5,9 @@ Rule
     `std::forward_like<T>(x)` or `static_cast<T&&>(x)`, the name x is spent.
     The qualifier of the function does not change this: `move(x)` after a
     using-declaration and `alias::move(x)` after a namespace alias are moves
-    too.  After the move, a read of x, a second move of x and a read of a
+    too, and so is `(std::move)(x)`.  A move can be the callee of a call:
+    `std::move(f)(1)` runs an rvalue of f, so f is spent.
+    After the move, a read of x, a second move of x and a read of a
     member of x are uses after move.  An assignment to x before them makes x
     live again.  A copy capture of x in a lambda is a use too.  The rule
     refuses:
@@ -968,9 +970,20 @@ class Walk:
         return None if path is None else self.canon(path)
 
     def move_callee(self, call: tsast.Node) -> bool:
-        """Return True when a call is a move: the last name of its function is in MOVE_CALLEES, with no member call."""
+        """Return True when a call is a move: the last name of its function is in MOVE_CALLEES.
+
+        A member call is no move.  A function that is a call, as in
+        std::move(f)(1), gives the value that this call runs, so the walk reads
+        the move in the function.  Parentheses around the name change nothing.
+        """
         function = call.child_by_field("function")
-        return function is not None and function.type != "field_expression" and leaf_name(function) in MOVE_CALLEES
+        while function is not None and function.type == "parenthesized_expression" and len(named(function)) == 1:
+            function = named(function)[0]
+        return (
+            function is not None
+            and function.type not in ("field_expression", "call_expression")
+            and leaf_name(function) in MOVE_CALLEES
+        )
 
     def element_of_get(self, call: tsast.Node) -> str | None:
         """Return the index I when a move is the first argument of get<I>( ... ), which moves the element I."""

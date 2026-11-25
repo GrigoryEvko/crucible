@@ -1,0 +1,5 @@
+// A plant of use-after-move: std::move(body)(1) runs an rvalue of body, and the second call runs it again.
+#include <utility>
+struct Body { Body() = default; Body(Body&&) {} void operator()(int) && {} };
+
+void must_catch_move_callee(Body body) { std::move(body)(1); std::move(body)(2); }

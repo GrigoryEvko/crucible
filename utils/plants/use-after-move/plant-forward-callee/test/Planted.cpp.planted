@@ -1,0 +1,5 @@
+// A plant of use-after-move: std::forward<Body>(body)(1) runs a forwarded body, and the second call runs it again.
+#include <utility>
+
+template <class Body>
+void must_catch_forward_callee(Body&& body) { std::forward<Body>(body)(1); std::forward<Body>(body)(2); }
