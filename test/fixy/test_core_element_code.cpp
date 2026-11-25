@@ -11,6 +11,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/handle/Once.h>
 #include <foundation/Brand.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Quantity.h>
@@ -326,6 +327,8 @@ void test_the_end_of_a_map_by_the_code_of_a_value_ends_the_process() {
 struct ArrayTag final {};
 struct BoxTag final {};
 struct MapTag final {};
+struct LazyTag final {};
+struct LazyCallTag final {};
 
 template <class Tag>
 struct Holder;
@@ -377,6 +380,28 @@ struct Holder<MapTag> final {
 };
 
 template <>
+struct Holder<LazyTag> final {
+    using brand_type = HolderBrand<LazyTag>;
+    ::fixy::handle::Lazy<Ending<LazyTag>> held{};
+
+    void read() const noexcept {
+        ++reads_of_an_owner;
+        is_ended_element_seen = is_ended_element_seen || held.initialized() || held.get().is_some();
+    }
+};
+
+template <>
+struct Holder<LazyCallTag> final {
+    using brand_type = HolderBrand<LazyCallTag>;
+    ::fixy::handle::Lazy<Ending<LazyCallTag>> held{};
+
+    void read() noexcept {
+        static_cast<void>(
+            held.get_or_init(kTest, [this]() noexcept { return Ending<LazyCallTag>{core::to(*this)}; })->is_live());
+    }
+};
+
+template <>
 struct Holder<BoxTag> final {
     using brand_type = HolderBrand<BoxTag>;
     core::Box<Ending<BoxTag>> held;
@@ -405,6 +430,20 @@ void test_the_end_of_an_owner_empties_it_first() {
         reads_of_an_owner = 0;
     }
     check_whole_reads(3);
+    {
+        Holder<LazyTag> holder{};
+        static_cast<void>(
+            holder.held.get_or_init(kTest, [&holder]() noexcept { return Ending<LazyTag>{core::to(holder)}; })
+                ->is_live());
+    }
+    check_whole_reads(1);
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            Holder<LazyCallTag> holder{};
+            holder.read();
+        },
+        ::fixy::TextView{"get_or_init of a Lazy runs in the code of its value, while the Lazy ends that value"});
     ::fixy::check::expect_dies(kTest, [] noexcept { Holder<BoxTag> const holder{}; }, kEmptyBox);
     ::fixy::check::pass(kTest, "  test_the_end_of_an_owner_empties_it_first: PASSED\n");
 }

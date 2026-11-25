@@ -7,13 +7,14 @@
 #include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
+#include <foundation/core/Report.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
 #include <array>
-#include <atomic>
 #include <cstdint>
 #include <new>
 #include <type_traits>
@@ -65,23 +66,45 @@ namespace fixy::handle {
 // of the caller, and the context owns Div.  The context of the hot path owns
 // no atom.
 
+//
+// The states of a gate: 0 before the body, 1 while the body runs, 2 after it, and
+// 3 in the end of the Lazy that holds the gate.
+
+namespace detail {
+
+// The fatal exit of a call of a gate whose Lazy ends its value.
+[[noreturn]] CRUCIBLE_COLD inline void report_call_of_an_ended_lazy_() noexcept {
+    ::foundation::core::fatal("get_or_init of a Lazy runs in the code of its value, while the Lazy ends that value");
+}
+
+}  // namespace detail
+
 class Once : ::foundation::Pinned<Once> {
-    alignas(64) std::atomic<std::uint8_t> state_{0};
+    alignas(64)::foundation::core::Atomic<std::uint8_t> state_{std::uint8_t{0}};
 
-public:
-    constexpr Once() noexcept = default;
+    template <typename T>
+    friend class Lazy;
 
-    template <typename Ctx, typename F>
-        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
-              && std::is_invocable_v<F>
-    void call(Ctx const& /*ctx*/, F&& f) noexcept(noexcept(std::forward<F>(f)())) {
-        std::uint8_t expected = 0;
-        if (state_.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire)) {
+    // Closes the gate for the end of its Lazy: done() is then false, and a call of
+    // the Lazy ends the process.  No other thread uses the gate at the end of its
+    // Lazy.
+    void close_() noexcept { state_.store_release(std::uint8_t{3}); }
+
+    // The body of call.  Only the end of a Lazy closes a gate, so only the call of
+    // a Lazy tests the closed state.
+    template <bool OfALazy, typename F>
+    void run_once_(F&& f) noexcept(noexcept(std::forward<F>(f)())) {
+        if (state_.cas_acq_rel(std::uint8_t{0}, std::uint8_t{1}).is_ok()) {
             std::forward<F>(f)();
-            state_.store(2, std::memory_order_release);
+            state_.store_release(std::uint8_t{2});
             return;
         }
-        while (state_.load(std::memory_order_acquire) != 2) {
+        for (std::uint8_t seen = state_.load_acquire(); seen != 2; seen = state_.load_acquire()) {
+            if constexpr (OfALazy) {
+                if (seen == 3) [[unlikely]] {
+                    detail::report_call_of_an_ended_lazy_();
+                }
+            }
             CRUCIBLE_SPIN_PAUSE;
         }
         // This is a template, so a postcondition would pull the
@@ -91,7 +114,17 @@ public:
         // completed state.
     }
 
-    [[nodiscard]] bool done() const noexcept { return state_.load(std::memory_order_acquire) == 2; }
+public:
+    constexpr Once() noexcept = default;
+
+    template <typename Ctx, typename F>
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+              && std::is_invocable_v<F>
+    void call(Ctx const& /*ctx*/, F&& f) noexcept(noexcept(std::forward<F>(f)())) {
+        run_once_<false>(std::forward<F>(f));
+    }
+
+    [[nodiscard]] bool done() const noexcept { return state_.load_acquire() == 2; }
 };
 
 template <typename T>
@@ -125,8 +158,14 @@ public:
 
     constexpr Lazy() noexcept = default;
 
+    // The gate closes before the value ends, so the code of the value that reaches
+    // its Lazy through a second name finds no value, and a get_or_init by it ends
+    // the process (the code of an element of foundation/core/Owner.h).
     ~Lazy() {
         if (once_.done()) {
+            if constexpr (!std::is_trivially_destructible_v<T>) {
+                once_.close_();
+            }
             storage_ptr_()->~T();
         }
     }
@@ -140,13 +179,14 @@ public:
              && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
              && std::is_invocable_r_v<T, F>
     [[nodiscard]] ::foundation::core::Ref<T, ::foundation::core::carrier_brand_t<T, Fresh>>
-    get_or_init(Ctx const& ctx, F&& f) noexcept {
+    get_or_init(Ctx const& /*ctx*/, F&& f) noexcept {
         // Exceptions are off for the build, so no path here throws.
         // Both specifiers are unconditional rather than derived from F.
         // A derived one reads false for a lambda whose call operator is
         // not itself declared noexcept, and the warning that infers
         // from the body then flags the mismatch.
-        once_.call(ctx, [&]() noexcept { ::new(static_cast<void*>(storage_.data())) T(std::forward<F>(f)()); });
+        once_.template run_once_<true>(
+            [&]() noexcept { ::new(static_cast<void*>(storage_.data())) T(std::forward<F>(f)()); });
         return ::foundation::core::LazyRefDoor::lend_<::foundation::core::carrier_brand_t<T, Fresh>>(*storage_ptr_());
     }
 
