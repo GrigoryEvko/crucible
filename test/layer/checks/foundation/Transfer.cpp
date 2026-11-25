@@ -11,10 +11,7 @@
 #include <foundation/core/Region.h>
 #include <foundation/core/RunSet.h>
 #include <foundation/core/Strided.h>
-#include <foundation/core/Text.h>
 #include <foundation/reflect/TypeComponents.h>
-
-#include <type_traits>
 
 namespace foundation::transfer {
 
@@ -434,15 +431,6 @@ static_assert(detail::is_door_token(^^GatedKey) && detail::is_door_token(^^Close
 static_assert(detail::is_door_token(^^KeyedCount::Key));
 static_assert(detail::is_door_token(^^::foundation::core::SoleWriter<WriterRole, WriterBrand>));
 static_assert(detail::is_open_token_of(^^OpenKey, ^^OpenKey) && !detail::is_open_token_of(^^GatedKey, ^^GatedKey));
-
-// The exemption holds one class, crucible::BackgroundThread, and no class of
-// this file.  The keyed doors of the owner-key member series remove the
-// exemption and these pins with it.
-static_assert(std::extent_v<decltype(detail::synchronized_door_exemptions)> == 1);
-static_assert(::foundation::core::mint_static_text(detail::synchronized_door_exemptions[0].space) == "crucible"
-              && ::foundation::core::mint_static_text(detail::synchronized_door_exemptions[0].name)
-                     == "BackgroundThread");
-static_assert(!detail::is_exempt_from_door_check(^^KeyedCount) && !detail::is_exempt_from_door_check(^^OrdersItsCount));
 
 // A class of one owner thread does not move and is not a target of a shared
 // write, but a read through a reference to const is safe when its parts are.

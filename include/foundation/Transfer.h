@@ -192,8 +192,7 @@
 //     apart.  So the kind synchronized-friend of the rule proof-routes of the
 //     quarantine plugin refuses each friend function of a class that states
 //     synchronized{}, and each friend class that can reach the class.  The
-//     check reads the nested classes (the nested classes).  One class has its
-//     doors exempt (the exemption).
+//     check reads the nested classes (the nested classes).
 //
 // Proof of a door
 //     A parameter is a proof of the class when its bare type is a token and
@@ -286,14 +285,6 @@
 //     that two threads can write.  The result of a claim door keeps a share:
 //     the door makes the share with one atomic step, and the share proves the
 //     claim of that step.
-//
-// Exemption
-//     The check does not read the doors of crucible::BackgroundThread.  Some
-//     of its doors take no proof (the comment of the class names them), and
-//     plant 06 of the audit of the threads, where two bodies of run_joined
-//     call set_numerics, proves the race.  The keyed doors of the owner-key
-//     member series replace those doors, and that series removes the
-//     exemption and the test that pins it to one class.
 //
 // Opaque types
 //     A class that is only declared, such as a handle whose definition is out
@@ -878,35 +869,6 @@ void a_door_probe_context_stands_outside_its_seal() noexcept;
     return specialized;
 }
 
-// One class whose doors the check does not read (the exemption): the name of
-// its namespace, which lies in the global namespace, and its own name.  The
-// check file of foundation/Transfer.h pins the table to the one class.
-struct synchronized_door_exemption {
-    char const* space = "";
-    char const* name = "";
-};
-
-inline constexpr synchronized_door_exemption synchronized_door_exemptions[] = {
-    {.space = "crucible", .name = "BackgroundThread"},
-};
-
-// True when the class is an exemption (the exemption).  The name query of
-// foundation/reflect/Members.h compares each name and walks no scope.  A
-// specialization is no exemption.  Complexity: linear in the exemptions,
-// times the length of a name.
-[[nodiscard]] consteval bool is_exempt_from_door_check(std::meta::info type) {
-    namespace refl = ::foundation::reflect;
-    if (!std::meta::has_identifier(type) || std::meta::has_template_arguments(type)) return false;
-    const std::meta::info space = std::meta::parent_of(type);
-    if (!std::meta::is_namespace(space) || std::meta::parent_of(space) != ^^::) return false;
-    for (const synchronized_door_exemption& exemption : synchronized_door_exemptions) {
-        if (refl::has_identifier_named(type, exemption.name) && refl::has_identifier_named(space, exemption.space)) {
-            return true;
-        }
-    }
-    return false;
-}
-
 // The depth of the walk of a closed class (the build of a token).  A walk that
 // needs more levels counts the class as open, so the check fails closed.
 inline constexpr int closed_walk_depth = 4;
@@ -1481,7 +1443,6 @@ consteval void check_synchronized_doors(std::meta::info type, std::meta::info pl
 
 consteval void check_synchronized_statement(std::meta::info type) {
     namespace refl = ::foundation::reflect;
-    const bool is_exempt = is_exempt_from_door_check(type);
     std::meta::info plain{};
     for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{type, true})) {
         // A node of a base names no member.  Each base, private or not, is
@@ -1505,7 +1466,7 @@ consteval void check_synchronized_statement(std::meta::info type) {
                 }
                 continue;
             }
-            if (is_exempt || plain != std::meta::info{}) continue;
+            if (plain != std::meta::info{}) continue;
             const bool holds_write = part.is_held_by_value
                                   && (part.was_const ? ::foundation::transfer::holds(part.type, Property::Share)
                                                      : is_shared_writable(part.type));

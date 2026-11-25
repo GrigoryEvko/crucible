@@ -60,8 +60,9 @@ static_assert(!__is_constructible(StartedBackgroundThread, StartedBackgroundThre
 static_assert(!::foundation::transfer::Shareable<StartedBackgroundThread>);
 static_assert(::foundation::transfer::Shareable<BackgroundThread>);
 
-// The class states synchronized{}.  The check of the statement exempts its
-// doors (the exemption of foundation/Transfer.h), so the class is Synchronized.
+// The class states synchronized{}.  Each door that writes plain state takes the
+// proof of a stage, or it is a door of a handle or of the holder, so the check
+// of the statement finds no door with no proof (foundation/Transfer.h).
 static_assert(::foundation::transfer::Synchronized<BackgroundThread>);
 
 // The publish stage and the readers of the totals use the cell of the count
