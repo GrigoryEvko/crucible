@@ -68,7 +68,7 @@ fixy/Corpus.cpp | 3.1 | ::fixy::corpus, ::fixy::tags::secret_policy, unknown
 fixy/Fn.cpp | 2.8 | ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
 fixy/Machine.cpp | 0.0 | ::fixy::machine::no_edges, unknown
 fixy/Mutation.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
-fixy/OwnedRegion.cpp | 0.5 | ::foundation::permissions::permission_rows
+fixy/OwnedRegion.cpp | 0.5 | ::foundation::permissions::permission_rows, unknown
 fixy/PredicateImplies.cpp | 5.6 | ::fixy::refined::admitted_implications
 fixy/Reject.cpp | 2.6 | unknown
 fixy/Role.cpp | 1.8 | ::fixy::role, ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
@@ -136,6 +136,8 @@ foundation/core/ArenaFrame.cpp | unmeasured | ::foundation::transfer::door_probe
 foundation/core/Array.cpp | 0.9 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Atomic.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/BumpArena.cpp | unmeasured | unknown
+foundation/core/CaptureStore.cpp | unmeasured | unknown
+foundation/core/KeyWalk.cpp | unmeasured | unknown
 foundation/core/Link.cpp | 0.3 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/LiveList.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Owner.cpp | 0.1 | unknown
@@ -144,6 +146,7 @@ foundation/core/Region.cpp | 2.2 | ::foundation::transfer::door_probe_contexts, 
 foundation/core/Sealed.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/SegmentList.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Strided.cpp | 0.2 | ::foundation::transfer::door_probe_contexts, unknown
+foundation/core/TypeParts.cpp | unmeasured | unknown
 foundation/diag/Catalog.cpp | 3.5 | ::foundation::diag
 foundation/diag/Insights.cpp | 0.6 | ::foundation::diag
 foundation/effects/Capability.cpp | 0.2 | ::foundation::effects::cap
