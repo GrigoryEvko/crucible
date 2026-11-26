@@ -31,7 +31,7 @@ namespace crucible::fuzz::boundary {
             alloc, ::fixy::ElementCount{arms}, [values](::fixy::RunStart at) noexcept {
                 return BranchNode::Arm{*values.get(at.value().raw()).expect("a position is below the count of values")};
             });
-        branch->set_arms(arm_run.weaken());
+        frame.store(branch, &BranchNode::arm_run, arm_run);
         ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});
         // The body takes the node by reference, and the serializer reads it
         // as const.

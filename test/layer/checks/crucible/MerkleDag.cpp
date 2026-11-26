@@ -100,7 +100,15 @@ static_assert(sizeof(NodeLink) == sizeof(void*), "a link slot takes the one poin
 static_assert(!std::is_copy_constructible_v<NodeLink> && !std::is_move_constructible_v<NodeLink>
               && !std::is_copy_assignable_v<NodeLink> && !std::is_move_assignable_v<NodeLink>);
 static_assert(!std::is_assignable_v<NodeLink&, TraceLink>, "only a store of a frame fills a link slot");
-static_assert(std::is_same_v<decltype(std::declval<RegionNode&>().ops), ::fixy::ArenaRun<TraceEntry const, DagArena>>);
+static_assert(std::is_same_v<decltype(std::declval<RegionNode&>().ops),
+                             ::foundation::core::FrameRunSlot<TraceEntry const, DagArena>>);
+static_assert(std::is_same_v<decltype(std::declval<BranchNode&>().arm_run), DagRunSlot<BranchNode::Arm>>);
+static_assert(std::is_same_v<decltype(std::declval<LoopNode&>().feedback_edges), DagRunSlot<FeedbackEdge const>>);
+static_assert(sizeof(DagRunSlot<TraceEntry const>) == sizeof(::fixy::View<TraceEntry const>),
+              "a run slot takes the pointer and the count of its run");
+static_assert(!std::is_copy_constructible_v<DagRunSlot<TraceEntry const>>
+                  && !std::is_assignable_v<DagRunSlot<TraceEntry const>&, ::fixy::ArenaRun<TraceEntry const, DagArena>>,
+              "only a store of a frame fills a run slot");
 static_assert(sizeof(::fixy::ArenaRun<TraceEntry const, DagArena>) == sizeof(::fixy::View<TraceEntry const>));
 static_assert(!std::is_constructible_v<::fixy::ArenaRun<TraceEntry const, DagArena>, ::fixy::View<TraceEntry const>>);
 

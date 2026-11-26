@@ -37,7 +37,7 @@ make_two_arm_branch(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh
                 &crucible::BranchNode::Arm::target, first);
     frame.store(arms.element(::fixy::RunStart{::fixy::ElementCount{1}}).expect("the branch holds two arms"),
                 &crucible::BranchNode::Arm::target, second);
-    branch->set_arms(arms.weaken());
+    frame.store(branch, &crucible::BranchNode::arm_run, arms);
     return branch;
 }
 

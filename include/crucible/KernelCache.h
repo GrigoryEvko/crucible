@@ -552,7 +552,7 @@ add_branch(::foundation::effects::Alloc a, ::foundation::effects::cap::Nondet no
             arms.element(::fixy::RunStart{::fixy::ElementCount{index}}).expect("the branch holds two arms");
         frame.store(arm, &BranchNode::Arm::target, is_old_arm ? old_target : new_target);
     }
-    branch->set_arms(arms.weaken());
+    frame.store(branch, &BranchNode::arm_run, arms);
     for (DagFrameRef<TraceNode, Fresh> const& node : merge)
         frame.store(branch, &TraceNode::next, node);
 

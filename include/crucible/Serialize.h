@@ -894,7 +894,7 @@ read_region_(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image
     node->content_hash = hdr.content_hash;
     node->numerics = numerics;
     // A new node holds no continuation, and the caller links it.
-    node->ops = ops_run.weaken();
+    frame.store(node, &RegionNode::ops, ops_run);
     node->first_op_schema = first_op_schema;
     node->measured_ms = measured_ms;
     // A new node holds the counter at zero, and each value on disk is at
@@ -992,7 +992,7 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     node->guard = guard;
     DagFrameRun<BranchNode::Arm, Fresh> arms = frame.template build_array<BranchNode::Arm>(
         a, ::fixy::ElementCount{num_arms}, [](::fixy::RunStart) noexcept { return BranchNode::Arm{}; });
-    node->set_arms(arms.weaken());
+    frame.store(node, &BranchNode::arm_run, arms);
     // The resolver gives a node of the frame, so frame.store links it to the
     // arm.  An arm with no resolved node keeps its empty target.
     for (size_t index = 0; index < num_arms; ++index) {

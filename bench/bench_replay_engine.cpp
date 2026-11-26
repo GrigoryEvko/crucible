@@ -42,32 +42,9 @@ struct BenchRegion {
 
     explicit BenchRegion(uint32_t n)
         : plan{arena.make<MemoryPlan>(::foundation::effects::testing::test().alloc)},
-          region{mint_region_(arena)},
+          region{build_region_(arena, n)},
           num_ops{n} {
         auto const alloc = ::foundation::effects::testing::test().alloc;
-        auto out_slots_run = arena.array(alloc, n, SlotId{});
-        auto in_slots_run = arena.array(alloc, n, SlotId{});
-        const auto out_metas_run = arena.array(alloc, n, TensorMeta{});
-        const auto in_metas_run = arena.array(alloc, n, TensorMeta{});
-        const auto in_producers_run = arena.array(alloc, n, OpIndex{});
-        auto ops_run = arena.array(alloc, n, TraceEntry{});
-
-        for (uint32_t i = 0; i < n; i++) {
-            const ::fixy::RunStart at_op{::fixy::ElementCount{i}};
-            const ::fixy::ElementCount one{1};
-            auto out_slot = out_slots_run.window(at_op, one).expect("i is below n");
-            auto in_slot = in_slots_run.window(at_op, one).expect("i is below n");
-            ::fixy::fill(out_slot.view(), SlotId{i});
-            ::fixy::fill(in_slot.view(), SlotId{(i > 0) ? (i - 1) : (n - 1)});
-
-            TraceEntry& op = *ops_run.view().get(i).expect("i is below n");
-            op.schema_hash = SchemaHash{1000 + i};
-            op.shape_hash = ShapeHash{2000 + i};
-            op.set_outputs(out_metas_run.window(at_op, one).expect("i is below n"), out_slot);
-            op.set_inputs(in_metas_run.window(at_op, one).expect("i is below n"),
-                          in_producers_run.window(at_op, one).expect("i is below n"), in_slot);
-        }
-
         auto slots_run = arena.array(alloc, n, TensorSlot{});
         for (uint32_t i = 0; i < n; i++) {
             *slots_run.view().get(i).expect("i is below n") = TensorSlot{.offset_bytes = i * 256ULL,
@@ -90,8 +67,6 @@ struct BenchRegion {
         plan->device_type = DeviceType::CPU;
         plan->device_idx = 0;
 
-        region->kind = TraceNodeKind::REGION;
-        region->ops = ops_run;
         region->plan = make_plan_link(plan);
     }
 
@@ -99,11 +74,41 @@ struct BenchRegion {
     BenchRegion& operator=(const BenchRegion&) = delete;
 
 private:
-    // A region node with each field at its default, which one frame on the
-    // arena builds.
-    [[nodiscard]] static DagRef<RegionNode> mint_region_(::fixy::BumpArena<DagArena>& arena) {
-        return ::foundation::core::with_arena_frame(arena, [](auto& frame) noexcept {
-            return mint_dag_node<RegionNode>(::foundation::effects::testing::test().alloc, frame).weaken();
+    // A region of n ops, which one frame on the arena builds with its ops and
+    // their runs.
+    [[nodiscard]] static DagRef<RegionNode> build_region_(::fixy::BumpArena<DagArena>& arena, uint32_t n) {
+        return ::foundation::core::with_arena_frame(arena, [n](auto& frame) noexcept {
+            auto const alloc = ::foundation::effects::testing::test().alloc;
+            auto out_slots_frame_run = frame.array(alloc, n, SlotId{});
+            auto in_slots_frame_run = frame.array(alloc, n, SlotId{});
+            ::fixy::ArenaRun<SlotId, DagArena> out_slots_run = out_slots_frame_run.weaken();
+            ::fixy::ArenaRun<SlotId, DagArena> in_slots_run = in_slots_frame_run.weaken();
+            const auto out_metas_run = frame.array(alloc, n, TensorMeta{}).weaken();
+            const auto in_metas_run = frame.array(alloc, n, TensorMeta{}).weaken();
+            const auto in_producers_run = frame.array(alloc, n, OpIndex{}).weaken();
+            auto ops_run = frame.template build_array<TraceEntry>(
+                alloc, ::fixy::ElementCount{n}, [](::fixy::RunStart) noexcept { return TraceEntry{}; });
+
+            for (uint32_t i = 0; i < n; i++) {
+                const ::fixy::RunStart at_op{::fixy::ElementCount{i}};
+                const ::fixy::ElementCount one{1};
+                auto out_slot = out_slots_run.window(at_op, one).expect("i is below n");
+                auto in_slot = in_slots_run.window(at_op, one).expect("i is below n");
+                ::fixy::fill(out_slot.view(), SlotId{i});
+                ::fixy::fill(in_slot.view(), SlotId{(i > 0) ? (i - 1) : (n - 1)});
+
+                TraceEntry& op = *ops_run.view().get(i).expect("i is below n");
+                op.schema_hash = SchemaHash{1000 + i};
+                op.shape_hash = ShapeHash{2000 + i};
+                op.set_outputs(out_metas_run.window(at_op, one).expect("i is below n"), out_slot);
+                op.set_inputs(in_metas_run.window(at_op, one).expect("i is below n"),
+                              in_producers_run.window(at_op, one).expect("i is below n"), in_slot);
+            }
+
+            const auto made = mint_dag_node<RegionNode>(alloc, frame);
+            made->kind = TraceNodeKind::REGION;
+            frame.store(made, &RegionNode::ops, ops_run);
+            return made.weaken();
         });
     }
 };

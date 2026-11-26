@@ -867,7 +867,7 @@ namespace {
                 auto arms = frame.template build_array<crucible::BranchNode::Arm>(
                     test.alloc, ::fixy::ElementCount{1},
                     [](::fixy::RunStart) noexcept { return crucible::BranchNode::Arm{1}; });
-                branch->set_arms(arms.weaken());
+                frame.store(branch, &crucible::BranchNode::arm_run, arms);
                 crucible::recompute_merkle(*branch);
                 // The child prints the hash only when the hash returns.
                 ::fixy::report(::fixy::Sink::Out, "  the hash of the unresolved branch: {}\n",

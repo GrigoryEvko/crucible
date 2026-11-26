@@ -31,4 +31,21 @@ void set_output_slots(Marker alloc, ::fixy::BumpArena<DagArena>& arena, TraceEnt
     op.set_outputs(arena.array(alloc, slot_ids.size(), TensorMeta{}), slot_ids);
 }
 
+// The inputs of op, as above, with the zero metadata and the producers in the
+// arena of a frame.  Complexity: O(count).
+template <class Marker, class Fresh>
+void set_input_slots(Marker alloc, DagFrame<Fresh>& frame, TraceEntry& op,
+                     ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
+    op.set_inputs(frame.array(alloc, slot_ids.size(), TensorMeta{}).weaken(),
+                  frame.array(alloc, slot_ids.size(), OpIndex{}).weaken(), slot_ids);
+}
+
+// The outputs of op, as above, with the zero metadata in the arena of a frame.
+// Complexity: O(count).
+template <class Marker, class Fresh>
+void set_output_slots(Marker alloc, DagFrame<Fresh>& frame, TraceEntry& op,
+                      ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
+    op.set_outputs(frame.array(alloc, slot_ids.size(), TensorMeta{}).weaken(), slot_ids);
+}
+
 }  // namespace crucible::test

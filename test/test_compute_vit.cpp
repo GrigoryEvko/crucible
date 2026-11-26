@@ -175,20 +175,24 @@ int main() {
         OpDef{.schema = H_SOFTMAX, .shape = S_SOFTMAX, .in = slots_of(SL_LOGITS), .out = slots_of(SL_PROBS)},
     };
 
-    auto ops_run = runs.array(test.alloc, N_OPS, TraceEntry{});
-    ::fixy::View<TraceEntry, N_OPS> const ops = ops_run.view().window<N_OPS>(0).expect("the run holds N_OPS ops");
-    for (auto [op, def] : ops.walk().zip(defs.view().walk())) {
-        op->schema_hash = def->schema;
-        op->shape_hash = def->shape;
-        crucible::test::set_input_slots(test.alloc, runs, *op, def->in);
-        crucible::test::set_output_slots(test.alloc, runs, *op, def->out);
-    }
-
+    // One frame on the arena of the runs makes the ops and the region, so the
+    // region links ops of its own arena.
     const DagRef<RegionNode> region =
-        ::foundation::core::with_arena_frame(runs, [alloc = test.alloc, &ops_run, &plan_storage](auto& frame) noexcept {
+        ::foundation::core::with_arena_frame(runs, [alloc = test.alloc, &defs, &plan_storage](auto& frame) noexcept {
+            auto ops_run = frame.template build_array<TraceEntry>(
+                alloc, ::fixy::ElementCount{N_OPS}, [](::fixy::RunStart) noexcept { return TraceEntry{}; });
+            ::fixy::View<TraceEntry, N_OPS> const ops =
+                ops_run.view().template window<N_OPS>(0).expect("the run holds N_OPS ops");
+            for (auto [op, def] : ops.walk().zip(defs.view().walk())) {
+                op->schema_hash = def->schema;
+                op->shape_hash = def->shape;
+                crucible::test::set_input_slots(alloc, frame, *op, def->in);
+                crucible::test::set_output_slots(alloc, frame, *op, def->out);
+            }
+
             const auto made = mint_dag_node<RegionNode>(alloc, frame);
             made->kind = TraceNodeKind::REGION;
-            made->ops = ops_run;
+            frame.store(made, &RegionNode::ops, ops_run);
             made->plan = make_plan_link(plan_storage);
             return made.weaken();
         });

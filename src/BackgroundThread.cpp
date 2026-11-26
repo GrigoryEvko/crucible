@@ -691,7 +691,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
          numerics = parts.numerics()](auto& frame, auto& ops, auto& /*metas*/, auto& /*scalars*/, auto& /*producers*/,
                                       auto& /*slot_ids*/, auto& slots) noexcept {
             const auto made = mint_dag_node<RegionNode>(alloc, frame);
-            init_region_node(made, ops, content_hash, numerics);
+            init_region_node(frame, made, ops, content_hash, numerics);
             if (slots.size() > 0) {
                 const DagRef<MemoryPlan> plan = frame.template make<MemoryPlan>(alloc).weaken();
                 const bool is_planned = scratch.arena.with_epoch(

@@ -357,6 +357,12 @@ using ConstRegionLink = ::fixy::Option<DagRef<RegionNode const>>;
 // link takes eight bytes too.
 using NodeLink = ::foundation::core::FrameLink<TraceNode, DagArena>;
 
+// A slot of a run of a node, as NodeLink is a slot of a link: only frame.store
+// fills it, with a holder and a run of one frame, so the run is in the arena
+// of its holder.  Its reads are the reads of an ArenaRun.
+template <class T>
+using DagRunSlot = ::foundation::core::FrameRunSlot<T, DagArena>;
+
 // A kind of node of the DAG: TraceNode or a class that derives from it.
 template <class Node>
 concept DagNodeType = std::is_class_v<Node> && !std::is_const_v<Node>
@@ -494,9 +500,9 @@ struct RegionNode : TraceNode {
     // and it is one word, so the 88-byte layout below holds.
     ::fixy::handle::BrandedPublishOnce<CompiledKernel const, KernelArena> compiled;
 
-    // The ops are in a DAG arena, and the node only borrows them as a run of
-    // the arena.  A region only reads its ops.
-    ::fixy::ArenaRun<TraceEntry const, DagArena> ops{};
+    // The ops are in the arena of the node, and the node only borrows them as
+    // a run slot of a frame.  A region only reads its ops.
+    DagRunSlot<TraceEntry const> ops{};
 
     SchemaHash first_op_schema;
 
@@ -596,16 +602,18 @@ struct BranchNode : TraceNode {
     uint32_t pad1 = 0;  // the bytes between the guard and the arms
     // The inherited next points at the merge node where all arms reconverge.
 
-    // The arms, which are in a DAG arena: the node only borrows them as a run
-    // of the arena.  A const branch gives its arms only as const, so a reader
-    // of a const branch writes no node that an arm links.
-    [[nodiscard]] ::fixy::View<Arm> arms() noexcept { return arms_.view(); }
-    [[nodiscard]] ::fixy::View<Arm const> arms() const noexcept { return arms_.view(); }
-    void set_arms(::fixy::ArenaRun<Arm, DagArena> arms) noexcept { arms_ = arms; }
+    // The run of the arms, in the arena of the node.  frame.store fills the
+    // slot, and arms() reads it.
+    DagRunSlot<Arm> arm_run{};
+
+    // The arms.  A const branch gives its arms only as const, so a reader of
+    // a const branch writes no node that an arm links.
+    [[nodiscard]] ::fixy::View<Arm> arms() noexcept { return arm_run.view(); }
+    [[nodiscard]] ::fixy::View<Arm const> arms() const noexcept { return arm_run.view(); }
 
     // The count of arms.  The loader takes at most CDAG_MAX_BRANCH_ARMS arms.
     [[nodiscard]] uint32_t num_arms() const noexcept {
-        const size_t count = arms_.size();
+        const size_t count = arm_run.size();
         CRUCIBLE_PRE(count <= ::fixy::max_of<uint32_t>);
         return static_cast<uint32_t>(count);
     }
@@ -616,13 +624,10 @@ struct BranchNode : TraceNode {
     // Adjacent-pair comparison admits duplicate values, because two guards
     // that compare equal are not structurally forbidden.
     [[nodiscard, gnu::cold]] bool are_arms_sorted_by_value() const noexcept {
-        for (const ::fixy::View<Arm const, 2> pair : arms_.view().windows<2>())
+        for (const ::fixy::View<Arm const, 2> pair : arm_run.view().windows<2>())
             if (pair.at(::fixy::index<1>()).value < pair.at(::fixy::index<0>()).value) return false;
         return true;
     }
-
-private:
-    ::fixy::ArenaRun<Arm, DagArena> arms_{};
 };
 
 // Carries one of the loop body's outputs back to one of its inputs for the
@@ -651,9 +656,9 @@ struct LoopNode : TraceNode {
     // sets it, and replay refuses a loop with an empty body.  A const loop
     // gives the body only as const.
     NodeLink body{};
-    // The edges are in a DAG arena, and the node only borrows them as a run
-    // of the arena.  A loop only reads its edges.
-    ::fixy::ArenaRun<FeedbackEdge const, DagArena> feedback_edges{};
+    // The edges are in the arena of the node, and the node only borrows them
+    // as a run slot of a frame.  A loop only reads its edges.
+    DagRunSlot<FeedbackEdge const> feedback_edges{};
     LoopTermKind term_kind = LoopTermKind::REPEAT;
     uint8_t pad_l0 = 0;
     uint16_t pad_l1 = 0;
@@ -1140,7 +1145,7 @@ make_region(::foundation::effects::Alloc a, DagFrame<Fresh>& frame,
             std::type_identity_t<DagFrameRun<TraceEntry const, Fresh>> ops) noexcept {
     const DagFrameRef<RegionNode, Fresh> node = mint_dag_node<RegionNode>(a, frame);
     node->kind = TraceNodeKind::REGION;
-    node->ops = ops.weaken();
+    frame.store(node, &RegionNode::ops, ops);
     node->content_hash = compute_content_hash(ops.view());
     node->first_op_schema = first_op_schema_of(ops.view());
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
@@ -1151,16 +1156,16 @@ make_region(::foundation::effects::Alloc a, DagFrame<Fresh>& frame,
 
 // For a caller that has already folded the hash while streaming the ops under
 // the numerics hash.  The node must come fresh from mint_dag_node.  The node
-// and the ops are in the arena of one frame, as for make_region.
+// and the ops are in the arena of the frame, as for make_region.
 template <class Fresh>
-void init_region_node(DagFrameRef<RegionNode, Fresh> node,
+void init_region_node(DagFrame<Fresh>& frame, std::type_identity_t<DagFrameRef<RegionNode, Fresh>> node,
                       std::type_identity_t<DagFrameRun<TraceEntry const, Fresh>> ops, ContentHash precomputed_hash,
                       NumericsHash numerics) noexcept {
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(precomputed_hash) || ops.size() == 0);
     // A non-zero hash here means a second construction over a live node.
     CRUCIBLE_PRE(node->content_hash.raw() == 0);
     node->kind = TraceNodeKind::REGION;
-    node->ops = ops.weaken();
+    frame.store(node, &RegionNode::ops, ops);
     node->content_hash = precomputed_hash;
     node->numerics = numerics;
     node->first_op_schema = first_op_schema_of(ops.view());
@@ -1182,7 +1187,7 @@ template <class Fresh>
     CRUCIBLE_PRE(!recipe.hash.is_sentinel());
     const DagFrameRef<RegionNode, Fresh> node = mint_dag_node<RegionNode>(a, frame);
     node->kind = TraceNodeKind::REGION;
-    node->ops = ops.weaken();
+    frame.store(node, &RegionNode::ops, ops);
     node->content_hash = compute_content_hash(ops.view(), recipe);
     node->first_op_schema = first_op_schema_of(ops.view());
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
@@ -1251,7 +1256,7 @@ make_loop(::foundation::effects::Alloc a, DagFrame<Fresh>& frame,
     node->kind = TraceNodeKind::LOOP;
     frame.store(node, &LoopNode::body, body);
     node->body_content_hash = body_content_hash;
-    node->feedback_edges = feedback.weaken();
+    frame.store(node, &LoopNode::feedback_edges, feedback);
     node->term_kind = term_kind;
     node->repeat_count = repeat_count;
     node->epsilon = epsilon;

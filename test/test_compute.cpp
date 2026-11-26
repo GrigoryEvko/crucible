@@ -272,47 +272,51 @@ int main() {
     ::fixy::report(::fixy::Sink::Out, "  plan: pool={} bytes, {} slots ({} external)\n",
                    static_cast<unsigned long>(plan.pool_bytes), plan.num_slots(), plan.num_external);
 
-    const auto op0_in = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_X}, SlotId{SL_W1});
-    const auto op0_out = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_MM1});
-
-    const auto op1_in = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_MM1});
-    const auto op1_out = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_REL});
-
-    const auto op2_in = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_REL}, SlotId{SL_W2});
-    const auto op2_out = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_MM2});
-
-    const auto op3_in = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_MM2});
-    const auto op3_out = ::fixy::check::run_of(kTest, test.alloc, runs, SlotId{SL_SM});
-
-    auto ops_run = runs.array(test.alloc, N_OPS, TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<TraceEntry, N_OPS> const ops = ops_run.view().window<N_OPS>(0).expect("the run holds N_OPS ops");
-
-    ops.at(::fixy::index<0>()).schema_hash = H_MM1;
-    ops.at(::fixy::index<0>()).shape_hash = S_MM1;
-    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<0>()), op0_in);
-    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<0>()), op0_out);
-
-    ops.at(::fixy::index<1>()).schema_hash = H_RELU;
-    ops.at(::fixy::index<1>()).shape_hash = S_RELU;
-    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<1>()), op1_in);
-    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<1>()), op1_out);
-
-    ops.at(::fixy::index<2>()).schema_hash = H_MM2;
-    ops.at(::fixy::index<2>()).shape_hash = S_MM2;
-    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<2>()), op2_in);
-    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<2>()), op2_out);
-
-    ops.at(::fixy::index<3>()).schema_hash = H_SOFTMAX;
-    ops.at(::fixy::index<3>()).shape_hash = S_SOFTMAX;
-    crucible::test::set_input_slots(test.alloc, runs, ops.at(::fixy::index<3>()), op3_in);
-    crucible::test::set_output_slots(test.alloc, runs, ops.at(::fixy::index<3>()), op3_out);
-
+    // One frame on the arena of the runs makes the ops, their runs and the
+    // region, so the region links ops of its own arena.
     const DagRef<RegionNode> region =
-        ::foundation::core::with_arena_frame(runs, [alloc = test.alloc, &ops_run, &plan_storage](auto& frame) noexcept {
+        ::foundation::core::with_arena_frame(runs, [alloc = test.alloc, &plan_storage](auto& frame) noexcept {
+            auto op0_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_X}, SlotId{SL_W1}).weaken();
+            auto op0_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM1}).weaken();
+
+            auto op1_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM1}).weaken();
+            auto op1_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_REL}).weaken();
+
+            auto op2_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_REL}, SlotId{SL_W2}).weaken();
+            auto op2_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM2}).weaken();
+
+            auto op3_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM2}).weaken();
+            auto op3_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_SM}).weaken();
+
+            auto ops_run = frame.template build_array<TraceEntry>(
+                alloc, ::fixy::ElementCount{N_OPS}, [](::fixy::RunStart) noexcept { return TraceEntry{}; });
+            // A plain View of an arena run: the View carries no brand of its arena.
+            ::fixy::View<TraceEntry, N_OPS> const ops =
+                ops_run.view().template window<N_OPS>(0).expect("the run holds N_OPS ops");
+
+            ops.at(::fixy::index<0>()).schema_hash = H_MM1;
+            ops.at(::fixy::index<0>()).shape_hash = S_MM1;
+            crucible::test::set_input_slots(alloc, frame, ops.at(::fixy::index<0>()), op0_in);
+            crucible::test::set_output_slots(alloc, frame, ops.at(::fixy::index<0>()), op0_out);
+
+            ops.at(::fixy::index<1>()).schema_hash = H_RELU;
+            ops.at(::fixy::index<1>()).shape_hash = S_RELU;
+            crucible::test::set_input_slots(alloc, frame, ops.at(::fixy::index<1>()), op1_in);
+            crucible::test::set_output_slots(alloc, frame, ops.at(::fixy::index<1>()), op1_out);
+
+            ops.at(::fixy::index<2>()).schema_hash = H_MM2;
+            ops.at(::fixy::index<2>()).shape_hash = S_MM2;
+            crucible::test::set_input_slots(alloc, frame, ops.at(::fixy::index<2>()), op2_in);
+            crucible::test::set_output_slots(alloc, frame, ops.at(::fixy::index<2>()), op2_out);
+
+            ops.at(::fixy::index<3>()).schema_hash = H_SOFTMAX;
+            ops.at(::fixy::index<3>()).shape_hash = S_SOFTMAX;
+            crucible::test::set_input_slots(alloc, frame, ops.at(::fixy::index<3>()), op3_in);
+            crucible::test::set_output_slots(alloc, frame, ops.at(::fixy::index<3>()), op3_out);
+
             const auto made = mint_dag_node<RegionNode>(alloc, frame);
             made->kind = TraceNodeKind::REGION;
-            made->ops = ops_run;
+            frame.store(made, &RegionNode::ops, ops_run);
             made->plan = make_plan_link(plan_storage);
             return made.weaken();
         });

@@ -507,7 +507,7 @@ static void check_descriptor_images_agree() {
             auto arms = frame.template build_array<crucible::BranchNode::Arm>(
                 alloc, ::fixy::ElementCount{2},
                 [](::fixy::RunStart at) noexcept { return crucible::BranchNode::Arm{at.value().raw() == 0 ? 2 : 1}; });
-            branch->set_arms(arms.weaken());
+            frame.store(branch, &crucible::BranchNode::arm_run, arms);
             crucible::BranchNode const& branch_read = *branch;
             auto [branch_bytes, branch_buf] =
                 ::fixy::with_mut(::fixy::mint_heap_array(alloc, 256, std::byte{0}), [&branch_read](auto run) noexcept {
@@ -798,8 +798,8 @@ static void check_descriptor_images_agree() {
                 policy_op.schema_hash = crucible::SchemaHash{0x78};
                 policy_op.set_scalar_args(::fixy::check::run_of(kTest, alloc, frame, int64_t{7}).weaken());
                 auto const made = crucible::mint_dag_node<crucible::RegionNode>(alloc, frame);
-                crucible::init_region_node(made, policy_ops_run, crucible::compute_content_hash(policy_ops, numerics),
-                                           numerics);
+                crucible::init_region_node(frame, made, policy_ops_run,
+                                           crucible::compute_content_hash(policy_ops, numerics), numerics);
                 return made.weaken();
             });
         crucible::RegionNode& policy_region = *policy_node;
