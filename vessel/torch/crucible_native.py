@@ -254,8 +254,9 @@ class HandleStatus(enum.IntEnum):
     BUSY = 3
     # The process holds the most live Vigils (CRUCIBLE_VIGIL_SLOTS), so the create makes no Vigil.
     FULL = 4
-    # An argument other than the handle breaks its rule: an eager word that EagerNumerics does not name, or an out
-    # pointer that is null or not aligned.
+    # An argument other than the handle breaks its rule: an eager word that EagerNumerics does not name, an out
+    # pointer that is null or not aligned, or a position of output_ptr or input_ptr that the replay cannot answer (a
+    # position past the op, or no op matched since the start of the replay of a region).
     REFUSED = 5
     # The Vigil records and replays no compiled region, so it has no address of an output or an input.
     NOT_REPLAYING = 6
@@ -350,7 +351,8 @@ def check_handle_status(status: int, entry: str) -> None:
         raise ValueError(f"{entry} gave the status {status}, which HandleStatus does not name") from None
     if named == HandleStatus.REFUSED:
         raise ValueError(f"{entry} refused an argument other than the handle: an eager word that EagerNumerics "
-                         f"does not name, or an out pointer that is null or not aligned")
+                         f"does not name, an out pointer that is null or not aligned, or a position past the inputs "
+                         f"or the outputs of the current op of the replay (or no op matched yet)")
     if named == HandleStatus.NOT_REPLAYING:
         raise CrucibleNotReplayingError(f"{entry} gives an address only while the Vigil replays a compiled "
                                         f"region, and the Vigil records.  Call it after a dispatch that gave "
@@ -1519,6 +1521,7 @@ class _VesselLib:
         Raises:
             CrucibleNotReplayingError: If the Vigil records, so it has no address
             CrucibleHandleError: If the library refuses the handle (check_handle_status)
+            ValueError: If the current op has no output at POSITION, or no op matched since the start of the replay
         """
         address = ctypes.c_void_p(0)
         check_handle_status(self._lib.crucible_output_ptr(h, position, ctypes.byref(address)), "crucible_output_ptr")
@@ -1530,6 +1533,7 @@ class _VesselLib:
         Raises:
             CrucibleNotReplayingError: If the Vigil records, so it has no address
             CrucibleHandleError: If the library refuses the handle (check_handle_status)
+            ValueError: If the current op has no input at POSITION, or no op matched since the start of the replay
         """
         address = ctypes.c_void_p(0)
         check_handle_status(self._lib.crucible_input_ptr(h, position, ctypes.byref(address)), "crucible_input_ptr")

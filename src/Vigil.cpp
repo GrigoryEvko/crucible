@@ -158,7 +158,7 @@ void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode const& region) {
 }
 
 void Vigil::refuse_call_outside_replay_() noexcept {
-    ::fixy::fatal("a Vigil gives an address or registers an external slot only while its context replays a region");
+    ::fixy::fatal("a Vigil registers an external slot only while its context replays a region");
 }
 
 void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,

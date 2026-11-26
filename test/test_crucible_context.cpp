@@ -20,6 +20,11 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
 
+// The test of one refusal of an address door, for is_some_and of the error.
+[[nodiscard]] constexpr auto is_refusal(crucible::AddressRefusal expected) noexcept {
+    return [expected](crucible::AddressRefusal const& refusal) noexcept { return refusal == expected; };
+}
+
 }  // namespace
 
 using crucible::DagArena;
@@ -219,14 +224,30 @@ static void test_full_replay() {
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    // A context that records gives no address, and the call ends nothing.
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.read_output_address(context_key, crucible::OutputPosition{0})
+                                    .err()
+                                    .is_some_and(is_refusal(crucible::AddressRefusal::NotReplaying)));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     const auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
+    // No op of the region matched yet, so the context has no op to answer for.
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.read_input_address(context_key, crucible::InputPosition{0})
+                                    .err()
+                                    .is_some_and(is_refusal(crucible::AddressRefusal::NoMatchedOp)));
 
     const auto replayed = ctx.with_compiled(context_key, [&ctx = ::fixy::as_const(ctx),
                                                           &pv](crucible::CompiledScope& scope) noexcept {
         constexpr crucible::OutputPosition first_output{0};
         CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SchemaHash{100}, ShapeHash{200}).status() == ReplayStatus::MATCH);
-        const ::fixy::Option<::fixy::RunAddress> p0 = scope.output_ptr(first_output);
+        // Op 0 has one output and no input.  A position past them gives its
+        // refusal, and the replay goes on.
+        CRUCIBLE_TEST_ASSERT(kTest, scope.output_ptr(crucible::OutputPosition{1})
+                                        .err()
+                                        .is_some_and(is_refusal(crucible::AddressRefusal::NoPosition)));
+        CRUCIBLE_TEST_ASSERT(kTest, scope.input_ptr(crucible::InputPosition{0})
+                                        .err()
+                                        .is_some_and(is_refusal(crucible::AddressRefusal::NoPosition)));
+        const ::fixy::Option<::fixy::RunAddress> p0 = scope.output_ptr(first_output).expect("op 0 has an output");
         CRUCIBLE_TEST_ASSERT(kTest, p0 == ctx.pool().slot_ptr(SlotId{0}, pv));
 
         CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SchemaHash{101}, ShapeHash{201}).status() == ReplayStatus::COMPLETE);
@@ -234,7 +255,7 @@ static void test_full_replay() {
 
         // The rewind is lazy, so after COMPLETE the position still sits on
         // the final op and its output pointer is still readable.
-        const ::fixy::Option<::fixy::RunAddress> p1 = scope.output_ptr(first_output);
+        const ::fixy::Option<::fixy::RunAddress> p1 = scope.output_ptr(first_output).expect("op 1 has an output");
         CRUCIBLE_TEST_ASSERT(kTest, p1 == ctx.pool().slot_ptr(SlotId{1}, pv));
 
         CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
@@ -711,12 +732,14 @@ static void test_integration_sweep_line() {
             .expect("the plan marks slot 2 external");
 
         CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SchemaHash{0xAA}, ShapeHash{0xBB}).status() == ReplayStatus::MATCH);
-        CRUCIBLE_TEST_ASSERT(kTest, scope.output_ptr(first_output) == ctx.pool().slot_ptr(SlotId{0}, pv));
+        CRUCIBLE_TEST_ASSERT(kTest, scope.output_ptr(first_output).expect("op 0 has an output")
+                                        == ctx.pool().slot_ptr(SlotId{0}, pv));
         // The external slot resolves to registered storage, not into the pool.
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             crucible::test::host_ptr(scope.input_ptr(crucible::InputPosition{0})) == fake_param);
+        CRUCIBLE_TEST_ASSERT(
+            kTest, crucible::test::host_ptr(scope.input_ptr(crucible::InputPosition{0}).expect("op 0 has an input"))
+                       == fake_param);
 
-        std::memset(crucible::test::host_ptr(scope.output_ptr(first_output)), 0x11, 512);
+        std::memset(crucible::test::host_ptr(scope.output_ptr(first_output).expect("op 0 has an output")), 0x11, 512);
 
         CRUCIBLE_TEST_ASSERT(kTest,
                              scope.advance(SchemaHash{0xCC}, ShapeHash{0xDD}).status() == ReplayStatus::COMPLETE);
@@ -725,7 +748,7 @@ static void test_integration_sweep_line() {
         CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SchemaHash{0xAA}, ShapeHash{0xBB}).status() == ReplayStatus::MATCH);
         // Nothing is claimed about the bytes across iterations, only that the
         // address is stable: a real op would run eagerly and overwrite them.
-        auto* p = crucible::test::host_ptr<uint8_t>(scope.output_ptr(first_output));
+        auto* p = crucible::test::host_ptr<uint8_t>(scope.output_ptr(first_output).expect("op 0 has an output"));
         CRUCIBLE_TEST_ASSERT(kTest, p == crucible::test::host_ptr(ctx.pool().slot_ptr(SlotId{0}, pv)));
 
         CRUCIBLE_TEST_ASSERT(kTest,
@@ -942,7 +965,7 @@ static void check_slot_views_in(CrucibleContext const& ctx, crucible::CompiledSc
     CRUCIBLE_TEST_ASSERT(kTest, window_refusal_of(SlotId{2}, 65) == ViewRefusal::TooSmall);
     CRUCIBLE_TEST_ASSERT(kTest, window_refusal_of(SlotId{2}, ~std::size_t{0}) == ViewRefusal::TooSmall);
     CRUCIBLE_TEST_ASSERT(kTest, window_refusal_of(SlotId{2}, 2) == ViewRefusal::Misaligned);
-    CRUCIBLE_TEST_ASSERT(kTest, scope.input_view<std::uint8_t>(InputPosition{0}).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, scope.input_view<std::uint8_t>(InputPosition{0}).expect("op 0 has an input").is_none());
     CRUCIBLE_TEST_ASSERT(kTest, input.size() == 64);
 
     // The window of nine floats at an offset of 4 bytes is off the alignment
@@ -956,8 +979,8 @@ static void check_slot_views_in(CrucibleContext const& ctx, crucible::CompiledSc
         });
     };
     const auto reads_floats_alone = [&is_input_value](crucible::CompiledScope const& scoped) noexcept {
-        return scoped.input_view<double>(InputPosition{0}).is_none()
-            && scoped.input_view<float>(InputPosition{0}).is_some_and(is_input_value);
+        return scoped.input_view<double>(InputPosition{0}).expect("op 0 has an input").is_none()
+            && scoped.input_view<float>(InputPosition{0}).expect("op 0 has an input").is_some_and(is_input_value);
     };
     const auto is_true = [](bool const& answer) noexcept { return answer; };
     for (const std::size_t offset : ::fixy::FixedArray<std::size_t, 3>{0, 4, 28}) {
@@ -965,7 +988,7 @@ static void check_slot_views_in(CrucibleContext const& ctx, crucible::CompiledSc
             kTest, in_block_scope(scope, make_window(SlotId{2}, ::fixy::ByteCount{offset}), input, reads_floats_alone)
                        .is_ok_and(is_true));
     }
-    CRUCIBLE_TEST_ASSERT(kTest, scope.input_view<float>(InputPosition{0}).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, scope.input_view<float>(InputPosition{0}).expect("op 0 has an input").is_none());
 
     // The two outputs of op 0 get one ViewMut each, in their order.
     const auto written = scope.with_output_views<float>([](auto& views) noexcept {
@@ -987,14 +1010,21 @@ static void check_slot_views_in(CrucibleContext const& ctx, crucible::CompiledSc
     // input of slot 4 has an address and no bytes.
     CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SchemaHash{701}, ShapeHash{801}).status() == ReplayStatus::MATCH);
     CRUCIBLE_TEST_ASSERT(
-        kTest,
-        scope.input_view<float>(InputPosition{0}).is_some_and([](::fixy::View<float const> const& values) noexcept {
-            return values.size() == 64 && values.walk().all_of([](float const& value) noexcept {
-                return ::fixy::bit_cast<std::uint32_t>(value) == ::fixy::bit_cast<std::uint32_t>(1.5f);
-            });
-        }));
-    CRUCIBLE_TEST_ASSERT(kTest, scope.input_view<float>(InputPosition{1}).is_none());
-    CRUCIBLE_TEST_ASSERT(kTest, scope.input_view<float>(InputPosition{2}).is_none());
+        kTest, scope.input_view<float>(InputPosition{0})
+                   .expect("op 1 has three inputs")
+                   .is_some_and([](::fixy::View<float const> const& values) noexcept {
+                       return values.size() == 64 && values.walk().all_of([](float const& value) noexcept {
+                           return ::fixy::bit_cast<std::uint32_t>(value) == ::fixy::bit_cast<std::uint32_t>(1.5f);
+                       });
+                   }));
+    CRUCIBLE_TEST_ASSERT(kTest, scope.input_view<float>(InputPosition{1}).expect("op 1 has three inputs").is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, scope.input_view<float>(InputPosition{2}).expect("op 1 has three inputs").is_none());
+    // A position past the inputs of the op gives its refusal, and the scope
+    // goes on.
+    const auto is_no_position = is_refusal(crucible::AddressRefusal::NoPosition);
+    CRUCIBLE_TEST_ASSERT(kTest, scope.input_view<float>(InputPosition{3}).err().is_some_and(is_no_position));
+    CRUCIBLE_TEST_ASSERT(kTest, scope.input_ptr(InputPosition{3}).err().is_some_and(is_no_position));
+    CRUCIBLE_TEST_ASSERT(kTest, scope.output_ptr(crucible::OutputPosition{1}).err().is_some_and(is_no_position));
     const auto in_place = scope.with_output_views<float>([](auto& views) noexcept {
         std::size_t matched = 0;
         std::move(views).drain([&matched](auto view) noexcept {
@@ -1012,7 +1042,7 @@ static void check_slot_views_in(CrucibleContext const& ctx, crucible::CompiledSc
     // after the call.
     const uint64_t pool_bytes = ctx.pool().pool_bytes();
     const ::fixy::View<float const> input_floats =
-        scope.input_view<float>(InputPosition{0}).expect("op 1 reads slot 0 as floats");
+        scope.input_view<float>(InputPosition{0}).expect("op 1 has three inputs").expect("op 1 reads slot 0 as floats");
     const auto read = scope.with_output_views<float>([input_floats](auto& views) noexcept {
         return views.size() > 0 && input_floats.size() == 64
             && ::fixy::bit_cast<std::uint32_t>(*input_floats.get(0).expect("the input holds 64 floats"))
@@ -1066,8 +1096,11 @@ static crucible::DagRef<RegionNode> make_region_of_two_externals(::fixy::BumpAre
 
 // True when the scope gives the input at the position as sixteen floats.
 [[nodiscard]] static bool reads_input(crucible::CompiledScope const& scope, crucible::InputPosition position) noexcept {
-    return scope.input_view<float>(position).is_some_and(
-        [](::fixy::View<float const> const& values) noexcept { return values.size() == 16; });
+    return scope.input_view<float>(position).is_ok_and(
+        [](::fixy::Option<::fixy::View<float const>> const& view) noexcept {
+            return view.is_some_and(
+                [](::fixy::View<float const> const& values) noexcept { return values.size() == 16; });
+        });
 }
 
 static void check_external_blocks_in(CrucibleContext const& ctx, crucible::CompiledScope& scope) noexcept;

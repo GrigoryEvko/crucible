@@ -48,6 +48,9 @@ using crucible::DeviceType;
 using crucible::Layout;
 using crucible::SchemaHash;
 using crucible::ShapeHash;
+using crucible::AddressRefusal;
+using crucible::InputPosition;
+using crucible::OutputPosition;
 
 // Of the entry fields a caller fills in, only schema_hash, shape_hash, the
 // two counts and the two arrays of slot ids reach the replay engine.  The
@@ -165,7 +168,8 @@ static void test_linear_match() {
         CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == i + 1);
         CRUCIBLE_TEST_ASSERT(kTest, engine.matched_op_index().value() == OpIndex{i});
 
-        const ::fixy::Option<::fixy::RunAddress> ptr = engine.output_ptr(0, av);
+        const ::fixy::Option<::fixy::RunAddress> ptr =
+            engine.output_ptr(OutputPosition{0}, av).expect("each op of the region has an output");
         CRUCIBLE_TEST_ASSERT(kTest, ptr == pool.slot_ptr(SlotId{i}, pv));
     }
 
@@ -177,7 +181,8 @@ static void test_linear_match() {
         // first op, and the matched op stays the last op.
         CRUCIBLE_TEST_ASSERT(kTest, engine.ops_matched() == 0);
         CRUCIBLE_TEST_ASSERT(kTest, engine.matched_op_index().value() == OpIndex{2});
-        const ::fixy::Option<::fixy::RunAddress> ptr = engine.output_ptr(0, av);
+        const ::fixy::Option<::fixy::RunAddress> ptr =
+            engine.output_ptr(OutputPosition{0}, av).expect("each op of the region has an output");
         CRUCIBLE_TEST_ASSERT(kTest, ptr == pool.slot_ptr(SlotId{2}, pv));
     }
     // The next iteration starts at the first op with no reset.
@@ -341,13 +346,26 @@ static void test_input_ptr() {
     ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{50}, ShapeHash{60}, av).status() == ReplayStatus::MATCH);
-    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(OutputPosition{0}, av).expect("op 0 has an output")
+                                    == pool.slot_ptr(SlotId{0}, pv));
 
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{51}, ShapeHash{61}, av).status() == ReplayStatus::COMPLETE);
-    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av) == pool.slot_ptr(SlotId{1}, pv));
-    CRUCIBLE_TEST_ASSERT(kTest, engine.input_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(OutputPosition{0}, av).expect("op 1 has an output")
+                                    == pool.slot_ptr(SlotId{1}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.input_ptr(InputPosition{0}, av).expect("op 1 has an input")
+                                    == pool.slot_ptr(SlotId{0}, pv));
 
-    CRUCIBLE_TEST_ASSERT(kTest, engine.input_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
+    // A position past the inputs or the outputs of the matched op gives its
+    // refusal, and the engine goes on: the read that follows gives the input.
+    const auto is_no_position = [](AddressRefusal const& refusal) noexcept {
+        return refusal == AddressRefusal::NoPosition;
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, engine.input_ptr(InputPosition{1}, av).err().is_some_and(is_no_position));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(OutputPosition{1}, av).err().is_some_and(is_no_position));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(OutputPosition{0xFFFF}, av).err().is_some_and(is_no_position));
+
+    CRUCIBLE_TEST_ASSERT(kTest, engine.input_ptr(InputPosition{0}, av).expect("op 1 has an input")
+                                    == pool.slot_ptr(SlotId{0}, pv));
 
     ::fixy::check::pass(kTest, "  test_input_ptr: PASSED\n");
 }
@@ -376,8 +394,8 @@ static void test_invalid_slot() {
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{77}, ShapeHash{88}, av).status() == ReplayStatus::COMPLETE);
 
-    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av).is_some());
-    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(1, av).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(OutputPosition{0}, av).expect("the op has two outputs").is_some());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(OutputPosition{1}, av).expect("the op has two outputs").is_none());
 
     ::fixy::check::pass(kTest, "  test_invalid_slot: PASSED\n");
 }
@@ -508,8 +526,8 @@ static void test_matched_index_follows_the_cursor() {
 }
 
 // A rewind from the middle of a region abandons the iteration, so no op stays
-// matched, and each read of the matched op ends the process.  The next
-// iteration matches from the first op.
+// matched.  A read of the matched position ends the process, and an address
+// door gives NoMatchedOp.  The next iteration matches from the first op.
 static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx const& test) {
     auto source = ::foundation::effects::testing::test();
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
@@ -537,9 +555,11 @@ static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx
     ::fixy::check::expect_dies(
         test, [&engine] noexcept { static_cast<void>(engine.matched_op_index()); },
         ::fixy::TextView{"contract violation: matched.is_some()"});
-    ::fixy::check::expect_dies(
-        test, [&engine, &av] noexcept { static_cast<void>(engine.output_ptr(0, av)); },
-        ::fixy::TextView{"contract violation: matched.is_some()"});
+    const auto is_no_matched_op = [](AddressRefusal const& refusal) noexcept {
+        return refusal == AddressRefusal::NoMatchedOp;
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(OutputPosition{0}, av).err().is_some_and(is_no_matched_op));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.input_ptr(InputPosition{0}, av).err().is_some_and(is_no_matched_op));
     CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{700}, ShapeHash{800}, av).status() == ReplayStatus::MATCH);
     require_matched(engine, 0);
 
@@ -734,20 +754,26 @@ static void test_integration_with_pool() {
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest,
                          engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}, av).status() == ReplayStatus::MATCH);
-    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(OutputPosition{0}, av).expect("op 0 has an output")
+                                    == pool.slot_ptr(SlotId{0}, pv));
     // The external slot resolves to registered storage, not into the pool.
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::test::host_ptr(engine.input_ptr(0, av)) == fake_param);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         crucible::test::host_ptr(engine.input_ptr(InputPosition{0}, av).expect("op 0 has an input"))
+                             == fake_param);
 
-    std::memset(crucible::test::host_ptr(engine.output_ptr(0, av)), 0x11, 512);
+    std::memset(crucible::test::host_ptr(engine.output_ptr(OutputPosition{0}, av).expect("op 0 has an output")), 0x11,
+                512);
 
     CRUCIBLE_TEST_ASSERT(kTest,
                          engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}, av).status() == ReplayStatus::COMPLETE);
-    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av) == pool.slot_ptr(SlotId{1}, pv));
-    CRUCIBLE_TEST_ASSERT(kTest, engine.input_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(OutputPosition{0}, av).expect("op 1 has an output")
+                                    == pool.slot_ptr(SlotId{1}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.input_ptr(InputPosition{0}, av).expect("op 1 has an input")
+                                    == pool.slot_ptr(SlotId{0}, pv));
 
     // Reading op 1's input back finds op 0's fill, which is what proves
     // the two entries name the same pool bytes.
-    auto* p = crucible::test::host_ptr<uint8_t>(engine.input_ptr(0, av));
+    auto* p = crucible::test::host_ptr<uint8_t>(engine.input_ptr(InputPosition{0}, av).expect("op 1 has an input"));
     for (uint32_t i = 0; i < 512; i++)
         CRUCIBLE_TEST_ASSERT(kTest, p[i] == 0x11);
 

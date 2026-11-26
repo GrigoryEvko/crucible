@@ -44,7 +44,8 @@ void test_dispatch_data_flow() {
     auto r0 = crucible::test::dispatch_synthetic(vigil, d0.entry, d0.metas, d0.n_metas);
     CRUCIBLE_TEST_ASSERT(kTest, r0.action == DispatchResult::Action::COMPILED);
     CRUCIBLE_TEST_ASSERT(kTest, r0.status == ReplayStatus::MATCH);
-    std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{0})),
+    std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{0})
+                                             .expect("the replayed op has an output")),
                 0x42, 4096);
 
     for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
@@ -53,14 +54,16 @@ void test_dispatch_data_flow() {
         CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
         CRUCIBLE_TEST_ASSERT(kTest, r.status == ReplayStatus::MATCH);
 
-        auto* in_data = crucible::test::host_ptr<uint8_t>(
-            vigil.input_ptr(vigil.mint_producer_context(), crucible::InputPosition{0}));
+        auto* in_data =
+            crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), crucible::InputPosition{0})
+                                                  .expect("the replayed op has an input"));
         uint8_t expected = static_cast<uint8_t>(0x42 + i - 1);
         for (uint32_t b = 0; b < 4096; b++)
             CRUCIBLE_TEST_ASSERT(kTest, in_data[b] == expected);
 
         std::memset(
-            crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{0})),
+            crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{0})
+                                         .expect("the replayed op has an output")),
             static_cast<int>(0x42 + i), 4096);
     }
 
@@ -70,7 +73,8 @@ void test_dispatch_data_flow() {
     CRUCIBLE_TEST_ASSERT(kTest, r7.status == ReplayStatus::COMPLETE);
 
     auto* in_last =
-        crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), crucible::InputPosition{0}));
+        crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), crucible::InputPosition{0})
+                                              .expect("the replayed op has an input"));
     uint8_t expected_last = static_cast<uint8_t>(0x42 + NUM_OPS - 2);
     for (uint32_t b = 0; b < 4096; b++)
         CRUCIBLE_TEST_ASSERT(kTest, in_last[b] == expected_last);
@@ -104,7 +108,8 @@ void test_dispatch_pool_bounds() {
 
         auto* pool_base = crucible::test::host_ptr<uint8_t>(pool.pool_base());
         auto* p = crucible::test::host_ptr<uint8_t>(
-            vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{0}));
+            vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{0})
+                .expect("the replayed op has an output"));
         CRUCIBLE_TEST_ASSERT(kTest, p >= pool_base);
         CRUCIBLE_TEST_ASSERT(kTest, p + 4096 <= pool_base + pool_bytes);
     }

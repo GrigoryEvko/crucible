@@ -627,33 +627,32 @@ public:
     // storage of the output, and a view at an offset starts storage_offset
     // elements later (strided_view_of).  Valid only after dispatch_op
     // returned COMPILED with a matching or complete status, until the next
-    // dispatch or the next change of the mode.  A call while the context
-    // records ends the process.  The address leaves the replay through the
-    // keyed door of the context for the foreign ABI
-    // (CrucibleContext::read_output_address).  The context proves that the
-    // caller holds this Vigil's producer claim.  The pool gives the device of a
-    // slot (PoolAllocator::slot_data).  input_ptr gives the same for an input.
+    // dispatch or the next change of the mode.  The position and the time of
+    // the call come from the front end, so the door gives a refusal and goes
+    // on: NotReplaying while the context records, NoMatchedOp before the
+    // first match of a region, and NoPosition past the outputs of the op.
+    // The address leaves the replay through the keyed door of the context
+    // for the foreign ABI (CrucibleContext::read_output_address).  The context
+    // proves that the caller holds this Vigil's producer claim.  The pool
+    // gives the device of a slot (PoolAllocator::slot_data).  input_ptr gives
+    // the same for an input.
     //
     // Each address and each reference that the members that follow return
     // points into a member of this Vigil.  A temporary Vigil releases its
     // members at the end of the statement.  A deleted twin refuses each call
     // on a temporary Vigil.
-    [[nodiscard]] ::fixy::Option<::fixy::RunAddress> output_ptr(VigilFgCtx const& /*fg*/, OutputPosition position) & {
-        const CrucibleContext::OutsideAddress read = replay_.read_output_address(position);
-        return read.match([](::fixy::Option<::fixy::RunAddress> const& address) noexcept { return address; },
-                          [] noexcept -> ::fixy::Option<::fixy::RunAddress> { refuse_call_outside_replay_(); });
+    [[nodiscard]] SlotAddress output_ptr(VigilFgCtx const& /*fg*/, OutputPosition position) & {
+        return replay_.read_output_address(position);
     }
 
-    ::fixy::Option<::fixy::RunAddress> output_ptr(VigilFgCtx const&, OutputPosition) && =
+    SlotAddress output_ptr(VigilFgCtx const&, OutputPosition) && =
         delete("a temporary Vigil releases its pool at the end of the statement. Use a Vigil that has a name");
 
-    [[nodiscard]] ::fixy::Option<::fixy::RunAddress> input_ptr(VigilFgCtx const& /*fg*/, InputPosition position) & {
-        const CrucibleContext::OutsideAddress read = replay_.read_input_address(position);
-        return read.match([](::fixy::Option<::fixy::RunAddress> const& address) noexcept { return address; },
-                          [] noexcept -> ::fixy::Option<::fixy::RunAddress> { refuse_call_outside_replay_(); });
+    [[nodiscard]] SlotAddress input_ptr(VigilFgCtx const& /*fg*/, InputPosition position) & {
+        return replay_.read_input_address(position);
     }
 
-    ::fixy::Option<::fixy::RunAddress> input_ptr(VigilFgCtx const&, InputPosition) && =
+    SlotAddress input_ptr(VigilFgCtx const&, InputPosition) && =
         delete("a temporary Vigil releases its pool at the end of the statement. Use a Vigil that has a name");
 
     // The address of an external slot of the active region and the device of
@@ -857,10 +856,10 @@ public:
     // from the region-ready callback.
 
 private:
-    // Ends the process for a call of output_ptr, input_ptr or register_external
-    // while the context records.  A front end calls them only after dispatch_op
-    // gave COMPILED, so such a call is a defect of the caller.  The body is in
-    // src/Vigil.cpp, so a call of a compiled op costs the branch alone.
+    // Ends the process for a call of register_external while the context
+    // records.  A front end calls it only after dispatch_op gave COMPILED, so
+    // such a call is a defect of the caller.  The body is in src/Vigil.cpp, so
+    // a call of a compiled op costs the branch alone.
     [[noreturn]] CRUCIBLE_COLD static void refuse_call_outside_replay_() noexcept;
 
     // The first call claims the thread; every later call verifies the match.
@@ -1707,10 +1706,10 @@ private:
 
         // The addresses of the slots of the matched op for the vessel, with the
         // key of the context (CrucibleContext::read_output_address).
-        [[nodiscard]] CrucibleContext::OutsideAddress read_output_address(OutputPosition position) noexcept {
+        [[nodiscard]] SlotAddress read_output_address(OutputPosition position) noexcept {
             return ctx_.read_output_address(key_, position);
         }
-        [[nodiscard]] CrucibleContext::OutsideAddress read_input_address(InputPosition position) noexcept {
+        [[nodiscard]] SlotAddress read_input_address(InputPosition position) noexcept {
             return ctx_.read_input_address(key_, position);
         }
 

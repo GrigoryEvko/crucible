@@ -58,6 +58,7 @@ void check_data_flow(crucible::test::TraceRig& /*rig*/, BackgroundThread const& 
         // True when each byte of the input of the matched op holds pattern.
         const auto is_input_pattern = [&scope, &pattern]() noexcept {
             return scope.input_view<std::uint8_t>(InputPosition{0})
+                .expect("the matched op has an input")
                 .is_some_and([&pattern](::fixy::View<std::uint8_t const> const& bytes) noexcept {
                     return bytes.size() == kTensorBytes
                         && bytes.walk().all_of(
@@ -128,6 +129,7 @@ void check_pool_bounds(crucible::test::TraceRig& /*rig*/, BackgroundThread const
             if (i > 0) {
                 CRUCIBLE_TEST_ASSERT(kTest,
                                      scope.input_view<std::uint8_t>(InputPosition{0})
+                                         .expect("each op after the first has an input")
                                          .is_some_and([](::fixy::View<std::uint8_t const> const& bytes) noexcept {
                                              return bytes.size() == kTensorBytes;
                                          }));

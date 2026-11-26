@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""A read of an address of the replay while the Vigil records gives a typed Python error, and the process continues.
+"""A read of an address of the replay that the Vigil cannot answer gives a Python error, and the process continues.
 
 crucible_output_ptr and crucible_input_ptr give the address of a slot of the
-current op of a compiled replay.  A Vigil that records has no such address.
+current op of a compiled replay.  A Vigil that records has no such address,
+and the current op has no slot at a position past its outputs or its inputs.
 The call comes from Python, which is outside the program, so the entry gives
-the status NOT_REPLAYING and writes nothing.  Python raises
-CrucibleNotReplayingError for that status.
+a status and writes nothing: NOT_REPLAYING while the Vigil records, and
+REFUSED for a position past the op.  Python raises CrucibleNotReplayingError
+and ValueError for them.
 
 The check runs in a child process, because the defect that it finds ends the
 process:
 
     record    output_ptr and input_ptr of a session that records each raise
-              CrucibleNotReplayingError, and the session then replays its loop
+              CrucibleNotReplayingError, and the session then replays its
+              loop.  Then a position past the outputs and past the inputs of
+              the current op each raise ValueError, and the session replays
+              on
 
 Usage:
     python test_replay_addresses.py
@@ -35,6 +40,10 @@ CHILD_SECONDS = 600
 
 # The name of the error of a read of an address while the Vigil records.
 NOT_REPLAYING_ERROR = "CrucibleNotReplayingError"
+
+# The name of the error of a position that the current op of the replay does
+# not have: the entry gives REFUSED.
+REFUSED_ERROR = "ValueError"
 
 # The child prints the name of the class of each error, so that it runs on a
 # module with no such class too.  The loop flushes after each iteration, so its
@@ -68,6 +77,11 @@ with CrucibleNative() as ctx:
             replays = True
             break
     print(f"the session replays after the refusals: {replays}", flush=True)
+    if replays:
+        report("output_ptr past the outputs", lambda: vessel.output_ptr(ctx._handle, 65535))
+        report("input_ptr past the inputs", lambda: vessel.input_ptr(ctx._handle, 65535))
+        torch.relu(source * 2.0 + 1.0)
+        print(f"the session replays after the positions: {ctx.is_compiled()}", flush=True)
 print("the child ended", flush=True)
 """
 
@@ -93,7 +107,10 @@ def main() -> int:
             problems.append(f"record: the child ends with {child.returncode}: {child.stderr[-2000:]!r}")
         for marker in (f"output_ptr while the Vigil records: {NOT_REPLAYING_ERROR}",
                        f"input_ptr while the Vigil records: {NOT_REPLAYING_ERROR}",
-                       "the session replays after the refusals: True", "the child ended"):
+                       "the session replays after the refusals: True",
+                       f"output_ptr past the outputs: {REFUSED_ERROR}",
+                       f"input_ptr past the inputs: {REFUSED_ERROR}",
+                       "the session replays after the positions: True", "the child ended"):
             if marker not in child.stdout:
                 problems.append(f"record: the child does not print {marker!r}: {child.stdout!r}")
     for line in problems:

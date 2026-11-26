@@ -587,10 +587,13 @@ void transpose_2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X
 // value, read before the frame of the output, and it gets the ViewMut of the
 // output for the time of the call.
 
-// The input at a position of the matched op, as floats.  An input that the
-// scope gives no View of floats ends the process.
+// The input at a position of the matched op, as floats.  A position that the
+// op does not have, and an input that the scope gives no View of floats, end
+// the process.
 [[nodiscard]] inline ::fixy::View<float const> read_input(CompiledScope const& scope, InputPosition position) {
-    return scope.input_view<float>(position).expect("each input of a reference op is a slot of floats");
+    return scope.input_view<float>(position)
+        .expect("the matched op of a reference kernel has the input")
+        .expect("each input of a reference op is a slot of floats");
 }
 
 // Runs kernel on the ViewMut of the one output of the matched op.  A refusal

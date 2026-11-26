@@ -58,6 +58,28 @@ struct Matched {};
 struct Diverged {};
 }  // namespace op_role
 
+// The position of an input of the matched op.  The doors of the addresses and
+// the views of the inputs take it in place of a raw number, and they refuse a
+// position past the inputs of the op (AddressRefusal::NoPosition).
+using InputPosition = ::fixy::Id<struct InputPositionTag, uint16_t>;
+
+// The position of an output of the matched op, with the same refusal.
+using OutputPosition = ::fixy::Id<struct OutputPositionTag, uint16_t>;
+
+// Why a door gave no address of a slot of the matched op.  A position and the
+// time of a call come from the caller, at the foreign ABI from outside the
+// program, so each door gives a refusal and not an end of the process.
+enum class AddressRefusal : uint8_t {
+    NotReplaying,  // the context records, so it replays no region
+    NoMatchedOp,  // no op matched since the activation of the region, or since a rewind in an iteration
+    NoPosition,  // the matched op has no input or no output at the position
+};
+
+// The answer of an address door: the address of the slot, no address for a
+// slot with none (an output with no slot, or an external slot that its owner
+// did not register), or the refusal.
+using SlotAddress = ::fixy::Result<::fixy::Option<::fixy::RunAddress>, AddressRefusal>;
+
 // The result of one advance: the status of the guard and the position of
 // the op that it matched.  A MATCH or a COMPLETE matched the op at the
 // cursor that the advance read, so the advance gives that position from the
@@ -111,31 +133,6 @@ struct ReplayEngine {
     CRUCIBLE_INLINE void reset() {
         if (cursor_.position() != 0) current_ = ::fixy::none;
         rewind_();
-    }
-
-    // The address of the slot of one of the last matched operation's
-    // outputs: the first byte of the storage of the output.  A view at an
-    // offset starts storage_offset elements later.  It points into the pool,
-    // and the engine does not own the pool.  An output with no slot, or an external slot that its owner did
-    // not register, gives no address.  An op with no array of slot ids gives
-    // the empty View, so the bound refuses each index of it.  The window
-    // folds into the bound, so the read has no second check.  The member is
-    // read into a local, so no contract reads a member through this.
-    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t j) const {
-        ::fixy::View<const SlotId> const slot_ids = matched_entry_().output_slot_ids();
-        CRUCIBLE_PRE(j < slot_ids.size());
-        SlotId const sid =
-            slot_ids.window<1>(j).expect("the precondition bounds the output index").at(::fixy::index<0>());
-        return address_of_slot_(sid);
-    }
-
-    // The same for one of the inputs.
-    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t j) const {
-        ::fixy::View<const SlotId> const slot_ids = matched_entry_().input_slot_ids();
-        CRUCIBLE_PRE(j < slot_ids.size());
-        SlotId const sid =
-            slot_ids.window<1>(j).expect("the precondition bounds the input index").at(::fixy::index<0>());
-        return address_of_slot_(sid);
     }
 
     // The entry is in the region, and the engine only points at it.
@@ -205,12 +202,23 @@ struct ReplayEngine {
         return advance(schema_hash, shape_hash);
     }
 
-    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t j, ActiveView const&) const {
-        return output_ptr(j);
+    // The address of the slot of an output of the last matched op: the first
+    // byte of the storage of the output.  A view at an offset starts
+    // storage_offset elements later.  It points into the pool, and the engine
+    // does not own the pool.  An output with no slot, or an external slot that
+    // its owner did not register, gives no address.  A position past the
+    // outputs of the op gives NoPosition, and an engine with no matched op
+    // gives NoMatchedOp.  The window of one slot id is the one compare of the
+    // position.  Complexity: O(1).
+    [[nodiscard]] CRUCIBLE_HOT SlotAddress output_ptr(OutputPosition position, ActiveView const&) const {
+        CRUCIBLE_TRY(sid, output_slot_(position));
+        return address_of_slot_(sid);
     }
 
-    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t j, ActiveView const&) const {
-        return input_ptr(j);
+    // The same for one of the inputs.
+    [[nodiscard]] CRUCIBLE_HOT SlotAddress input_ptr(InputPosition position, ActiveView const&) const {
+        CRUCIBLE_TRY(sid, input_slot_(position));
+        return address_of_slot_(sid);
     }
 
     CRUCIBLE_INLINE void reset(ActiveView const&) { reset(); }
@@ -361,6 +369,43 @@ private:
 
     [[nodiscard]] static constexpr ::foundation::core::CyclicCursor<const TraceEntry> no_region_cursor_() noexcept {
         return ::foundation::core::CyclicCursor<const TraceEntry>::cycle_from(kNoRegionRun.view().begin());
+    }
+
+    // The slot id of the output at position of the last matched op, or the
+    // refusal: NoMatchedOp for an engine with no matched op, and NoPosition
+    // for a position past the outputs.  The member is read into a local, so
+    // no read of a member goes through this in a constant evaluation.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Result<SlotId, AddressRefusal>
+    output_slot_(OutputPosition position) const noexcept {
+        const ::fixy::Option<::fixy::Ref<const TraceEntry>> matched = current_;
+        return matched.match(
+            [position](::fixy::Ref<const TraceEntry> entry) noexcept {
+                return slot_at_(entry->output_slot_ids(), position.raw());
+            },
+            [] noexcept -> ::fixy::Result<SlotId, AddressRefusal> { return ::fixy::err(AddressRefusal::NoMatchedOp); });
+    }
+
+    // The same for one of the inputs.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Result<SlotId, AddressRefusal>
+    input_slot_(InputPosition position) const noexcept {
+        const ::fixy::Option<::fixy::Ref<const TraceEntry>> matched = current_;
+        return matched.match(
+            [position](::fixy::Ref<const TraceEntry> entry) noexcept {
+                return slot_at_(entry->input_slot_ids(), position.raw());
+            },
+            [] noexcept -> ::fixy::Result<SlotId, AddressRefusal> { return ::fixy::err(AddressRefusal::NoMatchedOp); });
+    }
+
+    // The slot id at position of slot_ids, or NoPosition past their count.
+    // An op with no array of slot ids gives the empty View, which refuses
+    // each position.  The window of one id is the one compare.
+    [[nodiscard]] static constexpr ::fixy::Result<SlotId, AddressRefusal> slot_at_(::fixy::View<const SlotId> slot_ids,
+                                                                                   uint16_t position) noexcept {
+        return slot_ids.window<1>(position).match(
+            [](::fixy::View<const SlotId, 1> found) noexcept -> ::fixy::Result<SlotId, AddressRefusal> {
+                return found.at(::fixy::index<0>());
+            },
+            [] noexcept -> ::fixy::Result<SlotId, AddressRefusal> { return ::fixy::err(AddressRefusal::NoPosition); });
     }
 
     // The address of the slot sid, or no address for the id with no slot and

@@ -81,13 +81,11 @@ struct DispatchResult {
     }
 };
 
-// The position of an input of the matched op, below the count of its inputs.
-// input_view and input_ptr take it in place of a raw number.
-using InputPosition = ::fixy::Id<struct InputPositionTag, uint16_t>;
-
-// The position of an output of the matched op, below the count of its outputs.
-// output_ptr takes it in place of a raw number.
-using OutputPosition = ::fixy::Id<struct OutputPositionTag, uint16_t>;
+// The answer of input_view: the bytes of the input as a View of T, no View
+// (CrucibleContext::input_view_ gives the cases), or the refusal of the
+// position (AddressRefusal of crucible/ReplayEngine.h).
+template <class T>
+using InputView = ::fixy::Result<::fixy::Option<::fixy::View<T const>>, AddressRefusal>;
 
 // Why with_output_views refused the outputs of the matched op.
 enum class OutputRefusal : uint8_t {
@@ -315,23 +313,23 @@ struct CrucibleContext {
     // change of the mode of the context.  A body of with_compiled gives no
     // address back, so an address leaves the replay only through these two
     // doors.  Each takes the key of the context, which in product code only the
-    // Vigil holds.  No value while the context records, as with_compiled gives
-    // none, and the inner Option is the address of the slot (no address for an
-    // output with no slot).  Complexity: O(1).
-    using OutsideAddress = ::fixy::Option<::fixy::Option<::fixy::RunAddress>>;
-    [[nodiscard]] CRUCIBLE_HOT OutsideAddress read_output_address(ContextKey& /*key*/, OutputPosition position) const& {
+    // Vigil holds.  The position and the time of the call come from the front
+    // end, so each door gives a refusal: NotReplaying while the context
+    // records, and the refusals of the engine (ReplayEngine::output_ptr).
+    // Complexity: O(1).
+    [[nodiscard]] CRUCIBLE_HOT SlotAddress read_output_address(ContextKey& /*key*/, OutputPosition position) const& {
         if (mode_ != ContextMode::COMPILED) [[unlikely]]
-            return ::fixy::none;
-        return OutsideAddress::some(output_ptr_(position));
+            return ::fixy::err(AddressRefusal::NotReplaying);
+        return output_ptr_(position);
     }
-    [[nodiscard]] CRUCIBLE_HOT OutsideAddress read_input_address(ContextKey& /*key*/, InputPosition position) const& {
+    [[nodiscard]] CRUCIBLE_HOT SlotAddress read_input_address(ContextKey& /*key*/, InputPosition position) const& {
         if (mode_ != ContextMode::COMPILED) [[unlikely]]
-            return ::fixy::none;
-        return OutsideAddress::some(input_ptr_(position));
+            return ::fixy::err(AddressRefusal::NotReplaying);
+        return input_ptr_(position);
     }
-    OutsideAddress read_output_address(ContextKey& key, OutputPosition position) const&& =
+    SlotAddress read_output_address(ContextKey& key, OutputPosition position) const&& =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
-    OutsideAddress read_input_address(ContextKey& key, InputPosition position) const&& =
+    SlotAddress read_input_address(ContextKey& key, InputPosition position) const&& =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
     // Safe to call part-way through an iteration.  A region with no memory
@@ -434,13 +432,13 @@ private:
 
     // The addresses of the slots of the matched op (ReplayEngine::output_ptr
     // and input_ptr).  The engine checks that it is live.
-    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<::fixy::RunAddress> output_ptr_(OutputPosition position) const {
+    [[nodiscard]] CRUCIBLE_INLINE SlotAddress output_ptr_(OutputPosition position) const {
         auto av = engine_.active_view_();
-        return engine_.output_ptr(position.raw(), av);
+        return engine_.output_ptr(position, av);
     }
-    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<::fixy::RunAddress> input_ptr_(InputPosition position) const {
+    [[nodiscard]] CRUCIBLE_INLINE SlotAddress input_ptr_(InputPosition position) const {
         auto av = engine_.active_view_();
-        return engine_.input_ptr(position.raw(), av);
+        return engine_.input_ptr(position, av);
     }
 
     // The column of addresses of the pool for body (PoolAllocator::with_addresses).
@@ -592,22 +590,19 @@ private:
     }
 
     // The bytes of an input of the matched op as a read-only View of T, for a
-    // kernel that reads them (PoolAllocator::slot_view).  No value for an
+    // kernel that reads them (PoolAllocator::slot_view).  No View for an
     // input with no slot, an external slot with no registered View, bytes of
     // the wrong size or alignment for T, and an input slot that is also an
     // output slot of the op: an op that writes in place reads that slot
-    // through its ViewMut of with_output_views alone.  Complexity:
-    // O(outputs of the op).
+    // through its ViewMut of with_output_views alone.  The refusals of the
+    // position are the refusals of the engine (ReplayEngine::input_ptr).
+    // Complexity: O(outputs of the op).
     template <class T>
-    [[nodiscard]] ::fixy::Option<::fixy::View<T const>> input_view_(InputPosition position) const {
-        const TraceEntry& op = engine_.current_entry();
-        const ::fixy::View<const SlotId> inputs = op.input_slot_ids();
-        CRUCIBLE_PRE(position.raw() < inputs.size());
-        const SlotId sid = inputs.window<1>(position.raw())
-                               .expect("the precondition bounds the input position")
-                               .at(::fixy::index<0>());
-        const bool is_written =
-            op.output_slot_ids().walk().any_of([sid](SlotId const& output) noexcept { return output == sid; });
+    [[nodiscard]] InputView<T> input_view_(InputPosition position) const {
+        CRUCIBLE_TRY(sid, engine_.input_slot_(position));
+        // The engine gave a slot id, so it has a matched op.
+        const bool is_written = engine_.current_entry().output_slot_ids().walk().any_of(
+            [sid](SlotId const& output) noexcept { return output == sid; });
         if (is_written) return ::fixy::Option<::fixy::View<T const>>{::fixy::none};
         auto pv = pool_.initialized_view_();
         return pool_.slot_view<T>(sid, pv);
@@ -1095,11 +1090,13 @@ public:
     // The address of the slot of an output of the matched op: the first byte
     // of the storage of the output (ReplayEngine::output_ptr).  It points into
     // the pool of the context, or into the storage that the owner of an
-    // external slot registered.  input_ptr gives the same for an input.
-    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_ptr(OutputPosition position) const& {
+    // external slot registered.  A position past the outputs and a scope with
+    // no matched op give their refusals.  input_ptr gives the same for an
+    // input.
+    [[nodiscard]] CRUCIBLE_HOT SlotAddress output_ptr(OutputPosition position) const& {
         return context_->output_ptr_(position);
     }
-    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_ptr(InputPosition position) const& {
+    [[nodiscard]] CRUCIBLE_HOT SlotAddress input_ptr(InputPosition position) const& {
         return context_->input_ptr_(position);
     }
 
@@ -1127,11 +1124,12 @@ public:
         context_->bind_external_reads_(matched, live);
     }
 
-    // The bytes of an input of the matched op as a read-only View of T
-    // (CrucibleContext::input_view_).  Complexity: O(outputs of the op).
+    // The bytes of an input of the matched op as a read-only View of T, or the
+    // refusal of the position (CrucibleContext::input_view_).  Complexity:
+    // O(outputs of the op).
     template <class T>
         requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
-    [[nodiscard]] ::fixy::Option<::fixy::View<T const>> input_view(InputPosition position) const& {
+    [[nodiscard]] InputView<T> input_view(InputPosition position) const& {
         return context_->template input_view_<T>(position);
     }
 

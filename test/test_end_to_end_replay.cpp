@@ -71,7 +71,7 @@ void check_replay(crucible::test::TraceRig& /*rig*/, BackgroundThread const& /*b
             } else {
                 CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
             }
-            CRUCIBLE_TEST_ASSERT(kTest, scope.output_ptr(OutputPosition{0}).is_some());
+            CRUCIBLE_TEST_ASSERT(kTest, scope.output_ptr(OutputPosition{0}).expect("each op has an output").is_some());
         }
         CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
