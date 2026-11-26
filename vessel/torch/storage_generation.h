@@ -89,10 +89,12 @@
 // that holds the live claims of the Vigils of the process (ProducerClaim in
 // foundation/effects/Ctx.h).  crucible_create claims the Vigil of a session on
 // the thread of the session, before the attach.  Each change runs on the
-// producer thread of a Vigil.  A call on another thread, while a claim of a
-// Vigil lives, ends the process.  A reader on another thread gets the old
-// allocator or the new one, and the two stay valid for the life of the
-// process.
+// producer thread of a Vigil.  An attach or a detach on another thread, while
+// a claim of a Vigil lives, gives the refusal wrong_thread and writes nothing,
+// because its caller is outside the program.  A change on another thread ends
+// the process, because only the op of a Vigil calls it.  A reader on another
+// thread gets the old allocator or the new one, and the two stay valid for the
+// life of the process.
 
 #include <crucible/CrucibleContext.h>
 #include <crucible/Types.h>
@@ -177,16 +179,25 @@ CRUCIBLE_INLINE void follow_vigil_mode(crucible::ContextMode mode) noexcept {
         change_cpu_allocator(mode);
 }
 
+// The refusal of the attach and of the detach: the calling thread is not the
+// thread of the sessions (the threads above).
+enum class SessionRefusal : uint8_t {
+    wrong_thread
+};
+
 // Counts one more session.  The first session sets the generation allocator
 // as the CPU allocator of PyTorch, because a new Vigil records.  True when the
-// CPU allocator follows the Vigils of the sessions after the call.
-[[nodiscard]] bool attach_generation_allocator() noexcept;
+// CPU allocator follows the Vigils of the sessions after the call.  A call on
+// another thread than the thread of the sessions gives wrong_thread and writes
+// nothing.
+[[nodiscard]] ::fixy::Result<bool, SessionRefusal> attach_generation_allocator() noexcept;
 
 // Counts the end of one session.  The last one puts the allocator of the
 // first attach back, when the generation allocator is the CPU allocator, and
 // the CPU allocator then follows no Vigil.  A detach with no attached session
-// does nothing.
-void detach_generation_allocator() noexcept;
+// does nothing.  A call on another thread than the thread of the sessions
+// gives wrong_thread and writes nothing.
+[[nodiscard]] ::fixy::Result<::fixy::Unit, SessionRefusal> detach_generation_allocator() noexcept;
 
 // The address of the generation allocator, and the address of the allocator
 // that it allocates through (0 before the first attach).  For the tests of

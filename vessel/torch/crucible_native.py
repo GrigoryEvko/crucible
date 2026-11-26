@@ -331,6 +331,24 @@ def check_handle_status(status: int, entry: str) -> None:
     raise _HANDLE_ERRORS[named](f"{entry} refused the handle of the Vigil: {named.name}")
 
 
+def check_session_status(status: int, entry: str) -> None:
+    """Raise the error of the status that an entry of the state of the sessions gave, and return for LIVE.
+
+    The attach and the detach of the generation allocator take no handle.
+    They write the state of the sessions, which only the thread that holds the
+    live Vigils of the process writes (storage_generation.h).
+
+    Raises:
+        CrucibleWrongThreadError: For WRONG_THREAD: another thread holds the
+            live Vigils of the process
+        ValueError: For each other status, as check_handle_status gives it
+    """
+    if status == HandleStatus.WRONG_THREAD:
+        raise CrucibleWrongThreadError(f"{entry} runs only on the thread that holds the live Vigils of the "
+                                       f"process, and another thread holds them.  Call it on that thread")
+    check_handle_status(status, entry)
+
+
 def _fnv1a(data: bytes) -> int:
     """FNV-1a 64-bit hash, the fold of fnv1a_step in vessel/torch/entry_slots.h."""
     h = _FNV_OFFSET
@@ -1427,8 +1445,8 @@ class _DispatchLib:
         # The generation allocator (storage_generation.h): the attach, the
         # detach, and the reads of the chain and of a storage.
         L.crucible_dispatch_attach_allocator.restype = ctypes.c_uint32
-        L.crucible_dispatch_attach_allocator.argtypes = []
-        L.crucible_dispatch_detach_allocator.restype = None
+        L.crucible_dispatch_attach_allocator.argtypes = [ctypes.POINTER(ctypes.c_uint32)]
+        L.crucible_dispatch_detach_allocator.restype = ctypes.c_uint32
         L.crucible_dispatch_detach_allocator.argtypes = []
         for name in ("crucible_dispatch_cpu_allocator", "crucible_dispatch_generation_allocator",
                      "crucible_dispatch_inner_allocator"):
@@ -1451,12 +1469,24 @@ class _DispatchLib:
         follows the mode of its Vigil: the generation allocator for a record,
         the prior allocator for a replay.  True when the CPU allocator follows
         the Vigils after the call.
+
+        Raises:
+            CrucibleWrongThreadError: If another thread holds the live Vigils of
+                the process.  The attach then writes nothing
         """
-        return self._lib.crucible_dispatch_attach_allocator() == 1
+        follows = ctypes.c_uint32(0)
+        check_session_status(self._lib.crucible_dispatch_attach_allocator(ctypes.byref(follows)),
+                             "crucible_dispatch_attach_allocator")
+        return follows.value == 1
 
     def detach_allocator(self) -> None:
-        """End one session of the generation allocator.  The last one puts the prior allocator back."""
-        self._lib.crucible_dispatch_detach_allocator()
+        """End one session of the generation allocator.  The last one puts the prior allocator back.
+
+        Raises:
+            CrucibleWrongThreadError: If another thread holds the live Vigils of
+                the process.  The detach then writes nothing
+        """
+        check_session_status(self._lib.crucible_dispatch_detach_allocator(), "crucible_dispatch_detach_allocator")
 
     def cpu_allocator(self) -> int:
         """The address of the CPU allocator of PyTorch at this time."""

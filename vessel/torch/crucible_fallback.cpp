@@ -1244,8 +1244,11 @@ CRUCIBLE_API uint32_t crucible_dispatch_eager_numerics() { return crucible::vess
 // ── The generation allocator (storage_generation.h) ─────────────────
 //
 // A session attaches the allocator after it creates its Vigil, and detaches
-// it at its end.  The attach gives 1 when the CPU allocator of PyTorch
-// follows the Vigils of the sessions after the call.  The three addresses and
+// it at its end.  The attach writes 1 to its out value when the CPU allocator
+// of PyTorch follows the Vigils of the sessions after the call.  The attach and
+// the detach give a CRUCIBLE_HANDLE_* status: WRONG_THREAD on a thread that is
+// not the thread of the sessions, which writes nothing, and REFUSED for a null
+// out value of the attach.  The three addresses and
 // the generation of a storage are reads for the tests of the chain: an
 // address is 0 for no allocator.  The storage is the address of a
 // c10::StorageImpl, which Python gives as UntypedStorage._cdata.  The read
@@ -1253,11 +1256,21 @@ CRUCIBLE_API uint32_t crucible_dispatch_eager_numerics() { return crucible::vess
 // storage at that time: a known generation, or the top bit and the period for
 // a storage that the generation allocator did not make.
 
-CRUCIBLE_API uint32_t crucible_dispatch_attach_allocator() {
-    return crucible::vessel::attach_generation_allocator() ? 1U : 0U;
+CRUCIBLE_API uint32_t crucible_dispatch_attach_allocator(uint32_t* out_follows) {
+    if (out_follows == nullptr) return CRUCIBLE_HANDLE_REFUSED;
+    return crucible::vessel::attach_generation_allocator().match(
+        [out_follows](bool is_following) noexcept -> uint32_t {
+            *out_follows = is_following ? 1U : 0U;
+            return CRUCIBLE_HANDLE_LIVE;
+        },
+        [](crucible::vessel::SessionRefusal) noexcept -> uint32_t { return CRUCIBLE_HANDLE_WRONG_THREAD; });
 }
 
-CRUCIBLE_API void crucible_dispatch_detach_allocator() { crucible::vessel::detach_generation_allocator(); }
+CRUCIBLE_API uint32_t crucible_dispatch_detach_allocator() {
+    return crucible::vessel::detach_generation_allocator().match(
+        [](::fixy::Unit) noexcept -> uint32_t { return CRUCIBLE_HANDLE_LIVE; },
+        [](crucible::vessel::SessionRefusal) noexcept -> uint32_t { return CRUCIBLE_HANDLE_WRONG_THREAD; });
+}
 
 CRUCIBLE_API uint64_t crucible_dispatch_cpu_allocator() { return std::bit_cast<uint64_t>(c10::GetCPUAllocator()); }
 

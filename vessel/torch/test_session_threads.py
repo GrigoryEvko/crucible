@@ -10,14 +10,16 @@ lives gets CrucibleWrongThreadError at the create of its Vigil.  The error
 comes before the second thread writes a structure of the process, and the
 process continues.
 
-The checks run in child processes, because the attach refusal ends the
-process:
+The checks run in child processes, so that a refusal that ends the process
+ends only the child:
 
     second    a session on a second thread, while a session of the main thread
               lives, raises CrucibleWrongThreadError before the session opens,
               and the session of the main thread replays its loop after it
-    attach    an attach of the generation allocator on a second thread, while a
-              session of the main thread lives, ends the child with SIGABRT
+    attach    an attach and a detach of the generation allocator on a second
+              thread, while a session of the main thread lives, each raise
+              CrucibleWrongThreadError and write nothing, and the session of
+              the main thread replays its loop after them
     later     a session on a second thread after the session of the main thread
               closed replays its loop, and the child exits with 0
     nested    a session in a session on one thread replays its loop, and the
@@ -40,7 +42,6 @@ Exit 0 when each check passes, 1 otherwise.
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -92,10 +93,19 @@ print("the child ended", flush=True)
 ATTACH = PRELUDE + """
 with CrucibleNative() as ctx:
     give_loop(ctx)
-    def attach():
-        ctx._dispatch.attach_allocator()
-        print("the second attach returned", flush=True)
-    run_on_a_thread(attach)
+    def attach_and_detach():
+        try:
+            ctx._dispatch.attach_allocator()
+            print("the second attach returned", flush=True)
+        except Exception as error:
+            print(f"the second attach raised {type(error).__name__}", flush=True)
+        try:
+            ctx._dispatch.detach_allocator()
+            print("the second detach returned", flush=True)
+        except Exception as error:
+            print(f"the second detach raised {type(error).__name__}", flush=True)
+    run_on_a_thread(attach_and_detach)
+    print(f"the first session replays after the refusal: {give_loop(ctx)}", flush=True)
 print("the child ended", flush=True)
 """
 
@@ -145,27 +155,17 @@ with CrucibleMode():
 print("the child ended", flush=True)
 """
 
-# The error of a session on a second thread, and the text of the refusal of a
-# write of the state of the sessions on a thread that holds no Vigil claim.
+# The error of a session on a second thread, and the errors of an attach and
+# of a detach of the generation allocator on a thread that holds no Vigil.
 SECOND_SESSION_REFUSAL = "the second session raised CrucibleWrongThreadError"
-ATTACH_REFUSAL = "can_caller_use_brand"
+ATTACH_REFUSAL = "the second attach raised CrucibleWrongThreadError"
+DETACH_REFUSAL = "the second detach raised CrucibleWrongThreadError"
 
 
 def run_child(code: str) -> subprocess.CompletedProcess[str]:
     """Run CODE in a child interpreter with the vessel directory, and give its result."""
     return subprocess.run([sys.executable, "-E", "-B", "-c", code, str(VESSEL_DIRECTORY)], env=dict(os.environ),
                           capture_output=True, text=True, timeout=600, check=False)
-
-
-def check_refused(problems: list[str], name: str, code: str, refusal: str, marker: str) -> None:
-    """Expect the child of CODE to end with SIGABRT and REFUSAL, before it prints MARKER."""
-    child = run_child(code)
-    if child.returncode != -signal.SIGABRT:
-        problems.append(f"{name}: the child ends with {child.returncode}, not SIGABRT: {child.stderr[-2000:]!r}")
-    if refusal not in child.stderr:
-        problems.append(f"{name}: the child does not give the text {refusal!r}: {child.stderr[-2000:]!r}")
-    if marker in child.stdout:
-        problems.append(f"{name}: the child printed {marker!r} before the refusal")
 
 
 def check_admitted(problems: list[str], name: str, code: str, *markers: str) -> None:
@@ -195,7 +195,8 @@ def main() -> int:
     problems: list[str] = []
     check_raised(problems, "second", SECOND, "the second session opened", SECOND_SESSION_REFUSAL,
                  "the first session replays after the refusal: True", "the child ended")
-    check_refused(problems, "attach", ATTACH, ATTACH_REFUSAL, "the second attach returned")
+    check_raised(problems, "attach", ATTACH, "the second attach returned", ATTACH_REFUSAL, DETACH_REFUSAL,
+                 "the first session replays after the refusal: True", "the child ended")
     check_admitted(problems, "later", LATER, "the later session replays: True")
     check_admitted(problems, "nested", NESTED, "the nested session replays: True")
     check_admitted(problems, "mode", MODE, "the session after the exit of a live mode replays: True",

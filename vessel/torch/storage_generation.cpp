@@ -120,12 +120,16 @@ private:
     return store.state();
 }
 
-// Ends the process when the calling thread is not the thread of the sessions:
-// a claim of a Vigil lives, and another thread holds it (the threads of
+// True when the calling thread is the thread of the sessions: no claim of a
+// Vigil lives, or the calling thread holds the live claims (the threads of
 // storage_generation.h).  A linear scan of the records of the brands.
-void require_session_thread() noexcept {
-    CRUCIBLE_FATAL_INVARIANT(::foundation::effects::host::ProducerClaim<crucible::Vigil>::can_caller_use_brand());
+[[nodiscard]] bool is_session_thread() noexcept {
+    return ::foundation::effects::host::ProducerClaim<crucible::Vigil>::can_caller_use_brand();
 }
+
+// Ends the process when the calling thread is not the thread of the sessions.
+// Only the op of a Vigil calls a change, on the producer thread of the Vigil.
+void require_session_thread() noexcept { CRUCIBLE_FATAL_INVARIANT(is_session_thread()); }
 
 // Starts a new period of the allocator (the periods of storage_generation.h).
 void begin_period() noexcept { g_allocator_follow.epoch.store_release(g_allocator_follow.epoch.load_acquire() + 1); }
@@ -164,8 +168,8 @@ void delete_generation_allocation(void* data) noexcept {
 // change and the detach put that allocator back at that priority.  O(256) sets
 // at most.  A later session finds the allocator that follows the Vigils, and
 // the first op of its Vigil sets the allocator of its mode.
-bool attach_generation_allocator() noexcept {
-    require_session_thread();
+::fixy::Result<bool, SessionRefusal> attach_generation_allocator() noexcept {
+    if (!is_session_thread()) return ::fixy::err(SessionRefusal::wrong_thread);
     GenerationState& state = the_generation_state();
     GenerationAllocator& allocator = state.allocator;
     if (state.sessions > 0) {
@@ -197,14 +201,15 @@ bool attach_generation_allocator() noexcept {
     return false;
 }
 
-void detach_generation_allocator() noexcept {
-    require_session_thread();
+::fixy::Result<::fixy::Unit, SessionRefusal> detach_generation_allocator() noexcept {
+    if (!is_session_thread()) return ::fixy::err(SessionRefusal::wrong_thread);
     GenerationState& state = the_generation_state();
-    if (state.sessions == 0) return;
+    if (state.sessions == 0) return ::fixy::Unit{};
     --state.sessions;
-    if (state.sessions > 0) return;
+    if (state.sessions > 0) return ::fixy::Unit{};
     if (c10::GetCPUAllocator() == &state.allocator) c10::SetCPUAllocator(state.prior, state.priority);
     end_follow();
+    return ::fixy::Unit{};
 }
 
 // The two sets take, because each one is at the priority that the attach
