@@ -38,50 +38,32 @@ from crucible_native import (
     DispatchStatus,
     SchemaNameResult,
     _DispatchLib,
-    load_vessel_library,
+    _VesselLib as _NativeVesselLib,
+    check_handle_status,
 )
 
 
 # ─── ctypes bindings ────────────────────────────────────────────────
 
-class _VesselLib:
-    """Thin ctypes wrapper around libcrucible_vessel.so."""
+class _VesselLib(_NativeVesselLib):
+    """The vessel wrapper of crucible_native with the entries of this mode: the dispatch and the names of the ops.
 
-    def __init__(self, lib_path: str | None = None) -> None:
-        """Load the vessel library once its layout is the layout of its build.
+    The wrapper of crucible_native loads the library once its layout is the
+    layout of its build, and it checks the handle status of each entry that
+    takes the handle of the Vigil.
+    """
 
-        CrucibleMeta and CrucibleDispatchResult of crucible_native mirror the
-        structs of the C ABI, and the loader compares them and the layout note
-        of the library with the layout table of the build before the load
-        (crucible_native.load_vessel_library).
-        """
-        self._lib = load_vessel_library(lib_path)
-        self._setup_signatures()
-
-    def _setup_signatures(self):
+    def _setup(self) -> None:
+        """Declare the restype and argtypes of the entries of crucible_native and of this mode."""
+        super()._setup()
         lib = self._lib
-
-        lib.crucible_create.restype = ctypes.c_void_p
-        lib.crucible_create.argtypes = [ctypes.c_uint32]
-
-        lib.crucible_observe_eager_numerics.restype = ctypes.c_int
-        lib.crucible_observe_eager_numerics.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
-
-        lib.crucible_destroy.restype = None
-        lib.crucible_destroy.argtypes = [ctypes.c_void_p]
-
-        lib.crucible_release_claim.restype = None
-        lib.crucible_release_claim.argtypes = [ctypes.c_void_p]
-
-        lib.crucible_active_num_ops.restype = ctypes.c_uint32
-        lib.crucible_active_num_ops.argtypes = [ctypes.c_void_p]
 
         lib.crucible_hash_string.restype = ctypes.c_uint64
         lib.crucible_hash_string.argtypes = [ctypes.c_char_p]
 
-        lib.crucible_register_schema_name.restype = ctypes.c_int
+        lib.crucible_register_schema_name.restype = ctypes.c_uint32
         lib.crucible_register_schema_name.argtypes = [
-            ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p,
+            ctypes.c_uint64, ctypes.c_uint64, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32),
         ]
 
         lib.crucible_schema_name.restype = ctypes.c_char_p
@@ -91,7 +73,7 @@ class _VesselLib:
         # scalars, so the call gives no guard word.
         lib.crucible_dispatch_op_ex.restype = CrucibleDispatchResult
         lib.crucible_dispatch_op_ex.argtypes = [
-            ctypes.c_void_p,                  # handle
+            ctypes.c_uint64,                  # handle
             ctypes.c_uint64,                  # schema_hash
             ctypes.c_uint16,                  # num_inputs
             ctypes.c_uint16,                  # num_outputs
@@ -108,20 +90,16 @@ class _VesselLib:
         lib.crucible_is_structural_scalar.restype = ctypes.c_int
         lib.crucible_is_structural_scalar.argtypes = [ctypes.c_uint64, ctypes.c_uint32]
 
-        lib.crucible_flush.restype = ctypes.c_int
-        lib.crucible_flush.argtypes = [ctypes.c_void_p]
+    def register_schema_name(self, h: int, schema_hash: int, name: bytes) -> SchemaNameResult:
+        """Register the name of an op for its schema hash in the tables of the process, and give the result.
 
-        lib.crucible_is_compiled.restype = ctypes.c_int
-        lib.crucible_is_compiled.argtypes = [ctypes.c_void_p]
-
-        lib.crucible_compiled_iterations.restype = ctypes.c_uint64
-        lib.crucible_compiled_iterations.argtypes = [ctypes.c_void_p]
-
-        lib.crucible_diverged_count.restype = ctypes.c_uint64
-        lib.crucible_diverged_count.argtypes = [ctypes.c_void_p]
-
-        lib.crucible_export_crtrace.restype = ctypes.c_int
-        lib.crucible_export_crtrace.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        Raises:
+            CrucibleHandleError: If the library refuses the handle
+        """
+        code = ctypes.c_uint32(0)
+        check_handle_status(self._lib.crucible_register_schema_name(h, schema_hash, name, ctypes.byref(code)),
+                            "crucible_register_schema_name")
+        return SchemaNameResult(code.value)
 
     def __getattr__(self, name):
         return getattr(self._lib, name)
@@ -294,9 +272,9 @@ class CrucibleMode(TorchDispatchMode):
         # PyTorch keeps partly in the FP control register.  This mode includes
         # no Crucible dispatch key, so the kernels of the library never fire.
         self._dispatch = _DispatchLib()
-        self._handle = self._vessel.crucible_create(self._dispatch.eager_numerics())
-        if not self._handle:
-            raise ValueError("crucible_create refuses the eager word of the dispatch library")
+        # The create raises ValueError for a word that the library refuses,
+        # and CrucibleWrongThreadError while another thread holds a live Vigil.
+        self._handle = self._vessel.create(self._dispatch.eager_numerics())
         self._verbose = verbose
         self._op_count = 0
         self._schema_cache = {}
@@ -317,27 +295,43 @@ class CrucibleMode(TorchDispatchMode):
             return super().__exit__(exc_type, exc_value, traceback)
         finally:
             if self._handle:
-                self._vessel.crucible_release_claim(self._handle)
+                self._vessel.release_claim(self._handle)
 
     def __del__(self):
-        if hasattr(self, "_handle") and self._handle:
-            self._vessel.crucible_destroy(self._handle)
-            self._handle = None
+        """End the Vigil of the mode.
+
+        A finalizer raises nothing, so the status of the destroy stays unread.
+        The garbage collector can run the finalizer on any thread.  After the
+        exit of the mode, the slot of the Vigil is free, and the thread of the
+        finalizer claims it and ends the Vigil.  If another thread still holds
+        the Vigil, the destroy gives WRONG_THREAD, and the Vigil and its slot
+        stay until the end of the process.  This leak is accepted: it reads no
+        freed memory, and the slot counts against CRUCIBLE_VIGIL_SLOTS, so a
+        create past the limit gives FULL.
+        """
+        handle = getattr(self, "_handle", 0)
+        if handle:
+            self._handle = 0
+            self._vessel._lib.crucible_destroy(handle)
 
     # ── Public API ──────────────────────────────────────────────────
+    #
+    # Each query raises the CrucibleHandleError of crucible_native when the
+    # library refuses the handle, such as on a thread that does not hold the
+    # Vigil.
 
     def is_compiled(self):
-        return bool(self._vessel.crucible_is_compiled(self._handle))
+        return self._vessel.is_compiled(self._handle)
 
     def active_num_ops(self) -> int:
         """Return the count of the ops of the active region, or 0 with no active region."""
-        return self._vessel.crucible_active_num_ops(self._handle)
+        return self._vessel.active_num_ops(self._handle)
 
     def compiled_iterations(self):
-        return self._vessel.crucible_compiled_iterations(self._handle)
+        return self._vessel.compiled_iterations(self._handle)
 
     def diverged_count(self):
-        return self._vessel.crucible_diverged_count(self._handle)
+        return self._vessel.diverged_count(self._handle)
 
     def flush(self):
         """Wait until the background thread processed each recorded op.
@@ -345,8 +339,7 @@ class CrucibleMode(TorchDispatchMode):
         Raises RuntimeError when the background thread stopped first, because
         the ops after that point stay unprocessed.
         """
-        if self._vessel.crucible_flush(self._handle) == 0:
-            raise RuntimeError("the background thread of the Vigil stopped before the flush completed")
+        self._vessel.flush(self._handle)
 
     # ── Trace export ─────────────────────────────────────────────────
 
@@ -365,7 +358,7 @@ class CrucibleMode(TorchDispatchMode):
             True when the Vigil has an active region and the encoder wrote the
             file, False otherwise
         """
-        return bool(self._vessel.crucible_export_crtrace(self._handle, str(path).encode()))
+        return self._vessel.export_crtrace(self._handle, str(path))
 
     # ── Dispatch interception ───────────────────────────────────────
 
@@ -424,10 +417,13 @@ class CrucibleMode(TorchDispatchMode):
             scalars_ptr, num_scalars, scalar_types, data_slots,
             grad_on, infer_on,
         )
+        # A handle that the library refuses, such as on a thread that does not
+        # hold the Vigil, raises its error here.  The op already ran eagerly.
+        check_handle_status(dr.handle_status, "crucible_dispatch_op_ex")
         # The next op starts an iteration of a region, so the Vigil takes the
         # eager word again, once for each iteration.
         if dr.enters_region:
-            self._vessel.crucible_observe_eager_numerics(self._handle, self._dispatch.eager_numerics())
+            self._vessel.observe_eager_numerics(self._handle, self._dispatch.eager_numerics())
 
         self._op_count += 1
 
@@ -460,8 +456,7 @@ class CrucibleMode(TorchDispatchMode):
             # A collision means that two op names give one schema hash.  The
             # table keeps the first name, and two ops share one schema hash.
             # A full table keeps each name, and this op has no name in it.
-            result = self._vessel.crucible_register_schema_name(
-                self._handle, h, op_name.encode("ascii"))
+            result = self._vessel.register_schema_name(self._handle, h, op_name.encode("ascii"))
             if result == SchemaNameResult.COLLISION:
                 raise RuntimeError(
                     f"crucible: the schema hash {h} of the op {op_name} names a different op in the schema table")

@@ -64,8 +64,10 @@
 #include "entry_slots.h"
 #include "storage_generation.h"
 #include "vessel_api_typed.h"
+#include "vigil_handles.h"
 
 #include <array>
+#include <bit>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -1264,28 +1266,35 @@ static_assert(sizeof(RecordingBinding) == sizeof(crucible::TraceRing::ValidatedE
 // fails its guard. Refer to the serialisation note in
 // vessel/torch/crucible_native.py. This question then turns away the sessions
 // that do not arm that guard.
+//
+// The TLS state of PyTorch holds the handle of the Vigil of the thread as the
+// bits of its context, which nothing reads as an address.  PyTorch copies the
+// TLS state into each ThreadLocalState that it carries to another thread, so a
+// copy of the handle can outlive its Vigil.  The table of the handles
+// (vigil_handles.h) answers each question of the Vigil: the handle names a
+// live Vigil, and the calling thread holds it.  A thread that does not hold
+// the handle reads no memory of the Vigil, so a stale copy reads no freed
+// memory.  The first op of a handle that no thread holds claims it.
 // =====================================================================
 
+// The Vigil of the handle of the TLS state, when the calling thread holds it.
+// The fast path is one load of the context, the load of the table, and two
+// loads and two compares of the slot.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the TLS state of PyTorch holds the handle as the bits of its context")
+[[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::Ref<crucible::Vigil>>
+held_tls_vigil(c10::CrucibleState const& state) noexcept {
+    const VigilHandle handle{std::bit_cast<std::uint64_t>(state.context())};
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    return vigil_handles.find_recording_vigil(handle);
+}
+
 [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::Ref<crucible::Vigil>> recording_vigil() noexcept {
-    using Recorder = ::fixy::Option<::fixy::Ref<crucible::Vigil>>;
-    // The TLS state of PyTorch holds the mode and the Vigil handle of the
-    // thread.  The TLS-stored pointer crosses the same ABI boundary as a
-    // CrucibleHandle, so it enters through the typed door that tags it
-    // source::ABIBoundary.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the gate reads the recording state that PyTorch keeps for each thread")
     auto& state = c10::CrucibleState::get_tls_state();
     if (state.mode() == c10::CrucibleMode::INACTIVE) [[likely]]
         return ::fixy::none;
-
-    void* tls_context = state.context();
-    if (!tls_context) [[unlikely]]
-        return ::fixy::none;
-
-    crucible::Vigil& vigil = *as_vigil_typed(static_cast<CrucibleHandle>(tls_context)).value();
+    return held_tls_vigil(state);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    if (!vigil.is_producer_thread()) [[unlikely]]
-        return ::fixy::none;
-    return Recorder::some(::fixy::erase_brand(::fixy::to(vigil)));
 }
 
 // Bits 2 and 3 of op_flags. `is_foreach` is a property of the operator, which

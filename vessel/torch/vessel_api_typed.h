@@ -1,19 +1,15 @@
 #pragma once
 
-// Typed helpers for the internal Vessel C-ABI handle boundary.
+// Typed helpers for the internal Vessel C-ABI boundary.
 //
-// CrucibleHandle remains `void*` and CrucibleMeta remains a plain C
-// struct in vessel_api.h because both are exported to C / ctypes
-// callers.  Inside C++, every value crossing the FFI boundary is
-// immediately tagged with the `source::ABIBoundary` provenance tag so
-// foreign-runtime provenance is visible in the type system before the pointer
-// reaches Vigil / TensorMeta-consuming code.
+// CrucibleMeta remains a plain C struct in vessel_api.h because it is
+// exported to C / ctypes callers.  Inside C++, every value crossing the FFI
+// boundary is immediately tagged with the `source::ABIBoundary` provenance tag
+// so foreign-runtime provenance is visible in the type system before the
+// pointer reaches TensorMeta-consuming code.  A handle of a Vigil is a word of
+// the table of handles, and vigil_handles.h checks it.
 //
 // ── Helper surface ─────────────────────────────────────────────────
-//
-//   TypedHandle               := Tagged<Vigil*, ABIBoundary>
-//   as_vigil_typed(handle)    : CrucibleHandle           -> TypedHandle
-//   from_typed(typed)         : TypedHandle              -> CrucibleHandle
 //
 //   TypedArray<E>             := Tagged<E*, ABIBoundary>
 //   as_array_typed(first, n)  : E*, std::size_t          -> Option<TypedArray<E>>
@@ -49,21 +45,19 @@
 // ── Zero-cost guarantee ────────────────────────────────────────────
 //
 // `Tagged<T, Tag>` is regime-1 EBO collapse via TrustLattice<Tag>'s
-// empty element_type, so `sizeof(TypedHandle) == sizeof(void*)` and
-// `sizeof(TypedMeta) == sizeof(void*)` are static_assert'd below.
-// The helpers that give a type to a pointer are CRUCIBLE_HOT
-// (always-inline) and compile to the same machine code as the bare
-// pointer after EBO collapse.
+// empty element_type, so `sizeof(TypedMeta) == sizeof(void*)` is
+// static_assert'd below.  The helpers that give a type to a pointer are
+// CRUCIBLE_HOT (always-inline) and compile to the same machine code as the
+// bare pointer after EBO collapse.
 //
 // ── Usage rule (review-enforced) ───────────────────────────────────
 //
-// Every C-ABI thunk in vessel_api.cpp begins with `as_vigil_typed(h)`.
-// A thunk that takes an array gives the pointer and the count to
-// `as_meta_typed` or `as_array_typed` before it reads or writes an element,
-// and it gives its refusal when the door gives no value.  No raw
-// `static_cast<Vigil*>(h)` is permitted outside this header.  Grepping
-// for `as_vigil_typed`, `as_meta_typed` or `as_array_typed` finds every
-// ABI-crossing site in O(1).
+// Every C-ABI thunk in vessel_api.cpp that takes a handle begins with
+// `vigil_handles.mint_held_vigil(h)` of vigil_handles.h.  A thunk that takes
+// an array gives the pointer and the count to `as_meta_typed` or
+// `as_array_typed` before it reads or writes an element, and it gives its
+// refusal when the door gives no value.  Grepping for `mint_held_vigil`,
+// `as_meta_typed` or `as_array_typed` finds every ABI-crossing site in O(1).
 
 #include "aten_op_table.h"
 #include "vessel_api.h"
@@ -87,28 +81,21 @@
 #include <type_traits>
 #include <utility>
 
-// The helpers below name the Vigil only through a pointer, so a declaration
-// is sufficient, and this header does not include crucible/Vigil.h.
+// The helpers below name the Vigil only as a template argument, so a
+// declaration is sufficient, and this header does not include
+// crucible/Vigil.h.
 namespace crucible {
 class Vigil;
 }  // namespace crucible
 
 namespace crucible::vessel {
 
-// ── Vigil typed handle ────────────────────────────────────────────
+// ── The typed records of a C caller ───────────────────────────────
 //
 // ABIBoundary names where a value came from, so mint_tagged builds a
 // value under it.  A check that the value passed reaches Sanitized only
 // by retag along the catalog edge.  The data pointer of a meta is the
 // ExternalDataPtr of TensorMeta, another ::fixy Tagged.
-
-using TypedHandle = ::fixy::Tagged<Vigil*, ::fixy::tags::source::ABIBoundary>;
-
-static_assert(sizeof(TypedHandle) == sizeof(CrucibleHandle));
-static_assert(alignof(TypedHandle) == alignof(CrucibleHandle));
-static_assert(std::is_trivially_copy_constructible_v<TypedHandle>);
-
-// ── The typed records of a C caller ───────────────────────────────
 //
 // An array of a C caller, as the pointer to its first element.  The records
 // keep their C type.  decode_ffi_meta below makes a TensorMeta from one
@@ -148,36 +135,9 @@ static_assert(offsetof(CrucibleMeta, pad0) == 156);
 static_assert(offsetof(CrucibleMeta, storage_nbytes) == 160);
 static_assert(offsetof(CrucibleMeta, grad_fn_hash) == 168);
 
-// The helpers from here to decode_ffi_records take the handle and the meta
-// array of the C ABI as raw pointers, give them a type, and read the records.
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the helpers give a type to the handle and the meta array of the C caller")
-
-namespace detail {
-
-// The alignment of crucible::Vigil.  The class is only declared here, so
-// alignof cannot read it.  vessel_api.cpp includes crucible/Vigil.h and
-// checks that the two values are equal.
-inline constexpr std::size_t kVigilHandleAlignment = 64;
-
-// A handle of the C caller is above the first page, so it is not null, and
-// it has the alignment of a Vigil.  The checks stay in each build, so a
-// damaged handle ends the process before a read through it.
-inline void assert_plausible_vigil_handle(CrucibleHandle handle) noexcept {
-    const auto bits = std::bit_cast<std::uintptr_t>(handle);
-    CRUCIBLE_PRE(bits >= 4096U);
-    CRUCIBLE_PRE((bits & (kVigilHandleAlignment - 1U)) == 0U);
-}
-
-}  // namespace detail
-
-[[nodiscard]] CRUCIBLE_HOT TypedHandle as_vigil_typed(CrucibleHandle handle) noexcept {
-    detail::assert_plausible_vigil_handle(handle);
-    return ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(static_cast<Vigil*>(handle));
-}
-
-[[nodiscard]] CRUCIBLE_HOT CrucibleHandle from_typed(TypedHandle handle) noexcept {
-    return static_cast<CrucibleHandle>(handle.value());
-}
+// The helpers from here to decode_ffi_records take the meta array of the C
+// ABI as raw pointers, give them a type, and read the records.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the helpers give a type to the meta array of the C caller")
 
 // ── The arrays of a C caller ───────────────────────────────────────
 //

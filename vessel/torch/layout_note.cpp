@@ -10,6 +10,8 @@
 //     - crucible::TensorMeta, the record of a tensor
 //     - the four structs of the C ABI that ctypes mirrors: CrucibleMeta,
 //       CrucibleDispatchResult, CrucibleSlot and CrucibleBoundScalar
+//     - the table of the handles of the Vigils (vigil_handles.h), one
+//       object of the process that the two libraries read
 //   A new type that the two libraries share goes into the list of
 //   kSharedLayoutDigest.  The level probe keeps its own ABI stamp, because
 //   the level of the host of the test launcher reads it too.
@@ -18,6 +20,7 @@
 
 #include "dispatch_api.h"
 #include "vessel_api.h"
+#include "vigil_handles.h"
 
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
@@ -34,7 +37,8 @@ namespace {
 constexpr std::uint64_t kSharedLayoutDigest = ::foundation::reflect::combine_ids(
     ::foundation::reflect::layout_digest_of<crucible::Vigil, crucible::TraceRing, crucible::MetaLog,
                                             crucible::RegionNode, crucible::TraceEntry, crucible::TensorMeta,
-                                            CrucibleMeta, CrucibleDispatchResult, CrucibleSlot, CrucibleBoundScalar>(),
+                                            CrucibleMeta, CrucibleDispatchResult, CrucibleSlot, CrucibleBoundScalar,
+                                            VigilHandleTable<kVigilSlots>>(),
     ::foundation::reflect::c_entry_digest<^^::>("crucible_"));
 
 [[gnu::section(".note.crucible"), gnu::used, gnu::retain]] alignas(kLayoutNoteAlignment) constinit LayoutNote const

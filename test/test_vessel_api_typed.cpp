@@ -30,17 +30,12 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 namespace {
 
 using crucible::ExternalDataPtr;
-using crucible::vessel::TypedHandle;
 using crucible::vessel::TypedMeta;
 using crucible::vessel::TypedSchemaName;
 
 // The tag is phantom, so the typed wrapper must add no storage at the
-// ABI boundary.  A failure here means the wrapper costs something.
-
-static_assert(std::is_same_v<TypedHandle, ::fixy::Tagged<crucible::Vigil*, ::fixy::tags::source::ABIBoundary>>);
-static_assert(sizeof(TypedHandle) == sizeof(CrucibleHandle));
-static_assert(alignof(TypedHandle) == alignof(CrucibleHandle));
-static_assert(std::is_trivially_copy_constructible_v<TypedHandle>);
+// ABI boundary.  A failure here means the wrapper costs something.  The handle
+// of a Vigil is a word that the table of handles checks (test_vigil_handles).
 
 // The typed records keep the C type that the caller wrote.  Only
 // decode_ffi_meta makes a TensorMeta from a record.
@@ -62,7 +57,6 @@ static_assert(!::foundation::core::DecodableFrom<crucible::TensorMeta, CrucibleM
 // Two tags make two distinct classes with no conversion between them.
 // That is what stops a value from crossing the boundary under the wrong
 // provenance.
-static_assert(!std::is_convertible_v<::fixy::Tagged<crucible::Vigil*, ::fixy::tags::source::External>, TypedHandle>);
 static_assert(!std::is_convertible_v<::fixy::Tagged<const CrucibleMeta*, ::fixy::tags::source::External>, TypedMeta>);
 
 // The boundary tag names a source, so the one door admits it.  The tag
@@ -109,10 +103,6 @@ int g_failures = 0;
         }                                                                                          \
     } while (0)
 
-// The bytes of a Vigil that no constructor starts: the target of a handle
-// that the cases compare and never read.
-using VigilBytes = ::fixy::FixedArray<std::byte, sizeof(crucible::Vigil)>;
-
 // The typed records of a pair that the door admits.  Each case that calls it
 // gives an aligned array of count records, so the door gives a value.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case gives the records of a C caller as a pointer and a count")
@@ -120,24 +110,6 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case gives the records of a C caller as 
     return crucible::vessel::as_meta_typed(metas, count).expect("the case gives an aligned array of count records");
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-
-void test_handle_roundtrip() {
-    alignas(crucible::Vigil) VigilBytes storage{};
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case gives a CrucibleHandle of vessel_api.h to the typed door")
-    crucible::Vigil* const vigil_ptr = static_cast<crucible::Vigil*>(static_cast<void*>(&storage));
-    CrucibleHandle const raw = static_cast<CrucibleHandle>(vigil_ptr);
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-
-    auto typed = crucible::vessel::as_vigil_typed(raw);
-    EXPECT(typed.value() == vigil_ptr, "typed handle must preserve the Vigil pointer value");
-
-    EXPECT(crucible::vessel::from_typed(typed) == raw, "typed handle must roundtrip to CrucibleHandle");
-
-    // The wrapper must hold exactly the bytes of the raw pointer.
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the case compares the bytes of a typed handle with the bytes of its pointer")
-    EXPECT(std::memcmp(&typed, &raw, sizeof(raw)) == 0, "TypedHandle layout must be byte-identical to CrucibleHandle");
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-}
 
 void test_meta_roundtrip() {
     // Every field is filled, so the decode has to give each field of the
@@ -854,24 +826,6 @@ void test_hash_order_finds_each_row() {
     }
 }
 
-void test_handle_distinct_pointers() {
-    // Two storage blocks give two pointers, and the wrapper must keep
-    // them apart rather than collapse or reuse a value.
-    alignas(crucible::Vigil) VigilBytes storage_a{};
-    alignas(crucible::Vigil) VigilBytes storage_b{};
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case gives two CrucibleHandle values of vessel_api.h to the typed door")
-    crucible::Vigil* const vigil_a = static_cast<crucible::Vigil*>(static_cast<void*>(&storage_a));
-    crucible::Vigil* const vigil_b = static_cast<crucible::Vigil*>(static_cast<void*>(&storage_b));
-    auto ta = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(vigil_a));
-    auto tb = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(vigil_b));
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    EXPECT(vigil_a != vigil_b, "test setup: distinct storage must yield distinct pointers");
-
-    EXPECT(ta.value() == vigil_a, "typed handle for a must alias a");
-    EXPECT(tb.value() == vigil_b, "typed handle for b must alias b");
-    EXPECT(ta.value() != tb.value(), "distinct inputs must yield distinct typed handle values");
-}
-
 // True when the ladder accepts the one meta.
 [[nodiscard]] bool is_well_formed(const crucible::TensorMeta& meta) noexcept {
     const ::fixy::FixedArray<crucible::TensorMeta, 1> records{meta};
@@ -1010,7 +964,6 @@ void test_c10_decoders_map_by_name() {
 }  // namespace
 
 int main() {
-    test_handle_roundtrip();
     test_meta_roundtrip();
     test_meta_zero_n_with_null();
     test_array_door_judges_each_pair();
@@ -1023,7 +976,6 @@ int main() {
     test_schema_name_full_code();
     test_schema_name_reserved_hash();
     test_hash_order_finds_each_row();
-    test_handle_distinct_pointers();
     test_ladder_refuses_unnamed_enumerations();
     test_ladder_refuses_a_count_that_disagrees_with_the_entry();
     test_ladder_refuses_a_data_slot_past_the_inline_slots();

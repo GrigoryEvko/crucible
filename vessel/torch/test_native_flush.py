@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Raise an error from the flush of crucible_native when the background thread stopped.
 
-crucible_flush gives 1 when the background thread processed each recorded op,
-and 0 when the thread stopped first.  The flush of the vessel wrapper, the
+crucible_flush writes 1 when the background thread processed each recorded
+op, and 0 when the thread stopped first.  The flush of the vessel wrapper, the
 flush of CrucibleNative and export_trace read that result, and each one raises
 the error of crucible_mode on 0.  No C entry stops the background thread, so
-the test gives the wrapper a stand-in library whose crucible_flush gives the
-result of the case.  The stand-in loads no library.
+the test gives the wrapper a stand-in library whose crucible_flush writes the
+result of the case and gives the handle status LIVE.  The stand-in loads no
+library.
 
 Usage:
     python test_native_flush.py
@@ -18,11 +19,11 @@ running background does not, 1 otherwise.
 import ctypes
 import sys
 from collections.abc import Callable
-from typing import cast
+from typing import Any, cast
 
 import torch
 
-from crucible_native import CrucibleNative, _VesselLib
+from crucible_native import CrucibleNative, HandleStatus, _VesselLib
 
 # One intra-op thread and one inter-op thread, as in each vessel test.
 torch.set_num_threads(1)
@@ -36,17 +37,18 @@ STOPPED_TEXT = "the background thread of the Vigil stopped before the flush comp
 
 
 class FlushLibrary:
-    """A stand-in for libcrucible_vessel.so whose crucible_flush gives a fixed result."""
+    """A stand-in for libcrucible_vessel.so whose crucible_flush writes a fixed result."""
 
     def __init__(self, result: int) -> None:
-        """Give each call of crucible_flush RESULT: 1 for a complete flush, 0 for a stopped background."""
+        """Write RESULT at each call of crucible_flush: 1 for a complete flush, 0 for a stopped background."""
         self.result = result
         self.calls = 0
 
-    def crucible_flush(self, handle: int) -> int:
-        """Count the call, and give the result of the case."""
+    def crucible_flush(self, handle: int, out: Any) -> int:
+        """Count the call, write the result of the case through OUT, and give the handle status LIVE."""
         self.calls += 1
-        return self.result
+        out._obj.value = self.result
+        return int(HandleStatus.LIVE)
 
 
 class StandInVessel(_VesselLib):

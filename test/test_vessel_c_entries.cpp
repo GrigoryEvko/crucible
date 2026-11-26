@@ -140,6 +140,47 @@ template <class Element, std::size_t Count, class Entry>
     return result;
 }
 
+// The value of an entry whose status is not LIVE, in the helpers below.
+constexpr uint32_t kRefused = UINT32_MAX;
+
+// The handle of a new Vigil for the eager word 0, or 0 when the create gives
+// another status than LIVE.
+[[nodiscard]] CrucibleHandle create_vigil() noexcept {
+    CrucibleHandle handle = 0;
+    return crucible_create(0, &handle) == CRUCIBLE_HANDLE_LIVE ? handle : 0;
+}
+
+// The count that crucible_active_region_slots writes, or kRefused.
+[[nodiscard]] uint32_t slots_of(CrucibleHandle handle, CrucibleSlot* out, uint32_t capacity) noexcept {
+    uint32_t count = 0;
+    return crucible_active_region_slots(handle, out, capacity, &count) == CRUCIBLE_HANDLE_LIVE ? count : kRefused;
+}
+
+// The count that crucible_bound_scalars writes, or kRefused.
+[[nodiscard]] uint32_t bound_of(CrucibleHandle handle, CrucibleBoundScalar* out, uint32_t capacity) noexcept {
+    uint32_t count = 0;
+    return crucible_bound_scalars(handle, out, capacity, &count) == CRUCIBLE_HANDLE_LIVE ? count : kRefused;
+}
+
+// The code that crucible_register_schema_name writes, or kRefused.
+[[nodiscard]] uint32_t register_code(CrucibleHandle handle, uint64_t hash, const char* name) noexcept {
+    uint32_t code = 0;
+    return crucible_register_schema_name(handle, hash, name, &code) == CRUCIBLE_HANDLE_LIVE ? code : kRefused;
+}
+
+// The written flag of crucible_export_crtrace to the file of the exports, or
+// kRefused.
+[[nodiscard]] uint32_t export_written(CrucibleHandle handle, const char* path) noexcept {
+    uint32_t written = 0;
+    return crucible_export_crtrace(handle, path, &written) == CRUCIBLE_HANDLE_LIVE ? written : kRefused;
+}
+
+// The compiled flag of crucible_is_compiled, or kRefused.
+[[nodiscard]] uint32_t compiled_of(CrucibleHandle handle) noexcept {
+    uint32_t compiled = 0;
+    return crucible_is_compiled(handle, &compiled) == CRUCIBLE_HANDLE_LIVE ? compiled : kRefused;
+}
+
 // True when each byte of bytes is zero, so no entry wrote into them.
 template <class Element, std::size_t Count>
 [[nodiscard]] bool is_untouched(CallerBytes<Element, Count> const& bytes) noexcept {
@@ -214,30 +255,27 @@ void test_out_pairs(CrucibleHandle handle, RegionPhase phase) {
     CallerBytes<CrucibleBoundScalar, 4> bound_bytes{};
 
     const auto slots_with = [handle](uint32_t capacity) noexcept {
-        return [handle, capacity](CrucibleSlot* out) noexcept {
-            return crucible_active_region_slots(handle, out, capacity);
-        };
+        return [handle, capacity](CrucibleSlot* out) noexcept { return slots_of(handle, out, capacity); };
     };
     const auto bound_with = [handle](uint32_t capacity) noexcept {
-        return [handle, capacity](CrucibleBoundScalar* out) noexcept {
-            return crucible_bound_scalars(handle, out, capacity);
-        };
+        return [handle, capacity](CrucibleBoundScalar* out) noexcept { return bound_of(handle, out, capacity); };
     };
 
-    const uint32_t slot_count = crucible_active_region_slots(handle, nullptr, 0);
-    const uint32_t bound_count = crucible_bound_scalars(handle, nullptr, 0);
-    EXPECT(crucible_active_region_slots(handle, nullptr, 4) == 0, "a null out array with a capacity above 0 gives 0");
-    EXPECT(call_with_array(slot_bytes, Place::OneBytePast, slots_with(4)) == 0,
-           "a misaligned out array with a capacity above 0 gives 0");
+    const uint32_t slot_count = slots_of(handle, nullptr, 0);
+    const uint32_t bound_count = bound_of(handle, nullptr, 0);
+    EXPECT(slot_count != kRefused && bound_count != kRefused, "a read of the count of a live handle gives LIVE");
+    EXPECT(slots_of(handle, nullptr, 4) == kRefused, "a null out array with a capacity above 0 gives REFUSED");
+    EXPECT(call_with_array(slot_bytes, Place::OneBytePast, slots_with(4)) == kRefused,
+           "a misaligned out array with a capacity above 0 gives REFUSED");
     EXPECT(is_untouched(slot_bytes), "the entry writes nothing into a misaligned out array");
     EXPECT(call_with_array(slots, Place::Aligned, slots_with(0)) == slot_count,
            "an out array with a capacity of 0 is a read of the count");
     EXPECT(call_with_array(slots, Place::Aligned, slots_with(8)) == slot_count,
            "an aligned out array with a capacity above 0 gives the count");
 
-    EXPECT(crucible_bound_scalars(handle, nullptr, 4) == 0, "a null out array of bound scalars gives 0");
-    EXPECT(call_with_array(bound_bytes, Place::OneBytePast, bound_with(4)) == 0,
-           "a misaligned out array of bound scalars gives 0");
+    EXPECT(bound_of(handle, nullptr, 4) == kRefused, "a null out array of bound scalars gives REFUSED");
+    EXPECT(call_with_array(bound_bytes, Place::OneBytePast, bound_with(4)) == kRefused,
+           "a misaligned out array of bound scalars gives REFUSED");
     EXPECT(is_untouched(bound_bytes), "the entry writes nothing into a misaligned out array of bound scalars");
     EXPECT(call_with_array(bound, Place::Aligned, bound_with(4)) == bound_count,
            "an aligned out array of bound scalars gives the count");
@@ -320,14 +358,14 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
            "each text holds its end");
     const ::fixy::CText longest_name = ::fixy::mint_c_text(longest.view()).expect("the text ends with its zero");
     const ::fixy::CText too_long_name = ::fixy::mint_c_text(too_long.view()).expect("the text ends with its zero");
-    EXPECT(crucible_register_schema_name(handle, kLongSchema, ::foundation::core::foreign_c_str(longest_name))
+    EXPECT(register_code(handle, kLongSchema, ::foundation::core::foreign_c_str(longest_name))
                == CRUCIBLE_SCHEMA_NAME_REGISTERED,
            "the C entry takes a name of SCHEMA_NAME_MAX characters");
-    EXPECT(crucible_register_schema_name(handle, kTooLongSchema, ::foundation::core::foreign_c_str(too_long_name))
+    EXPECT(register_code(handle, kTooLongSchema, ::foundation::core::foreign_c_str(too_long_name))
                == CRUCIBLE_SCHEMA_NAME_REFUSED,
            "the C entry refuses a name of one character past SCHEMA_NAME_MAX");
 
-    EXPECT(crucible_export_crtrace(handle, ::foundation::core::foreign_c_str(kExportFile)) == 1,
+    EXPECT(export_written(handle, ::foundation::core::foreign_c_str(kExportFile)) == 1,
            "the export writes the longest name");
     EXPECT(export_file_holds(long_name_record()), "the file holds the hash, the length and the longest name");
     const auto path = ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(kExportFile.view()))
@@ -357,7 +395,7 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
             [] noexcept { return false; });
         EXPECT(is_stored_empty, "the table keeps the Sanitized name as an empty name");
 
-        EXPECT(crucible_export_crtrace(handle, ::foundation::core::foreign_c_str(kExportFile)) == 0,
+        EXPECT(export_written(handle, ::foundation::core::foreign_c_str(kExportFile)) == 0,
                "the export of a test build refuses an empty name");
         EXPECT(!export_file_exists(), "a refused export writes no file");
     }
@@ -381,7 +419,7 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
                    .is_ok(),
                "the late table takes each name");
     }
-    EXPECT(crucible_export_crtrace(handle, ::foundation::core::foreign_c_str(kExportFile)) == 1,
+    EXPECT(export_written(handle, ::foundation::core::foreign_c_str(kExportFile)) == 1,
            "the export writes a table of valid names");
     const auto many_path =
         ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(kExportFile.view()))
@@ -393,23 +431,60 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
 
 // The pairs of a handle with no region, from create to destroy.
 void test_pairs_with_no_region() {
-    const CrucibleHandle handle = crucible_create(0);
-    if (handle == nullptr) {
-        EXPECT(handle != nullptr, "crucible_create gives a handle for the eager word 0");
+    const CrucibleHandle handle = create_vigil();
+    if (handle == 0) {
+        EXPECT(handle != 0, "crucible_create gives a handle for the eager word 0");
         return;
     }
     test_dispatch_pairs(handle);
     test_out_pairs(handle, RegionPhase::NoRegion);
-    crucible_destroy(handle);
+    EXPECT(crucible_destroy(handle) == CRUCIBLE_HANDLE_LIVE, "the holder destroys its Vigil");
+}
+
+// The handle is outside data, so each entry checks it and gives a status.  A
+// destroyed handle, the handle 0 and a forged word give STALE from each entry,
+// and no entry reads the Vigil, writes an out value or ends the process.  The
+// old handle was the address of the Vigil, so a query of the handle 0 ended
+// the process and a second destroy freed the Vigil two times.
+void test_stale_handles() {
+    CrucibleHandle out_handle = 0;
+    EXPECT(crucible_create(0, nullptr) == CRUCIBLE_HANDLE_REFUSED, "a create with no out pointer is refused");
+    EXPECT(crucible_create(1U << 5, &out_handle) == CRUCIBLE_HANDLE_REFUSED && out_handle == 0,
+           "a create of an eager word that EagerNumerics does not name is refused, and writes no handle");
+    const CrucibleHandle handle = create_vigil();
+    EXPECT(handle != 0, "crucible_create gives a handle for the eager word 0");
+    uint32_t compiled = 0;
+    EXPECT(crucible_is_compiled(handle, nullptr) == CRUCIBLE_HANDLE_REFUSED, "a query with no out pointer is refused");
+    EXPECT(crucible_is_compiled(handle, &compiled) == CRUCIBLE_HANDLE_LIVE && compiled == 0,
+           "a query of the live handle writes its value");
+    EXPECT(crucible_destroy(handle) == CRUCIBLE_HANDLE_LIVE, "the first destroy ends the Vigil");
+
+    const CrucibleHandle forged = handle + (uint64_t{1} << 32);
+    for (const CrucibleHandle stale : ::fixy::FixedArray<CrucibleHandle, 3>{handle, CrucibleHandle{0}, forged}) {
+        uint32_t flag = 7;
+        uint64_t count = 7;
+        EXPECT(crucible_destroy(stale) == CRUCIBLE_HANDLE_STALE, "a destroy of a stale handle frees nothing");
+        EXPECT(crucible_release_claim(stale) == CRUCIBLE_HANDLE_STALE, "a release of a stale handle is stale");
+        EXPECT(crucible_is_compiled(stale, &flag) == CRUCIBLE_HANDLE_STALE && flag == 7,
+               "a query of a stale handle writes no out value");
+        EXPECT(crucible_diverged_count(stale, &count) == CRUCIBLE_HANDLE_STALE && count == 7,
+               "a count of a stale handle writes no out value");
+        EXPECT(crucible_flush(stale, &flag) == CRUCIBLE_HANDLE_STALE, "a flush of a stale handle is stale");
+        EXPECT(crucible_observe_eager_numerics(stale, 0) == CRUCIBLE_HANDLE_STALE, "an eager word of a stale handle");
+        EXPECT(slots_of(stale, nullptr, 0) == kRefused, "the slots of a stale handle are refused");
+        const CrucibleDispatchResult result = crucible_dispatch_op(stale, kAddSchema, 0, 0, nullptr, 0);
+        EXPECT(result.action == CRUCIBLE_ACTION_REFUSED && result.handle_status == CRUCIBLE_HANDLE_STALE,
+               "a dispatch of a stale handle is refused with the status STALE");
+    }
 }
 
 // The pairs of the out arrays of a handle that replays a region.  A loop of
 // two ops over three tensors runs until the Vigil replays its region.  The
 // records of the loop are the same in each iteration.
 void test_pairs_with_a_region() {
-    const CrucibleHandle handle = crucible_create(0);
-    if (handle == nullptr) {
-        EXPECT(handle != nullptr, "crucible_create gives a handle for the eager word 0");
+    const CrucibleHandle handle = create_vigil();
+    if (handle == 0) {
+        EXPECT(handle != 0, "crucible_create gives a handle for the eager word 0");
         return;
     }
     const LoopRecords loop{
@@ -418,13 +493,14 @@ void test_pairs_with_a_region() {
     bool is_compiled = false;
     for (int iteration = 0; iteration < kMaxIterations && !is_compiled; ++iteration) {
         run_iteration(handle, loop);
-        is_compiled = crucible_is_compiled(handle) == 1;
-        if (!is_compiled) static_cast<void>(crucible_flush(handle));
+        is_compiled = compiled_of(handle) == 1;
+        uint32_t is_flushed = 0;
+        if (!is_compiled) static_cast<void>(crucible_flush(handle, &is_flushed));
     }
     EXPECT(is_compiled, "the loop of the C entries replays a region");
     if (is_compiled) test_out_pairs(handle, RegionPhase::Active);
     if (is_compiled) test_export_writes_only_names_that_the_loader_takes(handle);
-    crucible_destroy(handle);
+    EXPECT(crucible_destroy(handle) == CRUCIBLE_HANDLE_LIVE, "the holder destroys its Vigil");
 }
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -433,6 +509,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
     test_pairs_with_no_region();
+    test_stale_handles();
     test_pairs_with_a_region();
     if (g_failures != 0) {
         ::fixy::report(::fixy::Sink::Err, "test_vessel_c_entries: FAIL ({})\n", g_failures);

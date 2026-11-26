@@ -730,6 +730,10 @@ crucible_test(test_vessel_api_typed)
 crucible_test(test_vessel_c_entries)
 target_link_libraries(test_vessel_c_entries PRIVATE crucible_vessel)
 crucible_test(test_vessel_entry_slots)
+# The table of the handles of the Vigils of the vessel: each status of a
+# handle, on a table of two slots, and the end of a Vigil against the claims
+# and the reads of a second thread.
+crucible_test(test_vigil_handles)
 crucible_test(test_storage_nbytes_simd)
 # The strided view of a tensor over the run of its slot: a dense matrix, a
 # transpose, a broadcast row and a scalar, and each refusal of the door.
@@ -4871,16 +4875,17 @@ crucible_neg_compile_test(neg_singleton_init_graph_unregistered_edge
     "required for the satisfaction of .EdgesNameRegisteredSingletons<Registry, Edges>. \\[with Registry = foundation::reflect::Pack<fixy::atom::global::singleton<neg_singleton_init_graph_unregistered_edge_types::registered_tag> >.*\\]"
     "the expression .edges_name_registered_<Registry, Edges> \\[with Registry = foundation::reflect::Pack<.*\\]. evaluated to .false.")
 
-# ─── Vessel ABI Tagged direction fence ────────────────────────────
+# ─── The proof of a held Vigil ─────────────────────────────────────
 #
-# from_typed() takes TypedHandle = Tagged<Vigil*, source::ABIBoundary>
-# only.  This fixture witnesses that calling it with any other source
-# tag (here: source::External) is rejected by the type system, so a
-# refactor "promoting" the helper to accept any Tagged<Vigil*, *> would
-# turn red here.
-crucible_neg_compile_test(neg_vessel_typed_handle_wrong_tag
-    "could not convert .wrong_tag. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
-    "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::ABIBoundary>.")
+# A HeldVigil proves that the calling thread holds the live Vigil of a handle
+# (vessel/torch/vigil_handles.h), so only the claim door of a slot of the table
+# makes one, and it does not copy to another thread.
+crucible_neg_compile_test(neg_vessel_held_vigil_direct_construction
+    ".constexpr crucible::vessel::VigilSlot::Held::Held\\(crucible::vessel::VigilHandle\\). is private within this context"
+    "neg_vessel_held_vigil_direct_construction.cpp:12")
+crucible_neg_compile_test(neg_vessel_held_vigil_copy
+    "use of deleted function .crucible::vessel::VigilSlot::Held::Held\\(const crucible::vessel::VigilSlot::Held&\\)."
+    "a proof of a slot names one claim of one thread")
 
 # ─── Vessel ABI typed-meta direction fence ────────────────────────
 #

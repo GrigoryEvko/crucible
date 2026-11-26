@@ -55,7 +55,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
-from crucible_native import CrucibleNative, SchemaNameResult  # noqa: E402
+from crucible_native import CrucibleNative, SchemaNameResult, check_handle_status  # noqa: E402
 
 # The import sets one intra-op thread and one inter-op thread, so the
 # instruction count of the test is the same in each run.  PyTorch refuses a
@@ -110,11 +110,18 @@ def define_operators() -> torch.library.Library:
 
 
 def register_name(ctx: CrucibleNative, hash_of: str, name: str) -> int:
-    """Give the C entry the hash of the name HASH_OF with the name NAME, and return its code."""
+    """Give the C entry the hash of the name HASH_OF with the name NAME, and return its code.
+
+    Raises:
+        CrucibleHandleError: If the library refuses the handle of the session
+    """
     entry = ctx._vessel._lib.crucible_register_schema_name
-    entry.restype = ctypes.c_int
-    entry.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p]
-    return entry(ctx._handle, schema_hash(hash_of), name.encode("ascii"))
+    entry.restype = ctypes.c_uint32
+    entry.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32)]
+    code = ctypes.c_uint32(0)
+    check_handle_status(entry(ctx._handle, schema_hash(hash_of), name.encode("ascii"), ctypes.byref(code)),
+                        "crucible_register_schema_name")
+    return code.value
 
 
 def record(directory: Path) -> tuple[Path, list[str]]:

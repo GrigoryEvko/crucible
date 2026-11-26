@@ -22,7 +22,8 @@ REFUSED, and a data slot below the count gives RECORD.
 
 The eager word of crucible_create and crucible_observe_eager_numerics has a
 layout (EagerNumerics of crucible/NumericalRecipe.h).  A word with a bit that
-no field names, or with the precision 3, gives a null handle and the result 0.
+no field names, or with the precision 3, gives the status REFUSED and no Vigil.
+Each result of a live handle gives the handle status LIVE.
 
 Usage:
     python test_dispatch_status.py
@@ -43,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import crucible_mode  # noqa: E402
 import torch  # noqa: E402
 import crucible_native  # noqa: E402
-from crucible_native import DispatchAction  # noqa: E402
+from crucible_native import DispatchAction, HandleStatus  # noqa: E402
 
 # One intra-op thread and one inter-op thread.  The instruction count of the
 # test is then the same in each run, and the budgets of the test launcher hold.
@@ -82,12 +83,12 @@ def bind(lib: ctypes.CDLL) -> tuple:
     dispatch_op = lib.crucible_dispatch_op
     dispatch_op.restype = DispatchResult
     dispatch_op.argtypes = [
-        ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
+        ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
     ]
     dispatch_op_ex = lib.crucible_dispatch_op_ex
     dispatch_op_ex.restype = DispatchResult
     dispatch_op_ex.argtypes = [
-        ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
+        ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
         ctypes.POINTER(ctypes.c_int64), ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint8,
         ctypes.c_uint8,
     ]
@@ -106,6 +107,8 @@ def check(problems: list[str], entry: str, case: str, result: DispatchResult, ex
     """Add one line to problems when result does not have the action expected and zero payload."""
     if result.action != expected:
         problems.append(f"{entry}: {case} gives the action {action_name(result.action)}, not {expected.name}")
+    if result.handle_status != HandleStatus.LIVE:
+        problems.append(f"{entry}: {case} gives the handle status {result.handle_status} for a live handle")
     if expected != DispatchAction.COMPILED and (result.status != 0 or result.op_index != 0):
         problems.append(f"{entry}: {case} gives the status {result.status} and the op index {result.op_index}, "
                         f"not zero")
@@ -169,13 +172,16 @@ def check_eager_words(vessel, handle: int) -> list[str]:
     """Return one line for each unnamed eager word that crucible_create or crucible_observe_eager_numerics takes."""
     problems = []
     for word in UNNAMED_EAGER_WORDS:
-        refused = vessel.crucible_create(word)
-        if refused:
-            vessel.crucible_destroy(refused)
+        try:
+            refused = vessel.create(word)
+        except ValueError:
+            pass
+        else:
+            vessel.destroy(refused)
             problems.append(f"crucible_create takes the unnamed eager word {word:#x}")
-        if vessel.crucible_observe_eager_numerics(handle, word) != 0:
+        if vessel.observe_eager_numerics(handle, word):
             problems.append(f"crucible_observe_eager_numerics takes the unnamed eager word {word:#x}")
-    if vessel.crucible_observe_eager_numerics(handle, 0) != 1:
+    if not vessel.observe_eager_numerics(handle, 0):
         problems.append("crucible_observe_eager_numerics refuses the eager word 0")
     return problems
 
@@ -185,7 +191,7 @@ def main() -> int:
     vessel = crucible_mode._VesselLib()
     dispatch_op, dispatch_op_ex = bind(vessel._lib)
     # The word 0: the highest precision, no TF32 and no flush of denormal floats.
-    handle = vessel.crucible_create(0)
+    handle = vessel.create(0)
     try:
         problems = run_entry(
             "crucible_dispatch_op",
@@ -199,7 +205,7 @@ def main() -> int:
         problems += check_scalar_claims(dispatch_op_ex, handle)
         problems += check_eager_words(vessel, handle)
     finally:
-        vessel.crucible_destroy(handle)
+        vessel.destroy(handle)
     for line in problems:
         print(f"  FAIL: {line}")
     if problems:

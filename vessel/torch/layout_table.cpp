@@ -85,5 +85,7 @@ int main() {
     write_constants<CRUCIBLE_ACTION_REFUSED>();
     write_constants<CRUCIBLE_STATUS_MATCH>();
     write_constants<CRUCIBLE_SCHEMA_NAME_REGISTERED>();
+    write_constants<CRUCIBLE_HANDLE_LIVE>();
+    write_constants<CRUCIBLE_VIGIL_SLOTS>();
     return 0;
 }

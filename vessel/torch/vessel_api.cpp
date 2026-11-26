@@ -1,28 +1,26 @@
 // Crucible Vessel C API — implementation.
 //
-// Every C-ABI thunk crosses the FFI boundary through the typed helpers
-// in vessel_api_typed.h:
-//   * `vessel::as_vigil_typed(h)` materializes a
-//     `Tagged<Vigil*, source::ABIBoundary>` from the opaque handle.
+// Every C-ABI thunk crosses the FFI boundary through the typed doors of
+// vigil_handles.h and vessel_api_typed.h:
+//   * `vigil_handles.mint_held_vigil(h)` checks the handle against the table
+//     of live handles, and gives the proof that the calling thread holds the
+//     Vigil, or a refusal that the thunk gives as its status.
 //   * `vessel::as_meta_typed(metas)` materializes a
 //     `Tagged<const CrucibleMeta*, source::ABIBoundary>` from the
 //     CrucibleMeta array, and `vessel::decode_ffi_records` makes a
 //     TensorMeta from each record through the checks of
 //     `vessel::decode_ffi_meta`.
-// The Tagged value is unwrapped (`.value()`) just before the actual
-// Vigil method invocation, so provenance is type-visible across the
-// entire thunk while the runtime cost stays at zero (regime-1 EBO
-// collapse on `Tagged<T, Tag>`).
 //
-// Review-enforced rule: no raw `static_cast<Vigil*>(h)` is permitted in
-// this file, and no code reads a CrucibleMeta record as a TensorMeta —
-// grep for `as_vigil_typed` / `as_meta_typed` to find every ABI-
-// crossing site in O(1).
+// Review-enforced rule: no code reads a CrucibleMeta record as a TensorMeta,
+// and each thunk that takes a handle reaches its Vigil only through the table
+// of handles — grep for `mint_held_vigil` / `as_meta_typed` to find every
+// ABI-crossing site in O(1).
 
 #include "entry_slots.h"
 #include "layout_note.h"
 #include "vessel_api.h"
 #include "vessel_api_typed.h"
+#include "vigil_handles.h"
 
 #include <crucible/SchemaTable.h>
 #include <crucible/TraceLoader.h>
@@ -41,12 +39,6 @@
 // CrucibleDispatchResult is a small POD; size-pin is local to this
 // file because the struct is only consumed at this boundary.
 static_assert(sizeof(CrucibleDispatchResult) == 8);
-
-// The handle check of vessel_api_typed.h reads the alignment of the Vigil
-// from a constant, because that header only declares the class.  This file
-// makes each Vigil, so the constant is checked here.
-static_assert(alignof(crucible::Vigil) == crucible::vessel::detail::kVigilHandleAlignment,
-              "vessel_api_typed.h: kVigilHandleAlignment must equal alignof(crucible::Vigil)");
 
 // The C enumerators name the same statuses as crucible::ReplayStatus, so the
 // encode below copies the status ordinal.
@@ -174,18 +166,55 @@ constexpr bool kChecksExportedNames = ::foundation::has_test_oracles;
 }  // namespace
 
 // The C answer for an op that the thunk refused before the Vigil saw it.
-// Each byte is zero, as the action REFUSED is.
+// Each byte is zero, as the action REFUSED and the handle status LIVE are.
 [[nodiscard]] static constexpr CrucibleDispatchResult refused_dispatch_result() noexcept {
     CrucibleDispatchResult refused{};
     refused.action = CRUCIBLE_ACTION_REFUSED;
     return refused;
 }
 
+// The C answer for an op whose handle the table refused.
+[[nodiscard]] static constexpr CrucibleDispatchResult
+refused_dispatch_result(crucible::vessel::HandleRefusal refused) noexcept {
+    CrucibleDispatchResult result = refused_dispatch_result();
+    result.handle_status = static_cast<uint8_t>(crucible::vessel::handle_code_of(refused));
+    return result;
+}
+
+// The status of an entry that runs body on the Vigil of a handle: the status
+// that body gives on the live Vigil that the calling thread holds, or the
+// status of the refusal of the table.  body takes the Vigil, and it gives a
+// CRUCIBLE_HANDLE_* status.
+template <class Body>
+[[nodiscard]] static uint32_t on_held_vigil(CrucibleHandle handle, Body&& body) noexcept {
+    return crucible::vessel::vigil_handles.mint_held_vigil(crucible::vessel::VigilHandle{handle})
+        .match(
+            [&body](crucible::vessel::HeldVigil held) noexcept -> uint32_t {
+                return body(*crucible::vessel::vigil_handles.vigil_of(held));
+            },
+            [](crucible::vessel::HandleRefusal refused) noexcept { return crucible::vessel::handle_code_of(refused); });
+}
+
 // The C caller owns the Vigil of a handle from crucible_create to
-// crucible_destroy, and it gives the texts and the arrays that the hashes read
-// as raw pointers.  The functions up to crucible_hash_string take these
-// pointers in an opt-out region of the class ABI.
+// crucible_destroy, and it gives the texts, the arrays and the out values as
+// raw pointers.  The functions up to crucible_hash_string take these pointers
+// in an opt-out region of the class ABI.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
+
+// The status of an entry that writes one value of the Vigil of a handle to
+// out: the value that read gives on the live Vigil that the calling thread
+// holds.  An out that is null or not aligned for Value gives REFUSED, and no
+// entry writes out with another status than LIVE.
+template <class Value, class Read>
+[[nodiscard]] static uint32_t answer(CrucibleHandle handle, Value* out, Read&& read) noexcept {
+    ::fixy::Option<crucible::vessel::TypedArray<Value>> checked = crucible::vessel::as_array_typed(out, 1);
+    if (checked.is_none()) return CRUCIBLE_HANDLE_REFUSED;
+    Value* const target = std::move(checked).expect("the test above found the out value").value();
+    return on_held_vigil(handle, [target, &read](crucible::Vigil& vigil) noexcept -> uint32_t {
+        *target = read(vigil);
+        return CRUCIBLE_HANDLE_LIVE;
+    });
+}
 
 // ── FFI entry validation ─────────────────────────────────────────────
 //
@@ -212,26 +241,63 @@ extern "C" {
 
 uint64_t crucible_layout_digest(void) noexcept { return crucible::vessel::library_layout_digest(); }
 
-CrucibleHandle crucible_create(uint32_t eager_numerics) noexcept {
+// The thread of the session claims the Vigil before the session writes a
+// structure of the process.  Two cheap tests refuse a wrong thread and a full
+// table before the start of a Vigil: a thread that holds the producer role of
+// another live Vigil, and no free slot.  The admit of the table makes the two
+// refusals sure, and its refusal ends the new Vigil.
+uint32_t crucible_create(uint32_t eager_numerics, CrucibleHandle* out) noexcept {
+    ::fixy::Option<crucible::vessel::TypedArray<CrucibleHandle>> checked = crucible::vessel::as_array_typed(out, 1);
+    if (checked.is_none()) return CRUCIBLE_HANDLE_REFUSED;
+    CrucibleHandle* const target = std::move(checked).expect("the test above found the out value").value();
     const crucible::EagerNumerics eager{.bits = eager_numerics};
-    if (!crucible::is_named_eager_word(eager)) return nullptr;
+    if (!crucible::is_named_eager_word(eager)) return CRUCIBLE_HANDLE_REFUSED;
+    if (!::foundation::effects::host::ProducerClaim<crucible::Vigil>::can_caller_use_brand())
+        return CRUCIBLE_HANDLE_WRONG_THREAD;
+    if (!crucible::vessel::vigil_handles.has_free_slot()) return CRUCIBLE_HANDLE_FULL;
     crucible::Vigil::Config config{};
     config.eager = eager;
-    crucible::Vigil& vigil = *new crucible::Vigil(std::move(config));
-    // The thread of the session claims the Vigil before the session writes a
-    // structure of the process.  A claim on a second thread, while a Vigil of
-    // another thread lives, ends the process here.
-    static_cast<void>(vigil.mint_producer_context());
-    return &vigil;
+    const ::fixy::InitLoadCtx init{::foundation::effects::host::InitOwner::mint_init_context()};
+    ::fixy::Box<crucible::Vigil> vigil = ::fixy::mint_box<crucible::Vigil>(init.cap().alloc, std::move(config));
+    return crucible::vessel::vigil_handles.admit(std::move(vigil))
+        .match(
+            [target](crucible::vessel::VigilHandle handle) noexcept -> uint32_t {
+                *target = handle.raw();
+                return CRUCIBLE_HANDLE_LIVE;
+            },
+            [](crucible::vessel::HandleRefusal refused) noexcept { return crucible::vessel::handle_code_of(refused); });
 }
 
-void crucible_destroy(CrucibleHandle h) noexcept {
-    auto handle = crucible::vessel::as_vigil_typed(h);
-    delete handle.value();
+// The end of the Box that withdraw gives ends the Vigil and joins its
+// background thread.
+uint32_t crucible_destroy(CrucibleHandle h) noexcept {
+    return crucible::vessel::vigil_handles.mint_held_vigil(crucible::vessel::VigilHandle{h})
+        .match(
+            [](crucible::vessel::HeldVigil held) noexcept {
+                return crucible::vessel::vigil_handles.withdraw(std::move(held))
+                    .match(
+                        [](::fixy::Box<crucible::Vigil> ended) noexcept -> uint32_t {
+                            static_cast<void>(ended);
+                            return CRUCIBLE_HANDLE_LIVE;
+                        },
+                        [](crucible::vessel::HandleRefusal refused) noexcept {
+                            return crucible::vessel::handle_code_of(refused);
+                        });
+            },
+            [](crucible::vessel::HandleRefusal refused) noexcept { return crucible::vessel::handle_code_of(refused); });
 }
 
-void crucible_release_claim(CrucibleHandle h) noexcept {
-    crucible::vessel::as_vigil_typed(h).value()->release_producer_claim();
+uint32_t crucible_release_claim(CrucibleHandle h) noexcept {
+    return crucible::vessel::vigil_handles.mint_held_vigil(crucible::vessel::VigilHandle{h})
+        .match(
+            [](crucible::vessel::HeldVigil held) noexcept {
+                return crucible::vessel::vigil_handles.release(std::move(held))
+                    .match([](::fixy::Unit) noexcept -> uint32_t { return CRUCIBLE_HANDLE_LIVE; },
+                           [](crucible::vessel::HandleRefusal refused) noexcept {
+                               return crucible::vessel::handle_code_of(refused);
+                           });
+            },
+            [](crucible::vessel::HandleRefusal refused) noexcept { return crucible::vessel::handle_code_of(refused); });
 }
 
 uint64_t crucible_hash_string(const char* s) noexcept {
@@ -243,6 +309,8 @@ uint64_t crucible_hash_string(const char* s) noexcept {
 }
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+}  // extern "C"
 
 // The guard word of the entry of a C caller, from the records of its inputs
 // that the decode gave and from the scalar slots of the entry.  The thunk
@@ -259,71 +327,103 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         depth);
 }
 
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
-CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t schema_hash, uint16_t num_inputs,
-                                            uint16_t num_outputs, const CrucibleMeta* metas,
-                                            uint32_t n_metas) noexcept {
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
+// The answer of an entry of a dispatch on the Vigil of a handle: the answer
+// that body gives on the live Vigil that the calling thread holds, or the
+// action REFUSED with the status of the refusal of the table.  The check of
+// the handle comes first, so a result with the status LIVE names a live
+// handle.
+template <class Body>
+[[nodiscard]] static CrucibleDispatchResult on_dispatch_vigil(CrucibleHandle handle, Body&& body) noexcept {
+    return crucible::vessel::vigil_handles.mint_held_vigil(crucible::vessel::VigilHandle{handle})
+        .match(
+            [&body](crucible::vessel::HeldVigil held) noexcept -> CrucibleDispatchResult {
+                return body(*crucible::vessel::vigil_handles.vigil_of(held));
+            },
+            [](crucible::vessel::HandleRefusal refused) noexcept { return refused_dispatch_result(refused); });
+}
 
-    // C→C++ boundary: wrap raw uint64_t into strong hash types.  The guard
-    // word comes from the decoded records below.
-    crucible::TraceRing::Entry entry{};
-    entry.schema_hash = crucible::SchemaHash{schema_hash};
-    entry.num_inputs = num_inputs;
-    entry.num_outputs = num_outputs;
+// The tags of the two entries of a dispatch, for the instances of
+// dispatch_records.
+namespace {
+struct DispatchOpEntry {};
+struct DispatchOpExEntry {};
+}  // namespace
 
-    // The pointer and the count of the records come from the caller.  A
-    // count above 0 with a null pointer, or with a pointer that does not have
-    // the alignment of a CrucibleMeta, gives the action REFUSED in each build
-    // (as_meta_typed).  A count of 0 reads no record.
-    ::fixy::Option<crucible::vessel::TypedMeta> checked_metas = crucible::vessel::as_meta_typed(metas, n_metas);
-    if (checked_metas.is_none()) return refused_dispatch_result();
-    const crucible::vessel::TypedMeta metas_typed = std::move(checked_metas).expect("the test above found the records");
-
-    // The trust ladder.  Every field above came from a caller this
-    // process does not control, so the Entry starts at the first tag and
-    // reaches the second only by passing the checks.  An op that a check
-    // refuses gives the action REFUSED, so the caller knows that the Vigil
-    // holds no record of it.
-    //
-    // The thunk first takes the context of the Vigil's producer claim.  The
-    // mint claims the calling thread, or ends the process when another
-    // thread holds the claim, which is the same gate that dispatch_op has.
-    // This entry asks no is_producer_thread question, so that gate is its
-    // only guard.  It runs before the decode, because the decode writes the
-    // record slots that the producer thread owns.
-    //
-    // The op borrows its records, so the thunk opens a frame of n_metas slots
-    // on the record stack of the Vigil and decodes the records of the caller
-    // into it.  A count that does not fit the free slots, or a record that the
-    // decode refuses, records nothing.
-    //
-    // The op runs no other op through this entry, so it opens no nest.  Its
-    // depth is the count of the nests that are open when it arrives.
-    const auto vigil = ::fixy::to(*vigil_typed.value());
-    const crucible::VigilFgCtx fg = vigil->mint_producer_context();
-    crucible::OpRecordStack& record_stack = vigil->op_record_stack(fg);
+// The trust ladder of the two entries of a dispatch.  Every field of the
+// entry came from a caller this process does not control, so the Entry
+// starts at the first tag and reaches the second only by passing the checks.
+// An op that a check refuses gives the action REFUSED, so the caller knows
+// that the Vigil holds no record of it.
+//
+// The calling thread holds the Vigil, so it holds the producer role, and the
+// mint of the context takes its fast path.  The mint runs before the decode,
+// because the decode writes the record slots that the producer thread owns.
+//
+// The op borrows its records, so the thunk opens a frame of n_metas slots on
+// the record stack of the Vigil and decodes the records of the caller into
+// it.  A count that does not fit the free slots, or a record that the decode
+// refuses, records nothing.
+//
+// The op runs no other op through this entry, so it opens no nest.  Its depth
+// is the count of the nests that are open when it arrives.
+//
+// The two entries share the ladder, and each entry gives its own tag.  So the
+// frame body of each instance has one caller, and the compiler inlines the
+// ladder, the frame door and the body into each entry.  The record of one op
+// then makes no call that the inline code of one entry did not make.
+template <class EntryTag>
+[[nodiscard]] CRUCIBLE_INLINE static CrucibleDispatchResult
+dispatch_records(crucible::Vigil& vigil, crucible::TraceRing::Entry& entry, crucible::vessel::TypedMeta metas_typed,
+                 ::foundation::core::WindowCount count) noexcept {
+    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+    crucible::OpRecordStack& record_stack = vigil.op_record_stack(fg);
     const crucible::OpDepth depth = record_stack.depth();
     // The arm dispatches to the Vigil, which the store check of a frame door
     // refuses as a capture, so the frame is a foreign frame of the C entry.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the frame of a C entry lends its slots to the decode and the dispatch")
     return record_stack.with_foreign_frame(
-        ::foundation::core::WindowCount{n_metas},
-        [&](auto slots) noexcept {
+        count,
+        [&] [[gnu::always_inline]] (auto slots) noexcept {
             for (const ::fixy::View<const crucible::TensorMeta> records :
                  crucible::vessel::decode_ffi_records(metas_typed, slots)) {
                 entry.shape_hash = guard_word_of(entry, records, depth);
                 for (const crucible::ValidatedOp& op :
                      crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
                     return encode_dispatch_result(
-                        vigil->dispatch_op_pure(fg, op, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth));
+                        vigil.dispatch_op_pure(fg, op, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth));
                 }
             }
             return refused_dispatch_result();
         },
         [] noexcept { return refused_dispatch_result(); });
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+}
+
+extern "C" {
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
+CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t schema_hash, uint16_t num_inputs,
+                                            uint16_t num_outputs, const CrucibleMeta* metas,
+                                            uint32_t n_metas) noexcept {
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    return on_dispatch_vigil(handle, [&](crucible::Vigil& vigil) noexcept {
+        // C→C++ boundary: wrap raw uint64_t into strong hash types.  The
+        // guard word comes from the decoded records.
+        crucible::TraceRing::Entry entry{};
+        entry.schema_hash = crucible::SchemaHash{schema_hash};
+        entry.num_inputs = num_inputs;
+        entry.num_outputs = num_outputs;
+
+        // The pointer and the count of the records come from the caller.  A
+        // count above 0 with a null pointer, or with a pointer that does not
+        // have the alignment of a CrucibleMeta, gives the action REFUSED in
+        // each build (as_meta_typed).  A count of 0 reads no record.
+        ::fixy::Option<crucible::vessel::TypedMeta> checked_metas = crucible::vessel::as_meta_typed(metas, n_metas);
+        if (checked_metas.is_none()) return refused_dispatch_result();
+        return dispatch_records<DispatchOpEntry>(vigil, entry,
+                                                 std::move(checked_metas).expect("the test above found the records"),
+                                                 ::foundation::core::WindowCount{n_metas});
+    });
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
@@ -333,88 +433,64 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
                                                uint16_t scalar_types, uint8_t data_slots, uint8_t grad_enabled,
                                                uint8_t inference_mode) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
+    return on_dispatch_vigil(handle, [&](crucible::Vigil& vigil) noexcept -> CrucibleDispatchResult {
+        // The two arrays of the caller, tested as in crucible_dispatch_op.  A
+        // scalar count above 0 with a null pointer, or with a pointer that does
+        // not have the alignment of an int64_t, gives the action REFUSED.  A
+        // count of 0 reads no value, as crucible_mode.py gives a buffer of five
+        // with each count.
+        ::fixy::Option<crucible::vessel::TypedArray<const int64_t>> checked_scalars =
+            crucible::vessel::as_array_typed(scalar_values, num_scalars);
+        if (checked_scalars.is_none()) return refused_dispatch_result();
+        const crucible::vessel::TypedArray<const int64_t> scalars_typed =
+            std::move(checked_scalars).expect("the test above found the scalar values");
+        ::fixy::Option<crucible::vessel::TypedMeta> checked_metas = crucible::vessel::as_meta_typed(metas, n_metas);
+        if (checked_metas.is_none()) return refused_dispatch_result();
+        const crucible::vessel::TypedMeta metas_typed =
+            std::move(checked_metas).expect("the test above found the records");
 
-    // The two arrays of the caller, tested as in crucible_dispatch_op.  A
-    // scalar count above 0 with a null pointer, or with a pointer that does
-    // not have the alignment of an int64_t, gives the action REFUSED.  A
-    // count of 0 reads no value, as crucible_mode.py gives a buffer of five
-    // with each count.
-    ::fixy::Option<crucible::vessel::TypedArray<const int64_t>> checked_scalars =
-        crucible::vessel::as_array_typed(scalar_values, num_scalars);
-    if (checked_scalars.is_none()) return refused_dispatch_result();
-    const crucible::vessel::TypedArray<const int64_t> scalars_typed =
-        std::move(checked_scalars).expect("the test above found the scalar values");
-    ::fixy::Option<crucible::vessel::TypedMeta> checked_metas = crucible::vessel::as_meta_typed(metas, n_metas);
-    if (checked_metas.is_none()) return refused_dispatch_result();
-    const crucible::vessel::TypedMeta metas_typed = std::move(checked_metas).expect("the test above found the records");
+        // C→C++ boundary: wrap raw uint64_t into strong hash types.  The guard
+        // word comes from the decoded records and the scalar slots below.
+        crucible::TraceRing::Entry entry{};
+        entry.schema_hash = crucible::SchemaHash{schema_hash};
+        entry.num_inputs = num_inputs;
+        entry.num_outputs = num_outputs;
+        // A claim past the width of the field saturates, so the ladder below
+        // refuses each claim past the inline slots.  The ladder refuses a data
+        // slot past the claim too, and a bit past the inline slots.
+        entry.num_scalar_args = static_cast<uint8_t>(::fixy::min(num_scalars, uint16_t{UINT8_MAX}));
+        bool is_slot_word = false;
+        for (const crucible::DataSlots data : crucible::DataSlots::from_bits(data_slots)) {
+            entry.set_data_slots(data);
+            is_slot_word = true;
+        }
+        if (!is_slot_word) return refused_dispatch_result();
+        uint8_t flags = 0;
+        if (inference_mode != 0) flags |= crucible::op_flag::INFERENCE_MODE;
+        if (grad_enabled != 0) flags |= crucible::op_flag::GRAD_ENABLED;
+        entry.op_flags = flags;
 
-    // C→C++ boundary: wrap raw uint64_t into strong hash types.  The guard
-    // word comes from the decoded records and the scalar slots below.
-    crucible::TraceRing::Entry entry{};
-    entry.schema_hash = crucible::SchemaHash{schema_hash};
-    entry.num_inputs = num_inputs;
-    entry.num_outputs = num_outputs;
-    // A claim past the width of the field saturates, so the ladder below
-    // refuses each claim past the inline slots.  The ladder refuses a data
-    // slot past the claim too, and a bit past the inline slots.
-    entry.num_scalar_args = static_cast<uint8_t>(::fixy::min(num_scalars, uint16_t{UINT8_MAX}));
-    bool is_slot_word = false;
-    for (const crucible::DataSlots data : crucible::DataSlots::from_bits(data_slots)) {
-        entry.set_data_slots(data);
-        is_slot_word = true;
-    }
-    if (!is_slot_word) return refused_dispatch_result();
-    uint8_t flags = 0;
-    if (inference_mode != 0) flags |= crucible::op_flag::INFERENCE_MODE;
-    if (grad_enabled != 0) flags |= crucible::op_flag::GRAD_ENABLED;
-    entry.op_flags = flags;
+        // The count above is what the caller claims; the inline array is the
+        // room there is for it. Writing past the array would be the first
+        // corruption, so the copy takes the smaller of the two and the
+        // ladder below rejects the operation outright when the claim does
+        // not fit.
+        constexpr uint16_t inline_scalars = decltype(entry.scalar_values)::size();
+        // The door gave a pointer that is not null for each count above 0.
+        const uint16_t stored_scalars = num_scalars < inline_scalars ? num_scalars : inline_scalars;
+        for (uint16_t i = 0; i < stored_scalars; i++) {
+            entry.scalar_values.set(::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room"),
+                                    scalars_typed.value()[i]);
+        }
+        // The tags of the stored values, after the flags, because the tag of
+        // slot 4 is in the two high bits of op_flags.  The bits of a slot past
+        // the stored values are zero, as on the recording paths.
+        entry.set_packed_scalar_types(
+            static_cast<uint16_t>(scalar_types & ((uint32_t{1} << (crucible::kScalarTypeBits * stored_scalars)) - 1)));
 
-    // The count above is what the caller claims; the inline array is the
-    // room there is for it. Writing past the array would be the first
-    // corruption, so the copy takes the smaller of the two and the
-    // ladder below rejects the operation outright when the claim does
-    // not fit.
-    constexpr uint16_t inline_scalars = decltype(entry.scalar_values)::size();
-    // The door gave a pointer that is not null for each count above 0.
-    const uint16_t stored_scalars = num_scalars < inline_scalars ? num_scalars : inline_scalars;
-    for (uint16_t i = 0; i < stored_scalars; i++) {
-        entry.scalar_values.set(::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room"),
-                                scalars_typed.value()[i]);
-    }
-    // The tags of the stored values, after the flags, because the tag of
-    // slot 4 is in the two high bits of op_flags.  The bits of a slot past
-    // the stored values are zero, as on the recording paths.
-    entry.set_packed_scalar_types(
-        static_cast<uint16_t>(scalar_types & ((uint32_t{1} << (crucible::kScalarTypeBits * stored_scalars)) - 1)));
-
-    // The trust ladder of crucible_dispatch_op.  The producer claim gates
-    // this entry and its decode as it gates crucible_dispatch_op, and an op
-    // that a check refuses gives the action REFUSED.  The depth comes from
-    // the record stack, as in crucible_dispatch_op.
-    const auto vigil = ::fixy::to(*vigil_typed.value());
-    const crucible::VigilFgCtx fg = vigil->mint_producer_context();
-    crucible::OpRecordStack& record_stack = vigil->op_record_stack(fg);
-    const crucible::OpDepth depth = record_stack.depth();
-    // The arm dispatches to the Vigil, which the store check of a frame door
-    // refuses as a capture, so the frame is a foreign frame of the C entry.
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the frame of a C entry lends its slots to the decode and the dispatch")
-    return record_stack.with_foreign_frame(
-        ::foundation::core::WindowCount{n_metas},
-        [&](auto slots) noexcept {
-            for (const ::fixy::View<const crucible::TensorMeta> records :
-                 crucible::vessel::decode_ffi_records(metas_typed, slots)) {
-                entry.shape_hash = guard_word_of(entry, records, depth);
-                for (const crucible::ValidatedOp& op :
-                     crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
-                    return encode_dispatch_result(
-                        vigil->dispatch_op_pure(fg, op, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth));
-                }
-            }
-            return refused_dispatch_result();
-        },
-        [] noexcept { return refused_dispatch_result(); });
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+        // The trust ladder of crucible_dispatch_op (dispatch_records).
+        return dispatch_records<DispatchOpExEntry>(vigil, entry, metas_typed, ::foundation::core::WindowCount{n_metas});
+    });
 }
 
 // The position of the C caller is a number, and a position past the
@@ -432,86 +508,92 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers o
 // parks in the kernel after its spin.  The door of the init context gives the
 // Block and the Nondet of the wait.  1 when the background processed each op
 // that the ring held, and 0 when the background stopped first.
-int crucible_flush(CrucibleHandle h) noexcept {
-    const ::fixy::InitLoadCtx waiter{::foundation::effects::host::InitOwner::mint_init_context()};
-    return crucible::vessel::as_vigil_typed(h).value()->flush(waiter).is_ok() ? 1 : 0;
+uint32_t crucible_flush(CrucibleHandle h, uint32_t* out) noexcept {
+    return answer(h, out, [](crucible::Vigil& vigil) noexcept -> uint32_t {
+        const ::fixy::InitLoadCtx waiter{::foundation::effects::host::InitOwner::mint_init_context()};
+        return vigil.flush(waiter).is_ok() ? 1U : 0U;
+    });
 }
 
-int crucible_is_compiled(CrucibleHandle h) noexcept {
-    return crucible::vessel::as_vigil_typed(h).value()->is_compiled() ? 1 : 0;
+uint32_t crucible_is_compiled(CrucibleHandle h, uint32_t* out) noexcept {
+    return answer(h, out, [](crucible::Vigil& vigil) noexcept -> uint32_t { return vigil.is_compiled() ? 1U : 0U; });
 }
 
-uint64_t crucible_compiled_iterations(CrucibleHandle h) noexcept {
-    return crucible::vessel::as_vigil_typed(h).value()->compiled_iterations();
+uint32_t crucible_compiled_iterations(CrucibleHandle h, uint64_t* out) noexcept {
+    return answer(h, out, [](crucible::Vigil& vigil) noexcept -> uint64_t { return vigil.compiled_iterations(); });
 }
 
-uint64_t crucible_diverged_count(CrucibleHandle h) noexcept {
-    return crucible::vessel::as_vigil_typed(h).value()->diverged_count();
+uint32_t crucible_diverged_count(CrucibleHandle h, uint64_t* out) noexcept {
+    return answer(h, out, [](crucible::Vigil& vigil) noexcept -> uint64_t { return vigil.diverged_count(); });
 }
 
 // The context of the producer claim gates the change of the word, as it gates
 // a dispatch.  A word that crucible_create refuses changes nothing.
-int crucible_observe_eager_numerics(CrucibleHandle h, uint32_t eager_numerics) noexcept {
+uint32_t crucible_observe_eager_numerics(CrucibleHandle h, uint32_t eager_numerics) noexcept {
     const crucible::EagerNumerics eager{.bits = eager_numerics};
-    if (!crucible::is_named_eager_word(eager)) return 0;
-    const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
-    vigil->observe_eager_numerics(vigil->mint_producer_context(), eager);
-    return 1;
+    return on_held_vigil(h, [eager](crucible::Vigil& vigil) noexcept -> uint32_t {
+        if (!crucible::is_named_eager_word(eager)) return CRUCIBLE_HANDLE_REFUSED;
+        vigil.observe_eager_numerics(vigil.mint_producer_context(), eager);
+        return CRUCIBLE_HANDLE_LIVE;
+    });
 }
 
-uint64_t crucible_active_content_hash(CrucibleHandle h) noexcept {
-    for (const crucible::DagRef<const crucible::RegionNode> region :
-         crucible::vessel::as_vigil_typed(h).value()->active_region()) {
-        return region->content_hash.raw();
-    }
-    return 0;
+uint32_t crucible_active_content_hash(CrucibleHandle h, uint64_t* out) noexcept {
+    return answer(h, out, [](crucible::Vigil& vigil) noexcept -> uint64_t {
+        for (const crucible::DagRef<const crucible::RegionNode> region : vigil.active_region()) {
+            return region->content_hash.raw();
+        }
+        return 0;
+    });
 }
 
-uint32_t crucible_bg_iterations(CrucibleHandle h) noexcept {
-    return crucible::vessel::as_vigil_typed(h).value()->bg_iterations_completed();
+uint32_t crucible_bg_iterations(CrucibleHandle h, uint32_t* out) noexcept {
+    return answer(h, out, [](crucible::Vigil& vigil) noexcept -> uint32_t { return vigil.bg_iterations_completed(); });
 }
 
-uint32_t crucible_ring_size(CrucibleHandle h) noexcept {
-    // .peek(): unwrap the Stale<uint32_t> racy snapshot to the C-ABI scalar.
-    return crucible::vessel::as_vigil_typed(h).value()->ring_size().peek();
+// .peek() unwraps the Stale<uint32_t> racy snapshot to the C-ABI scalar.
+uint32_t crucible_ring_size(CrucibleHandle h, uint32_t* out) noexcept {
+    return answer(h, out, [](crucible::Vigil& vigil) noexcept -> uint32_t { return vigil.ring_size().peek(); });
 }
 
-uint32_t crucible_metalog_size(CrucibleHandle h) noexcept {
-    // .peek(): unwrap the Stale<uint32_t> racy snapshot to the C-ABI scalar.
-    return crucible::vessel::as_vigil_typed(h).value()->meta_log_size().peek();
+uint32_t crucible_metalog_size(CrucibleHandle h, uint32_t* out) noexcept {
+    return answer(h, out, [](crucible::Vigil& vigil) noexcept -> uint32_t { return vigil.meta_log_size().peek(); });
 }
 
-// Each call proves that it runs on the thread that holds the producer claim.
-// A call from any other thread ends the process, as a dispatch from one does.
 // A call outside a compiled op, while the context of the Vigil records, ends
-// the process too (Vigil::output_ptr).  The C caller knows the device of its
-// own tensor.
-void* crucible_output_ptr(CrucibleHandle h, uint16_t j) noexcept {
-    const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
-    const ::fixy::Option<::fixy::RunAddress> output =
-        vigil->output_ptr(vigil->mint_producer_context(), crucible::OutputPosition{j});
-    return output.match(
-        [](::fixy::RunAddress address) noexcept { return ::foundation::core::foreign_pointer(address); },
-        [] noexcept -> void* { return nullptr; });
+// the process (Vigil::output_ptr).  The C caller knows the device of its own
+// tensor.
+uint32_t crucible_output_ptr(CrucibleHandle h, uint16_t j, void** out) noexcept {
+    return answer(h, out, [j](crucible::Vigil& vigil) noexcept -> void* {
+        const ::fixy::Option<::fixy::RunAddress> output =
+            vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{j});
+        return output.match(
+            [](::fixy::RunAddress address) noexcept { return ::foundation::core::foreign_pointer(address); },
+            [] noexcept -> void* { return nullptr; });
+    });
 }
 
-void* crucible_input_ptr(CrucibleHandle h, uint16_t j) noexcept {
-    const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
-    const ::fixy::Option<::fixy::RunAddress> input =
-        vigil->input_ptr(vigil->mint_producer_context(), crucible::InputPosition{j});
-    return input.match([](::fixy::RunAddress address) noexcept { return ::foundation::core::foreign_pointer(address); },
-                       [] noexcept -> void* { return nullptr; });
+uint32_t crucible_input_ptr(CrucibleHandle h, uint16_t j, void** out) noexcept {
+    return answer(h, out, [j](crucible::Vigil& vigil) noexcept -> void* {
+        const ::fixy::Option<::fixy::RunAddress> input =
+            vigil.input_ptr(vigil.mint_producer_context(), crucible::InputPosition{j});
+        return input.match(
+            [](::fixy::RunAddress address) noexcept { return ::foundation::core::foreign_pointer(address); },
+            [] noexcept -> void* { return nullptr; });
+    });
 }
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
-int crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const char* name) noexcept {
+uint32_t crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const char* name,
+                                       uint32_t* out) noexcept {
     // The C caller gives a C text.  A null name is refused here.  strnlen
     // reads at most SCHEMA_NAME_MAX + 1 bytes, so a text with no zero from a
     // malformed caller cannot lead the walk into foreign memory.  The typed
     // door refuses the zero hash and a length of zero or past the bound.
-    if (name == nullptr) return CRUCIBLE_SCHEMA_NAME_REFUSED;
+    if (name == nullptr)
+        return answer(h, out, [](crucible::Vigil&) noexcept -> uint32_t { return CRUCIBLE_SCHEMA_NAME_REFUSED; });
     const size_t len = ::strnlen(name, crucible::SCHEMA_NAME_MAX + 1);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
@@ -523,16 +605,15 @@ int crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const 
     const auto name_text = ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(::fixy::mint_foreign_text(name, len));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-    // The tables take names only from the thread that holds the producer
-    // claim of this Vigil.  The Vigil mints that context for the write, and
-    // the mint ends the process on any other thread.  A different name of a
-    // held hash comes back as a collision, and the table keeps its first name.
-    // A different name of the hash of an operator of the generated table
-    // comes back as a collision too, and the tables stay as they were.  A new
-    // hash in a full table comes back as full, and the table keeps each name
-    // that it holds.
-    return crucible::vessel::register_schema_name_typed(*crucible::vessel::as_vigil_typed(h).value(), schema_hash,
-                                                        name_text);
+    // The tables take names only from the thread that holds this Vigil.  A
+    // different name of a held hash comes back as a collision, and the table
+    // keeps its first name.  A different name of the hash of an operator of the generated
+    // table comes back as a collision too, and the tables stay as they were.
+    // A new hash in a full table comes back as full, and the table keeps each
+    // name that it holds.
+    return answer(h, out, [schema_hash, &name_text](crucible::Vigil& vigil) noexcept -> uint32_t {
+        return static_cast<uint32_t>(crucible::vessel::register_schema_name_typed(vigil, schema_hash, name_text));
+    });
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
@@ -549,8 +630,12 @@ const char* crucible_schema_name(uint64_t schema_hash) noexcept {
     return nullptr;
 }
 
+// The export of crucible_export_crtrace on the Vigil that the calling thread
+// holds: 1 when it wrote the file, and 0 when it wrote nothing.  The C entry
+// gives the init context of the wait and of the file.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
-int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
+[[nodiscard]] static uint32_t export_trace_of(crucible::Vigil& held, const char* path,
+                                              const ::fixy::InitLoadCtx& io) noexcept {
     // FFI boundary: path validation before the read of the path and the open.
     //   - path != null
     //   - strnlen(path, PATH_MAX+1) ≤ PATH_MAX
@@ -573,14 +658,9 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         [](::fixy::PathTraversalError) noexcept { return ::fixy::Option<Sanitized>{::fixy::none}; });
     if (sanitized.is_none()) return 0;
 
-    // The export runs on a thread of the caller, outside the hot path.  The
-    // flush parks, and the open and the write wait on the disk.  The door of
-    // the init context gives the Block and the Nondet of the wait, the
-    // allocation of the buffer and the right to open and to write the file.
     // A background that stopped before the flush leaves the region unsure,
     // so the export writes nothing.
-    const ::fixy::InitLoadCtx io{::foundation::effects::host::InitOwner::mint_init_context()};
-    const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
+    const auto vigil = ::fixy::to(held);
     if (vigil->flush(io).is_err()) return 0;
 
     ::fixy::Option<crucible::DagRef<const crucible::RegionNode>> active = vigil->active_region();
@@ -710,75 +790,93 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
             return ::fixy::fs::replace_file(io, checked, file_image).is_ok();
         },
         [] noexcept { return false; });
-    return is_written ? 1 : 0;
+    return is_written ? 1U : 0U;
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
-uint32_t crucible_active_num_ops(CrucibleHandle h) noexcept {
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    auto vigil_typed = crucible::vessel::as_vigil_typed(h);
-    for (const crucible::DagRef<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
-        return region->num_ops();
-    }
-    return 0;
+
+// The export runs on a thread of the caller, outside the hot path.  The flush
+// parks, and the open and the write wait on the disk.  The door of the init
+// context gives the Block and the Nondet of the wait, the allocation of the
+// buffer and the right to open and to write the file.
+uint32_t crucible_export_crtrace(CrucibleHandle h, const char* path, uint32_t* out) noexcept {
+    return answer(h, out, [path](crucible::Vigil& vigil) noexcept {
+        const ::fixy::InitLoadCtx io{::foundation::effects::host::InitOwner::mint_init_context()};
+        return export_trace_of(vigil, path, io);
+    });
+}
+
+uint32_t crucible_active_num_ops(CrucibleHandle h, uint32_t* out) noexcept {
+    return answer(h, out, [](crucible::Vigil& vigil) noexcept -> uint32_t {
+        for (const crucible::DagRef<const crucible::RegionNode> region : vigil.active_region()) {
+            return region->num_ops();
+        }
+        return 0;
+    });
 }
 
 // The plan is in the memory of the active region, which lives while the
 // Vigil keeps it active.  O(n) in the slots that the call writes.  A
 // capacity above 0 with a null out, or with an out that does not have the
-// alignment of a CrucibleSlot, gives 0, and the call writes nothing
+// alignment of a CrucibleSlot, gives REFUSED, and the call writes nothing
 // (as_array_typed).
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
-uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out, uint32_t capacity) noexcept {
+uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out, uint32_t capacity,
+                                      uint32_t* out_count) noexcept {
     ::fixy::Option<crucible::vessel::TypedArray<CrucibleSlot>> checked_out =
         crucible::vessel::as_array_typed(out, capacity);
-    if (checked_out.is_none()) return 0;
+    if (checked_out.is_none()) return CRUCIBLE_HANDLE_REFUSED;
     CrucibleSlot* const first = std::move(checked_out).expect("the test above found the out array").value();
-    auto vigil_typed = crucible::vessel::as_vigil_typed(h);
-    for (const crucible::DagRef<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
-        for (const crucible::DagRef<crucible::MemoryPlan const> plan : region->plan) {
-            uint32_t written = 0;
-            for (const crucible::TensorSlot& slot : plan->slots.view()) {
-                if (written == capacity) break;
-                first[written] = encode_slot(slot);
-                ++written;
+    return answer(h, out_count, [first, capacity](crucible::Vigil& vigil) noexcept -> uint32_t {
+        for (const crucible::DagRef<const crucible::RegionNode> region : vigil.active_region()) {
+            for (const crucible::DagRef<crucible::MemoryPlan const> plan : region->plan) {
+                uint32_t written = 0;
+                for (const crucible::TensorSlot& slot : plan->slots.view()) {
+                    if (written == capacity) break;
+                    first[written] = encode_slot(slot);
+                    ++written;
+                }
+                return plan->num_slots();
             }
-            return plan->num_slots();
         }
-    }
-    return 0;
+        return 0;
+    });
 }
 
 // A capacity above 0 with a null out, or with an out that does not have the
-// alignment of a CrucibleBoundScalar, gives 0, and the call writes nothing.
-uint32_t crucible_bound_scalars(CrucibleHandle h, CrucibleBoundScalar* out, uint32_t capacity) noexcept {
+// alignment of a CrucibleBoundScalar, gives REFUSED, and the call writes
+// nothing.
+uint32_t crucible_bound_scalars(CrucibleHandle h, CrucibleBoundScalar* out, uint32_t capacity,
+                                uint32_t* out_count) noexcept {
     ::fixy::Option<crucible::vessel::TypedArray<CrucibleBoundScalar>> checked_out =
         crucible::vessel::as_array_typed(out, capacity);
-    if (checked_out.is_none()) return 0;
+    if (checked_out.is_none()) return CRUCIBLE_HANDLE_REFUSED;
     CrucibleBoundScalar* const first = std::move(checked_out).expect("the test above found the out array").value();
-    const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
-    const crucible::VigilFgCtx fg = vigil->mint_producer_context();
-    const ::fixy::View<const crucible::Vigil::BoundScalar> bound = vigil->bound_scalars(fg);
-    uint32_t written = 0;
-    for (const crucible::Vigil::BoundScalar& source : bound) {
-        if (written == capacity) break;
-        first[written] = CrucibleBoundScalar{.op_index = source.op.raw(),
-                                             .slot = static_cast<uint32_t>(source.slot.value().raw()),
-                                             .value = source.value};
-        ++written;
-    }
-    return ::fixy::narrow<uint32_t>(bound.size()).expect("a region holds fewer data slots than 2^32");
+    return answer(h, out_count, [first, capacity](crucible::Vigil& vigil) noexcept -> uint32_t {
+        const crucible::VigilFgCtx fg = vigil.mint_producer_context();
+        const ::fixy::View<const crucible::Vigil::BoundScalar> bound = vigil.bound_scalars(fg);
+        uint32_t written = 0;
+        for (const crucible::Vigil::BoundScalar& source : bound) {
+            if (written == capacity) break;
+            first[written] = CrucibleBoundScalar{.op_index = source.op.raw(),
+                                                 .slot = static_cast<uint32_t>(source.slot.value().raw()),
+                                                 .value = source.value};
+            ++written;
+        }
+        return ::fixy::narrow<uint32_t>(bound.size()).expect("a region holds fewer data slots than 2^32");
+    });
 }
 
-uint64_t crucible_active_pool_bytes(CrucibleHandle h) noexcept {
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    auto vigil_typed = crucible::vessel::as_vigil_typed(h);
-    for (const crucible::DagRef<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
-        for (const crucible::DagRef<crucible::MemoryPlan const> plan : region->plan) {
-            return plan->pool_bytes;
+uint32_t crucible_active_pool_bytes(CrucibleHandle h, uint64_t* out) noexcept {
+    return answer(h, out, [](crucible::Vigil& vigil) noexcept -> uint64_t {
+        for (const crucible::DagRef<const crucible::RegionNode> region : vigil.active_region()) {
+            for (const crucible::DagRef<crucible::MemoryPlan const> plan : region->plan) {
+                return plan->pool_bytes;
+            }
         }
-    }
-    return 0;
+        return 0;
+    });
 }
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }  // extern "C"

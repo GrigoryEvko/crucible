@@ -1,8 +1,11 @@
 // Crucible Vessel C API — ABI boundary for Python/ctypes.
 //
-// Wraps crucible::Vigil behind opaque handles and C-compatible structs.
+// Wraps crucible::Vigil behind checked handles and C-compatible structs.
 // TorchDispatchMode (Python) calls these functions to feed real ATen ops
-// into Crucible's recording and dispatch pipeline.
+// into Crucible's recording and dispatch pipeline.  A handle is a word of the
+// table of handles (vessel/torch/vigil_handles.h), and each entry that takes
+// one gives a CRUCIBLE_HANDLE_* status: a stale handle, a forged handle and a
+// call on a wrong thread give a status, never an end of the process.
 //
 // CrucibleMeta has the layout of crucible::TensorMeta (176 bytes).  The C++
 // side reads each record through CrucibleMeta and decodes it into a
@@ -14,10 +17,11 @@
 // The C ABI fields below remain raw (`void*`, `const char*`) because
 // ctypes consumers cannot interpret C++ wrapper types.  Inside C++,
 // every value crossing this boundary is immediately re-typed via the
-// helpers in vessel_api_typed.h:
+// helpers in vessel_api_typed.h and vigil_handles.h:
 //
-//   * CrucibleHandle          → Tagged<Vigil*, source::ABIBoundary>
-//                               via `as_vigil_typed(h)`.
+//   * CrucibleHandle          → HeldVigil, the proof that the calling thread
+//                               holds the live Vigil of the handle, via
+//                               `vigil_handles.mint_held_vigil(h)`.
 //   * const CrucibleMeta*     → Tagged<const CrucibleMeta*, ABIBoundary>
 //                               via `as_meta_typed(metas, n)`, and each
 //                               record → TensorMeta via
@@ -95,8 +99,40 @@ extern "C" {
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("C-HEADER: a C caller and ctypes read these declarations, so they hold only C types")
 #endif
 
-// Opaque handle to a crucible::Vigil instance.
-typedef void* CrucibleHandle;
+// The handle of a Vigil: a word that crucible_create gives, and no address.
+// The table of the handles checks each handle that an entry takes
+// (vessel/torch/vigil_handles.h).  The word 0 never names a Vigil.
+typedef uint64_t CrucibleHandle;
+
+// The most live Vigils of one process.  A crucible_create past them gives
+// CRUCIBLE_HANDLE_FULL.
+enum {
+    CRUCIBLE_VIGIL_SLOTS = 64
+};
+
+// The status of an entry that takes or gives a handle.  An entry with another
+// status than LIVE changes nothing and writes no out value.
+enum {
+    // The entry ran on the live Vigil of the handle.
+    CRUCIBLE_HANDLE_LIVE = 0,
+    // No live Vigil has the handle: crucible_destroy ended it, no
+    // crucible_create gave it, or it is 0 or forged.
+    CRUCIBLE_HANDLE_STALE = 1,
+    // Another thread holds the Vigil, or holds the producer role of another
+    // live Vigil.  The first entry on a handle that no thread holds claims the
+    // handle for its thread, and crucible_release_claim gives it up.
+    CRUCIBLE_HANDLE_WRONG_THREAD = 2,
+    // An op of the Vigil runs on this thread, so crucible_destroy and
+    // crucible_release_claim cannot end it or give it up.
+    CRUCIBLE_HANDLE_BUSY = 3,
+    // The process holds CRUCIBLE_VIGIL_SLOTS live Vigils, so crucible_create
+    // makes no Vigil.
+    CRUCIBLE_HANDLE_FULL = 4,
+    // An argument other than the handle breaks its rule: an eager word that
+    // EagerNumerics does not name, or an out pointer that is null or not
+    // aligned for its type.
+    CRUCIBLE_HANDLE_REFUSED = 5
+};
 
 // Binary-compatible with crucible::TensorMeta (176 bytes).
 // Field order and types must match exactly — verified via static_assert
@@ -159,7 +195,9 @@ typedef struct {
     // word again and gives it to crucible_observe_eager_numerics.  Zero for
     // each other op.
     uint8_t enters_region;
-    uint8_t pad;  // zero
+    // CRUCIBLE_HANDLE_*: LIVE when the handle names a live Vigil that this
+    // thread holds.  Another status comes with the action REFUSED.
+    uint8_t handle_status;
     uint32_t op_index;  // the position of the op in the region for COMPILED, zero for another action
 } CrucibleDispatchResult;
 
@@ -174,28 +212,30 @@ CRUCIBLE_VESSEL_API uint64_t crucible_layout_digest(void) CRUCIBLE_VESSEL_NOEXCE
 
 // ── Lifecycle ────────────────────────────────────────────────────────
 
-// Create a Vigil instance. Starts the background thread.
+// Makes a Vigil, starts its background thread, and writes its handle to out.
 // eager_numerics: the eager word of the front end at the attach (EagerNumerics
 // of crucible/NumericalRecipe.h): bits 0 and 1 the precision of a float32
 // matmul (0 highest, 1 high, 2 medium), bit 2 TF32 for a cuBLAS matmul, bit 3
 // TF32 for a cuDNN convolution, bit 4 the flush of denormal floats.  The Vigil
 // records each region under this word.  A word with another bit, or with the
-// precision 3, gives no Vigil, and the call gives a null handle.
-// The calling thread claims the Vigil: it is the producer thread of each op of
+// precision 3, gives REFUSED.
+// The calling thread holds the Vigil: it is the producer thread of each op of
 // the Vigil.  Each live Vigil of the process has one producer thread, so a
-// create on a second thread, while a Vigil of another thread lives, ends the
-// process (ProducerClaim in foundation/effects/Ctx.h).
-CRUCIBLE_VESSEL_API CrucibleHandle crucible_create(uint32_t eager_numerics) CRUCIBLE_VESSEL_NOEXCEPT;
+// create on a second thread, while a Vigil of another thread lives, gives
+// WRONG_THREAD.  With CRUCIBLE_VIGIL_SLOTS live Vigils, the call gives FULL.
+CRUCIBLE_VESSEL_API uint32_t crucible_create(uint32_t eager_numerics, CrucibleHandle* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Destroy a Vigil instance. Joins the background thread.
-CRUCIBLE_VESSEL_API void crucible_destroy(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// Ends the Vigil of the handle, and joins its background thread.  The handle
+// is then stale, also for a second call.  BUSY while an op of the Vigil runs
+// on this thread.
+CRUCIBLE_VESSEL_API uint32_t crucible_destroy(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// The calling thread gives up its producer claim of the Vigil.  The next op,
-// on any thread, claims the Vigil again.  With no claim, nothing changes.  A
-// call while another thread holds the claim ends the process.  CrucibleMode
-// calls it at the exit of the mode, so a live mode object outside its context
-// holds no claim.
-CRUCIBLE_VESSEL_API void crucible_release_claim(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// The calling thread gives up its hold of the Vigil and the producer role.
+// The next entry or op of the handle, on any thread, holds it again.  BUSY
+// while an op of the Vigil runs on this thread.  CrucibleMode calls it at the
+// exit of the mode, so a live mode object outside its context holds no
+// thread.
+CRUCIBLE_VESSEL_API uint32_t crucible_release_claim(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Hashing ──────────────────────────────────────────────────────────
 
@@ -215,7 +255,9 @@ CRUCIBLE_VESSEL_API uint64_t crucible_hash_string(const char* s) CRUCIBLE_VESSEL
 // and from its scalars, as the native recording paths do.  The caller gives no
 // guard word.
 // An op that the checks of the thunk refuse gives the action REFUSED, such as
-// a pair of metas and n_metas that breaks the rule of the arrays above.
+// a pair of metas and n_metas that breaks the rule of the arrays above.  A
+// handle that names no live Vigil that this thread holds gives the action
+// REFUSED and its status in handle_status.
 CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle h, uint64_t schema_hash,
                                                                 uint16_t num_inputs, uint16_t num_outputs,
                                                                 const CrucibleMeta* metas,
@@ -248,38 +290,42 @@ CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(
 // each slot through it, as the native recording paths do.
 CRUCIBLE_VESSEL_API int crucible_is_structural_scalar(uint64_t schema_hash, uint32_t position) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// ── Control ──────────────────────────────────────────────────────────
+// ── Control and queries ──────────────────────────────────────────────
+//
+// Each entry below that takes a handle gives a CRUCIBLE_HANDLE_* status, and
+// it writes its value to out only with the status LIVE.  An out pointer that
+// is null or not aligned for its type gives REFUSED.
 
 // Waits until the background thread completes the work for each ring entry
 // that exists at the call.  That work includes the build and the publication
-// of a region.  The wait spins, and then it parks in the kernel.  Returns 1
-// when the work is complete, and 0 when the background thread stopped before
-// it completed the work.  The call does not wait for a stopped background.
-CRUCIBLE_VESSEL_API int crucible_flush(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// of a region.  The wait spins, and then it parks in the kernel.  out: 1 when
+// the work is complete, and 0 when the background thread stopped before it
+// completed the work.  The call does not wait for a stopped background.
+CRUCIBLE_VESSEL_API uint32_t crucible_flush(CrucibleHandle h, uint32_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Query mode: 1 while the Vigil replays a region, 0 while it records.  A
-// region that the background thread published and the foreground has not
-// aligned to yet reads 0.
-CRUCIBLE_VESSEL_API int crucible_is_compiled(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// out: 1 while the Vigil replays a region, 0 while it records.  A region that
+// the background thread published and the foreground has not aligned to yet
+// reads 0.
+CRUCIBLE_VESSEL_API uint32_t crucible_is_compiled(CrucibleHandle h, uint32_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Number of complete iterations in COMPILED mode, as 64 bits.
-CRUCIBLE_VESSEL_API uint64_t crucible_compiled_iterations(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// out: the count of the complete iterations in COMPILED mode.
+CRUCIBLE_VESSEL_API uint32_t crucible_compiled_iterations(CrucibleHandle h, uint64_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Number of divergences detected, as 64 bits.
-CRUCIBLE_VESSEL_API uint64_t crucible_diverged_count(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// out: the count of the divergences.
+CRUCIBLE_VESSEL_API uint32_t crucible_diverged_count(CrucibleHandle h, uint64_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Give the eager word of the front end, in the layout of crucible_create.  The
 // caller reads the word when a dispatch result has enters_region, and gives it
 // here.  A changed word stops the replay of a region of the old word, which
 // counts one divergence, and the Vigil records the next regions under the new
-// word.  Returns 1, or 0 for a word that crucible_create refuses, which
-// changes nothing.  The call must run on the thread that holds the producer
-// claim of the Vigil, as a dispatch must.
-CRUCIBLE_VESSEL_API int crucible_observe_eager_numerics(CrucibleHandle h,
-                                                        uint32_t eager_numerics) CRUCIBLE_VESSEL_NOEXCEPT;
+// word.  A word that crucible_create refuses gives REFUSED, and it changes
+// nothing.
+CRUCIBLE_VESSEL_API uint32_t crucible_observe_eager_numerics(CrucibleHandle h,
+                                                             uint32_t eager_numerics) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// The content hash of the active region, or 0 when the Vigil has no region.
-CRUCIBLE_VESSEL_API uint64_t crucible_active_content_hash(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// out: the content hash of the active region, or 0 when the Vigil has no
+// region.
+CRUCIBLE_VESSEL_API uint32_t crucible_active_content_hash(CrucibleHandle h, uint64_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Schema name registration ─────────────────────────────────────────
 
@@ -302,37 +348,34 @@ enum {
 };
 
 // Register an op name for a schema hash, for the labels of trace
-// visualization and diagnostics.  It returns a CRUCIBLE_SCHEMA_NAME_* code.
-// The call must run on the thread that holds the producer claim of the Vigil
-// h.  A call from any other thread ends the process, as a dispatch from one
-// does.
-CRUCIBLE_VESSEL_API int crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash,
-                                                      const char* name) CRUCIBLE_VESSEL_NOEXCEPT;
+// visualization and diagnostics.  out: a CRUCIBLE_SCHEMA_NAME_* code.  The
+// tables take names only from the thread that holds the Vigil h.
+CRUCIBLE_VESSEL_API uint32_t crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const char* name,
+                                                           uint32_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Lookup the registered name for a schema hash. Returns NULL if unknown.
 CRUCIBLE_VESSEL_API const char* crucible_schema_name(uint64_t schema_hash) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Diagnostics ──────────────────────────────────────────────────────
 
-// Number of iteration boundaries detected by the background thread.
-CRUCIBLE_VESSEL_API uint32_t crucible_bg_iterations(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// out: the count of the iteration boundaries that the background thread found.
+CRUCIBLE_VESSEL_API uint32_t crucible_bg_iterations(CrucibleHandle h, uint32_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Number of entries currently in the ring buffer (approximate).
-CRUCIBLE_VESSEL_API uint32_t crucible_ring_size(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// out: the count of the entries in the ring buffer (approximate).
+CRUCIBLE_VESSEL_API uint32_t crucible_ring_size(CrucibleHandle h, uint32_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Number of entries in the MetaLog (approximate).
-CRUCIBLE_VESSEL_API uint32_t crucible_metalog_size(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// out: the count of the entries in the MetaLog (approximate).
+CRUCIBLE_VESSEL_API uint32_t crucible_metalog_size(CrucibleHandle h, uint32_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Compiled mode accessors ──────────────────────────────────────────
 
-// Pre-allocated output pointer for output j of the current op: the first
-// byte of the storage of the output.  A view at an offset starts
-// storage_offset elements later.
-// Valid only after dispatch returned COMPILED with MATCH/COMPLETE.
-CRUCIBLE_VESSEL_API void* crucible_output_ptr(CrucibleHandle h, uint16_t j) CRUCIBLE_VESSEL_NOEXCEPT;
+// out: the pre-allocated output pointer for output j of the current op: the
+// first byte of the storage of the output.  A view at an offset starts
+// storage_offset elements later.  Null outside a compiled op.
+CRUCIBLE_VESSEL_API uint32_t crucible_output_ptr(CrucibleHandle h, uint16_t j, void** out) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Pre-allocated input pointer for input j of the current op.
-CRUCIBLE_VESSEL_API void* crucible_input_ptr(CrucibleHandle h, uint16_t j) CRUCIBLE_VESSEL_NOEXCEPT;
+// out: the pre-allocated input pointer for input j of the current op, or null.
+CRUCIBLE_VESSEL_API uint32_t crucible_input_ptr(CrucibleHandle h, uint16_t j, void** out) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Trace export ────────────────────────────────────────────────────
 
@@ -342,14 +385,15 @@ CRUCIBLE_VESSEL_API void* crucible_input_ptr(CrucibleHandle h, uint16_t j) CRUCI
 // The file goes to a temporary file in the directory of path, and a rename
 // puts it at path, so a reader of path sees the whole old file or the whole
 // new file.
-// Returns 1 on success, 0 on failure (no active region, file I/O error).  The
+// out: 1 on success, 0 on failure (no active region, file I/O error).  The
 // tables hold only names that the loader takes (sanitize_schema_name of
 // crucible/SchemaTable.h).  A test build checks each name again, and a name
 // that the loader refuses then gives 0, and the export writes nothing.
-CRUCIBLE_VESSEL_API int crucible_export_crtrace(CrucibleHandle h, const char* path) CRUCIBLE_VESSEL_NOEXCEPT;
+CRUCIBLE_VESSEL_API uint32_t crucible_export_crtrace(CrucibleHandle h, const char* path,
+                                                     uint32_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Number of ops in the active compiled region.  0 if no region.
-CRUCIBLE_VESSEL_API uint32_t crucible_active_num_ops(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// out: the count of the ops of the active compiled region, 0 with no region.
+CRUCIBLE_VESSEL_API uint32_t crucible_active_num_ops(CrucibleHandle h, uint32_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── The memory plan of the active region ─────────────────────────────
 
@@ -375,16 +419,17 @@ typedef struct {
 
 // The slots of the memory plan of the active region, in the order of the
 // plan.  The call writes the first slots into out, at most capacity of them,
-// and returns the count of the slots of the plan.  It returns 0 when the Vigil
-// has no active region or the region has no plan.  out is null only with a
-// capacity of 0, for a read of the count.  A pair of out and capacity that
-// breaks the rule of the arrays above gives 0, and the call writes nothing.
-CRUCIBLE_VESSEL_API uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out,
-                                                          uint32_t capacity) CRUCIBLE_VESSEL_NOEXCEPT;
+// and writes the count of the slots of the plan to out_count: 0 when the
+// Vigil has no active region or the region has no plan.  out is null only with
+// a capacity of 0, for a read of the count.  A pair of out and capacity that
+// breaks the rule of the arrays above gives REFUSED, and the call writes
+// nothing.
+CRUCIBLE_VESSEL_API uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out, uint32_t capacity,
+                                                          uint32_t* out_count) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// The bytes of the pool of the memory plan of the active region, or 0 when
-// the Vigil has no active region or the region has no plan.
-CRUCIBLE_VESSEL_API uint64_t crucible_active_pool_bytes(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
+// out: the bytes of the pool of the memory plan of the active region, or 0
+// when the Vigil has no active region or the region has no plan.
+CRUCIBLE_VESSEL_API uint32_t crucible_active_pool_bytes(CrucibleHandle h, uint64_t* out) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── The data scalars of the replayed region ──────────────────────────
 
@@ -401,13 +446,12 @@ typedef struct {
 
 // The data slots of the region of the last activation or switch, in the order
 // of the ops and of the slots.  The call writes the first slots into out, at
-// most capacity of them, and returns the count of the data slots.  The call
-// takes the producer claim of the Vigil, as a dispatch does.  out is null only
-// with a capacity of 0, for a read of the count.  A pair of out and capacity
-// that breaks the rule of the arrays above gives 0, and the call writes
-// nothing.
-CRUCIBLE_VESSEL_API uint32_t crucible_bound_scalars(CrucibleHandle h, CrucibleBoundScalar* out,
-                                                    uint32_t capacity) CRUCIBLE_VESSEL_NOEXCEPT;
+// most capacity of them, and writes the count of the data slots to out_count.
+// out is null only with a capacity of 0, for a read of the count.  A pair of
+// out and capacity that breaks the rule of the arrays above gives REFUSED,
+// and the call writes nothing.
+CRUCIBLE_VESSEL_API uint32_t crucible_bound_scalars(CrucibleHandle h, CrucibleBoundScalar* out, uint32_t capacity,
+                                                    uint32_t* out_count) CRUCIBLE_VESSEL_NOEXCEPT;
 
 #ifdef __cplusplus
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

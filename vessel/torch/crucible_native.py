@@ -200,7 +200,7 @@ class CrucibleDispatchResult(ctypes.Structure):
         ("action", ctypes.c_uint8),
         ("status", ctypes.c_uint8),
         ("enters_region", ctypes.c_uint8),
-        ("pad", ctypes.c_uint8),
+        ("handle_status", ctypes.c_uint8),
         ("op_index", ctypes.c_uint32),
     ]
 
@@ -227,6 +227,24 @@ class DispatchStatus(enum.IntEnum):
     MATCH = 0
     DIVERGED = 1
     COMPLETE = 2
+
+
+class HandleStatus(enum.IntEnum):
+    """The status of a C entry that takes or gives the handle of a Vigil (CRUCIBLE_HANDLE_* of vessel_api.h)."""
+
+    # The entry ran on the live Vigil of the handle.
+    LIVE = 0
+    # No live Vigil has the handle: it ended, no create gave it, or it is 0 or forged.
+    STALE = 1
+    # Another thread holds the Vigil, or holds the producer role of another live Vigil.
+    WRONG_THREAD = 2
+    # An op of the Vigil runs on this thread, so the Vigil cannot end or let its thread go.
+    BUSY = 3
+    # The process holds the most live Vigils (CRUCIBLE_VIGIL_SLOTS), so the create makes no Vigil.
+    FULL = 4
+    # An argument other than the handle breaks its rule: an eager word that EagerNumerics does not name, or an out
+    # pointer that is null or not aligned.
+    REFUSED = 5
 
 
 class TlsMode(enum.IntEnum):
@@ -256,6 +274,60 @@ class CrucibleAbiMismatchError(RuntimeError):
     ABI stamp, and a probe whose stamp is not AbiStamp.expected raises it
     too.  The message names the library and the build command.
     """
+
+
+class CrucibleHandleError(RuntimeError):
+    """Raised when a C entry of the vessel library refuses the handle of a Vigil (HandleStatus).
+
+    The handle is outside data, so the library checks it and gives a status,
+    and the process continues.  A subclass names each status.
+    """
+
+
+class CrucibleStaleHandleError(CrucibleHandleError):
+    """No live Vigil has the handle: the session ended, the handle was destroyed, or it is 0 or forged."""
+
+
+class CrucibleWrongThreadError(CrucibleHandleError):
+    """Another thread holds the Vigil, or holds the producer role of another live Vigil of the process."""
+
+
+class CrucibleBusyHandleError(CrucibleHandleError):
+    """An op of the Vigil runs on this thread, so the Vigil cannot end or let its thread go."""
+
+
+class CrucibleFullError(CrucibleHandleError):
+    """The process holds the most live Vigils that the vessel library admits (CRUCIBLE_VIGIL_SLOTS)."""
+
+
+# The error of each status of a handle other than LIVE and REFUSED.  REFUSED
+# names an argument other than the handle, so each caller gives its own error.
+_HANDLE_ERRORS: dict[HandleStatus, type[CrucibleHandleError]] = {
+    HandleStatus.STALE: CrucibleStaleHandleError,
+    HandleStatus.WRONG_THREAD: CrucibleWrongThreadError,
+    HandleStatus.BUSY: CrucibleBusyHandleError,
+    HandleStatus.FULL: CrucibleFullError,
+}
+
+
+def check_handle_status(status: int, entry: str) -> None:
+    """Raise the error of the status that the C entry ENTRY gave, and return for LIVE.
+
+    Raises:
+        CrucibleHandleError: A subclass for STALE, WRONG_THREAD, BUSY and FULL
+        ValueError: For REFUSED, which names an argument other than the handle, and for a status that HandleStatus
+            does not name
+    """
+    if status == HandleStatus.LIVE:
+        return
+    try:
+        named = HandleStatus(status)
+    except ValueError:
+        raise ValueError(f"{entry} gave the status {status}, which HandleStatus does not name") from None
+    if named == HandleStatus.REFUSED:
+        raise ValueError(f"{entry} refused an argument other than the handle: an eager word that EagerNumerics "
+                         f"does not name, or an out pointer that is null or not aligned")
+    raise _HANDLE_ERRORS[named](f"{entry} refused the handle of the Vigil: {named.name}")
 
 
 def _fnv1a(data: bytes) -> int:
@@ -788,6 +860,7 @@ MIRRORED_CONSTANTS: dict[str, type[enum.IntEnum]] = {
     "CRUCIBLE_ACTION_": DispatchAction,
     "CRUCIBLE_STATUS_": DispatchStatus,
     "CRUCIBLE_SCHEMA_NAME_": SchemaNameResult,
+    "CRUCIBLE_HANDLE_": HandleStatus,
 }
 
 
@@ -1053,123 +1126,170 @@ class _VesselLib:
         self._setup()
 
     def _setup(self) -> None:
-        """Declare the restype and argtypes of every symbol this class calls."""
+        """Declare the restype and argtypes of every symbol this class calls.
+
+        Each entry that takes a handle gives a HandleStatus, and it writes its
+        value through its last argument, a pointer, only with the status LIVE.
+        """
         L = self._lib
+        handle = ctypes.c_uint64
+        status = ctypes.c_uint32
+        u32 = ctypes.POINTER(ctypes.c_uint32)
+        u64 = ctypes.POINTER(ctypes.c_uint64)
 
         # Lifecycle.  crucible_create takes the eager word of the attach.
-        L.crucible_create.restype = ctypes.c_void_p
-        L.crucible_create.argtypes = [ctypes.c_uint32]
-        L.crucible_destroy.restype = None
-        L.crucible_destroy.argtypes = [ctypes.c_void_p]
-        L.crucible_flush.restype = ctypes.c_int
-        L.crucible_flush.argtypes = [ctypes.c_void_p]
+        L.crucible_create.restype = status
+        L.crucible_create.argtypes = [ctypes.c_uint32, u64]
+        L.crucible_destroy.restype = status
+        L.crucible_destroy.argtypes = [handle]
+        L.crucible_release_claim.restype = status
+        L.crucible_release_claim.argtypes = [handle]
+        L.crucible_flush.restype = status
+        L.crucible_flush.argtypes = [handle, u32]
 
         # Queries
-        L.crucible_is_compiled.restype = ctypes.c_int
-        L.crucible_is_compiled.argtypes = [ctypes.c_void_p]
-        L.crucible_compiled_iterations.restype = ctypes.c_uint64
-        L.crucible_compiled_iterations.argtypes = [ctypes.c_void_p]
-        L.crucible_diverged_count.restype = ctypes.c_uint64
-        L.crucible_diverged_count.argtypes = [ctypes.c_void_p]
-        L.crucible_bg_iterations.restype = ctypes.c_uint32
-        L.crucible_bg_iterations.argtypes = [ctypes.c_void_p]
-        L.crucible_ring_size.restype = ctypes.c_uint32
-        L.crucible_ring_size.argtypes = [ctypes.c_void_p]
-        L.crucible_metalog_size.restype = ctypes.c_uint32
-        L.crucible_metalog_size.argtypes = [ctypes.c_void_p]
+        for name, out in (("crucible_is_compiled", u32), ("crucible_compiled_iterations", u64),
+                          ("crucible_diverged_count", u64), ("crucible_bg_iterations", u32),
+                          ("crucible_ring_size", u32), ("crucible_metalog_size", u32),
+                          ("crucible_active_num_ops", u32), ("crucible_active_content_hash", u64),
+                          ("crucible_active_pool_bytes", u64)):
+            getattr(L, name).restype = status
+            getattr(L, name).argtypes = [handle, out]
 
         # Trace export
-        L.crucible_export_crtrace.restype = ctypes.c_int
-        L.crucible_export_crtrace.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
-        L.crucible_active_num_ops.restype = ctypes.c_uint32
-        L.crucible_active_num_ops.argtypes = [ctypes.c_void_p]
-        L.crucible_active_content_hash.restype = ctypes.c_uint64
-        L.crucible_active_content_hash.argtypes = [ctypes.c_void_p]
-        L.crucible_active_region_slots.restype = ctypes.c_uint32
-        L.crucible_active_region_slots.argtypes = [ctypes.c_void_p, ctypes.POINTER(CrucibleSlot), ctypes.c_uint32]
-        L.crucible_active_pool_bytes.restype = ctypes.c_uint64
-        L.crucible_active_pool_bytes.argtypes = [ctypes.c_void_p]
-        L.crucible_bound_scalars.restype = ctypes.c_uint32
-        L.crucible_bound_scalars.argtypes = [ctypes.c_void_p, ctypes.POINTER(CrucibleBoundScalar), ctypes.c_uint32]
+        L.crucible_export_crtrace.restype = status
+        L.crucible_export_crtrace.argtypes = [handle, ctypes.c_char_p, u32]
+        L.crucible_active_region_slots.restype = status
+        L.crucible_active_region_slots.argtypes = [handle, ctypes.POINTER(CrucibleSlot), ctypes.c_uint32, u32]
+        L.crucible_bound_scalars.restype = status
+        L.crucible_bound_scalars.argtypes = [handle, ctypes.POINTER(CrucibleBoundScalar), ctypes.c_uint32, u32]
 
         # The eager word of a region entry
-        L.crucible_observe_eager_numerics.restype = ctypes.c_int
-        L.crucible_observe_eager_numerics.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+        L.crucible_observe_eager_numerics.restype = status
+        L.crucible_observe_eager_numerics.argtypes = [handle, ctypes.c_uint32]
+
+    def _read(self, name: str, h: int, value_type: type[Any]) -> Any:
+        """The value that the query NAME of the vessel library writes for the handle H.
+
+        Raises:
+            CrucibleHandleError: If the library refuses the handle (check_handle_status)
+        """
+        value = value_type(0)
+        check_handle_status(getattr(self._lib, name)(h, ctypes.byref(value)), name)
+        return value.value
 
     def create(self, eager_numerics: int) -> int:
-        """Create a Vigil under the eager word of the attach, and return its opaque handle.
+        """Create a Vigil under the eager word of the attach, and return its handle.
+
+        The calling thread holds the Vigil.
 
         Args:
             eager_numerics: The eager word, as crucible_dispatch_eager_numerics gives it
 
         Returns:
-            The handle of the Vigil
+            The handle of the Vigil, a word that is not 0
 
         Raises:
             ValueError: If the library refuses the word, which names a bit that EagerNumerics does not name
+            CrucibleWrongThreadError: If another thread holds a live Vigil of the process
+            CrucibleFullError: If the process holds the most live Vigils
         """
-        handle = self._lib.crucible_create(eager_numerics)
-        if not handle:
+        handle = ctypes.c_uint64(0)
+        result = self._lib.crucible_create(eager_numerics, ctypes.byref(handle))
+        if result == HandleStatus.REFUSED:
             raise ValueError(f"crucible_create refuses the eager word {eager_numerics:#x}: it names a bit that "
                              f"EagerNumerics of crucible/NumericalRecipe.h does not name")
-        return handle
+        check_handle_status(result, "crucible_create")
+        return handle.value
 
     def observe_eager_numerics(self, h: int, eager_numerics: int) -> bool:
-        """Give the Vigil the eager word of a region entry, and give False when the library refuses the word."""
-        return bool(self._lib.crucible_observe_eager_numerics(h, eager_numerics))
+        """Give the Vigil the eager word of a region entry, and give False when the library refuses the word.
+
+        Raises:
+            CrucibleHandleError: If the library refuses the handle
+        """
+        result = self._lib.crucible_observe_eager_numerics(h, eager_numerics)
+        if result == HandleStatus.REFUSED:
+            return False
+        check_handle_status(result, "crucible_observe_eager_numerics")
+        return True
 
     def active_content_hash(self, h: int) -> int:
         """The content hash of the active region, or 0 when the Vigil has no region."""
-        return self._lib.crucible_active_content_hash(h)
+        return self._read("crucible_active_content_hash", h, ctypes.c_uint64)
 
     def destroy(self, h: int) -> None:
-        """Destroy the Vigil behind one handle."""
-        self._lib.crucible_destroy(h)
+        """Destroy the Vigil behind one handle.  The handle is then stale.
+
+        Raises:
+            CrucibleStaleHandleError: If no live Vigil has the handle, such as for a second destroy
+            CrucibleWrongThreadError: If another thread holds the Vigil
+            CrucibleBusyHandleError: If an op of the Vigil runs on this thread
+        """
+        check_handle_status(self._lib.crucible_destroy(h), "crucible_destroy")
+
+    def release_claim(self, h: int) -> None:
+        """Give up the hold of this thread on the Vigil, so the next call on any thread holds it.
+
+        Raises:
+            CrucibleHandleError: If the library refuses the handle
+        """
+        check_handle_status(self._lib.crucible_release_claim(h), "crucible_release_claim")
 
     def flush(self, h: int) -> None:
         """Wait until the background thread of the Vigil processed each recorded op.
 
-        crucible_flush gives 1 when the work is complete, and 0 when the
+        crucible_flush writes 1 when the work is complete, and 0 when the
         background thread stopped first.  The ops after the stop stay
         unprocessed, so a stop is an error, as in crucible_mode.
 
         Raises:
             RuntimeError: If the background thread stopped before the flush completed
+            CrucibleHandleError: If the library refuses the handle
         """
-        if self._lib.crucible_flush(h) == 0:
+        if self._read("crucible_flush", h, ctypes.c_uint32) == 0:
             raise RuntimeError("the background thread of the Vigil stopped before the flush completed")
 
     def is_compiled(self, h: int) -> bool:
         """True once the Vigil replays a region instead of recording one."""
-        return bool(self._lib.crucible_is_compiled(h))
+        return bool(self._read("crucible_is_compiled", h, ctypes.c_uint32))
 
     def compiled_iterations(self, h: int) -> int:
         """The number of iterations the Vigil has replayed."""
-        return self._lib.crucible_compiled_iterations(h)
+        return self._read("crucible_compiled_iterations", h, ctypes.c_uint64)
 
     def diverged_count(self, h: int) -> int:
         """The number of times a replayed operation failed its guard."""
-        return self._lib.crucible_diverged_count(h)
+        return self._read("crucible_diverged_count", h, ctypes.c_uint64)
 
     def bg_iterations(self, h: int) -> int:
         """The number of iteration boundaries the background thread found."""
-        return self._lib.crucible_bg_iterations(h)
+        return self._read("crucible_bg_iterations", h, ctypes.c_uint32)
 
     def ring_size(self, h: int) -> int:
         """The number of entries waiting in the TraceRing."""
-        return self._lib.crucible_ring_size(h)
+        return self._read("crucible_ring_size", h, ctypes.c_uint32)
 
     def metalog_size(self, h: int) -> int:
         """The number of entries waiting in the MetaLog."""
-        return self._lib.crucible_metalog_size(h)
+        return self._read("crucible_metalog_size", h, ctypes.c_uint32)
 
     def export_crtrace(self, h: int, path: str) -> bool:
-        """Write the active region to one .crtrace file."""
-        return bool(self._lib.crucible_export_crtrace(h, path.encode()))
+        """Write the active region to one .crtrace file, and give True when the library wrote it."""
+        written = ctypes.c_uint32(0)
+        check_handle_status(self._lib.crucible_export_crtrace(h, path.encode(), ctypes.byref(written)),
+                            "crucible_export_crtrace")
+        return bool(written.value)
 
     def active_num_ops(self, h: int) -> int:
         """The number of operations in the active region."""
-        return self._lib.crucible_active_num_ops(h)
+        return self._read("crucible_active_num_ops", h, ctypes.c_uint32)
+
+    def _count_into(self, name: str, h: int, buffer: Any, capacity: int) -> int:
+        """The count that the array query NAME writes for the handle H, with at most CAPACITY items into BUFFER."""
+        count = ctypes.c_uint32(0)
+        check_handle_status(getattr(self._lib, name)(h, buffer, capacity, ctypes.byref(count)), name)
+        return count.value
 
     def active_region_slots(self, h: int) -> list[RegionSlot]:
         """The slots of the memory plan of the active region, in the order of the plan.  O(n) in the slots.
@@ -1177,9 +1297,9 @@ class _VesselLib:
         Raises:
             RuntimeError: If the count of the slots changes between the read of the count and the read of the slots
         """
-        count = self._lib.crucible_active_region_slots(h, None, 0)
+        count = self._count_into("crucible_active_region_slots", h, None, 0)
         slots = (CrucibleSlot * count)()
-        written = self._lib.crucible_active_region_slots(h, slots, count)
+        written = self._count_into("crucible_active_region_slots", h, slots, count)
         if written != count:
             raise RuntimeError(f"the plan of the active region went from {count} to {written} slots between two reads.  "
                                f"Read the slots on the thread of the session, between two ops")
@@ -1188,7 +1308,7 @@ class _VesselLib:
 
     def active_pool_bytes(self, h: int) -> int:
         """The bytes of the pool of the plan of the active region, or 0 when the Vigil has no region or no plan."""
-        return self._lib.crucible_active_pool_bytes(h)
+        return self._read("crucible_active_pool_bytes", h, ctypes.c_uint64)
 
     def bound_scalars(self, h: int) -> list[BoundScalar]:
         """The data slots of the region of the last activation or switch, in the order of the ops.  O(n) in the slots.
@@ -1196,9 +1316,9 @@ class _VesselLib:
         Raises:
             RuntimeError: If the count of the slots changes between the read of the count and the read of the slots
         """
-        count = self._lib.crucible_bound_scalars(h, None, 0)
+        count = self._count_into("crucible_bound_scalars", h, None, 0)
         bound = (CrucibleBoundScalar * count)()
-        written = self._lib.crucible_bound_scalars(h, bound, count)
+        written = self._count_into("crucible_bound_scalars", h, bound, count)
         if written != count:
             raise RuntimeError(f"the region went from {count} to {written} data slots between two reads.  "
                                f"Read the slots on the thread of the session, between two ops")
@@ -1229,9 +1349,9 @@ class _DispatchLib:
         L.crucible_dispatch_set_tls_mode.argtypes = [ctypes.c_uint8]
         L.crucible_dispatch_get_tls_mode.restype = ctypes.c_uint8
         L.crucible_dispatch_get_tls_mode.argtypes = []
-        L.crucible_dispatch_set_tls_context.restype = None
-        L.crucible_dispatch_set_tls_context.argtypes = [ctypes.c_void_p]
-        L.crucible_dispatch_get_tls_context.restype = ctypes.c_void_p
+        L.crucible_dispatch_set_tls_context.restype = ctypes.c_uint32
+        L.crucible_dispatch_set_tls_context.argtypes = [ctypes.c_uint64]
+        L.crucible_dispatch_get_tls_context.restype = ctypes.c_uint64
         L.crucible_dispatch_get_tls_context.argtypes = []
 
         # TLS scope hash
@@ -1339,9 +1459,14 @@ class _DispatchLib:
             raise ValueError(f"the dispatch library refuses the TLS mode {int(mode)}, which names no enumerator of "
                              f"c10::CrucibleMode.  Give a member of TlsMode")
 
-    def set_context(self, ctx: int) -> None:
-        """Set the CrucibleState TLS Vigil handle for this thread."""
-        self._lib.crucible_dispatch_set_tls_context(ctypes.c_void_p(ctx))
+    def set_context(self, handle: int) -> None:
+        """Set the handle of the Vigil of the CrucibleState TLS of this thread.  The handle 0 clears it.
+
+        Raises:
+            CrucibleHandleError: If no live Vigil has the handle, or another thread holds it.  The TLS keeps its handle
+        """
+        check_handle_status(self._lib.crucible_dispatch_set_tls_context(ctypes.c_uint64(handle)),
+                            "crucible_dispatch_set_tls_context")
 
     def set_scope(self, scope_hash: int) -> None:
         """Set the scope hash the next recorded operations carry."""
@@ -1422,7 +1547,7 @@ class CrucibleNative:
     On activation:
       1. Load libcrucible_dispatch.so (registers TORCH_LIBRARY_IMPL fallback)
       2. Create Vigil via vessel C API
-      3. Set CrucibleState TLS: mode=RECORD, context=vigil*
+      3. Set CrucibleState TLS: mode=RECORD, context=the handle of the Vigil
       4. Enable DispatchKey::Crucible in this thread's TLS
 
     While active:
@@ -1450,7 +1575,12 @@ class CrucibleNative:
     allocator of PyTorch and the wrap of Tensor.backward.  The create of the
     Vigil claims the thread of the session, and each live Vigil of the process
     has one producer thread.  So a session on a second thread, while a session
-    of another thread lives, ends the process at the create of its Vigil.
+    of another thread lives, raises CrucibleWrongThreadError at the create of
+    its Vigil, before it writes a structure of the process.
+
+    The handle of the Vigil is a word that the vessel library checks at each
+    call.  After the end of the session, each query raises
+    CrucibleStaleHandleError.
     """
 
     def __init__(self, *, vessel_lib_path: str | None = None,
@@ -1613,7 +1743,8 @@ class CrucibleNative:
             self._dispatch.detach_allocator()
             self._allocator_attached = False
 
-        # Destroy Vigil
+        # Destroy Vigil.  The handle is then stale, so each later query of
+        # this controller raises CrucibleStaleHandleError.
         if self._vessel and self._handle:
             self._vessel.destroy(self._handle)
             self._handle = 0
@@ -1879,18 +2010,16 @@ class CrucibleNative:
         to have built a region.  Returns True on success.
 
         Raises:
-            RuntimeError: If the context is not active, or if the background
-                thread stopped before the flush completed
+            CrucibleStaleHandleError: If the controller has no live Vigil
+            RuntimeError: If the background thread stopped before the flush completed
         """
-        if not self._vessel or not self._handle:
-            raise RuntimeError("export_trace() requires active CrucibleNative context")
+        vessel = self._live_vessel()
+        vessel.flush(self._handle)
 
-        self._vessel.flush(self._handle)
-
-        num_ops = self._vessel.active_num_ops(self._handle)
+        num_ops = vessel.active_num_ops(self._handle)
         if num_ops == 0:
             if self._verbose:
-                bg_iters = self._vessel.bg_iterations(self._handle)
+                bg_iters = vessel.bg_iterations(self._handle)
                 log.info("[crucible] no active region (bg_iterations=%d)", bg_iters)
                 log.info("[crucible] need 2+ complete iterations for detection")
             return False
@@ -1898,7 +2027,7 @@ class CrucibleNative:
         # The schema tables are one pair for the process, so the names that
         # the dispatch library registered while it recorded are already in
         # the tables that the export reads.
-        ok = self._vessel.export_crtrace(self._handle, path)
+        ok = vessel.export_crtrace(self._handle, path)
         if self._verbose:
             if ok:
                 log.info("[crucible] exported %d ops to %s", num_ops, path)
@@ -1907,59 +2036,74 @@ class CrucibleNative:
         return ok
 
     # ── Queries ──────────────────────────────────────────────────────
+    #
+    # Each query reads the Vigil of the session through its handle.  The
+    # library checks the handle, so a query after the end of the session
+    # raises CrucibleStaleHandleError, and a query on a thread that does not
+    # hold the Vigil raises CrucibleWrongThreadError.  The process continues.
+
+    def _live_vessel(self) -> "_VesselLib":
+        """The vessel library of the session, for a query of its Vigil.
+
+        Raises:
+            CrucibleStaleHandleError: If the controller never opened a session, so it has no Vigil
+        """
+        if self._vessel is None:
+            raise CrucibleStaleHandleError("the controller opened no session, so it has no Vigil")
+        return self._vessel
 
     def flush(self) -> None:
         """Wait until the background thread processed each recorded op.
 
         Raises:
             RuntimeError: If the background thread stopped before the flush completed
+            CrucibleHandleError: If the controller has no live Vigil that this thread holds
         """
-        if self._vessel and self._handle:
-            self._vessel.flush(self._handle)
+        self._live_vessel().flush(self._handle)
 
     def is_compiled(self) -> bool:
         """True once the Vigil replays a region instead of recording one."""
-        return bool(self._vessel and self._vessel.is_compiled(self._handle))
+        return self._live_vessel().is_compiled(self._handle)
 
     def compiled_iterations(self) -> int:
         """The number of iterations the Vigil has replayed."""
-        return self._vessel.compiled_iterations(self._handle) if self._vessel else 0
+        return self._live_vessel().compiled_iterations(self._handle)
 
     def diverged_count(self) -> int:
         """The number of times a replayed operation failed its guard."""
-        return self._vessel.diverged_count(self._handle) if self._vessel else 0
+        return self._live_vessel().diverged_count(self._handle)
 
     def bg_iterations(self) -> int:
         """The number of iteration boundaries the background thread found."""
-        return self._vessel.bg_iterations(self._handle) if self._vessel else 0
+        return self._live_vessel().bg_iterations(self._handle)
 
     def ring_size(self) -> int:
         """The number of entries waiting in the TraceRing."""
-        return self._vessel.ring_size(self._handle) if self._vessel else 0
+        return self._live_vessel().ring_size(self._handle)
 
     def metalog_size(self) -> int:
         """The number of entries waiting in the MetaLog."""
-        return self._vessel.metalog_size(self._handle) if self._vessel else 0
+        return self._live_vessel().metalog_size(self._handle)
 
     def active_num_ops(self) -> int:
         """The number of operations in the active region."""
-        return self._vessel.active_num_ops(self._handle) if self._vessel else 0
+        return self._live_vessel().active_num_ops(self._handle)
 
     def active_content_hash(self) -> int:
         """The content hash of the active region, or 0 when the Vigil has no region."""
-        return self._vessel.active_content_hash(self._handle) if self._vessel else 0
+        return self._live_vessel().active_content_hash(self._handle)
 
     def active_region_slots(self) -> list[RegionSlot]:
         """The slots of the memory plan of the active region, or no slot when the Vigil has no region."""
-        return self._vessel.active_region_slots(self._handle) if self._vessel else []
+        return self._live_vessel().active_region_slots(self._handle)
 
     def active_pool_bytes(self) -> int:
         """The bytes of the pool of the plan of the active region, or 0 when the Vigil has no region."""
-        return self._vessel.active_pool_bytes(self._handle) if self._vessel else 0
+        return self._live_vessel().active_pool_bytes(self._handle)
 
     def bound_scalars(self) -> list[BoundScalar]:
         """The data slots of the replayed region with the values that the replay bound last, or no slot."""
-        return self._vessel.bound_scalars(self._handle) if self._vessel else []
+        return self._live_vessel().bound_scalars(self._handle)
 
     # ── Autograd engine serialisation ────────────────────────────────
     #

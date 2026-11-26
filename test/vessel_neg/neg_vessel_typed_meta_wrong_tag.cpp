@@ -17,8 +17,8 @@
 // tags, so only the refusal of the External-to-ABIBoundary conversion
 // satisfies it.
 //
-// Pairs with neg_vessel_typed_handle_wrong_tag.cpp — the two together
-// pin both directions of the typed Vessel ABI helper API.
+// The handle of a Vigil is a word of the table of handles, and the two
+// fixtures neg_vessel_held_vigil_* pin its proof.
 //
 // [GCC-WRAPPER-TEXT] — function-argument type-mismatch rejection.
 

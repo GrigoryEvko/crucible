@@ -23,9 +23,11 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: ctypes binds these entries by name, so they 
 CRUCIBLE_API uint64_t crucible_dispatch_layout_digest();
 CRUCIBLE_API uint32_t crucible_dispatch_mode_entry(uint32_t i, uint8_t* out_value, const char** out_name);
 CRUCIBLE_API uint32_t crucible_dispatch_set_tls_mode(uint8_t mode);
-CRUCIBLE_API void crucible_dispatch_set_tls_context(void* ctx);
+// The handle of the TLS context is a CrucibleHandle of vessel_api.h, a word,
+// and the set gives a CRUCIBLE_HANDLE_* status.
+CRUCIBLE_API uint32_t crucible_dispatch_set_tls_context(uint64_t handle);
 CRUCIBLE_API uint8_t crucible_dispatch_get_tls_mode();
-CRUCIBLE_API void* crucible_dispatch_get_tls_context();
+CRUCIBLE_API uint64_t crucible_dispatch_get_tls_context();
 CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash);
 CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope();
 CRUCIBLE_API void crucible_dispatch_backward_enter();

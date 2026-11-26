@@ -163,7 +163,7 @@ def bind_dispatch_op(ctx: CrucibleNative):
     function = ctx._vessel._lib.crucible_dispatch_op
     function.restype = CrucibleDispatchResult
     function.argtypes = [
-        ctypes.c_void_p,
+        ctypes.c_uint64,
         ctypes.c_uint64,
         ctypes.c_uint16,
         ctypes.c_uint16,

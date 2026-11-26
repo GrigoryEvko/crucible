@@ -6,13 +6,16 @@ sessions of the generation allocator, the CPU allocator of PyTorch and the wrap
 of Tensor.backward.  The thread that creates the Vigil of a session claims it
 (crucible_create), and each live Vigil of the process has one producer thread.
 So a second thread that opens a session while a session of the first thread
-lives ends the process at the create of its Vigil.  The end comes before the
-second thread writes a structure of the process.
+lives gets CrucibleWrongThreadError at the create of its Vigil.  The error
+comes before the second thread writes a structure of the process, and the
+process continues.
 
-The checks run in child processes, because a refusal ends the process:
+The checks run in child processes, because the attach refusal ends the
+process:
 
     second    a session on a second thread, while a session of the main thread
-              lives, ends the child with SIGABRT before the session opens
+              lives, raises CrucibleWrongThreadError before the session opens,
+              and the session of the main thread replays its loop after it
     attach    an attach of the generation allocator on a second thread, while a
               session of the main thread lives, ends the child with SIGABRT
     later     a session on a second thread after the session of the main thread
@@ -25,8 +28,8 @@ The checks run in child processes, because a refusal ends the process:
               replays its loop.  Then the mode records on the main thread
               again, and the child exits with 0
     held      a session on a second thread, while a CrucibleMode of the main
-              thread is inside its context, ends the child with SIGABRT before
-              the session opens
+              thread is inside its context, raises CrucibleWrongThreadError
+              before the session opens
 
 Usage:
     python test_session_threads.py
@@ -69,15 +72,20 @@ def run_on_a_thread(body):
     thread = threading.Thread(target=body)
     thread.start()
     thread.join()
+
+def open_second_session():
+    try:
+        with CrucibleNative():
+            print("the second session opened", flush=True)
+    except Exception as error:
+        print(f"the second session raised {type(error).__name__}", flush=True)
 """
 
 SECOND = PRELUDE + """
 with CrucibleNative() as ctx:
     give_loop(ctx)
-    def second():
-        with CrucibleNative():
-            print("the second session opened", flush=True)
-    run_on_a_thread(second)
+    run_on_a_thread(open_second_session)
+    print(f"the first session replays after the refusal: {give_loop(ctx)}", flush=True)
 print("the child ended", flush=True)
 """
 
@@ -133,16 +141,13 @@ HELD = PRELUDE + """
 from crucible_mode import CrucibleMode
 with CrucibleMode():
     torch.relu(torch.ones(16) * 2.0 + 1.0)
-    def second():
-        with CrucibleNative():
-            print("the second session opened", flush=True)
-    run_on_a_thread(second)
+    run_on_a_thread(open_second_session)
 print("the child ended", flush=True)
 """
 
-# The text of the refusal of a second producer thread of the Vigils, and of a
+# The error of a session on a second thread, and the text of the refusal of a
 # write of the state of the sessions on a thread that holds no Vigil claim.
-SECOND_CLAIM_REFUSAL = "foundation: fatal invariant failed: record != nullptr"
+SECOND_SESSION_REFUSAL = "the second session raised CrucibleWrongThreadError"
 ATTACH_REFUSAL = "can_caller_use_brand"
 
 
@@ -173,16 +178,29 @@ def check_admitted(problems: list[str], name: str, code: str, *markers: str) -> 
             problems.append(f"{name}: the child does not print {marker!r}: {child.stdout!r}")
 
 
+def check_raised(problems: list[str], name: str, code: str, forbidden: str, *markers: str) -> None:
+    """Expect the child of CODE to exit with 0, to print each of MARKERS, and not to print FORBIDDEN."""
+    child = run_child(code)
+    if child.returncode != 0:
+        problems.append(f"{name}: the child ends with {child.returncode}: {child.stderr[-2000:]!r}")
+    for marker in markers:
+        if marker not in child.stdout:
+            problems.append(f"{name}: the child does not print {marker!r}: {child.stdout!r}")
+    if forbidden in child.stdout:
+        problems.append(f"{name}: the child printed {forbidden!r}")
+
+
 def main() -> int:
     """Run each check and report."""
     problems: list[str] = []
-    check_refused(problems, "second", SECOND, SECOND_CLAIM_REFUSAL, "the second session opened")
+    check_raised(problems, "second", SECOND, "the second session opened", SECOND_SESSION_REFUSAL,
+                 "the first session replays after the refusal: True", "the child ended")
     check_refused(problems, "attach", ATTACH, ATTACH_REFUSAL, "the second attach returned")
     check_admitted(problems, "later", LATER, "the later session replays: True")
     check_admitted(problems, "nested", NESTED, "the nested session replays: True")
     check_admitted(problems, "mode", MODE, "the session after the exit of a live mode replays: True",
                    "the mode records again: True")
-    check_refused(problems, "held", HELD, SECOND_CLAIM_REFUSAL, "the second session opened")
+    check_raised(problems, "held", HELD, "the second session opened", SECOND_SESSION_REFUSAL, "the child ended")
     for line in problems:
         print(f"  FAIL: {line}")
     if problems:

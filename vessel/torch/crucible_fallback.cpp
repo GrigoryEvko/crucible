@@ -972,21 +972,13 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
 
     // -- Get Vigil from TLS context -----------------------------------
     //
-    // state.context() crosses the same ABI boundary as CrucibleHandle —
-    // a `void*` registered by the Vessel-side Python binding into
-    // PyTorch's CrucibleState TLS.  Route through `as_vigil_typed` so
-    // the TLS-stored Vigil pointer carries `source::ABIBoundary`
-    // provenance just like a freshly-handed-in CrucibleHandle does.
-    // The plausibility-check inside the typed helper is debug-only and
-    // skipped when state.context() is null (caller branches below).
-    void* tls_ctx = state.context();
-    if (!tls_ctx) [[unlikely]] {
-        op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, stack);
-        return;
-    }
-    auto vigil_typed = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(tls_ctx));
-    crucible::Vigil& vigil = *vigil_typed.value();
-
+    // The context of the TLS state holds the handle of the Vigil of the
+    // thread, as crucible_dispatch_set_tls_context stored it.  The table of
+    // the handles gives the Vigil only to the thread that holds the handle
+    // (held_tls_vigil of record_kernel.h).  A context of no handle, a handle
+    // of an ended Vigil, and a handle that another thread holds give no
+    // Vigil, and the op runs eagerly.
+    //
     // -- Foreign thread: execute, do not record -----------------------
     //
     // The ring behind Vigil is single-producer and the recorded op order is
@@ -1027,17 +1019,18 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // branch then carries the sessions that do not arm that guard, and any
     // thread the engine still owns outside a backward pass.
     //
-    // Vigil refuses a second producer on its own and ends the process when
-    // it sees one.  That guard stays as the last resort for a caller that
-    // does not ask first.  This is the asking.
-    if (!vigil.is_producer_thread()) [[unlikely]] {
+    // The table refuses a thread that does not hold the handle, with no read
+    // of the Vigil.  That refusal is this branch.
+    ::fixy::Option<::fixy::Ref<crucible::Vigil>> held = crucible::vessel::held_tls_vigil(state);
+    if (held.is_none()) [[unlikely]] {
         op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, stack);
         return;
     }
+    crucible::Vigil& vigil = *std::move(held).expect("the test above found the Vigil");
 
-    // The check above confirmed that this thread can take the producer
-    // claim, so the mint claims this thread or confirms its claim.  The
-    // context gives the record stack of the Vigil and the dispatch to it.
+    // The thread holds the handle, so it holds the producer role of the
+    // Vigil, and the mint confirms its claim.  The context gives the record
+    // stack of the Vigil and the dispatch to it.
     //
     // The nest holds the depth of the operation until the operation returns
     // or unwinds, as in the unboxed kernels of record_kernel.h.  Each
@@ -1288,13 +1281,35 @@ CRUCIBLE_API uint32_t crucible_dispatch_set_tls_mode(uint8_t mode) {
     return 1;
 }
 
-CRUCIBLE_API void crucible_dispatch_set_tls_context(void* ctx) { c10::CrucibleState::get_tls_state().set_context(ctx); }
+// Sets the handle of the Vigil of the TLS state of the calling thread, and
+// gives a CRUCIBLE_HANDLE_* status.  The handle 0 clears the context and gives
+// LIVE.  Each other handle must name a live Vigil that the calling thread
+// holds, or claims here, and a refused handle keeps the context.  The context
+// keeps the handle as its bits, and no code reads them as an address.
+CRUCIBLE_API uint32_t crucible_dispatch_set_tls_context(uint64_t handle) {
+    c10::CrucibleState& state = c10::CrucibleState::get_tls_state();
+    if (handle == 0) {
+        state.set_context(nullptr);
+        return CRUCIBLE_HANDLE_LIVE;
+    }
+    return crucible::vessel::vigil_handles.mint_held_vigil(crucible::vessel::VigilHandle{handle})
+        .match(
+            [&state, handle](crucible::vessel::HeldVigil held) noexcept -> uint32_t {
+                static_cast<void>(held);
+                state.set_context(std::bit_cast<void*>(handle));
+                return CRUCIBLE_HANDLE_LIVE;
+            },
+            [](crucible::vessel::HandleRefusal refused) noexcept { return crucible::vessel::handle_code_of(refused); });
+}
 
 CRUCIBLE_API uint8_t crucible_dispatch_get_tls_mode() {
     return static_cast<uint8_t>(c10::CrucibleState::get_tls_state().mode());
 }
 
-CRUCIBLE_API void* crucible_dispatch_get_tls_context() { return c10::CrucibleState::get_tls_state().context(); }
+// The handle of the TLS state of the calling thread, or 0.
+CRUCIBLE_API uint64_t crucible_dispatch_get_tls_context() {
+    return std::bit_cast<uint64_t>(c10::CrucibleState::get_tls_state().context());
+}
 
 CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash) {
     c10::CrucibleState::get_tls_state().set_scope_hash(scope_hash);
