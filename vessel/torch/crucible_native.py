@@ -234,6 +234,13 @@ class DispatchStatus(enum.IntEnum):
     COMPLETE = 2
 
 
+class DispatchLimit(enum.IntEnum):
+    """The bounds of the arguments of a dispatch entry (CRUCIBLE_MAX_* of vessel_api.h)."""
+
+    # The most scalars of one op that crucible_dispatch_op_ex reads.  A count past it gives the action REFUSED.
+    FFI_SCALARS = 4096
+
+
 class HandleStatus(enum.IntEnum):
     """The status of a C entry that takes or gives the handle of a Vigil (CRUCIBLE_HANDLE_* of vessel_api.h)."""
 
@@ -902,6 +909,7 @@ MIRRORED_CONSTANTS: dict[str, type[enum.IntEnum]] = {
     "CRUCIBLE_STATUS_": DispatchStatus,
     "CRUCIBLE_SCHEMA_NAME_": SchemaNameResult,
     "CRUCIBLE_HANDLE_": HandleStatus,
+    "CRUCIBLE_MAX_": DispatchLimit,
 }
 
 
@@ -1701,6 +1709,37 @@ def _get_crucible_dispatch_key() -> Any:
     return None
 
 
+def wrap_tensor_backward(dispatch: _DispatchLib,
+                         window: Callable[[], contextlib.AbstractContextManager[Any]] = contextlib.nullcontext,
+                         after: Callable[[], None] | None = None) -> Callable[..., Any]:
+    """Wrap Tensor.backward in the backward window of the dispatch library, and return the Tensor.backward before it.
+
+    The phase of an op comes from a counter of the dispatch library
+    (derive_training_phase of record_kernel.h): each call of the wrapper opens
+    one window with crucible_dispatch_backward_enter, and closes it with
+    crucible_dispatch_backward_exit.  The two sessions, CrucibleNative and
+    CrucibleMode, install this one wrapper, so the two read one source of the
+    phase.  window gives a context around the call, such as the serialisation
+    of the controller, and after runs after the window closes.  The caller
+    puts the returned Tensor.backward back at its end.
+    """
+    original = torch.Tensor.backward
+
+    def backward(tensor: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
+        """Run one backward pass inside a marked window."""
+        with window():
+            dispatch.backward_enter()
+            try:
+                return original(tensor, *args, **kwargs)
+            finally:
+                dispatch.backward_exit()
+                if after is not None:
+                    after()
+
+    torch.Tensor.backward = backward  # type: ignore[method-assign]
+    return original
+
+
 # =====================================================================
 # CrucibleNative — the vessel controller
 # =====================================================================
@@ -2029,25 +2068,11 @@ class CrucibleNative:
         """Wrap Tensor.backward for the lifetime of this controller."""
         if self._tensor_backward is not None:
             return
-        original = torch.Tensor.backward
-        self._tensor_backward = original
-        controller = self
         # Bound once, as the scope hooks bind it: the wrapper is installed
         # after the library is loaded and removed before the controller lets go
         # of it, so the handle cannot go away underneath a call.
-        dispatch = self._dispatch
-
-        def backward(tensor: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
-            """Run one backward pass inside a marked, serialised window."""
-            with controller.recording_backward():
-                dispatch.backward_enter()
-                try:
-                    return original(tensor, *args, **kwargs)
-                finally:
-                    dispatch.backward_exit()
-                    controller.sync_scope_hooks()
-
-        torch.Tensor.backward = backward  # type: ignore[method-assign]
+        self._tensor_backward = wrap_tensor_backward(self._dispatch, self.recording_backward,
+                                                     self.sync_scope_hooks)
 
     def _restore_tensor_backward(self) -> None:
         """Put the runtime's own Tensor.backward back."""

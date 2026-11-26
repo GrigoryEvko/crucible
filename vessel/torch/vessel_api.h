@@ -269,24 +269,49 @@ CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle h
                                                                 const CrucibleMeta* metas,
                                                                 uint32_t n_metas) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// Extended dispatch with scalar arguments and grad/inference flags.
-// scalar_values: up to 5 int64_t values (floats bitcast via memcpy).
-// num_scalars: number of valid entries in scalar_values (0-5).  The pair
-// obeys the rule of the arrays above, as metas and n_metas do, so a null
-// scalar_values with a count above 0 gives the action REFUSED.
-// scalar_types: the tag of each value (ScalarType2 of crucible/TraceRing.h),
-// two bits for each, the first value in the low bits: 0 an integer, 1 a
-// double, 2 a bool, 3 an argument that boxes into None.  The bits of a slot
-// past num_scalars are ignored.
-// data_slots: bit i is set when value i is a data scalar (ScalarRole of
-// crucible/Types.h): its argument has the type Scalar or float in the schema,
-// and crucible_is_structural_scalar gives 0 for it.  The guard word reads the
-// tag of a data scalar but not its value, and the replay binds its value.  A
-// bit of a slot past num_scalars gives the action REFUSED.
+// The most scalars of one op that crucible_dispatch_op_ex reads from its
+// caller.  A _foreach_ op over the parameter tensors of a model gives one
+// scalar for each tensor, so the bound holds the scalar lists of large
+// models.  It also bounds the read of the three scalar arrays of a caller
+// that gives a wrong count.
+enum {
+    CRUCIBLE_MAX_FFI_SCALARS = 4096
+};
+
+// Extended dispatch with scalar arguments and op flags.  The entry writes the
+// entry that the native recording paths write for the same op.
+//
+// metas holds n_metas records: num_inputs inputs, then num_outputs outputs.
+// The entry keeps the first 32 records (MAX_INLINE_METAS of entry_slots.h):
+// each input while there is room, then each output while there is room.  The
+// inputs past them fold into the overflow digest, and the outputs past them
+// have no record, as on the native paths.  n_metas other than num_inputs plus
+// num_outputs, or a record that the decode refuses, gives the action REFUSED.
+//
+// The op gives each of its scalars, in the order of the schema, as three
+// arrays of num_scalars entries:
+//   scalar_values: the value (a double as its bits)
+//   scalar_tags:   the tag (ScalarType2 of crucible/TraceRing.h): 0 an integer,
+//                  1 a double, 2 a bool, 3 an argument that boxes into None
+//   scalar_roles:  the role (ScalarRole of crucible/Types.h): 1 a data scalar,
+//                  whose argument has the type Scalar or float in the schema
+//                  and for which crucible_is_structural_scalar gives 0, and 0
+//                  a structural scalar
+// The entry folds the scalars as the native recording paths do
+// (write_scalar_slots of entry_slots.h): the first five stay inline, and the
+// scalars past them fold into the overflow digest.  A count above
+// CRUCIBLE_MAX_FFI_SCALARS, a null array with a count above 0, a tag or a role
+// that names no value, gives the action REFUSED.  The guard word reads the tag
+// of a data scalar but not its value, and the replay binds its value.
+//
+// op_flags holds the bits of op_flag of crucible/TraceRing.h that the native
+// paths set: INFERENCE_MODE, IS_MUTABLE, the training phase, TORCH_FUNCTION
+// and GRAD_ENABLED.  A bit of the tag of slot 4, which the entry writes, or a
+// bit that no flag names, gives the action REFUSED.
 CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(
     CrucibleHandle h, uint64_t schema_hash, uint16_t num_inputs, uint16_t num_outputs, const CrucibleMeta* metas,
-    uint32_t n_metas, const int64_t* scalar_values, uint16_t num_scalars, uint16_t scalar_types, uint8_t data_slots,
-    uint8_t grad_enabled, uint8_t inference_mode) CRUCIBLE_VESSEL_NOEXCEPT;
+    uint32_t n_metas, const int64_t* scalar_values, const uint8_t* scalar_tags, const uint8_t* scalar_roles,
+    uint16_t num_scalars, uint8_t op_flags) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // 1 when the argument at position of the operator of schema_hash is a
 // structural scalar by the list of the vessel (kStructuralScalars of

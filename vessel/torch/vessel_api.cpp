@@ -424,6 +424,66 @@ dispatch_records(crucible::Vigil& vigil, Fill const& fill, crucible::vessel::Typ
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
+// The scalars of a caller of crucible_dispatch_op_ex, folded as the native
+// recording paths fold them (ScalarArgs<true> of entry_slots.h).  So the
+// three paths write one entry for one op: the first five scalars stay inline,
+// and the scalars past them fold into the overflow digest.  The door of the
+// arrays checked each pointer, so each array holds count elements.  A tag
+// that names no ScalarType2, or a role that names no ScalarRole, gives no
+// value.  O(count).
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fold reads the three scalar arrays of a C caller")
+[[nodiscard]] static ::fixy::Option<crucible::vessel::ScalarArgs<true>>
+fold_ffi_scalars(crucible::vessel::TypedArray<const int64_t> values, crucible::vessel::TypedArray<const uint8_t> tags,
+                 crucible::vessel::TypedArray<const uint8_t> roles, uint16_t count) noexcept {
+    const ::fixy::View<const int64_t> value_view = ::fixy::mint_foreign_view(values.value(), count);
+    const ::fixy::View<const uint8_t> tag_view = ::fixy::mint_foreign_view(tags.value(), count);
+    const ::fixy::View<const uint8_t> role_view = ::fixy::mint_foreign_view(roles.value(), count);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    crucible::vessel::ScalarArgs<true> scalars{};
+    std::size_t position = 0;
+    for (const int64_t value : value_view) {
+        ::fixy::Option<crucible::ScalarType2> tag =
+            ::fixy::enum_from<crucible::ScalarType2>(*tag_view.get(position).expect("the tags hold count elements"));
+        ::fixy::Option<crucible::ScalarRole> role =
+            ::fixy::enum_from<crucible::ScalarRole>(*role_view.get(position).expect("the roles hold count elements"));
+        if (tag.is_none() || role.is_none()) return ::fixy::none;
+        scalars.push(value, std::move(tag).expect("the test above found the tag"),
+                     std::move(role).expect("the test above found the role"));
+        ++position;
+    }
+    return ::fixy::Option<crucible::vessel::ScalarArgs<true>>::some(scalars);
+}
+
+// The overflow digest of the input records of a caller of
+// crucible_dispatch_op_ex at the positions from first to end, folded as the
+// native recording paths fold the inputs past their records
+// (InputOverflow::fold of entry_slots.h).  The door of the records checked the
+// pointer, and the caller gives each position below the count of the records.
+// No value when the decode refuses a record.  An op with more inputs than the
+// kept records is rare, so the fold is cold.  O(end - first).
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the fold reads the records of a C caller past the kept records")
+[[nodiscard]] CRUCIBLE_COLD static ::fixy::Option<crucible::vessel::InputOverflow>
+fold_ffi_input_overflow(crucible::vessel::TypedMeta metas, uint32_t first, uint32_t end) noexcept {
+    crucible::vessel::InputOverflow overflow{};
+    for (uint32_t position = first; position < end; ++position) {
+        ::fixy::Option<crucible::TensorMeta> decoded =
+            crucible::vessel::decode_ffi_meta(crucible::vessel::metas_from_typed(metas)[position]);
+        if (decoded.is_none()) return ::fixy::none;
+        overflow.fold(std::move(decoded).expect("the test above found the record"));
+    }
+    return ::fixy::Option<crucible::vessel::InputOverflow>::some(overflow);
+}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// The op flags that a caller of crucible_dispatch_op_ex gives: each bit that
+// the native recording paths set.  The tag of slot 4 is the entry's own.
+constexpr uint8_t kCallerOpFlags = crucible::op_flag::INFERENCE_MODE | crucible::op_flag::IS_MUTABLE
+                                 | crucible::op_flag::PHASE_MASK | crucible::op_flag::TORCH_FUNCTION
+                                 | crucible::op_flag::GRAD_ENABLED;
+
+// The records that an entry keeps, as the native recording paths keep them.
+constexpr uint16_t kKeptRecords = static_cast<uint16_t>(crucible::vessel::MAX_INLINE_METAS);
+
 extern "C" {
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
@@ -455,79 +515,73 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t schema_hash, uint16_t num_inputs,
                                                uint16_t num_outputs, const CrucibleMeta* metas, uint32_t n_metas,
-                                               const int64_t* scalar_values, uint16_t num_scalars,
-                                               uint16_t scalar_types, uint8_t data_slots, uint8_t grad_enabled,
-                                               uint8_t inference_mode) noexcept {
+                                               const int64_t* scalar_values, const uint8_t* scalar_tags,
+                                               const uint8_t* scalar_roles, uint16_t num_scalars,
+                                               uint8_t op_flags) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return on_dispatch_vigil(handle, [&](crucible::Vigil& vigil) noexcept -> CrucibleDispatchResult {
-        // The two arrays of the caller, tested as in crucible_dispatch_op.  A
-        // scalar count above 0 with a null pointer, or with a pointer that does
-        // not have the alignment of an int64_t, gives the action REFUSED.  A
-        // count of 0 reads no value, as crucible_mode.py gives a buffer of five
-        // with each count.
-        ::fixy::Option<crucible::vessel::TypedArray<const int64_t>> checked_scalars =
+        // The counts and the flags come from the caller, so a count past the
+        // bound, counts that do not add up to the records, or a flag that the
+        // caller does not give, gives the action REFUSED before a read of an
+        // array.
+        if (num_scalars > uint16_t{CRUCIBLE_MAX_FFI_SCALARS}) return refused_dispatch_result();
+        if (uint32_t{num_inputs} + uint32_t{num_outputs} != n_metas) return refused_dispatch_result();
+        if ((op_flags & ~kCallerOpFlags) != 0) return refused_dispatch_result();
+        // The four arrays of the caller, tested as in crucible_dispatch_op.  A
+        // count above 0 with a null pointer, or with a pointer that does not
+        // have the alignment of its element, gives the action REFUSED.  A
+        // count of 0 reads no element.
+        ::fixy::Option<crucible::vessel::TypedArray<const int64_t>> checked_values =
             crucible::vessel::as_array_typed(scalar_values, num_scalars);
-        if (checked_scalars.is_none()) return refused_dispatch_result();
-        const crucible::vessel::TypedArray<const int64_t> scalars_typed =
-            std::move(checked_scalars).expect("the test above found the scalar values");
+        ::fixy::Option<crucible::vessel::TypedArray<const uint8_t>> checked_tags =
+            crucible::vessel::as_array_typed(scalar_tags, num_scalars);
+        ::fixy::Option<crucible::vessel::TypedArray<const uint8_t>> checked_roles =
+            crucible::vessel::as_array_typed(scalar_roles, num_scalars);
+        if (checked_values.is_none() || checked_tags.is_none() || checked_roles.is_none())
+            return refused_dispatch_result();
+        ::fixy::Option<crucible::vessel::ScalarArgs<true>> folded =
+            fold_ffi_scalars(std::move(checked_values).expect("the test above found the values"),
+                             std::move(checked_tags).expect("the test above found the tags"),
+                             std::move(checked_roles).expect("the test above found the roles"), num_scalars);
+        if (folded.is_none()) return refused_dispatch_result();
+        const crucible::vessel::ScalarArgs<true> scalars = std::move(folded).expect("the test above found the fold");
         ::fixy::Option<crucible::vessel::TypedMeta> checked_metas = crucible::vessel::as_meta_typed(metas, n_metas);
         if (checked_metas.is_none()) return refused_dispatch_result();
         const crucible::vessel::TypedMeta metas_typed =
             std::move(checked_metas).expect("the test above found the records");
 
-        // The word of the data slots comes from the caller.  A word with a bit
-        // past the inline slots gives the action REFUSED.
-        crucible::DataSlots data{};
-        bool is_slot_word = false;
-        for (const crucible::DataSlots found : crucible::DataSlots::from_bits(data_slots)) {
-            data = found;
-            is_slot_word = true;
+        // The entry keeps the records of the native paths (extract_inputs and
+        // extract_outputs of crucible_fallback.cpp): each input while there is
+        // room, then each output while there is room.  So the kept records are
+        // the first records of the caller.  The inputs past them fold into the
+        // overflow digest, and the outputs past them have no record.
+        const uint16_t kept_inputs = ::fixy::min(num_inputs, kKeptRecords);
+        const uint16_t kept_outputs = ::fixy::min(num_outputs, static_cast<uint16_t>(kKeptRecords - kept_inputs));
+        crucible::vessel::InputOverflow overflow{};
+        if (num_inputs > kept_inputs) [[unlikely]] {
+            ::fixy::Option<crucible::vessel::InputOverflow> folded_inputs =
+                fold_ffi_input_overflow(metas_typed, kept_inputs, num_inputs);
+            if (folded_inputs.is_none()) return refused_dispatch_result();
+            overflow = std::move(folded_inputs).expect("the test above found the fold");
         }
-        if (!is_slot_word) return refused_dispatch_result();
-        uint8_t flags = 0;
-        if (inference_mode != 0) flags |= crucible::op_flag::INFERENCE_MODE;
-        if (grad_enabled != 0) flags |= crucible::op_flag::GRAD_ENABLED;
-
-        // The count above is what the caller claims; the inline array is the
-        // room there is for it. Writing past the array would be the first
-        // corruption, so the copy takes the smaller of the two and the
-        // ladder below rejects the operation outright when the claim does
-        // not fit.
-        constexpr uint16_t inline_scalars = decltype(crucible::TraceRing::Entry::scalar_values)::size();
-        const uint16_t stored_scalars = num_scalars < inline_scalars ? num_scalars : inline_scalars;
 
         // The trust ladder of crucible_dispatch_op (dispatch_records).  The
-        // fill holds the small values by value.  With a capture by reference,
-        // the Release build of this entry had 16 more instructions.
+        // fill holds the small values by value.
         return dispatch_records(
             vigil,
-            [&, data, flags, stored_scalars](crucible::TraceRing::Entry& entry) noexcept {
+            [&, op_flags, kept_inputs, kept_outputs](crucible::TraceRing::Entry& entry) noexcept {
                 // C→C++ boundary: the raw uint64_t becomes a strong hash type.
                 // The ladder writes the guard word from the decoded records
                 // and the scalar slots.
                 entry.schema_hash = crucible::SchemaHash{schema_hash};
-                entry.num_inputs = num_inputs;
-                entry.num_outputs = num_outputs;
-                // A claim past the width of the field saturates, so the ladder
-                // refuses each claim past the inline slots.  The ladder refuses
-                // a data slot past the claim too.
-                entry.num_scalar_args = static_cast<uint8_t>(::fixy::min(num_scalars, uint16_t{UINT8_MAX}));
-                entry.set_data_slots(data);
-                entry.op_flags = flags;
-                // The door gave a pointer that is not null for each count above 0.
-                for (uint16_t i = 0; i < stored_scalars; i++) {
-                    entry.scalar_values.set(
-                        ::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room"),
-                        scalars_typed.value()[i]);
-                }
-                // The tags of the stored values, after the flags, because the
-                // tag of slot 4 is in the two high bits of op_flags.  The bits
-                // of a slot past the stored values are zero, as on the
-                // recording paths.
-                entry.set_packed_scalar_types(static_cast<uint16_t>(
-                    scalar_types & ((uint32_t{1} << (crucible::kScalarTypeBits * stored_scalars)) - 1)));
+                entry.num_inputs = kept_inputs;
+                entry.num_outputs = kept_outputs;
+                // The flags come before the scalar slots, because the tag of
+                // slot 4 is in the two high bits of op_flags.
+                entry.op_flags = op_flags;
+                crucible::vessel::write_scalar_slots(entry, scalars, overflow);
             },
-            metas_typed, ::foundation::core::WindowCount{n_metas});
+            metas_typed, ::foundation::core::WindowCount{uint32_t{kept_inputs} + uint32_t{kept_outputs}});
     });
 }
 

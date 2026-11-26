@@ -10,7 +10,10 @@ dispatch) instead of the real C++ DispatchKey::Crucible. Known problems:
   - In-place ops and views share data_ptr, producing wrong edges downstream.
   - Python dispatch overhead is ~10μs/op. Real Crucible is ~5ns/op via C++.
   - No compiled mode, no shadow handles, no replay — just recording.
-  - Scalar extraction is best-effort and misses many kwargs.
+  - The mode does not see the ops that a kernel calls through the
+    dispatcher, which the native vessel records as nested ops.  The entry of
+    each op that the mode sees is the entry of the native vessel
+    (test_mode_entries.py).
 
 The REAL implementation uses DispatchKey::Crucible in c10 (see patches/).
 This file exists ONLY for recording traces to feed the visualization pipeline.
@@ -27,6 +30,8 @@ Usage:
 
 import ctypes
 import struct
+import sys
+from typing import NamedTuple
 
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode
@@ -35,11 +40,13 @@ from crucible_native import (
     CrucibleDispatchResult,
     CrucibleMeta,
     DispatchAction,
+    DispatchLimit,
     DispatchStatus,
     SchemaNameResult,
     _DispatchLib,
     _VesselLib as _NativeVesselLib,
     check_handle_status,
+    wrap_tensor_backward,
 )
 
 
@@ -80,11 +87,10 @@ class _VesselLib(_NativeVesselLib):
             ctypes.POINTER(CrucibleMeta),     # metas
             ctypes.c_uint32,                  # n_metas
             ctypes.POINTER(ctypes.c_int64),   # scalar_values
+            ctypes.POINTER(ctypes.c_uint8),   # scalar_tags, one for each value
+            ctypes.POINTER(ctypes.c_uint8),   # scalar_roles, one for each value
             ctypes.c_uint16,                  # num_scalars
-            ctypes.c_uint16,                  # scalar_types, two bits for each value
-            ctypes.c_uint8,                   # data_slots, one bit for each value
-            ctypes.c_uint8,                   # grad_enabled
-            ctypes.c_uint8,                   # inference_mode
+            ctypes.c_uint8,                   # op_flags
         ]
 
         lib.crucible_is_structural_scalar.restype = ctypes.c_int
@@ -212,47 +218,328 @@ def _schema_hash(name: bytes) -> int:
     return fold if fold != 0 else _FNV_OFFSET
 
 
-def _scalar_tag(val):
-    """Return the tag of a Python scalar, as ScalarType2 of crucible/TraceRing.h numbers it: 0 int, 1 float, 2 bool."""
-    if isinstance(val, bool):
-        return 2
-    if isinstance(val, float):
-        return 1
-    return 0
+# ─── The arguments of an op ────────────────────────────────────────
+#
+# The native fallback reads the boxed stack of an op (extract_inputs of
+# vessel/torch/crucible_fallback.cpp), and this mode reads the args and the
+# kwargs that PyTorch gives __torch_dispatch__.  PyTorch makes those from the
+# same stack, with two changes: it leaves out each trailing positional
+# argument and each kwarg-only argument at its default value, and it gives a
+# dtype, a layout and a memory format as Python objects, which the stack holds
+# as integers.  So the mode walks the arguments of the schema in their order,
+# takes the default of each argument that PyTorch left out, and pushes the
+# slots that extract_inputs pushes for the boxed value.  The rules of
+# extract_inputs, for the value of each argument:
+#
+#   None of an optional       one slot with the tag NONE, structural
+#   None of a tensor that is  no slot: the stack holds an undefined tensor
+#   no optional
+#   a tensor                  one input record
+#   a Python number in a      one input record of rank zero: PyTorch wraps the
+#   tensor position           number into a tensor before the dispatch
+#   a list of tensors         one input record for each tensor
+#   a list of optional        one input record for each tensor, and one NONE
+#   tensors                   slot for each None
+#   int, SymInt               one INT slot
+#   float                     one FLOAT slot
+#   bool                      one BOOL slot
+#   Scalar                    one slot with the tag of its Python type, and no
+#                             slot for a complex number
+#   int[], SymInt[]           one INT slot for each element
+#   float[]                   one FLOAT slot for each element
+#   Scalar[]                  one slot for each element, as for a Scalar
+#   ScalarType, Layout,       one INT slot with the c10 ordinal
+#   MemoryFormat
+#   each other type           no slot, such as a Device, a str or a bool[]
+#
+# These rules are a second statement of extract_inputs.  test_mode_entries.py
+# records one op for each rule under this mode and under CrucibleNative, and
+# it compares the two entries, so it keeps the two statements equal.  The rule
+# of None of a tensor that is no optional has no case: a Python caller cannot
+# give an op an undefined tensor, and only a kernel of PyTorch can.
+
+# The tags of a scalar slot, as ScalarType2 of crucible/TraceRing.h numbers
+# them, and the roles of a slot, as ScalarRole of crucible/Types.h numbers them.
+TAG_INT, TAG_FLOAT, TAG_BOOL, TAG_NONE = 0, 1, 2, 3
+ROLE_STRUCTURAL, ROLE_DATA = 0, 1
+
+# The positions of the arguments of a schema that the native paths give a
+# role (kMaxSchemaArguments of vessel/torch/entry_slots.h).  An argument at a
+# later position is structural.
+MAX_SCHEMA_ARGUMENTS = 32
+
+# The op flags of an entry (op_flag of crucible/TraceRing.h), and the training
+# phases of bits 2 and 3 (TrainingPhase of crucible/Types.h).
+OP_INFERENCE_MODE = 1 << 0
+OP_IS_MUTABLE = 1 << 1
+OP_PHASE_SHIFT = 2
+OP_TORCH_FUNCTION = 1 << 4
+OP_GRAD_ENABLED = 1 << 5
+PHASE_FORWARD, PHASE_BACKWARD, PHASE_OPTIMIZER = 0, 1, 2
+
+# The kinds of an argument of a schema, one for each row of the rules above
+# that reads the type of the argument.
+(_KIND_TENSOR, _KIND_TENSOR_LIST, _KIND_OPTIONAL_TENSOR_LIST, _KIND_INT, _KIND_FLOAT, _KIND_BOOL, _KIND_NUMBER,
+ _KIND_INT_LIST, _KIND_FLOAT_LIST, _KIND_NUMBER_LIST, _KIND_DTYPE, _KIND_LAYOUT, _KIND_MEMORY_FORMAT,
+ _KIND_OTHER) = range(14)
+
+# The kind of each type of a schema, by the name of its kind.  The kind of an
+# optional is the kind of its payload.
+_KIND_OF_TYPE = {
+    "TensorType": _KIND_TENSOR,
+    "IntType": _KIND_INT,
+    "SymIntType": _KIND_INT,
+    "FloatType": _KIND_FLOAT,
+    "BoolType": _KIND_BOOL,
+    "NumberType": _KIND_NUMBER,
+    "ScalarTypeType": _KIND_DTYPE,
+    "LayoutType": _KIND_LAYOUT,
+    "MemoryFormatType": _KIND_MEMORY_FORMAT,
+}
+
+# The kind of a list, by the name of the kind of its element.  A list of
+# optional tensors is a kind of its own.
+_KIND_OF_LIST = {
+    "TensorType": _KIND_TENSOR_LIST,
+    "IntType": _KIND_INT_LIST,
+    "SymIntType": _KIND_INT_LIST,
+    "FloatType": _KIND_FLOAT_LIST,
+    "NumberType": _KIND_NUMBER_LIST,
+}
+
+# The position of a kwarg-only argument in the walk: past each args tuple, so
+# the walk reads its value from the kwargs.
+_KWARG_ONLY = sys.maxsize
+
+# The c10 ordinal of each element type (c10::ScalarType of
+# torch/headeronly/core/ScalarType.h), which the boxed stack holds for an
+# argument of the type ScalarType.  These differ from the crucible ordinals of
+# _DTYPE_MAP, which name only the element types of a tensor that crucible
+# reads.  test_mode_entries.py compares each row with torch.ops.prim.dtype.
+_C10_DTYPE_ORDINALS = {
+    getattr(torch, name): ordinal for name, ordinal in (
+        ("uint8", 0), ("int8", 1), ("int16", 2), ("int32", 3), ("int64", 4), ("float16", 5), ("float32", 6),
+        ("float64", 7), ("complex32", 8), ("complex64", 9), ("complex128", 10), ("bool", 11), ("qint8", 12),
+        ("quint8", 13), ("qint32", 14), ("bfloat16", 15), ("quint4x2", 16), ("quint2x4", 17), ("bits1x8", 18),
+        ("bits2x4", 19), ("bits4x2", 20), ("bits8", 21), ("bits16", 22), ("float8_e5m2", 23),
+        ("float8_e4m3fn", 24), ("float8_e5m2fnuz", 25), ("float8_e4m3fnuz", 26), ("uint16", 27), ("uint32", 28),
+        ("uint64", 29), ("uint1", 30), ("uint2", 31), ("uint3", 32), ("uint4", 33), ("uint5", 34), ("uint6", 35),
+        ("uint7", 36), ("int1", 37), ("int2", 38), ("int3", 39), ("int4", 40), ("int5", 41), ("int6", 42),
+        ("int7", 43), ("float8_e8m0fnu", 44), ("float4_e2m1fn_x2", 45), ("bcomplex32", 46))
+    if hasattr(torch, name)
+}
+
+# The c10 ordinal of each layout (c10::Layout of
+# torch/headeronly/core/Layout.h) and of each memory format (c10::MemoryFormat
+# of torch/headeronly/core/MemoryFormat.h).  legacy_contiguous_format is the
+# object of contiguous_format.
+_C10_LAYOUT_ORDINALS = {
+    getattr(torch, name): ordinal for name, ordinal in (
+        ("strided", 0), ("sparse_coo", 1), ("sparse_csr", 2), ("_mkldnn", 3), ("sparse_csc", 4),
+        ("sparse_bsr", 5), ("sparse_bsc", 6), ("jagged", 7))
+    if hasattr(torch, name)
+}
+_C10_MEMORY_FORMAT_ORDINALS = {
+    torch.contiguous_format: 0,
+    torch.preserve_format: 1,
+    torch.channels_last: 2,
+    torch.channels_last_3d: 3,
+}
+
+# The crucible ordinal of the element type of a tensor that PyTorch wraps a
+# Python number into: a double, a long, a bool or a complex double.
+_WRAPPED_DTYPE = {float: 7, int: 4, bool: 11, complex: 10}
+# The bytes of the storage of such a tensor.
+_WRAPPED_NBYTES = {float: 8, int: 8, bool: 1, complex: 16}
+
+_DOUBLE = struct.Struct("<d")
+_INT64 = struct.Struct("<q")
 
 
 def _is_data_type(argument_type) -> bool:
-    """True for a schema type whose Python scalar fills a data slot.
+    """True for a schema type whose slots are data.
 
     The type Scalar or float, an optional of one, or a list of one, is data
     (ScalarRole of crucible/Types.h), unless crucible_is_structural_scalar
-    names the argument.  The type comes from the schema of the operator, as on
-    the native recording paths.
-
-    A Python scalar in a position of the type Tensor is a wrapped number.
-    PyTorch makes a tensor of rank zero from the number, and it gives this mode
-    the number again, such as the float divisor of div.Tensor in the step of
-    the AdamW with no fused kernel.  The native vessel records that tensor as
-    an input, and its guard reads no value of an input.  So the value of a
-    wrapped number is data here too, and a loop whose wrapped number changes
-    at each iteration keeps its period.
+    names the argument.  The rule is data_arguments_of of
+    vessel/torch/crucible_fallback.cpp: it reads the type of the schema, and
+    no value.
     """
-    kind = argument_type.kind()
-    if kind in ("OptionalType", "ListType"):
-        return _is_data_type(argument_type.getElementType())
-    return kind in ("NumberType", "FloatType", "TensorType")
+    if argument_type.kind() == "OptionalType":
+        argument_type = argument_type.getElementType()
+    if argument_type.kind() == "ListType":
+        argument_type = argument_type.getElementType()
+    return argument_type.kind() in ("NumberType", "FloatType")
 
 
-def _scalar_to_int64(val):
-    """Bitcast a Python scalar to int64 for TraceRing::Entry::scalar_values."""
-    if isinstance(val, bool):
-        return 1 if val else 0
-    if isinstance(val, int):
-        return val & 0xFFFFFFFFFFFFFFFF  # truncate to uint64 bits
-    if isinstance(val, float):
-        # Bitcast float64 → int64 via struct pack/unpack
-        return struct.unpack("q", struct.pack("d", val))[0]
-    return 0
+def _kind_of(argument_type) -> tuple[int, bool]:
+    """Return the kind of a type of a schema and True when the type is an optional."""
+    is_optional = argument_type.kind() == "OptionalType"
+    if is_optional:
+        argument_type = argument_type.getElementType()
+    if argument_type.kind() != "ListType":
+        return _KIND_OF_TYPE.get(argument_type.kind(), _KIND_OTHER), is_optional
+    element = argument_type.getElementType()
+    if element.kind() == "OptionalType" and element.getElementType().kind() == "TensorType":
+        return _KIND_OPTIONAL_TENSOR_LIST, is_optional
+    return _KIND_OF_LIST.get(element.kind(), _KIND_OTHER), is_optional
+
+
+def _push_number(value, role: int, values: list, tags: list, roles: list) -> None:
+    """Push the slot of a Python number in a Scalar position: no slot for a complex number."""
+    if isinstance(value, bool):
+        values.append(int(value))
+        tags.append(TAG_BOOL)
+    elif isinstance(value, int):
+        values.append(value)
+        tags.append(TAG_INT)
+    elif isinstance(value, float):
+        values.append(_INT64.unpack(_DOUBLE.pack(value))[0])
+        tags.append(TAG_FLOAT)
+    else:
+        return
+    roles.append(role)
+
+
+def _extract_inputs(steps: tuple, args: tuple, kwargs: dict) -> tuple[list, list[int], list[int], list[int]]:
+    """Walk the arguments of an op by its plan, and return its inputs and the values, tags and roles of its slots.
+
+    Each input is a tensor, or a Python number that PyTorch wraps into a
+    tensor.  The walk follows the rules at the head of this section, which
+    state the rules of extract_inputs of vessel/torch/crucible_fallback.cpp
+    again.  test_mode_entries.py keeps the two statements equal.
+
+    Complexity: O(arguments + elements of the lists).
+    """
+    inputs: list = []
+    values: list[int] = []
+    tags: list[int] = []
+    roles: list[int] = []
+    count = len(args)
+    for position, name, default, kind, is_optional, role in steps:
+        value = args[position] if position < count else kwargs.get(name, default)
+        if value is None:
+            # An undefined tensor of a position that is no optional gives no
+            # slot.  PyTorch gives it as None too.
+            if is_optional:
+                values.append(0)
+                tags.append(TAG_NONE)
+                roles.append(ROLE_STRUCTURAL)
+        elif kind == _KIND_TENSOR:
+            inputs.append(value)
+        elif kind == _KIND_TENSOR_LIST:
+            inputs.extend(element for element in value if element is not None)
+        elif kind == _KIND_OPTIONAL_TENSOR_LIST:
+            for element in value:
+                if element is None:
+                    values.append(0)
+                    tags.append(TAG_NONE)
+                    roles.append(ROLE_STRUCTURAL)
+                else:
+                    inputs.append(element)
+        elif kind == _KIND_INT:
+            if isinstance(value, int):
+                values.append(int(value))
+                tags.append(TAG_INT)
+                roles.append(role)
+        elif kind == _KIND_FLOAT:
+            values.append(_INT64.unpack(_DOUBLE.pack(float(value)))[0])
+            tags.append(TAG_FLOAT)
+            roles.append(role)
+        elif kind == _KIND_BOOL:
+            values.append(int(bool(value)))
+            tags.append(TAG_BOOL)
+            roles.append(role)
+        elif kind == _KIND_NUMBER:
+            _push_number(value, role, values, tags, roles)
+        elif kind == _KIND_INT_LIST:
+            for element in value:
+                if isinstance(element, int):
+                    values.append(int(element))
+                    tags.append(TAG_INT)
+                    roles.append(role)
+        elif kind == _KIND_FLOAT_LIST:
+            for element in value:
+                values.append(_INT64.unpack(_DOUBLE.pack(float(element)))[0])
+                tags.append(TAG_FLOAT)
+                roles.append(role)
+        elif kind == _KIND_NUMBER_LIST:
+            for element in value:
+                _push_number(element, role, values, tags, roles)
+        elif kind in (_KIND_DTYPE, _KIND_LAYOUT, _KIND_MEMORY_FORMAT):
+            ordinal = value if isinstance(value, int) else _ORDINALS_OF_KIND[kind].get(value)
+            if ordinal is not None:
+                values.append(ordinal)
+                tags.append(TAG_INT)
+                roles.append(role)
+    return inputs, values, tags, roles
+
+
+# The c10 ordinals of the objects of each kind that the stack holds as an
+# integer.
+_ORDINALS_OF_KIND = {
+    _KIND_DTYPE: _C10_DTYPE_ORDINALS,
+    _KIND_LAYOUT: _C10_LAYOUT_ORDINALS,
+    _KIND_MEMORY_FORMAT: _C10_MEMORY_FORMAT_ORDINALS,
+}
+
+
+def _extract_outputs(result, num_returns: int) -> list:
+    """Return the outputs of an op, as extract_outputs of vessel/torch/crucible_fallback.cpp reads the stack.
+
+    Each output is a tensor, or a Python number, such as the value of
+    _local_scalar_dense, that the native path records as a meta of rank zero.
+    Complexity: O(returns + elements of the lists).
+    """
+    if num_returns == 0 or result is None:
+        return []
+    returned = (result,) if num_returns == 1 else result
+    outputs = []
+    for value in returned:
+        if isinstance(value, (torch.Tensor, bool, int, float, complex)):
+            outputs.append(value)
+        elif isinstance(value, (list, tuple)):
+            outputs.extend(element for element in value if isinstance(element, torch.Tensor))
+    return outputs
+
+
+def _fill_number_meta(meta, number, is_input: bool) -> None:
+    """Fill the record of a Python number.
+
+    An input is the tensor of rank zero that PyTorch wraps the number into.
+    This mode sees no such tensor, so the record has no data address, and the
+    memory plan gives it no slot.  An output is the meta of rank zero of
+    scalar_result_meta of vessel/torch/entry_slots.h, with no storage.
+    """
+    kind = complex if isinstance(number, complex) else type(number)
+    meta.ndim = 0
+    meta.dtype = _WRAPPED_DTYPE.get(kind, _UNNAMED_ORDINAL)
+    meta.device_type = _DEVICE_MAP["cpu"]
+    meta.device_idx = -1
+    meta.layout = _LAYOUT_MAP[torch.strided]
+    if is_input:
+        # A leaf and contiguous (the flags of _fill_meta).
+        meta.flags = 0x03
+        meta.storage_nbytes = _WRAPPED_NBYTES.get(kind, 0)
+
+
+class _OpPlan(NamedTuple):
+    """The walk plan of one operator overload, which the mode builds once.
+
+    steps holds one tuple for each argument of the schema that can give an
+    input or a slot: (position, name, default, kind, is_optional, role).  The
+    position of a kwarg-only argument is _KWARG_ONLY.  schema_flags holds the
+    op flags of the schema: IS_MUTABLE for an op that writes an argument.
+    is_foreach is True for a fused multi-tensor op, whose name holds
+    "_foreach_" (is_foreach_op_name of record_kernel.h).
+    """
+
+    name: str
+    schema_hash: int
+    num_returns: int
+    steps: tuple
+    schema_flags: int
+    is_foreach: bool
 
 
 # ─── CrucibleMode ──────────────────────────────────────────────────
@@ -278,12 +565,29 @@ class CrucibleMode(TorchDispatchMode):
         self._verbose = verbose
         self._op_count = 0
         self._schema_cache = {}
-        # The names of the data arguments of each operator (_data_arguments).
-        self._data_argument_cache = {}
+        # The walk plan of each operator overload that the mode saw
+        # (_plan_of).  The table holds one plan for each overload, and
+        # PyTorch registers a finite set of them (4407 schemas in the build of
+        # the fork), so the table holds at most that many plans and the
+        # overloads of the custom operators of the program.
+        self._plans: dict = {}
         self._prev_compiled = False
+        # The Tensor.backward before the wrapper of the backward window, while
+        # the mode is entered.
+        self._tensor_backward = None
+
+    def __enter__(self):
+        """Enter the mode, and wrap Tensor.backward in the backward window of the dispatch library.
+
+        The phase of an op comes from the counter of that window, as on the
+        native paths (wrap_tensor_backward of crucible_native.py).
+        """
+        entered = super().__enter__()
+        self._tensor_backward = wrap_tensor_backward(self._dispatch)
+        return entered
 
     def __exit__(self, exc_type, exc_value, traceback):
-        """Leave the mode, and give up the producer claim of this thread.
+        """Leave the mode, put Tensor.backward back, and give up the producer claim of this thread.
 
         The create of the Vigil and each op claim the thread of the mode
         (crucible_create).  The exit gives the claim up (crucible_release_claim),
@@ -294,6 +598,9 @@ class CrucibleMode(TorchDispatchMode):
         try:
             return super().__exit__(exc_type, exc_value, traceback)
         finally:
+            if self._tensor_backward is not None:
+                torch.Tensor.backward = self._tensor_backward
+                self._tensor_backward = None
             if self._handle:
                 self._vessel.release_claim(self._handle)
 
@@ -368,54 +675,52 @@ class CrucibleMode(TorchDispatchMode):
         # Execute eagerly first (always, in this POC).
         result = func(*args, **kwargs)
 
-        # Op identity
-        op_name = func.name()
-        schema_hash = self._get_schema_hash(op_name)
+        plan = self._plans.get(func)
+        if plan is None:
+            plan = self._plan_of(func)
+        op_name = plan.name
+        inputs, values, tags, roles = _extract_inputs(plan.steps, args, kwargs)
+        outputs = _extract_outputs(result, plan.num_returns)
+        num_inputs = len(inputs)
+        num_outputs = len(outputs)
 
-        # Tensor inputs/outputs
-        input_tensors = self._extract_tensors(args, kwargs)
-        output_tensors = self._extract_tensors_from_result(result)
-        num_inputs = len(input_tensors)
-        num_outputs = len(output_tensors)
-
-        # Build TensorMeta array: [inputs..., outputs...]
-        all_tensors = input_tensors + output_tensors
-        n_metas = len(all_tensors)
+        # The records of the op: [inputs..., outputs...]
+        n_metas = num_inputs + num_outputs
+        metas = None
         if n_metas > 0:
-            MetaArray = CrucibleMeta * n_metas
-            metas = MetaArray()
-            for i, t in enumerate(all_tensors):
-                self._fill_meta(metas[i], t)
-            metas_ptr = ctypes.cast(metas, ctypes.POINTER(CrucibleMeta))
-        else:
-            metas_ptr = None
+            metas = (CrucibleMeta * n_metas)()
+            for i, item in enumerate(inputs):
+                if isinstance(item, torch.Tensor):
+                    self._fill_meta(metas[i], item)
+                else:
+                    _fill_number_meta(metas[i], item, is_input=True)
+            for i, item in enumerate(outputs, num_inputs):
+                if isinstance(item, torch.Tensor):
+                    self._fill_meta(metas[i], item)
+                else:
+                    _fill_number_meta(metas[i], item, is_input=False)
 
-        # Extract scalar arguments from args and kwargs, each with its tag and
-        # its role.
-        scalars = self._extract_scalars(func, args, kwargs, self._data_arguments(func, op_name, schema_hash))
-        num_scalars = min(len(scalars), 5)
-        ScalarArray = ctypes.c_int64 * 5
-        scalar_buf = ScalarArray()
-        scalar_types = 0
-        data_slots = 0
-        for i in range(num_scalars):
-            scalar_buf[i], tag, is_data = scalars[i]
-            scalar_types |= tag << (2 * i)
-            data_slots |= int(is_data) << i
-        scalars_ptr = ctypes.cast(scalar_buf, ctypes.POINTER(ctypes.c_int64))
+        # The slots of the op as three arrays.  A count past the bound gives
+        # the action REFUSED, and the entry reads no slot.  The count has 16
+        # bits, so a longer list gives the bound plus one.
+        num_scalars = len(values)
+        value_array = tag_array = role_array = None
+        if num_scalars > 0:
+            value_array = (ctypes.c_int64 * num_scalars)(*values)
+            tag_array = (ctypes.c_uint8 * num_scalars)(*tags)
+            role_array = (ctypes.c_uint8 * num_scalars)(*roles)
+        count_word = min(num_scalars, DispatchLimit.FFI_SCALARS + 1)
 
-        # Grad/inference mode flags
-        grad_on = 1 if torch.is_grad_enabled() else 0
-        infer_on = 1 if torch.is_inference_mode_enabled() else 0
+        flags = self._op_flags(plan, types)
 
         # Dispatch to Vigil
         dr = self._vessel.crucible_dispatch_op_ex(
             self._handle,
-            schema_hash,
+            plan.schema_hash,
             num_inputs, num_outputs,
-            metas_ptr, n_metas,
-            scalars_ptr, num_scalars, scalar_types, data_slots,
-            grad_on, infer_on,
+            metas, n_metas,
+            value_array, tag_array, role_array, count_word,
+            flags,
         )
         # A handle that the library refuses, such as on a thread that does not
         # hold the Vigil, raises its error here.  The op already ran eagerly.
@@ -439,7 +744,7 @@ class CrucibleMode(TorchDispatchMode):
             # The status is a field of the action COMPILED only.
             label = (f"{action.name}:{DispatchStatus(dr.status).name}"
                      if action == DispatchAction.COMPILED else action.name)
-            extra = f" scalars={[value for value, _, _ in scalars[:num_scalars]]}" if num_scalars > 0 else ""
+            extra = f" scalars={values}" if num_scalars > 0 else ""
             print(f"  [{label}] {op_name} "
                   f"in={num_inputs} out={num_outputs}{extra}")
 
@@ -546,66 +851,66 @@ class CrucibleMode(TorchDispatchMode):
         else:
             meta.grad_fn_hash = 0
 
-    @staticmethod
-    def _extract_tensors(args, kwargs):
-        tensors = []
-        for a in args:
-            if isinstance(a, torch.Tensor):
-                tensors.append(a)
-            elif isinstance(a, (list, tuple)):
-                for x in a:
-                    if isinstance(x, torch.Tensor):
-                        tensors.append(x)
-        for v in kwargs.values():
-            if isinstance(v, torch.Tensor):
-                tensors.append(v)
-            elif isinstance(v, (list, tuple)):
-                for x in v:
-                    if isinstance(x, torch.Tensor):
-                        tensors.append(x)
-        return tensors
+    def _plan_of(self, func) -> _OpPlan:
+        """Build the walk plan of an operator overload, keep it in the table of the plans, and return it.
 
-    @staticmethod
-    def _extract_tensors_from_result(result):
-        if isinstance(result, torch.Tensor):
-            return [result]
-        if isinstance(result, (list, tuple)):
-            return [x for x in result if isinstance(x, torch.Tensor)]
-        return []
+        The type of each argument in the schema gives its kind (_kind_of) and
+        its role.  An argument of the type Scalar or float, an optional of one,
+        or a list of one, is data (_is_data_type), unless its position is past
+        the positions that the native paths name (MAX_SCHEMA_ARGUMENTS) or the
+        list of the vessel makes it structural (crucible_is_structural_scalar).
+        A tensor, a list of tensors and an optional of each other kind can
+        give an input or a slot.  An argument of each other kind gives
+        neither, and the plan leaves it out.
 
-    def _data_arguments(self, func, op_name, schema_hash):
-        """Return the names of the arguments of the operator whose Python scalars are data.
-
-        The type of an argument in the schema gives its role (_is_data_type),
-        and the list of the vessel makes some of them structural
-        (crucible_is_structural_scalar).  The answer depends on the operator
-        only, so the mode keeps it for each name.  O(arguments) at the first
-        call for an operator.
+        Complexity: O(arguments of the schema), once for each overload.
         """
-        names = self._data_argument_cache.get(op_name)
-        if names is None:
-            names = frozenset(
-                argument.name for position, argument in enumerate(func._schema.arguments)
-                if _is_data_type(argument.type)
-                and not self._vessel.crucible_is_structural_scalar(schema_hash, position))
-            self._data_argument_cache[op_name] = names
-        return names
+        name = func.name()
+        schema_hash = self._get_schema_hash(name)
+        schema = func._schema
+        steps = []
+        for position, argument in enumerate(schema.arguments):
+            kind, is_optional = _kind_of(argument.real_type)
+            if kind == _KIND_OTHER and not is_optional:
+                continue
+            is_data = (position < MAX_SCHEMA_ARGUMENTS and _is_data_type(argument.real_type)
+                       and not self._vessel.crucible_is_structural_scalar(schema_hash, position))
+            default = argument.default_value if argument.has_default_value() else None
+            steps.append((_KWARG_ONLY if argument.kwarg_only else position, argument.name, default, kind,
+                          is_optional, ROLE_DATA if is_data else ROLE_STRUCTURAL))
+        plan = _OpPlan(name, schema_hash, len(schema.returns), tuple(steps),
+                       OP_IS_MUTABLE if schema.is_mutable else 0, "_foreach_" in name)
+        self._plans[func] = plan
+        return plan
 
-    @staticmethod
-    def _extract_scalars(func, args, kwargs, data_arguments):
-        """Extract the scalar arguments as triples of an int64 bitcast value, its tag and its role.
+    def _op_flags(self, plan: _OpPlan, types) -> int:
+        """Return the op flags of one op, as the native paths set them (entry_op_flags of record_kernel.h).
 
-        The role is True for a data scalar: an argument whose name is in
-        data_arguments.  A positional argument has the name of the argument
-        of the schema at its position.
+        The inference and the grad bits read the modes of this thread.  The
+        phase is BACKWARD in a backward window of the dispatch library, which
+        the wrapper of Tensor.backward opens.  It is OPTIMIZER for a fused
+        multi-tensor op with grad off, and FORWARD for each other op
+        (derive_training_phase of record_kernel.h).  TORCH_FUNCTION tells that
+        the native paths see the Python dispatch key: an argument is a tensor
+        subclass with __torch_dispatch__ (types is not empty), or a Python
+        dispatch mode other than this one is on the stack.  PyTorch takes this
+        mode off the stack while its handler runs, so the count of the stack
+        leaves it out.  The mode stands in for the native recorder, so its own
+        dispatch sets no bit.
         """
-        arguments = func._schema.arguments
-        scalars = []
-        for position, a in enumerate(args):
-            if isinstance(a, (int, float, bool)) and not isinstance(a, torch.Tensor):
-                is_data = position < len(arguments) and arguments[position].name in data_arguments
-                scalars.append((_scalar_to_int64(a), _scalar_tag(a), is_data))
-        for name, v in kwargs.items():
-            if isinstance(v, (int, float, bool)) and not isinstance(v, torch.Tensor):
-                scalars.append((_scalar_to_int64(v), _scalar_tag(v), name in data_arguments))
-        return scalars
+        grad_enabled = torch.is_grad_enabled()
+        flags = plan.schema_flags
+        if torch.is_inference_mode_enabled():
+            flags |= OP_INFERENCE_MODE
+        if grad_enabled:
+            flags |= OP_GRAD_ENABLED
+        if self._dispatch.backward_depth() != 0:
+            phase = PHASE_BACKWARD
+        elif plan.is_foreach and not grad_enabled:
+            phase = PHASE_OPTIMIZER
+        else:
+            phase = PHASE_FORWARD
+        flags |= phase << OP_PHASE_SHIFT
+        if types or torch._C._len_torch_dispatch_stack() > 0:
+            flags |= OP_TORCH_FUNCTION
+        return flags

@@ -166,11 +166,13 @@ def main():
     # block of 10 ops.  The divisor of div.Tensor in each block is a wrapped
     # number, the square root of the bias correction, which changes at each
     # step.  This mode gets it as a Python float in a position of the type
-    # Tensor, and it is data (_is_data_type of crucible_mode.py).  If the mode
-    # folds its value into the guard word, no whole iteration repeats, and the
-    # detector cuts a region of the one block that two parameters of one shape
-    # repeat in one step.  So the test requires a region of the ops of one
-    # whole iteration.
+    # Tensor, and it records an input of rank zero, as the native vessel
+    # records the tensor that PyTorch wraps the number into (_extract_inputs
+    # of crucible_mode.py).  The guard word reads no value of an input.  If
+    # the mode folds its value into the guard word, no whole iteration
+    # repeats, and the detector cuts a region of the one block that two
+    # parameters of one shape repeat in one step.  So the test requires a
+    # region of the ops of one whole iteration.
     model = MiniGPT(VOCAB, D_MODEL, N_HEADS, N_LAYERS, D_FF, MAX_SEQ)
     model.train()
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, fused=False, foreach=False)

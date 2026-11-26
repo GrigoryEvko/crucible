@@ -87,5 +87,6 @@ int main() {
     write_constants<CRUCIBLE_SCHEMA_NAME_REGISTERED>();
     write_constants<CRUCIBLE_HANDLE_LIVE>();
     write_constants<CRUCIBLE_VIGIL_SLOTS>();
+    write_constants<CRUCIBLE_MAX_FFI_SCALARS>();
     return 0;
 }

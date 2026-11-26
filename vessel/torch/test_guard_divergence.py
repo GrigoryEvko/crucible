@@ -47,8 +47,10 @@ check runs under CrucibleNative, and the check wrapped runs under CrucibleMode:
                  the step from a tensor, so the loop replays
     wrapped      under CrucibleMode, a Python float in a position of the type
                  Tensor, such as the divisor of div.Tensor, is a wrapped
-                 number and data: a loop whose divisor changes replays with no
-                 divergence.  A changed int index of select still diverges
+                 number.  The mode records it as an input of rank zero, as the
+                 native vessel records its tensor, and the guard reads no
+                 value of an input: a loop whose divisor changes replays with
+                 no divergence.  A changed int index of select still diverges
 
 Each check of a structural change needs a divergence after the change.  The
 loops replay with no divergence before the change.  The tests compare no value
@@ -338,10 +340,10 @@ def check_wrapped_number_under_mode() -> list[str]:
     """Give one line for each problem of CrucibleMode with a wrapped number, which must replay, and an int.
 
     A Python float in a position of the type Tensor is a wrapped number, and
-    the mode makes it data, as the native vessel records its tensor as an
-    input.  So a loop whose divisor changes at each iteration replays with no
-    divergence.  An int of the schema stays structural, so a changed index of
-    select diverges.
+    the mode records it as an input of rank zero, as the native vessel records
+    its tensor.  So a loop whose divisor changes at each iteration replays with
+    no divergence.  An int of the schema stays structural, so a changed index
+    of select diverges.
     """
     problems = []
     source = torch.ones(16)

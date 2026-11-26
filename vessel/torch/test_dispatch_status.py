@@ -12,13 +12,17 @@ check runs through the two entries:
                     gives REFUSED
     broken record   a record with the gradient byte 2 gives REFUSED
     too many        more records than the record stack of the Vigil holds gives
-                    REFUSED
+                    REFUSED from crucible_dispatch_op.  crucible_dispatch_op_ex
+                    keeps the first 32 records, as the native paths do, so it
+                    gives RECORD
     again           an op with one input and one output after the refused ops
                     gives RECORD
 
-crucible_dispatch_op_ex also checks the claim of the scalars: a count of 257
-scalars, a data slot past the count and a data bit past the five slots give
-REFUSED, and a data slot below the count gives RECORD.
+crucible_dispatch_op_ex also checks the claim of the scalars: a count past
+CRUCIBLE_MAX_FFI_SCALARS, a null array with a count, a tag of 4 and a role of
+2 give REFUSED.  A count of 257 scalars with each array of that length, and
+data slots in the first five, give RECORD.  A bit of the tag of slot 4 in the
+op flags gives REFUSED.
 
 The eager word of crucible_create and crucible_observe_eager_numerics has a
 layout (EagerNumerics of crucible/NumericalRecipe.h).  A word with a bit that
@@ -89,8 +93,8 @@ def bind(lib: ctypes.CDLL) -> tuple:
     dispatch_op_ex.restype = DispatchResult
     dispatch_op_ex.argtypes = [
         ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
-        ctypes.POINTER(ctypes.c_int64), ctypes.c_uint16, ctypes.c_uint16, ctypes.c_uint8, ctypes.c_uint8,
-        ctypes.c_uint8,
+        ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_uint16, ctypes.c_uint8,
     ]
     return dispatch_op, dispatch_op_ex
 
@@ -114,8 +118,12 @@ def check(problems: list[str], entry: str, case: str, result: DispatchResult, ex
                         f"not zero")
 
 
-def run_entry(entry: str, call, handle: int) -> list[str]:
-    """Run each case through call, which takes (handle, inputs, outputs, metas, count), and return the problems."""
+def run_entry(entry: str, call, handle: int, too_many_action: DispatchAction) -> list[str]:
+    """Run each case through call, which takes (handle, inputs, outputs, metas, count), and return the problems.
+
+    too_many_action is the action of the entry for more records than the
+    record stack holds.
+    """
     problems: list[str] = []
     pair = records(2)
     broken = records(2)
@@ -134,7 +142,7 @@ def run_entry(entry: str, call, handle: int) -> list[str]:
           DispatchAction.REFUSED)
     check(problems, entry, "a record with the gradient byte 2", call(handle, 1, 1, broken, 2), DispatchAction.REFUSED)
     check(problems, entry, f"{MAX_OP_RECORDS + 1} records", call(handle, 64, 65, too_many, MAX_OP_RECORDS + 1),
-          DispatchAction.REFUSED)
+          too_many_action)
     check(problems, entry, "an op with one input and one output after the refused ops", call(handle, 1, 1, pair, 2),
           DispatchAction.RECORD)
     return problems
@@ -143,23 +151,42 @@ def run_entry(entry: str, call, handle: int) -> list[str]:
 def check_scalar_claims(dispatch_op_ex, handle: int) -> list[str]:
     """Return one line for each claim of the scalars of crucible_dispatch_op_ex that the entry judges wrongly.
 
-    An entry holds five scalars and a byte of their count.  A claim of 257
-    scalars must not wrap to a count of one, and a data slot must lie below
-    the count, because the replay binds its value from the stored scalars.
+    An entry holds five scalars inline, and the scalars past them fold into
+    the overflow digest.  So a count of 257 scalars records, and it does not
+    wrap to a count of one.  The count, the tags and the roles come from the
+    caller, so a count past the bound, a null array, and a tag or a role that
+    names no value give REFUSED.
     """
     problems: list[str] = []
     pair = records(2)
-    values = (ctypes.c_int64 * 5)()
+    limit = crucible_native.DispatchLimit.FFI_SCALARS
+    many = 257
+    values = (ctypes.c_int64 * many)()
+    tags = (ctypes.c_uint8 * many)()
+    roles = (ctypes.c_uint8 * many)()
+    unnamed_tag = (ctypes.c_uint8 * many)(*([0] * (many - 1) + [4]))
+    unnamed_role = (ctypes.c_uint8 * many)(*([0] * (many - 1) + [2]))
+    data_roles = (ctypes.c_uint8 * many)(*([1] * 5 + [0] * (many - 5)))
     entry = "crucible_dispatch_op_ex"
+    # The arrays hold 257 elements, and the entry refuses a count past the
+    # bound before it reads an element.
     cases = (
-        ("a claim of 257 scalars", 257, 0, DispatchAction.REFUSED),
-        ("a data slot past the count of one scalar", 1, 0b10, DispatchAction.REFUSED),
-        ("a data bit past the five slots", 5, 0b100000, DispatchAction.REFUSED),
-        ("a data slot below the count of one scalar", 1, 0b1, DispatchAction.RECORD),
+        ("a count past the bound", values, tags, roles, limit + 1, DispatchAction.REFUSED),
+        ("a null value array with 5 scalars", None, tags, roles, 5, DispatchAction.REFUSED),
+        ("a null tag array with 5 scalars", values, None, roles, 5, DispatchAction.REFUSED),
+        ("a null role array with 5 scalars", values, tags, None, 5, DispatchAction.REFUSED),
+        ("a tag of 4 in the last of 257 scalars", values, unnamed_tag, roles, many, DispatchAction.REFUSED),
+        ("a role of 2 in the last of 257 scalars", values, tags, unnamed_role, many, DispatchAction.REFUSED),
+        ("257 scalars", values, tags, roles, many, DispatchAction.RECORD),
+        ("257 scalars with five data slots", values, tags, data_roles, many, DispatchAction.RECORD),
     )
-    for case, count, data_slots, expected in cases:
-        result = dispatch_op_ex(handle, SCHEMA_HASH, 1, 1, pair, 2, values, count, 0, data_slots, 0, 0)
+    for case, values_at, tags_at, roles_at, count, expected in cases:
+        result = dispatch_op_ex(handle, SCHEMA_HASH, 1, 1, pair, 2, values_at, tags_at, roles_at, count, 0)
         check(problems, entry, case, result, expected)
+    # Bits 6 and 7 of the op flags hold the tag of slot 4, which the entry
+    # writes from the scalars.
+    check(problems, entry, "the bit of the tag of slot 4 in the op flags",
+          dispatch_op_ex(handle, SCHEMA_HASH, 1, 1, pair, 2, None, None, None, 0, 1 << 6), DispatchAction.REFUSED)
     return problems
 
 
@@ -196,12 +223,12 @@ def main() -> int:
         problems = run_entry(
             "crucible_dispatch_op",
             lambda h, inputs, outputs, metas, count: dispatch_op(h, SCHEMA_HASH, inputs, outputs, metas, count),
-            handle)
+            handle, DispatchAction.REFUSED)
         problems += run_entry(
             "crucible_dispatch_op_ex",
             lambda h, inputs, outputs, metas, count: dispatch_op_ex(h, SCHEMA_HASH, inputs, outputs, metas, count,
-                                                                    None, 0, 0, 0, 0, 0),
-            handle)
+                                                                    None, None, None, 0, 0),
+            handle, DispatchAction.RECORD)
         problems += check_scalar_claims(dispatch_op_ex, handle)
         problems += check_eager_words(vessel, handle)
     finally:

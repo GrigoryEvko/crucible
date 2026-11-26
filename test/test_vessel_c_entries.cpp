@@ -67,9 +67,15 @@ constexpr bool kExportChecksNames = ::foundation::has_test_oracles;
 constexpr uint64_t kScaleSchema = 0x5CA1E0001ULL;
 constexpr uint64_t kAddSchema = 0xADD00002ULL;
 
-// The crucible ordinal of float32, and the tag of a double scalar.
+// The crucible ordinal of float32, the tag of a double scalar, and the roles
+// of a scalar (ScalarRole of crucible/Types.h).
 constexpr int8_t kFloat = 6;
-constexpr uint16_t kDoubleTag = 1;
+constexpr uint8_t kDoubleTag = 1;
+constexpr uint8_t kStructural = 0;
+constexpr uint8_t kData = 1;
+
+// The tags and the roles of five structural integer scalars.
+using ScalarBytes = ::fixy::FixedArray<uint8_t, 5>;
 
 // The most iterations of the loop that forms a region.  The Vigil activates a
 // region after two periods of the loop.
@@ -192,9 +198,12 @@ template <class Element, std::size_t Count>
 
 // One iteration of the loop: a scale with one data scalar, then an add.
 void run_iteration(CrucibleHandle handle, LoopRecords const& loop) noexcept {
-    const ::fixy::FixedArray<int64_t, 5> step{std::bit_cast<int64_t>(0.5), 0, 0, 0, 0};
+    const ::fixy::FixedArray<int64_t, 1> step{std::bit_cast<int64_t>(0.5)};
+    const ::fixy::FixedArray<uint8_t, 1> step_tag{kDoubleTag};
+    const ::fixy::FixedArray<uint8_t, 1> step_role{kData};
     static_cast<void>(crucible_dispatch_op_ex(handle, kScaleSchema, 1, 1, &loop.scale.at(::fixy::index<0>()), 2,
-                                              &step.at(::fixy::index<0>()), 1, kDoubleTag, 1, 0, 0));
+                                              &step.at(::fixy::index<0>()), &step_tag.at(::fixy::index<0>()),
+                                              &step_role.at(::fixy::index<0>()), 1, 0));
     static_cast<void>(crucible_dispatch_op(handle, kAddSchema, 1, 1, &loop.add.at(::fixy::index<0>()), 2));
 }
 
@@ -205,45 +214,112 @@ void test_dispatch_pairs(CrucibleHandle handle) {
     const CrucibleMeta* const metas = &records.at(::fixy::index<0>());
     const ::fixy::FixedArray<int64_t, 5> values{1, 2, 3, 4, 5};
     const int64_t* const scalars = &values.at(::fixy::index<0>());
+    const ScalarBytes tag_bytes{};
+    const ScalarBytes role_bytes{};
+    const uint8_t* const tags = &tag_bytes.at(::fixy::index<0>());
+    const uint8_t* const roles = &role_bytes.at(::fixy::index<0>());
     CallerBytes<CrucibleMeta, 1> meta_bytes{};
     CallerBytes<int64_t, 1> scalar_bytes{};
     const auto misaligned_meta_action = [handle](CrucibleMeta* record) noexcept {
         return crucible_dispatch_op(handle, kAddSchema, 1, 0, record, 1).action;
     };
-    const auto misaligned_meta_ex_action = [handle, scalars](CrucibleMeta* record) noexcept {
-        return crucible_dispatch_op_ex(handle, kScaleSchema, 1, 0, record, 1, scalars, 1, 0, 0, 0, 0).action;
+    const auto misaligned_meta_ex_action = [handle, scalars, tags, roles](CrucibleMeta* record) noexcept {
+        return crucible_dispatch_op_ex(handle, kScaleSchema, 1, 0, record, 1, scalars, tags, roles, 1, 0).action;
     };
-    const auto misaligned_scalar_action = [handle, metas](int64_t* values_at) noexcept {
-        return crucible_dispatch_op_ex(handle, kScaleSchema, 1, 1, metas, 2, values_at, 1, 0, 0, 0, 0).action;
+    const auto misaligned_scalar_action = [handle, metas, tags, roles](int64_t* values_at) noexcept {
+        return crucible_dispatch_op_ex(handle, kScaleSchema, 1, 1, metas, 2, values_at, tags, roles, 1, 0).action;
+    };
+    const auto ex_action = [handle, metas](const int64_t* values_at, const uint8_t* tags_at, const uint8_t* roles_at,
+                                           uint16_t count) noexcept {
+        return crucible_dispatch_op_ex(handle, kScaleSchema, 1, 1, metas, 2, values_at, tags_at, roles_at, count, 0)
+            .action;
+    };
+    const auto flags_action = [handle, metas](uint8_t op_flags) noexcept {
+        return crucible_dispatch_op_ex(handle, kScaleSchema, 1, 1, metas, 2, nullptr, nullptr, nullptr, 0, op_flags)
+            .action;
     };
 
     // The cases that the old entries recorded or judged with a contract
     // check come first, in the order of their defect.
-    EXPECT(crucible_dispatch_op_ex(handle, kScaleSchema, 1, 1, metas, 2, nullptr, 5, 0, 0, 0, 0).action
-               == CRUCIBLE_ACTION_REFUSED,
+    EXPECT(ex_action(nullptr, tags, roles, 5) == CRUCIBLE_ACTION_REFUSED,
            "a null scalar array with a count above 0 is refused, not recorded with zero values");
+    EXPECT(ex_action(scalars, nullptr, roles, 5) == CRUCIBLE_ACTION_REFUSED,
+           "a null tag array with a count above 0 is refused");
+    EXPECT(ex_action(scalars, tags, nullptr, 5) == CRUCIBLE_ACTION_REFUSED,
+           "a null role array with a count above 0 is refused");
     EXPECT(call_with_array(scalar_bytes, Place::OneBytePast, misaligned_scalar_action) == CRUCIBLE_ACTION_REFUSED,
            "a misaligned scalar array with a count above 0 is refused");
+    // The arrays hold five elements, so a read past them is a defect that
+    // AddressSanitizer reports.
+    EXPECT(ex_action(scalars, tags, roles, uint16_t{CRUCIBLE_MAX_FFI_SCALARS + 1}) == CRUCIBLE_ACTION_REFUSED,
+           "a count past CRUCIBLE_MAX_FFI_SCALARS is refused before a read of the arrays");
+    const ScalarBytes unnamed_tag{0, 0, 4, 0, 0};
+    const ScalarBytes unnamed_role{0, 0, 0, 2, 0};
+    EXPECT(ex_action(scalars, &unnamed_tag.at(::fixy::index<0>()), roles, 5) == CRUCIBLE_ACTION_REFUSED,
+           "a tag that names no ScalarType2 is refused");
+    EXPECT(ex_action(scalars, tags, &unnamed_role.at(::fixy::index<0>()), 5) == CRUCIBLE_ACTION_REFUSED,
+           "a role that names no ScalarRole is refused");
+    const ScalarBytes mixed_roles{kStructural, kData, kData, kStructural, kData};
+    EXPECT(ex_action(scalars, tags, &mixed_roles.at(::fixy::index<0>()), 5) == CRUCIBLE_ACTION_RECORD,
+           "five scalars with data slots record");
+    const ::fixy::FixedArray<int64_t, CRUCIBLE_MAX_FFI_SCALARS> many_values{};
+    const ::fixy::FixedArray<uint8_t, CRUCIBLE_MAX_FFI_SCALARS> many_bytes{};
+    EXPECT(ex_action(&many_values.at(::fixy::index<0>()), &many_bytes.at(::fixy::index<0>()),
+                     &many_bytes.at(::fixy::index<0>()), uint16_t{CRUCIBLE_MAX_FFI_SCALARS})
+               == CRUCIBLE_ACTION_RECORD,
+           "CRUCIBLE_MAX_FFI_SCALARS scalars record, with the scalars past the fifth in the overflow digest");
     EXPECT(crucible_dispatch_op(handle, kAddSchema, 0, 0, metas, 0).action == CRUCIBLE_ACTION_RECORD,
            "a meta array with a count of 0 reads no record, and the op with no tensor records");
     EXPECT(call_with_array(meta_bytes, Place::OneBytePast, misaligned_meta_action) == CRUCIBLE_ACTION_REFUSED,
            "a misaligned meta array with a count above 0 is refused");
     EXPECT(crucible_dispatch_op(handle, kAddSchema, 1, 1, nullptr, 2).action == CRUCIBLE_ACTION_REFUSED,
            "a null meta array with a count above 0 is refused");
-    EXPECT(crucible_dispatch_op_ex(handle, kScaleSchema, 1, 1, metas, 2, scalars, 0, 0, 0, 0, 0).action
-               == CRUCIBLE_ACTION_RECORD,
-           "a scalar buffer with a count of 0 reads no value, as crucible_mode.py gives it");
-    EXPECT(crucible_dispatch_op_ex(handle, kScaleSchema, 1, 1, metas, 2, nullptr, 0, 0, 0, 0, 0).action
-               == CRUCIBLE_ACTION_RECORD,
-           "a null scalar array with a count of 0 records");
-    EXPECT(crucible_dispatch_op_ex(handle, kScaleSchema, 1, 1, nullptr, 2, scalars, 1, 0, 0, 0, 0).action
+    EXPECT(ex_action(scalars, tags, roles, 0) == CRUCIBLE_ACTION_RECORD,
+           "scalar arrays with a count of 0 read no value");
+    EXPECT(ex_action(nullptr, nullptr, nullptr, 0) == CRUCIBLE_ACTION_RECORD,
+           "null scalar arrays with a count of 0 record");
+    EXPECT(crucible_dispatch_op_ex(handle, kScaleSchema, 1, 1, nullptr, 2, scalars, tags, roles, 1, 0).action
                == CRUCIBLE_ACTION_REFUSED,
            "a null meta array with a count above 0 is refused by the extended entry");
-    EXPECT(crucible_dispatch_op_ex(handle, kScaleSchema, 0, 0, metas, 0, scalars, 1, 0, 0, 0, 0).action
+    EXPECT(crucible_dispatch_op_ex(handle, kScaleSchema, 0, 0, metas, 0, scalars, tags, roles, 1, 0).action
                == CRUCIBLE_ACTION_RECORD,
            "a meta array with a count of 0 reads no record in the extended entry");
     EXPECT(call_with_array(meta_bytes, Place::OneBytePast, misaligned_meta_ex_action) == CRUCIBLE_ACTION_REFUSED,
            "a misaligned meta array with a count above 0 is refused by the extended entry");
+    // The array holds two records, so a read of a third is a defect that
+    // AddressSanitizer reports.
+    EXPECT(crucible_dispatch_op_ex(handle, kScaleSchema, 2, 1, metas, 2, nullptr, nullptr, nullptr, 0, 0).action
+               == CRUCIBLE_ACTION_REFUSED,
+           "counts of the inputs and the outputs that do not add up to the records are refused");
+
+    // The flags of the caller: each bit that the native paths set records,
+    // and a bit of the tag of slot 4 is the entry's own.
+    EXPECT(flags_action(crucible::op_flag::INFERENCE_MODE | crucible::op_flag::IS_MUTABLE
+                        | crucible::op_flag::PHASE_MASK | crucible::op_flag::TORCH_FUNCTION
+                        | crucible::op_flag::GRAD_ENABLED)
+               == CRUCIBLE_ACTION_RECORD,
+           "each flag that the native paths set records");
+    EXPECT(flags_action(uint8_t{1} << crucible::op_flag::SCALAR4_TYPE_SHIFT) == CRUCIBLE_ACTION_REFUSED,
+           "a bit of the tag of slot 4 in the flags of the caller is refused");
+
+    // The records past the 32 that the native paths keep: the inputs past
+    // them fold into the overflow digest, and a broken one is refused.
+    ::fixy::FixedArray<CrucibleMeta, 40> wide{};
+    for (::fixy::Index<40> position : ::fixy::FixedArray<CrucibleMeta, 40>::indices())
+        wide.set(position, record_at(crucible::SyntheticAddress{0x100000 + 0x1000 * position.raw()}));
+    EXPECT(crucible_dispatch_op_ex(handle, kScaleSchema, 39, 1, &wide.at(::fixy::index<0>()), 40, nullptr, nullptr,
+                                   nullptr, 0, 0)
+                   .action
+               == CRUCIBLE_ACTION_RECORD,
+           "an op of 39 inputs and one output records its first 32 inputs and the digest of the others");
+    CrucibleMeta broken = record_at(crucible::SyntheticAddress{0x200000});
+    broken.requires_grad = 2;
+    wide.set(::fixy::index<36>(), broken);
+    EXPECT(crucible_dispatch_op_ex(handle, kScaleSchema, 39, 1, &wide.at(::fixy::index<0>()), 40, nullptr, nullptr,
+                                   nullptr, 0, 0)
+                   .action
+               == CRUCIBLE_ACTION_REFUSED,
+           "an input past the kept records that the decode refuses is refused");
 }
 
 // The pairs of the two entries that write into an array of the caller, with
