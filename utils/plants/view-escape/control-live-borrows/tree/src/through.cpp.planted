@@ -1,0 +1,48 @@
+// A closure argument holds a borrow through its captures, beside an argument that
+// gives an object, but no callee changes the object of the borrow: the closure
+// captures the owner itself, a View of a different owner, and a View beside a callee
+// that only reads the owner.
+#include <foundation/core/Array.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+using View = fc::View<int const>;
+
+template <class Body>
+unsigned long move_and_run(Items& items, Body&& body) noexcept {
+    Items held = std::move(items);
+    unsigned long const read = body();
+    items = std::move(held);
+    return read;
+}
+
+template <class Body>
+unsigned long count_and_run(Items& items, Body&& body) noexcept {
+    return items.size() + body();
+}
+
+unsigned long owner_itself() noexcept {
+    Items items{};
+    return move_and_run(items, [&items]() noexcept { return items.size(); });
+}
+
+unsigned long view_of_a_different_owner() noexcept {
+    Items items{};
+    Items const other{};
+    View const view = other.view();
+    return move_and_run(items, [&view]() noexcept { return view.size(); });
+}
+
+unsigned long view_beside_a_reading_callee() noexcept {
+    Items items{};
+    Items const& readable = items;
+    View const view = readable.view();
+    return count_and_run(items, [&view]() noexcept { return view.size(); });
+}
+
+}  // namespace planted

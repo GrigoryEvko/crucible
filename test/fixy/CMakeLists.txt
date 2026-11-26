@@ -7707,7 +7707,8 @@ fixy_neg_compile_test(neg_spawn_parallel_for_captured_ref
   "Give the run to the door in reads\\(\\)")
 fixy_neg_compile_test(neg_spawn_parallel_for_view_in_a_captured_closure
   "static assertion failed: mint_parallel_for: the body captures .first_of_run. \\(field __first_of_run, type const main\\(\\)::<lambda\\(\\)>\\)"
-  "The first part that refuses it: foundation::core::View<const long unsigned int>")
+  "The first part that refuses it: foundation::core::View<const long unsigned int>"
+  "neg_spawn_parallel_for_view_in_a_captured_closure\\.cpp:13:[0-9]+: error: this use reads a borrow of items in a closure argument after a call of .*give_region_and_borrow with items, which moves an owner of the borrow")
 fixy_neg_compile_test(neg_spawn_parallel_for_const_reference_to_an_owner
   "static assertion failed: mint_parallel_for: the body captures .owner. \\(field __owner, type const foundation::core::FixedArray<long unsigned int, 64"
   "Give the run to the door in reads\\(\\)")

@@ -10,7 +10,10 @@
 # In the unit segments a SegmentList of Views keeps a borrow of an element across
 # an append and across an append with code of the element.  In the unit beside one
 # argument of a call gives a borrow, and a different argument names its object, but
-# no callee ends it.
+# no callee ends it.  In the unit through a closure argument holds a borrow through
+# its captures, beside an argument that gives an object, but no callee changes the
+# object of the borrow: a capture of the owner itself (31), a View of a different
+# owner (38), and a callee that only reads the owner (45).
 
 compile live src/live.cpp
 flag live -freflection
@@ -39,3 +42,7 @@ exit segments pass
 compile beside src/beside.cpp
 flag beside -freflection
 exit beside pass
+
+compile through src/through.cpp
+flag through -freflection
+exit through pass

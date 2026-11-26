@@ -44,6 +44,12 @@
 # that is not const (58), an element beside its list (62), and a View beside an owner
 # that the call consumes (74).  In the unit receiver the receiver of a borrow match
 # stands behind the operator-> of a Box, and the arm ends the Box (23).
+#
+# In the unit through a closure argument holds a borrow of an object through its
+# captures, and a different argument gives the object: a View that the closure
+# captures by reference beside a callee that moves the owner away and back (36), a
+# copy of the View in the closure (43), the View in a captured closure (51), and a
+# View beside a callee that replaces the owner (58).
 
 compile stale src/stale.cpp
 flag stale -freflection
@@ -234,6 +240,18 @@ error beside src/beside.cpp:53 | this use reads a borrow of items in an argument
 error beside src/beside.cpp:58 | this use reads a borrow of items in an argument of the call after a call of planted::replace_and_read with items
 error beside src/beside.cpp:62 | this use reads a borrow of list in an argument of the call after a call of planted::clear_and_read with list
 error beside src/beside.cpp:74 | this use reads a borrow of items in an argument of the call after a call of planted::consume with items
+
+compile through src/through.cpp
+flag through -freflection
+exit through fail
+finding through view-escape stale-borrow src/through.cpp:36:24 | borrow of items in view after a call of planted::move_and_run with items, which moves an owner of the borrow
+finding through view-escape stale-borrow src/through.cpp:43:24 | borrow of items in a closure argument after a call of planted::move_and_run with items, which moves an owner of the borrow
+finding through view-escape stale-borrow src/through.cpp:51:24 | borrow of items in size after a call of planted::move_and_run with items, which moves an owner of the borrow
+finding through view-escape stale-borrow src/through.cpp:58:27 | borrow of items in view after a call of planted::replace_and_run with items
+error through src/through.cpp:36 | this use reads a borrow of items in view after a call of planted::move_and_run with items, which moves an owner of the borrow
+error through src/through.cpp:43 | this use reads a borrow of items in a closure argument after a call of planted::move_and_run with items, which moves an owner of the borrow
+error through src/through.cpp:51 | this use reads a borrow of items in size after a call of planted::move_and_run with items, which moves an owner of the borrow
+error through src/through.cpp:58 | this use reads a borrow of items in view after a call of planted::replace_and_run with items
 
 compile early src/early.cpp
 flag early -freflection

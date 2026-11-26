@@ -1,0 +1,61 @@
+// A closure argument holds a borrow of an object through its captures, and a
+// different argument of the same call gives the object.  The callee changes the
+// object, and then it can run the closure: a View that the closure captures by
+// reference beside a callee that moves the owner away and back, a copy of the View
+// in the closure, the View in a closure that the closure captures, and a View
+// beside a callee that replaces the owner.
+#include <foundation/core/Array.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+using View = fc::View<int const>;
+
+template <class Body>
+unsigned long move_and_run(Items& items, Body&& body) noexcept {
+    Items held = std::move(items);
+    unsigned long const read = body();
+    items = std::move(held);
+    return read;
+}
+
+template <class Body>
+unsigned long replace_and_run(Items& items, Body&& body) noexcept {
+    items = Items{};
+    return body();
+}
+
+unsigned long view_by_reference() noexcept {
+    Items items{};
+    Items const& readable = items;
+    View const view = readable.view();
+    return move_and_run(items, [&view]() noexcept { return view.size(); });
+}
+
+unsigned long view_by_copy() noexcept {
+    Items items{};
+    Items const& readable = items;
+    View const view = readable.view();
+    return move_and_run(items, [view]() noexcept { return view.size(); });
+}
+
+unsigned long view_in_a_captured_closure() noexcept {
+    Items items{};
+    Items const& readable = items;
+    View const view = readable.view();
+    auto const size = [view]() noexcept { return view.size(); };
+    return move_and_run(items, [&size]() noexcept { return size(); });
+}
+
+unsigned long view_beside_a_replace() noexcept {
+    Items items{};
+    Items const& readable = items;
+    View const view = readable.view();
+    return replace_and_run(items, [&view]() noexcept { return view.size(); });
+}
+
+}  // namespace planted

@@ -46,6 +46,19 @@
 //     a use of the borrow after that end.  The effects of the body judge the end, as
 //     they judge a later use.
 //
+// Borrows through a capture
+//     A closure argument also holds each loan that its captures hold: the loans of a
+//     captured local, such as a View that the closure captures by reference, and a
+//     copy of a borrow.  Its own captures are no such loan, so a capture of the
+//     object itself stays with the ends beside a borrow.  Beside an argument that
+//     gives the object of such a loan, the call is a use of the loan.  The callee
+//     changes the object when it ends an owner of the route or a target, and also
+//     when it moves such an owner out of the object, into a call or into a local.  A
+//     move counts also when the body gives the owner back: while the owner is away,
+//     the callee can lend its storage under a unique borrow and run the closure,
+//     which reads the same bytes.  Such a use comes after each other use at the end
+//     of the unit, so a finding of a different form at the same place keeps its text.
+//
 // Transfer
 //     A move of an owner keeps the storage behind it, so each loan whose route has
 //     a class in the bytes of the moved object goes to the new object.  A call
@@ -66,7 +79,8 @@
 //     that the body assigns, destroys, moves away or replaces by a store to a
 //     pointer of their state, and the calls that take an object of the parameter.
 //     A capture of a closure has an effect too.  A body that moves an owner of its
-//     caller to a local, and then back, ends nothing.  The effect on an owner inside
+//     caller to a local, and then back, ends nothing, but the effect keeps the moved
+//     classes for the borrows through a capture.  The effect on an owner inside
 //     the object has the ends of a path that come before the owner leaves the object,
 //     and the end of a local that still holds it.  So expect() of an Option moves the
 //     payload out, clears the Option, and ends no owner inside it.  The walk of each
@@ -299,18 +313,21 @@ std::uint64_t capture_key(unsigned closure, unsigned field) {
     return (std::uint64_t{1} << 63) | (static_cast<std::uint64_t>(closure) << 32) | field;
 }
 
-// The classes with an end that a body ends, and the calls that take an object.
+// The classes with an end that a body ends, the classes with an end that it moves
+// out of the object, and the calls that take an object.
 struct Ends {
     TypeSet ended;
+    TypeSet moved;
     std::set<Taking> takings;
 
     void add(const Ends& other) {
         add_types(ended, other.ended);
+        add_types(moved, other.moved);
         takings.insert(other.takings.begin(), other.takings.end());
     }
 
     bool operator==(const Ends& other) const {
-        return ended == other.ended
+        return ended == other.ended && moved == other.moved
             && !std::lexicographical_compare(takings.begin(), takings.end(), other.takings.begin(), other.takings.end())
             && !std::lexicographical_compare(other.takings.begin(), other.takings.end(), takings.begin(),
                                              takings.end());
@@ -347,6 +364,7 @@ struct StaleUse {
     location_t location = UNKNOWN_LOCATION;
     std::string borrow;
     std::vector<JudgedEnd> ends;
+    bool is_through = false;  // a closure holds the loan through a capture, so a move of an owner changes it
 };
 
 // What one reading of a body gives.
@@ -1129,6 +1147,20 @@ private:
     }
 
     void note_ended(int place, tree type) { note_ended(place, ended_parts(type)); }
+
+    // The body moves the owner of TYPE at PLACE out of its object, into a call or a
+    // local.  The body can give the owner back, so the move ends nothing (the borrows
+    // through a capture).
+    void note_moved_out(int place, tree type) {
+        const TypeSet& parts = ended_parts(type);
+        if (parts.empty()) {
+            return;
+        }
+        visit_effects(place, [&](Effect& effect) {
+            add_types(effect.all.moved, parts);
+            add_types(effect.inner.moved, parts);
+        });
+    }
 
     // The owner at PLACE ends with a local that holds it.
     void note_dropped(int place, tree type) {
@@ -2301,7 +2333,85 @@ private:
                         }
                     }
                 }
+                check_borrows_through(arguments[lender], bindings[writer], arguments[writer], writer, callee);
             }
+        }
+    }
+
+    // The closure CLOSURE holds a loan through its captures, and the argument at
+    // WRITER_INDEX gives the object of the loan (the borrows through a capture).
+    // Complexity: the loans of the closure times the bindings of the writer.
+    void check_borrows_through(const Argument& closure, const std::vector<Binding>& writers,
+                               const Argument& writer_argument, std::size_t writer_index, tree callee) {
+        if (!closure.is_closure) {
+            return;
+        }
+        unsigned const own = closure_id_of(closure);
+        for (int held : closure.loans) {
+            bool const is_own_capture = loans_[held].source == LoanSource::capture && loans_[held].closure == own;
+            if (loans_[held].place == kNoPlace || is_own_capture) {
+                continue;
+            }
+            for (const Binding& writer : writers) {
+                if (writer.is_write && places_.overlaps(loans_[held].place, writer.place)) {
+                    note_end_through(held, closure, writer, writer_argument, writer_index, callee);
+                }
+            }
+        }
+    }
+
+    // The TYPE_UID of the class of the closure that ARGUMENT gives, or 0.
+    static unsigned closure_id_of(const Argument& argument) {
+        tree object = object_of(argument.node);
+        tree type = object != NULL_TREE ? TREE_TYPE(object) : NULL_TREE;
+        if (is_indirect_type(type)) {
+            type = TREE_TYPE(type);
+        }
+        type = element_class(type);
+        return type != NULL_TREE && is_closure_type(type) ? TYPE_UID(TYPE_MAIN_VARIANT(type)) : 0U;
+    }
+
+    // The name of the local that the closure CLOSURE captures and that holds LOAN,
+    // or the name of a copy in the closure.
+    std::string holder_of(const Argument& closure, int loan) {
+        for (int capture : closure.loans) {
+            const Loan& known = loans_[capture];
+            if (known.source != LoanSource::capture || known.place == kNoPlace || places_.depth(known.place) != 0) {
+                continue;
+            }
+            auto found = state_.loans.find(root_id(known.place));
+            if (found != state_.loans.end()
+                && std::find(found->second.begin(), found->second.end(), loan) != found->second.end()) {
+                return places_.text(known.place);
+            }
+        }
+        return "a closure argument";
+    }
+
+    // The callee can end the object of the loan HELD through the argument at
+    // WRITER_INDEX, or move an owner of it away, and then run the closure CLOSURE,
+    // which holds the loan.  The use is at the call.
+    void note_end_through(int held, const Argument& closure, const Binding& writer, const Argument& writer_argument,
+                          std::size_t writer_index, tree callee) {
+        End end = make_end(EndKind::call, writer.place);
+        end.callee = callee;
+        if (writer.is_capture) {
+            end.is_closure = true;
+            end.taking = taking_of_capture(loans_[writer.loan].closure, loans_[writer.loan].field);
+        } else {
+            end.taking = taking_of_parameter(callee, writer_index, writer_argument.held);
+        }
+        tree const type = writer.is_capture ? places_.type(writer.place) : writer_argument.held;
+        is_rvalue_end_ = writer_argument.is_rvalue && !writer.is_capture;
+        bool const is_ended = ends_loan(loans_[held], writer.place, end, type);
+        is_rvalue_end_ = false;
+        if (!is_ended) {
+            return;
+        }
+        std::size_t const before = reading_.uses.size();
+        record_use(holder_of(closure, held), held, {add_end(end)});
+        if (reading_.uses.size() != before) {
+            reading_.uses.back().is_through = true;
         }
     }
 
@@ -2574,6 +2684,7 @@ private:
         const Argument& argument = arguments[index];
         bool const is_same_class = facts.is_constructor && element_class(facts.result) == element_class(argument.held);
         note_moved(place);
+        note_moved_out(place, argument.held);
         if (is_same_class && index == 1 && arguments.size() == 2) {
             transfer_loans(place, facts.built, argument.held);
             note_kept(place, facts.built, argument.held);
@@ -2956,10 +3067,12 @@ void on_pre_genericize(void* gcc_data, void*) {
 
 // ── The judgment ────────────────────────────────────────────────────────
 
-// What the calls of a taking can end: the classes that a body ends, and the owners
-// that a call with no body can end.
+// What the calls of a taking can end: the classes that a body ends, the classes
+// that a body moves out of the object, and the owners that a call with no body can
+// end.
 struct TakingEnds {
     TypeSet ended;
+    TypeSet moved;
     TypeSet unseen;
 };
 
@@ -2980,6 +3093,7 @@ void collect_ends(const Taking& taking, TakingEnds& ends, std::set<std::pair<std
     }
     const Ends& of_call = taking.is_inner ? effect->second.inner : effect->second.all;
     add_types(ends.ended, of_call.ended);
+    add_types(ends.moved, of_call.moved);
     for (const Taking& next : of_call.takings) {
         collect_ends(next, ends, seen);
     }
@@ -3013,6 +3127,18 @@ std::string judged_text(const JudgedEnd& end) {
             break;
     }
     return std::string();
+}
+
+// The text of END when it changes a loan that a closure holds through a capture,
+// or an empty text.  A move of an owner of the loan out of its object changes it
+// too (the borrows through a capture).
+std::string judged_through_text(const JudgedEnd& end) {
+    std::string const text = judged_text(end);
+    if (!text.empty() || end.kind != EndKind::call) {
+        return text;
+    }
+    return have_common_type(end.types, ends_of(end.taking).moved) ? end.text + ", which moves an owner of the borrow"
+                                                                  : std::string();
 }
 
 }  // namespace
@@ -3062,17 +3188,21 @@ CallEnd call_end(const Taking& taking, unsigned owners) {
 }
 
 void finish_live_borrows() {
-    for (const StaleUse& use : stale_uses) {
-        Place place = place_of(use.location, Scope::quarantine);
-        if (place.file == nullptr) {
-            continue;
-        }
-        for (const JudgedEnd& end : use.ends) {
-            std::string const text = judged_text(end);
-            if (!text.empty()) {
-                add_finding(Kind::stale_borrow, nullptr, place, use.borrow + " after " + text);
-                end_locations.emplace(place.spelling, end.location);
-                break;
+    // A use through a capture comes after each other use, so a finding of a
+    // different form at the same place keeps its text.
+    for (bool const is_through_pass : {false, true}) {
+        for (const StaleUse& use : stale_uses) {
+            Place place = use.is_through == is_through_pass ? place_of(use.location, Scope::quarantine) : Place{};
+            if (place.file == nullptr) {
+                continue;
+            }
+            for (const JudgedEnd& end : use.ends) {
+                std::string const text = use.is_through ? judged_through_text(end) : judged_text(end);
+                if (!text.empty()) {
+                    add_finding(Kind::stale_borrow, nullptr, place, use.borrow + " after " + text);
+                    end_locations.emplace(place.spelling, end.location);
+                    break;
+                }
             }
         }
     }

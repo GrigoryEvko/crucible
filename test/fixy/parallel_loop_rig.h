@@ -35,7 +35,10 @@ inline constexpr std::size_t kShards = 2;
 // borrow.  The plugin refuses a borrow of an owner in the closure of a door
 // that the owner moved into, when the borrow and the move are in one function.
 // Here the borrow is a parameter, which that rule does not see, so a fixture
-// fails only for its own reason.
+// fails only for its own reason.  A closure that holds a borrow of the items
+// through its captures is different: the plugin refuses the call of this
+// function too, because the call moves the items away while it holds the
+// closure (the borrows through a capture of the plugin).
 template <class Borrow, class Body>
 void give_region_and_borrow(::fixy::HeapArray<Word>& items, Borrow const& borrow, Body body) noexcept {
     items = ::fixy::with_region<Written>(
