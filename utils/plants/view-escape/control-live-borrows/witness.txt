@@ -22,7 +22,9 @@
 # takes the owner by a const reference, and the end of a different owner.  In the
 # unit static_texts a value that holds a StaticText comes from a call with a local,
 # and lives on past the end of the scope of the local (29) and past a change of it
-# (36): a class of the base that states refers_static{} holds no borrow.
+# (36): a class of the base that states refers_static{} holds no borrow.  In the
+# unit parts a change of a different part leaves a borrow of a part alone: a Record,
+# a std::tuple, a std::pair and a std::array.
 
 compile live src/live.cpp
 flag live -freflection
@@ -67,3 +69,7 @@ exit numbers pass
 compile static_texts src/static_texts.cpp
 flag static_texts -freflection
 exit static_texts pass
+
+compile parts src/parts.cpp
+flag parts -freflection
+exit parts pass

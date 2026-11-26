@@ -23,6 +23,19 @@
 //     and a pointer local name the place of their initializer, until a different
 //     store.  std::move, std::forward and std::as_const give their argument back.
 //
+// Parts
+//     A door of a part gives a reference to one part of a product type at the
+//     constant index of its first template argument: std::get of a std::tuple, a
+//     std::pair and a std::array, and Record::at (kPartDoors).  FixedArray::at
+//     gives only a const reference, and each change of an element goes through a
+//     door of the whole array, so a part of it would change no finding.  The loan
+//     of a door of a part, and its name as an argument, is the part at that
+//     index, a step with the index.  Two parts of different indices are two
+//     objects.  A part overlaps an element of no index and each field of its
+//     object, because the walk does not map an index to a field.  A sum type, such
+//     as a std::variant or a OneOf, has no row: its alternatives share storage.  A
+//     door with no row gives a loan of its whole object.
+//
 // Ends
 //     These events end a loan:
 //       the end of the scope of its root
@@ -138,8 +151,11 @@
 //
 // Limits
 //     A join takes each end of its branches.  Two elements of one array are one
-//     place.  A door of a class gives a loan of its whole object, so a change of a
-//     different member of the same type is a finding.  A swap in a callee reads as
+//     place.  A door of a class with no row of the parts gives a loan of its whole
+//     object, so a change of a different member of the same type is a finding.  A
+//     door that ends a part by an index argument, such as FixedArray::set, ends the
+//     whole object, because an index does not prove that the door changes only that
+//     part.  A swap in a callee reads as
 //     the end of the two owners, and an exchange as the end of the old owner, also
 //     when a local keeps it.  An owner that leaves the block of a Box reads as ended,
 //     and so does an owner that a match gives to an arm with a borrow of it.  Two owners
@@ -191,6 +207,16 @@ public:
     int dereference(int place) { return intern_step(place, StepKind::dereference, NULL_TREE); }
     int element(int place) { return intern_step(place, StepKind::element, NULL_TREE); }
 
+    // The part at the constant index INDEX of the object at PLACE, whose type is
+    // TYPE (the parts).  A door with a constant index gives it.
+    int part(int place, long index, tree type) {
+        int const made = place == kNoPlace ? kNoPlace : intern(place, StepKind::element, NULL_TREE, index);
+        if (made != kNoPlace && type != NULL_TREE) {
+            part_types_[made] = type;
+        }
+        return made;
+    }
+
     // The root of PLACE, as a declaration.
     tree root_decl(int place) const {
         while (nodes_[place].parent != kNoPlace) {
@@ -215,7 +241,31 @@ public:
     // True when the path of LONGER starts with the path of SHORTER.
     bool holds(int shorter, int longer) const {
         return shorter != kNoPlace && longer != kNoPlace && nodes_[shorter].depth <= nodes_[longer].depth
-            && ancestor(longer, nodes_[shorter].depth) == shorter;
+            && matches(ancestor(longer, nodes_[shorter].depth), shorter);
+    }
+
+    // True when the places ONE and OTHER of one depth can name one object (the
+    // parts).  A part matches an element of no index and a field of the same
+    // object, because the walk does not map an index to a field.  Two parts match
+    // only when their indices are the same.  Complexity: linear in the depth.
+    bool matches(int one, int other) const {
+        if (one == other) {
+            return true;
+        }
+        if (one == kNoPlace || other == kNoPlace) {
+            return false;
+        }
+        const Node& first = nodes_[one];
+        const Node& second = nodes_[other];
+        bool const is_first_part = first.kind == StepKind::element && first.index >= 0;
+        bool const is_second_part = second.kind == StepKind::element && second.index >= 0;
+        if (!is_first_part && !is_second_part) {
+            return false;
+        }
+        bool const are_other_parts = is_first_part && is_second_part && first.index != second.index;
+        bool const are_steps_of_one_kind =
+            first.kind == second.kind || first.kind == StepKind::field || second.kind == StepKind::field;
+        return !are_other_parts && are_steps_of_one_kind && matches(first.parent, second.parent);
     }
 
     bool overlaps(int one, int other) const { return holds(one, other) || holds(other, one); }
@@ -236,7 +286,12 @@ public:
             return to;
         }
         Node const node = nodes_[place];
-        return intern(rebase(node.parent, from, to), node.kind, node.decl);
+        int const made = intern(rebase(node.parent, from, to), node.kind, node.decl, node.index);
+        auto const part = part_types_.find(place);
+        if (part != part_types_.end()) {
+            part_types_[made] = part->second;
+        }
+        return made;
     }
 
     // The type of the object at PLACE, or null.
@@ -247,6 +302,10 @@ public:
         const Node& node = nodes_[place];
         if (node.decl != NULL_TREE) {
             return TREE_TYPE(node.decl);
+        }
+        if (node.kind == StepKind::element && node.index >= 0) {
+            auto const found = part_types_.find(place);
+            return found != part_types_.end() ? found->second : NULL_TREE;
         }
         tree held = type(node.parent);
         if (held == NULL_TREE) {
@@ -286,7 +345,8 @@ public:
                 return pointer != NULL_TREE && TREE_CODE(pointer) == REFERENCE_TYPE ? base : "*" + base;
             }
             case StepKind::element:
-                return text(node.parent) + "[]";
+                // A part has the spelling of its object, as the door names it.
+                return node.index >= 0 ? text(node.parent) : text(node.parent) + "[]";
         }
         return "an object";
     }
@@ -297,19 +357,22 @@ private:
         StepKind kind = StepKind::root;
         tree decl = NULL_TREE;
         int depth = 0;
+        long index = -1;  // the constant index of a part, or -1
     };
 
     int intern_step(int place, StepKind kind, tree decl) {
         return place == kNoPlace ? kNoPlace : intern(place, kind, decl);
     }
 
-    int intern(int parent, StepKind kind, tree decl) {
-        std::uint64_t const key = (static_cast<std::uint64_t>(parent + 1) << 34)
-                                | (static_cast<std::uint64_t>(decl != NULL_TREE ? DECL_UID(decl) : 0U) << 2)
-                                | static_cast<std::uint64_t>(kind);
+    // The key holds the DECL_UID of the step, or one more than the index of a part.
+    int intern(int parent, StepKind kind, tree decl, long index = -1) {
+        std::uint64_t const slot =
+            decl != NULL_TREE ? std::uint64_t{DECL_UID(decl)} : static_cast<std::uint64_t>(index + 1);
+        std::uint64_t const key =
+            (static_cast<std::uint64_t>(parent + 1) << 34) | (slot << 2) | static_cast<std::uint64_t>(kind);
         auto [found, is_new] = index_.emplace(key, static_cast<int>(nodes_.size()));
         if (is_new) {
-            nodes_.push_back(Node{parent, kind, decl, parent == kNoPlace ? 0 : nodes_[parent].depth + 1});
+            nodes_.push_back(Node{parent, kind, decl, parent == kNoPlace ? 0 : nodes_[parent].depth + 1, index});
         }
         return found->second;
     }
@@ -326,6 +389,7 @@ private:
 
     std::vector<Node> nodes_;
     std::unordered_map<std::uint64_t, int> index_;
+    std::unordered_map<int, tree> part_types_;  // the type of each part, by its place
 };
 
 // ── The records of the effects and of the uses ──────────────────────────
@@ -628,6 +692,87 @@ tree strip_value(tree node) {
 
 // True for a function of std that gives its argument back.
 bool is_identity_call(tree function) { return is_std_move_cast(function) || is_std_as_const(function); }
+
+// ── The parts ──
+
+// A door that gives a reference to one part of a product type at the constant
+// index of its first template argument: the name of the door, and the namespace
+// and the name of the class of its receiver (the parts).  A row is only for a
+// product type, whose parts have storage of their own.  The alternatives of a sum
+// type, such as a std::variant or a OneOf, share storage, so a door of a sum type
+// is no row, and each door with no row gives a loan of its whole object.
+struct PartDoor {
+    const char* door = nullptr;
+    const char* space = nullptr;  // std, or core for foundation::core
+    const char* receiver = nullptr;
+};
+
+constexpr PartDoor kPartDoors[] = {
+    {"get", "std", "tuple"},
+    {"get", "std", "pair"},
+    {"get", "std", "array"},
+    {"at", "core", "Record"},
+};
+
+// True when the class TYPE has the name NAME in the namespace SPACE: std or a
+// namespace inside it, or foundation::core.
+bool is_class_of(tree type, const char* space, const char* name) {
+    tree const decl = type != NULL_TREE && CLASS_TYPE_P(type) ? TYPE_NAME(TYPE_MAIN_VARIANT(type)) : NULL_TREE;
+    if (decl == NULL_TREE || DECL_NAME(decl) == NULL_TREE
+        || std::strcmp(IDENTIFIER_POINTER(DECL_NAME(decl)), name) != 0) {
+        return false;
+    }
+    if (std::strcmp(space, "std") == 0) {
+        return is_standard_class(type);
+    }
+    tree const core = CP_DECL_CONTEXT(decl);
+    tree const foundation = core != NULL_TREE && TREE_CODE(core) == NAMESPACE_DECL ? CP_DECL_CONTEXT(core) : NULL_TREE;
+    return foundation != NULL_TREE && TREE_CODE(foundation) == NAMESPACE_DECL && DECL_NAME(core) != NULL_TREE
+        && std::strcmp(IDENTIFIER_POINTER(DECL_NAME(core)), space) == 0 && DECL_NAME(foundation) != NULL_TREE
+        && std::strcmp(IDENTIFIER_POINTER(DECL_NAME(foundation)), "foundation") == 0
+        && CP_DECL_CONTEXT(foundation) == global_namespace;
+}
+
+// The value of the first template argument of the instance FUNCTION of a function
+// template, when it is a constant index, or -1.
+long template_index_of(tree function) {
+    if (DECL_LANG_SPECIFIC(function) == nullptr || DECL_TEMPLATE_INFO(function) == NULL_TREE
+        || TREE_CODE(DECL_TI_TEMPLATE(function)) != TEMPLATE_DECL || !PRIMARY_TEMPLATE_P(DECL_TI_TEMPLATE(function))) {
+        return -1;
+    }
+    tree const arguments = INNERMOST_TEMPLATE_ARGS(DECL_TI_ARGS(function));
+    tree const first =
+        arguments != NULL_TREE && TREE_VEC_LENGTH(arguments) > 0 ? TREE_VEC_ELT(arguments, 0) : NULL_TREE;
+    return first != NULL_TREE && TREE_CODE(first) == INTEGER_CST && tree_fits_shwi_p(first) && tree_to_shwi(first) >= 0
+             ? static_cast<long>(tree_to_shwi(first))
+             : -1;
+}
+
+// The constant index of the part that a call of CALLEE gives a reference to, when
+// a row of kPartDoors names the door, or -1 (the parts).  The receiver is the
+// object of the first parameter.
+long part_index_of(tree callee) {
+    tree const type = callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL ? TREE_TYPE(callee) : NULL_TREE;
+    if (type == NULL_TREE || TREE_CODE(TREE_TYPE(type)) != REFERENCE_TYPE || TYPE_ARG_TYPES(type) == NULL_TREE
+        || DECL_NAME(callee) == NULL_TREE) {
+        return -1;
+    }
+    tree const first = TREE_VALUE(TYPE_ARG_TYPES(type));
+    tree const receiver = first != NULL_TREE && is_indirect_type(first) ? element_class(TREE_TYPE(first)) : NULL_TREE;
+    tree const scope = CP_DECL_CONTEXT(callee);
+    bool const is_of_std = scope != NULL_TREE && TREE_CODE(scope) == NAMESPACE_DECL && DECL_NAMESPACE_STD_P(scope);
+    for (const PartDoor& row : kPartDoors) {
+        bool const is_std = std::strcmp(row.space, "std") == 0;
+        bool const is_door = std::strcmp(IDENTIFIER_POINTER(DECL_NAME(callee)), row.door) == 0
+                          && (is_std ? is_of_std
+                                     : DECL_CONTEXT(callee) != NULL_TREE && TYPE_P(DECL_CONTEXT(callee))
+                                           && TYPE_MAIN_VARIANT(DECL_CONTEXT(callee)) == receiver);
+        if (is_door && is_class_of(receiver, row.space, row.receiver)) {
+            return template_index_of(callee);
+        }
+    }
+    return -1;
+}
 
 // The call of an identity function at NODE, or null.
 tree identity_call(tree node) {
@@ -1098,6 +1243,7 @@ private:
         }
         std::vector<int> found;
         tree parameter = type != NULL_TREE ? TYPE_ARG_TYPES(type) : NULL_TREE;
+        long const part = part_index_of(callee);
         for (int index = 0; index < argument_count(call); ++index) {
             tree parameter_type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
             parameter = parameter != NULL_TREE ? TREE_CHAIN(parameter) : NULL_TREE;
@@ -1106,14 +1252,16 @@ private:
             }
             add_indices(found, loans_of_argument(argument_at(call, index), parameter_type, result,
                                                  index == 0 && type != NULL_TREE && TREE_CODE(type) == METHOD_TYPE
-                                                     && FUNCTION_RVALUE_QUALIFIED(type)));
+                                                     && FUNCTION_RVALUE_QUALIFIED(type),
+                                                 index == 0 ? part : -1));
         }
         return found;
     }
 
     // The loans that the result RESULT of a call gets from ARGUMENT.  IS_CONSUMED
-    // tells that the member consumes its object.
-    std::vector<int> loans_of_argument(tree argument, tree parameter, tree result, bool is_consumed) {
+    // tells that the member consumes its object.  PART is the constant index of the
+    // part of the object that a door of a part gives, or -1 (the parts).
+    std::vector<int> loans_of_argument(tree argument, tree parameter, tree result, bool is_consumed, long part) {
         if (is_body_argument(argument, result)) {
             return {};
         }
@@ -1136,7 +1284,10 @@ private:
         bool const is_into = route.reach == Reach::into;
         BorrowRoute const copy = is_into ? route : BorrowRoute{};
         std::vector<int> found;
-        int const place = is_into ? place_of_pointee(argument) : kNoPlace;
+        int place = is_into ? place_of_pointee(argument) : kNoPlace;
+        if (place != kNoPlace && part >= 0) {
+            place = places_.part(place, part, TREE_TYPE(result));
+        }
         if (place != kNoPlace) {
             Loan loan;
             loan.place = place;
@@ -2597,12 +2748,27 @@ private:
     // A linear class and a unique borrow class have no copy, so a parameter by value
     // gets a named object of such a class by a move.  kNoPlace for a closure and for
     // an argument that names no such object.
+    // The part that a call of a door of a part at NODE gives, with the type of the
+    // part, or kNoPlace (the parts).
+    int door_part(tree node) {
+        node = strip_value(node);
+        if (node == NULL_TREE || TREE_CODE(node) != CALL_EXPR || call_expr_nargs(node) < 1) {
+            return kNoPlace;
+        }
+        tree const callee = cp_get_callee_fndecl_nofold(node);
+        long const index = part_index_of(callee);
+        return index >= 0 ? places_.part(place_of_pointee(CALL_EXPR_ARG(node, 0)), index,
+                                         TREE_TYPE(TREE_TYPE(TREE_TYPE(callee))))
+                          : kNoPlace;
+    }
+
     int named_place(const Argument& argument) {
         if (argument.parameter == NULL_TREE || argument.is_closure) {
             return kNoPlace;
         }
         if (is_indirect_type(argument.parameter)) {
-            return place_of_pointee(argument.node);
+            int const place = place_of_pointee(argument.node);
+            return place != kNoPlace ? place : door_part(argument.node);
         }
         int const source = moved_source(argument.node);
         if (source != kNoPlace) {
@@ -2638,8 +2804,10 @@ private:
     // A call whose two arguments name one object of a linear class or of a unique
     // borrow class, and one of them can write or move it (the two names).  One
     // argument names the object itself, and the other one names it itself too, or
-    // gives a loan or a capture of it.  Two loans of one object, from a door or from
-    // a moved object, are no second name.  An assignment whose two sides name one
+    // gives a loan or a capture of it.  A door of a part names its part (the parts),
+    // so one part two times is two names, and two parts of one object are none.  Two
+    // other loans of one object, from a door or from a moved object, are no second
+    // name.  An assignment whose two sides name one
     // object is the kind self-move of the rule must-consume, and a loan that a move
     // of the target of an assignment gives is no second name: the target holds no
     // value until the assignment.  A body of a door with the annotation
@@ -3067,8 +3235,9 @@ bool has_effect(tree function) {
 }
 
 // The local or the parameter that the argument NODE names, through its addresses,
-// members, elements, casts, std::move and the move into a parameter by value, or
-// null.  The front end gives a value of an empty class as the source and then an
+// members, elements, casts, std::move, the move into a parameter by value and the
+// doors of a part, or null.  The front end gives a value of an empty class as the
+// source and then an
 // empty value, in a COMPOUND_EXPR.
 tree root_of_argument(tree node) {
     for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
@@ -3096,6 +3265,11 @@ tree root_of_argument(tree node) {
                 }
                 if (constructor != NULL_TREE && DECL_CONSTRUCTOR_P(constructor) && argument_count(node) == 2) {
                     node = argument_at(node, 1);
+                    continue;
+                }
+                // A door of a part gives a part of its first argument (the parts).
+                if (TREE_CODE(node) == CALL_EXPR && call_expr_nargs(node) >= 1 && part_index_of(constructor) >= 0) {
+                    node = CALL_EXPR_ARG(node, 0);
                     continue;
                 }
                 return NULL_TREE;

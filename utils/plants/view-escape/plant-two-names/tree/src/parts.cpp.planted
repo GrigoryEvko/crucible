@@ -1,0 +1,33 @@
+// A door of a part names its part, so one part of a product type given to two
+// parameters that can write it is one object under two names: a part of a
+// std::tuple, and a part of a Record.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+#include <foundation/core/Index.h>
+#include <foundation/core/Record.h>
+
+#include <tuple>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept = default;
+    Token(const Token&) = delete;
+};
+
+void write_two(Token& one, Token& other) noexcept;
+
+void same_part_of_a_tuple(std::tuple<Token, Token>& tuple) noexcept {
+    write_two(std::get<0>(tuple), std::get<0>(tuple));
+}
+
+void same_part_of_a_record(fc::Record<Token, Token>& parts) noexcept {
+    write_two(parts.at(fc::index<1>()), parts.at(fc::index<1>()));
+}
+
+}  // namespace planted

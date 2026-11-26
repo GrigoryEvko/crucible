@@ -59,6 +59,12 @@
 # a number and states no refers_by_number{} is a line of the kind number-borrow.  A
 # borrow with a trivial assignment is stale after the end of the scope of its owner,
 # when the assignment copies the temporary of a call (160).
+#
+# In the unit parts a door of a part lends one part of a product type.  A borrow of a
+# part is stale after an assignment of the same part of a Record (28), after an
+# assignment of the whole Record (35), and after a change of the same part of a
+# std::tuple (42) and of a std::array (49).  The alternatives of a std::variant share
+# storage, so a change of a different alternative ends the borrow (56).
 
 compile stale src/stale.cpp
 flag stale -freflection
@@ -303,3 +309,17 @@ error numbers src/numbers.cpp:114 | this use reads a borrow of owner in borrow a
 error numbers src/numbers.cpp:122 | this use reads a borrow of owner in copy after an assignment of owner
 error numbers src/numbers.cpp:129 | this use reads a borrow of owner in passed after an assignment of owner
 error numbers src/numbers.cpp:160 | this use reads a borrow of owner in kept after the end of the scope of owner
+
+compile parts src/parts.cpp
+flag parts -freflection
+exit parts fail
+finding parts view-escape stale-borrow src/parts.cpp:28:12 | borrow of parts in view after an assignment of parts
+finding parts view-escape stale-borrow src/parts.cpp:35:12 | borrow of parts in view after an assignment of parts
+finding parts view-escape stale-borrow src/parts.cpp:42:12 | borrow of parts in view after a call of planted::change with parts, which reaches a function with no body in this unit
+finding parts view-escape stale-borrow src/parts.cpp:49:12 | borrow of parts in view after a call of planted::change with parts, which reaches a function with no body in this unit
+finding parts view-escape stale-borrow src/parts.cpp:56:12 | borrow of sum in view after a call of planted::change with sum, which reaches a function with no body in this unit
+error parts src/parts.cpp:28 | this use reads a borrow of parts in view after an assignment of parts
+error parts src/parts.cpp:35 | this use reads a borrow of parts in view after an assignment of parts
+error parts src/parts.cpp:42 | this use reads a borrow of parts in view after a call of planted::change with parts, which reaches a function with no body in this unit
+error parts src/parts.cpp:49 | this use reads a borrow of parts in view after a call of planted::change with parts, which reaches a function with no body in this unit
+error parts src/parts.cpp:56 | this use reads a borrow of sum in view after a call of planted::change with sum, which reaches a function with no body in this unit

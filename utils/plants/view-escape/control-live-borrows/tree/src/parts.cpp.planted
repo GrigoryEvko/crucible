@@ -1,0 +1,49 @@
+// A door of a part lends one part of a product type, so a change of a different
+// part leaves a borrow of the first part alone: Record::at, and std::get of a
+// std::tuple, a std::pair and a std::array.
+#include <foundation/core/Array.h>
+#include <foundation/core/Index.h>
+#include <foundation/core/Record.h>
+
+#include <array>
+#include <tuple>
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::HeapArray;
+using ::foundation::core::index;
+using Items = HeapArray<int>;
+
+void change(Items& items) noexcept;
+
+unsigned long other_part_of_a_record() noexcept {
+    ::foundation::core::Record<Items, Items> parts{};
+    auto const view = parts.at(index<0>()).view();
+    parts.at(index<1>()) = Items{};
+    change(parts.at(index<1>()));
+    return view.size();
+}
+
+unsigned long other_part_of_a_tuple() noexcept {
+    std::tuple<Items, Items> parts{};
+    auto const view = std::get<0>(parts).view();
+    change(std::get<1>(parts));
+    return view.size();
+}
+
+unsigned long other_part_of_a_pair() noexcept {
+    std::pair<Items, Items> parts{};
+    auto const view = std::get<0>(parts).view();
+    change(std::get<1>(parts));
+    return view.size();
+}
+
+unsigned long other_part_of_an_array() noexcept {
+    std::array<Items, 2> parts{};
+    auto const view = std::get<0>(parts).view();
+    change(std::get<1>(parts));
+    return view.size();
+}
+
+}  // namespace planted

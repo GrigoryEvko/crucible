@@ -3,9 +3,10 @@
 # two members of one object, a plain class, two parts that a door lends, two
 # moved parts of one object, and two parts of a tuple that std::get lends.  The
 # rule judges only a call where one argument names the object itself, so these
-# two loans are no second name.  A closure that captures a different object is no
-# second name, and an assignment of a unique view takes the loan that a move of
-# its own target gives.
+# two loans are no second name.  A door of a part names its part, so two parts of a
+# Record, a std::pair and a std::array are two objects.  A closure that captures a
+# different object is no second name, and an assignment of a unique view takes the
+# loan that a move of its own target gives.
 
 compile names src/names.cpp must-consume=on
 flag names -freflection

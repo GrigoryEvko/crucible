@@ -10,6 +10,10 @@ admit foundation::transfer | the marks of the owner and the borrow of a resource
 admit foundation::lifetime | the byte seal of the borrow of a resource by its number
 admit fixy | the end of a channel
 admit std::move | a cast to an rvalue reference
+admit std::tuple | the tuple whose parts a door of std lends
+admit std::pair | the pair whose parts a door of std lends
+admit std::array | the array whose parts a door of std lends
+admit std::get | the door of std that lends a part
 admit std::construct_at | a construct at a pointer
 
 quarantine src/

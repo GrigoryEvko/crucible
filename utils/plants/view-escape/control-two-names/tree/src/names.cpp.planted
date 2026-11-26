@@ -2,12 +2,16 @@
 // parameters that can write or move it, and no line names the rule view-escape.
 // Two loans of one object, from a door or from a moved object, are no second
 // name.  A capture of a different object is no second name, and an assignment
-// takes a loan that a move of its own target gives.
+// takes a loan that a move of its own target gives.  A door of a part names its
+// part, so two parts of a Record, a std::pair or a std::array are two objects.
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/Index.h>
+#include <foundation/core/Record.h>
 #include <foundation/core/Region.h>
 
+#include <array>
 #include <tuple>
 #include <utility>
 
@@ -77,5 +81,13 @@ void reborrow_into_its_name(fc::HeapArray<int>& items) noexcept {
         view = fc::reborrow(std::move(view), [](auto lent) noexcept { static_cast<void>(lent); });
     });
 }
+
+void parts_of_a_record(fc::Record<Token, Token>& parts) noexcept {
+    write_two(parts.at(fc::index<0>()), parts.at(fc::index<1>()));
+}
+
+void parts_of_a_pair(std::pair<Token, Token>& pair) noexcept { write_two(std::get<0>(pair), std::get<1>(pair)); }
+
+void parts_of_an_array(std::array<Token, 2>& array) noexcept { write_two(std::get<0>(array), std::get<1>(array)); }
 
 }  // namespace planted

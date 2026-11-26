@@ -229,8 +229,8 @@ include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<vector> | 1 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 355 | - | -
-include/fixy/session/ | base-std-object | 140 | - | -
+include/fixy/session/ | base-std-entity | 342 | - | -
+include/fixy/session/ | base-std-object | 123 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 1 | - | -
@@ -241,7 +241,6 @@ include/fixy/session/ | replace-pending:<expected> | 1 | - | -
 include/fixy/session/ | replace-pending:<functional> | 4 | - | -
 include/fixy/session/ | replace-pending:<limits> | 1 | - | -
 include/fixy/session/ | replace-pending:<optional> | 3 | - | -
-include/fixy/session/ | replace-pending:<source_location> | 3 | - | -
 include/fixy/session/ | replace-pending:<span> | 5 | - | -
 include/fixy/session/ | replace-pending:<string> | 6 | - | -
 include/fixy/session/ | replace-pending:<string_view> | 10 | - | -
@@ -484,7 +483,6 @@ test/fixy/ | region | 8 | PROBE: two parameters get one unique view to read its 
 test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 12 | - | -
-test/fixy/ | replace-pending:std::source_location | 5 | - | -
 test/fixy/ | std-entity | 1910 | - | -
 test/fixy/ | std-object | 615 | - | -
 test/fixy/neg/ | c-array-object | 25 | - | -
@@ -523,7 +521,7 @@ test/fixy/neg/ | opted-out | 1 | PROBE: the fixture gives the premises cell of a
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture gives the record cell of a pack the cell of another pack | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture gives the verdict cell of a binding the cell of another binding | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a corpus entry template of the base | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/fixy/neg/ | opted-out | 55 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
+test/fixy/neg/ | opted-out | 54 | PROBE: the fixture plants a declaration in a base namespace, and a check refuses it | a PROBE region holds a declaration that a test plants in a namespace of the base, so that a check of the base can refuse it
 test/fixy/neg/ | opted-out | 15 | PROBE: the fixture plants a pole table whose pole offers two branches | the pole fixtures plant pole tables whose poles receive a token or offer branches, so that each step of a pole that the tables of the tree do not reach has a fixture
 test/fixy/neg/ | opted-out | 6 | PROBE: the fixture plants a pole table whose pole receives a token and sends it on | the pole fixtures plant pole tables whose poles receive a token or offer branches, so that each step of a pole that the tables of the tree do not reach has a fixture
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a reader of the base with no cell | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -577,7 +575,7 @@ test/fixy/neg/ | region | 10 | PROBE: the fixture specializes a trait of the bas
 test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member mint with a target type | only a pointer to member takes the address of a member mint, and the result of the admittance is a std::pair
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
-test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
+test/fixy/neg/ | replace-pending:std::source_location | 2 | - | -
 test/fixy/neg/ | std-entity | 48 | - | -
 test/fixy/neg/ | std-object | 24 | - | -
 test/forge_neg/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
@@ -768,7 +766,6 @@ test/layer/checks/fixy/fp/ | std-entity | 2 | - | -
 test/layer/checks/fixy/handle/ | std-entity | 2 | - | -
 test/layer/checks/fixy/os/ | c-array-object | 2 | - | -
 test/layer/checks/fixy/os/ | std-entity | 4 | - | -
-test/layer/checks/fixy/session/ | replace-pending:std::source_location | 1 | - | -
 test/layer/checks/fixy/session/ | std-entity | 2 | - | -
 test/layer/checks/fixy/session/ | std-object | 1 | - | -
 test/layer/checks/foundation/ | opted-out | 3 | PROBE: the walk of a value of a cell reads raw pointers and pointers to members | a PROBE region of each new fixture and of the check file of foundation/ThreadLocalRef.h holds the pointers to members and the raw pointer that the walk of a value of a cell refuses and admits
@@ -856,7 +853,7 @@ vessel/torch/ | opted-out | 3 | ABI: the interpreter of Python gives the check o
 vessel/torch/ | opted-out | 17 | ABI: the kernel takes the arguments of an operator of PyTorch and runs it again | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
 vessel/torch/ | opted-out | 4 | ABI: the lookup takes the operator handle and the schema of PyTorch | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
 vessel/torch/ | opted-out | 10 | ABI: the read takes one boxed value of PyTorch | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
-vessel/torch/ | opted-out | 3 | ABI: the read takes the address of a StorageImpl that the C caller gives | the GIL entries of the dispatch library: the proof of the GIL asks the interpreter through a weak C symbol, and the read of a storage takes the address that ctypes gives
+vessel/torch/ | opted-out | 2 | ABI: the read takes the address of a StorageImpl that the C caller gives | the GIL entries of the dispatch library: the proof of the GIL asks the interpreter through a weak C symbol, and the read of a storage takes the address that ctypes gives
 vessel/torch/ | opted-out | 8 | ABI: the reader asks the context of PyTorch for the precision and the TF32 bits | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
 vessel/torch/ | opted-out | 27 | ABI: the record reads the arguments and the results of an operator of PyTorch | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
 vessel/torch/ | opted-out | 25 | ABI: the role reads the argument types of the schema of PyTorch | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open

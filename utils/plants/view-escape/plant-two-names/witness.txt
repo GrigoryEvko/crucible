@@ -7,7 +7,9 @@
 # each build of the tree turns on with must-consume=on.  In the unit hidden one
 # argument names the object, and a closure of a different argument captures it:
 # a token (39), a unique view (45), and a token in a function outside the base
-# with the annotation two_names_door, which the rule does not trust there (51).
+# with the annotation two_names_door, which the rule does not trust there (51).  In
+# the unit parts a door of a part names its part, so one part given two times is
+# two names: a part of a std::tuple (26) and a part of a Record (30).
 
 compile names src/names.cpp must-consume=on
 flag names -freflection
@@ -34,3 +36,11 @@ finding hidden view-escape two-names src/hidden.cpp:45:20 | argument 0 and a cap
 error hidden src/hidden.cpp:45 | this call gives one object to two parameters: argument 0 and a capture of argument 1 of planted::fill_beside name view, a unique borrow foundation::core::ViewMut<int, foundation::core::<lambda()>, 18446744073709551615>
 finding hidden view-escape two-names src/hidden.cpp:51:17 | argument 0 and a capture of argument 1 of planted::write_beside name token, a linear planted::Token
 error hidden src/hidden.cpp:51 | this call gives one object to two parameters: argument 0 and a capture of argument 1 of planted::write_beside name token, a linear planted::Token
+
+compile parts src/parts.cpp must-consume=on
+flag parts -freflection
+exit parts fail
+finding parts view-escape two-names src/parts.cpp:26:14 | argument 0 and argument 1 of planted::write_two name tuple, a linear planted::Token
+finding parts view-escape two-names src/parts.cpp:30:14 | argument 0 and argument 1 of planted::write_two name parts, a linear planted::Token
+error parts src/parts.cpp:26 | this call gives one object to two parameters: argument 0 and argument 1 of planted::write_two name tuple, a linear planted::Token
+error parts src/parts.cpp:30 | this call gives one object to two parameters: argument 0 and argument 1 of planted::write_two name parts, a linear planted::Token

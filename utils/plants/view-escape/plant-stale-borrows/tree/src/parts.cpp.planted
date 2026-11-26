@@ -1,0 +1,59 @@
+// A door of a part lends one part of a product type.  A borrow of a part is stale
+// after an assignment of the same part, after a call that changes the same part,
+// and after an assignment of the whole object.  The alternatives of a std::variant
+// share storage, so std::get of a variant lends the whole variant, and a change of
+// a different alternative ends the borrow.
+#include <foundation/core/Array.h>
+#include <foundation/core/Index.h>
+#include <foundation/core/Record.h>
+
+#include <array>
+#include <tuple>
+#include <utility>
+#include <variant>
+
+namespace planted {
+
+using ::foundation::core::HeapArray;
+using ::foundation::core::index;
+using Items = HeapArray<int>;
+using Parts = ::foundation::core::Record<Items, Items>;
+
+void change(Items& items) noexcept;
+
+unsigned long same_part_of_a_record() noexcept {
+    Parts parts{};
+    auto const view = parts.at(index<1>()).view();
+    parts.at(index<1>()) = Items{};
+    return view.size();
+}
+
+unsigned long whole_record() noexcept {
+    Parts parts{};
+    auto const view = parts.at(index<0>()).view();
+    parts = Parts{};
+    return view.size();
+}
+
+unsigned long same_part_of_a_tuple() noexcept {
+    std::tuple<Items, Items> parts{};
+    auto const view = std::get<1>(parts).view();
+    change(std::get<1>(parts));
+    return view.size();
+}
+
+unsigned long same_part_of_an_array() noexcept {
+    std::array<Items, 2> parts{};
+    auto const view = std::get<0>(parts).view();
+    change(std::get<0>(parts));
+    return view.size();
+}
+
+unsigned long alternatives_of_a_variant() noexcept {
+    std::variant<Items, Items> sum{std::in_place_index<0>};
+    auto const view = std::get<0>(sum).view();
+    change(std::get<1>(sum));
+    return view.size();
+}
+
+}  // namespace planted
