@@ -1932,6 +1932,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::os::Handle, kDescriptor},
     {^^::fixy::os::HandleRef, kDescriptor},
     {^^::fixy::os::HandleInTransit, kDescriptor},
+    {^^::fixy::os::message_socket,
+     "the annotation of the tag of a socket kind that keeps one message for each call: it is empty and is never a "
+     "value in a signature"},
     {^^::fixy::os::DuplicateDoor, kDescriptorDoor},
     {^^::fixy::os::Args, "the arguments of main: a view of argv, which carries no claim to fold"},
     {^^::fixy::os::ArgsCursor, "the cursor of the arguments of main, which carries no claim to fold"},

@@ -36,6 +36,8 @@ static_assert(std::to_underlying(RightSet::ioctl_ptp) >> 32U == 1U, "the ioctl f
 // The kinds: the closed table, with a row for each class of namespace kind and
 // for the template of the socket kinds.
 struct NotAKind final {};
+// A socket tag of the base that keeps one message for each call.
+struct[[= message_socket{}]] MessageTag final {};
 template <class Tag>
 struct NotAFamily final {};
 static_assert(HandleKind<kind::File> && HandleKind<kind::Directory> && HandleKind<kind::PtpClock>
@@ -153,9 +155,20 @@ static_assert(shared_state_of(^^kind::PtpClock) == SharedState::none);
 static_assert(shared_state_of(^^kind::PerfEvent) == SharedState::owned
               && shared_state_of(^^kind::IoRing) == SharedState::owned);
 
-// A duplicate of a socket and of a PTP clock holds each right of its borrow.
-static_assert(duplicates<AnySocket, RightSet::read | RightSet::write | RightSet::ioctl_socket>);
+// A duplicate of a message socket and of a PTP clock holds each right of its
+// borrow.  A duplicate of a stream socket holds no direction (the shape of a
+// socket kind): AnySocket has a tag of the base with no statement.
+static_assert(duplicates<kind::Socket<MessageTag>, RightSet::read | RightSet::write | RightSet::ioctl_socket>);
 static_assert(duplicates<kind::PtpClock, RightSet::ioctl_ptp>);
+static_assert(duplicates<AnySocket, RightSet::ioctl_socket>);
+static_assert(!duplicates<AnySocket, RightSet::read> && !duplicates<AnySocket, RightSet::write>,
+              "two handles of one stream socket must not hold one direction");
+static_assert(is_message_socket_(^^kind::Socket<MessageTag>) && !is_message_socket_(^^AnySocket)
+              && !is_message_socket_(^^kind::File));
+static_assert(StreamSocketKind<AnySocket> && !StreamSocketKind<kind::Socket<MessageTag>>
+              && !StreamSocketKind<kind::File>);
+static_assert(rights_without<RightSet::read | RightSet::write | RightSet::ioctl_socket, RightSet::write>
+              == (RightSet::read | RightSet::ioctl_socket));
 
 // A kind with a position gives no duplicate that reads, writes or seeks.
 static_assert(duplicates<kind::File, RightSet::map> && duplicates<kind::File, RightSet::sync | RightSet::map_exec>);

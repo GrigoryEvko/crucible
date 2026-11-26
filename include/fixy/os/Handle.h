@@ -119,18 +119,26 @@
 //   the other handle can stop or reset the event between the two.  The queues of
 //   a ring have one owner.
 //
-//   A socket shares its options, its queues and its shutdown state, and a
-//   duplicate of it holds each right of its borrow.  The kernel orders each call
-//   of the two handles, and a read takes bytes that the other handle does not
-//   get, so no call reads a state that another one left half-changed.  Each door
-//   of fixy/os/Socket.h makes one call for one message.  Three doors of the base
-//   make more than one call for one run: read_full and write_full of
-//   fixy/os/Fs.h, and zerocopy_transfer of fixy/os/Io.h.  A read of the other
-//   handle between two calls takes bytes from the middle of the run, and the run
-//   then holds bytes that do not follow each other in the stream.  A write of the
-//   other handle puts its bytes into the middle of the run.  So two threads
-//   divide a stream socket by direction: one reads, and the other writes.  No
-//   type holds that rule.
+//   A socket shares its options, its queues and its shutdown state.  The kernel
+//   orders each call of the two handles, and a read takes bytes that the other
+//   handle does not get, so no call reads a state that another one left
+//   half-changed.  Each door of fixy/os/Socket.h makes one call for one message.
+//   Three doors of the base make more than one call for one run: read_full and
+//   write_full of fixy/os/Fs.h, and zerocopy_transfer of fixy/os/Io.h.  A read of
+//   the other handle between two calls takes bytes from the middle of the run,
+//   and the run then holds bytes that do not follow each other in the stream.  A
+//   write of the other handle puts its bytes into the middle of the run.
+//
+//   So the shape of a socket kind decides the rights of a duplicate.  The tag of
+//   a socket kind of the base that states message_socket{} keeps one message for
+//   each call, and a duplicate of it holds each right of its borrow.  Each other
+//   socket kind is a stream, and a duplicate of it holds no read and no write
+//   right: the borrow keeps each direction that it holds.  The statement counts
+//   only on a tag of the base (is_class_of_the_base_ of
+//   foundation/reflect/Members.h), because a wrong statement gives two readers
+//   of one stream.  Two threads divide a stream socket by direction through
+//   with_stream_halves of fixy/os/Socket.h, which gives a read half and a write
+//   half of one socket.
 //
 // Doors
 //   The constructor of a Handle from a descriptor is private.  Its friends
@@ -163,6 +171,8 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/PathText.h>
+#include <foundation/reflect/Annotation.h>
+#include <foundation/reflect/Members.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -217,6 +227,16 @@ enum class RightSet : std::uint64_t {
 // True when the set Held holds each right of the set Needed.
 template <RightSet Held, RightSet Needed>
 concept HoldsRights = (std::to_underlying(Held) & std::to_underlying(Needed)) == std::to_underlying(Needed);
+
+// The rights of the set Held with no right of the set Removed.
+template <RightSet Held, RightSet Removed>
+inline constexpr RightSet rights_without =
+    static_cast<RightSet>(std::to_underlying(Held) & ~std::to_underlying(Removed));
+
+// The annotation of the tag of a socket kind that keeps one message for each
+// call, such as a raw or a datagram socket (the shape of a socket kind).  A
+// tag of the base with no statement is a stream.
+struct message_socket final {};
 
 // The kinds of a handle.
 namespace kind {
@@ -310,13 +330,28 @@ template <class Kind>
 
 namespace detail {
 
-// True when a duplicate that shares the state can hold the rights fewer (the
-// shared state).  A state with no arm gives no duplicate.
-[[nodiscard]] consteval bool duplicates_with_(SharedState shared, RightSet fewer) noexcept {
-    switch (shared) {
+// True when the kind is a socket whose tag is a class of the base and states
+// message_socket{} (the shape of a socket kind).  Each other socket kind is a
+// stream.  Complexity: the depth of the scopes of the tag, at compile time.
+[[nodiscard]] consteval bool is_message_socket_(std::meta::info kind) {
+    std::meta::info const bare = std::meta::dealias(kind);
+    if (!std::meta::has_template_arguments(bare) || std::meta::template_of(bare) != ^^kind::Socket) return false;
+    std::meta::info const tag = ::foundation::core::detail::template_argument_at(bare, 0);
+    return ::foundation::reflect::is_class_of_the_base_(tag)
+        && ::foundation::reflect::carries_annotation(tag, ^^message_socket);
+}
+
+// True when a duplicate of a handle of the kind can hold the rights fewer (the
+// shared state).  A state with no arm gives no duplicate.  A stream socket
+// gives a duplicate with no direction, and a message socket a duplicate with
+// each right (the shape of a socket kind).
+[[nodiscard]] consteval bool duplicates_with_(std::meta::info kind, RightSet fewer) {
+    switch (kind_table[kind_row_of_(kind)].shared) {
         case SharedState::none:
-        case SharedState::socket:
             return true;
+        case SharedState::socket:
+            return is_message_socket_(kind)
+                || (std::to_underlying(fewer) & std::to_underlying(RightSet::read | RightSet::write)) == 0;
         case SharedState::position:
             return (std::to_underlying(fewer) & std::to_underlying(RightSet::read | RightSet::write | RightSet::seek))
                 == 0;
@@ -330,10 +365,16 @@ namespace detail {
 
 // A duplicate of a handle of the kind Kind can hold the rights Fewer (the shared
 // state).  A kind whose open file has a position gives no duplicate that reads,
-// writes or seeks, so no two handles move one position.
+// writes or seeks, so no two handles move one position.  A stream socket gives
+// no duplicate that reads or writes, so no two handles hold one direction.
 template <class Kind, RightSet Fewer>
-concept DuplicatesWith =
-    HandleKind<Kind> && detail::duplicates_with_(detail::kind_table[detail::kind_row_of_(^^Kind)].shared, Fewer);
+concept DuplicatesWith = HandleKind<Kind> && detail::duplicates_with_(^^Kind, Fewer);
+
+// A socket kind whose tag states no message shape (the shape of a socket kind).
+template <class Kind>
+concept StreamSocketKind =
+    HandleKind<Kind> && std::meta::has_template_arguments(std::meta::dealias(^^Kind))
+    && std::meta::template_of(std::meta::dealias(^^Kind)) == ^^kind::Socket && !detail::is_message_socket_(^^Kind);
 
 template <class Kind, RightSet Rights>
     requires HandleKind<Kind>

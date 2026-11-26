@@ -56,8 +56,10 @@ namespace socket_kind {
 
 // A netlink socket to the routing subsystem of the kernel.  It sends a
 // dump request and reads the reply, for example the queueing discipline
-// of an interface.
-struct NetlinkRoute final {};
+// of an interface.  Each call is one message, so a duplicate of it keeps
+// each right (the shape of a socket kind of fixy/os/Handle.h).  The two
+// stream kinds below state no shape.
+struct[[= ::fixy::os::message_socket{}]] NetlinkRoute final {};
 
 // A TCP stream socket of IPv4.
 struct TcpStream final {};

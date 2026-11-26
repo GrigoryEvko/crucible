@@ -100,6 +100,8 @@ constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 
 using NetlinkSocket = fixy::net::SocketHandle<fixy::net::socket_kind::NetlinkRoute>;
 using TcpSocket = fixy::net::SocketHandle<fixy::net::socket_kind::TcpStream>;
+using TcpOptions =
+    fixy::os::Handle<fixy::os::kind::Socket<fixy::net::socket_kind::TcpStream>, fixy::os::RightSet::ioctl_socket>;
 using UnixSocket = fixy::net::SocketHandle<fixy::net::socket_kind::UnixStream>;
 using UnixPair = fixy::net::SocketPair<fixy::net::socket_kind::UnixStream>;
 using TcpRef = fixy::net::SocketRef<fixy::net::socket_kind::TcpStream, fixy::net::socket_rights>;
@@ -291,8 +293,9 @@ struct LinkDumpRequest final {
 
 // The name of the congestion control of a socket, or the empty name when the
 // read fails.
-[[nodiscard]] fixy::FixedText<fixy::net::congestion_name_bytes> congestion_of(IoBlockCtx const& ctx,
-                                                                              TcpRef socket) noexcept {
+template <fixy::os::RightSet Rights>
+[[nodiscard]] fixy::FixedText<fixy::net::congestion_name_bytes>
+congestion_of(IoBlockCtx const& ctx, fixy::net::SocketRef<fixy::net::socket_kind::TcpStream, Rights> socket) noexcept {
     return fixy::net::read_tcp_congestion(ctx, socket).value_or(fixy::FixedText<fixy::net::congestion_name_bytes>{});
 }
 
@@ -339,10 +342,13 @@ struct LinkDumpRequest final {
     IoBlockCtx ctx{eff::testing::test()};
     TcpSocket first = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     if (!first.is_open()) return 111;
-    TcpSocket const second = fixy::os::mint_duplicate<fixy::net::socket_rights>(ctx, first.ref()).value_or(TcpSocket{});
+    // A duplicate of a stream socket holds no direction, so it takes the options
+    // right only (the shape of a socket kind of fixy/os/Handle.h).
+    TcpOptions const second =
+        fixy::os::mint_duplicate<fixy::os::RightSet::ioctl_socket>(ctx, first.ref()).value_or(TcpOptions{});
     if (!second.is_open()) return 112;
     SharedTcp const first_shared = fixy::net::share_socket(first.ref());
-    SharedTcp const second_shared = fixy::net::share_socket(second.ref());
+    auto const second_shared = fixy::net::share_socket(second.ref());
     if (first_shared.identity() == second_shared.identity()) return 113;
     if (!is_close_on_exec(second.ref())) return 114;
     if (fixy::net::set_tcp_congestion(ctx, first.ref(), "reno").is_err()) return 115;

@@ -56,6 +56,14 @@ static_assert(CtxFitsSocketPairMint<IoBlockCtx, socket_kind::UnixStream>);
 static_assert(!CtxFitsSocketPairMint<IoOnlyCtx, socket_kind::UnixStream>,
               "a context without Block must not open a pair: the catalog puts socketpair in a family that can park.");
 static_assert(!CtxFitsSocketPairMint<IoBlockCtx, socket_kind::TcpStream>);
+
+// The shape of each socket kind (fixy/os/Handle.h): a netlink socket keeps one
+// message for each call, and the two other kinds are streams.
+static_assert(::fixy::os::detail::is_message_socket_(^^::fixy::os::kind::Socket<socket_kind::NetlinkRoute>));
+static_assert(::fixy::os::StreamSocketKind<::fixy::os::kind::Socket<socket_kind::TcpStream>>
+              && ::fixy::os::StreamSocketKind<::fixy::os::kind::Socket<socket_kind::UnixStream>>);
+static_assert(::fixy::os::DuplicatesWith<::fixy::os::kind::Socket<socket_kind::NetlinkRoute>, socket_rights>
+              && !::fixy::os::DuplicatesWith<::fixy::os::kind::Socket<socket_kind::TcpStream>, socket_rights>);
 static_assert(sizeof(detail::SocketPairNumbers) == 2 * sizeof(int), "socketpair writes two ints");
 
 // The foreign socket: a ref by value of one int and the generation of its

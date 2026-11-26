@@ -47,6 +47,9 @@ using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effe
                                                     eff::Effect::Block, eff::Effect::Nondet>>;
 
 using TcpSocket = fixy::net::SocketHandle<fixy::net::socket_kind::TcpStream>;
+// A duplicate of a stream socket holds no direction, so it holds the options
+// right only (the shape of a socket kind of fixy/os/Handle.h).
+using TcpOptions = fixy::os::Handle<fixy::os::kind::Socket<fixy::net::socket_kind::TcpStream>, RightSet::ioctl_socket>;
 using CongestionName = fixy::FixedText<fixy::net::congestion_name_bytes>;
 
 // The region of the mapping of a file.
@@ -88,7 +91,7 @@ template <class Kind, RightSet Rights>
 
 // The name of the congestion control of a socket, or the empty name when the
 // read fails.
-[[nodiscard]] CongestionName congestion_of(IoBlockCtx const& ctx, TcpSocket const& socket) noexcept {
+[[nodiscard]] CongestionName congestion_of(IoBlockCtx const& ctx, TcpOptions const& socket) noexcept {
     return fixy::net::read_tcp_congestion(ctx, socket.ref()).value_or(CongestionName{});
 }
 
@@ -144,8 +147,8 @@ void test_a_duplicate_of_a_directory_and_a_file_works() {
 void test_a_borrow_that_is_not_open_gives_ebadf() {
     IoBlockCtx const ctx{eff::testing::test()};
     TcpSocket const empty{};
-    CRUCIBLE_TEST_ASSERT(kTest, error_of(fixy::os::mint_duplicate<fixy::net::socket_rights>(ctx, empty.ref()))
-                                    == Errno::ebadf);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         error_of(fixy::os::mint_duplicate<RightSet::ioctl_socket>(ctx, empty.ref())) == Errno::ebadf);
     TcpSocket closed = handle_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     CRUCIBLE_TEST_ASSERT(kTest, closed.is_open());
     auto const borrow = closed.ref();
@@ -155,7 +158,7 @@ void test_a_borrow_that_is_not_open_gives_ebadf() {
     CRUCIBLE_TEST_ASSERT(kTest, later.is_open());
     CRUCIBLE_TEST_ASSERT(kTest, fixy::net::share_socket(later.ref()).identity() == closed_identity);
     CRUCIBLE_TEST_ASSERT(kTest,
-                         error_of(fixy::os::mint_duplicate<fixy::net::socket_rights>(ctx, borrow)) == Errno::ebadf);
+                         error_of(fixy::os::mint_duplicate<RightSet::ioctl_socket>(ctx, borrow)) == Errno::ebadf);
     fixy::check::pass(kTest, "  test_a_borrow_that_is_not_open_gives_ebadf: PASSED\n");
 }
 
@@ -169,12 +172,12 @@ void test_a_duplicate_of_a_second_thread_keeps_its_socket() {
     TcpSocket first = handle_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     CRUCIBLE_TEST_ASSERT(kTest, first.is_open());
     CRUCIBLE_TEST_ASSERT(kTest, fixy::net::set_tcp_congestion(ctx, first.ref(), "reno").is_ok());
-    TcpSocket second = duplicate_of(fixy::os::mint_duplicate<fixy::net::socket_rights>(ctx, first.ref()));
+    TcpOptions second = duplicate_of(fixy::os::mint_duplicate<RightSet::ioctl_socket>(ctx, first.ref()));
     CRUCIBLE_TEST_ASSERT(kTest, second.is_open());
     foundation::core::Atomic<std::uint32_t> wrong{0};
     // Each socket goes to its thread through a transit (fixy/os/Handle.h).
     auto reader = [moving = std::move(second).depart(), &wrong]() mutable noexcept {
-        TcpSocket const socket = std::move(moving).arrive();
+        TcpOptions const socket = std::move(moving).arrive();
         IoBlockCtx const reader_ctx{eff::testing::test()};
         for (std::uint32_t turn = 0; turn < kTurns; ++turn) {
             auto const name = congestion_of(reader_ctx, socket);

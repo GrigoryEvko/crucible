@@ -7169,6 +7169,18 @@ fixy_neg_compile_test(neg_os_duplicate_of_a_perf_event
 fixy_neg_compile_test(neg_os_duplicate_ctx_lacks_block
   "no matching function for call to .mint_duplicate<fixy::net::socket_rights>\\(const \\{anonymous\\}::IoOnlyCtx&"
   "required for the satisfaction of .CtxOwnsAllOf<Ctx, foundation::effects::Effect::IO, foundation::effects::Effect::Block>.")
+# A duplicate of a stream socket holds no direction: a duplicate with the read
+# right, one with the write right, and a tag outside the base that states the
+# message shape, which reads as a stream.
+fixy_neg_compile_test(neg_os_stream_duplicate_reads
+  "no matching function for call to .mint_duplicate<fixy::os::RightSet::read>\\("
+  "required for the satisfaction of .DuplicatesWith<Kind, Fewer>. \\[with Kind = fixy::os::kind::Socket<fixy::net::socket_kind::TcpStream>; Fewer = fixy::os::RightSet::read\\]")
+fixy_neg_compile_test(neg_os_stream_duplicate_writes
+  "no matching function for call to .mint_duplicate<fixy::os::RightSet::write>\\("
+  "required for the satisfaction of .DuplicatesWith<Kind, Fewer>. \\[with Kind = fixy::os::kind::Socket<fixy::net::socket_kind::TcpStream>; Fewer = fixy::os::RightSet::write\\]")
+fixy_neg_compile_test(neg_os_stream_shape_outside_the_base
+  "static assertion failed: a tag outside the base reads as a stream"
+  "duplicates_with_.*\\[with Kind = fixy::os::kind::Socket<<unnamed>::OutsideTag>; Fewer = fixy::os::RightSet::read\\]")
 
 # The transit of a handle to another thread: the borrows of the sender are
 # stale after the departure, the handle arrives on a second thread, and a
