@@ -88,6 +88,15 @@ static_assert(!std::is_trivially_copyable_v<WideMonotonic<1>> && !std::is_trivia
 static_assert(!std::is_constructible_v<WideMonotonic<1>, std::uint64_t>);
 static_assert(!std::is_constructible_v<WideStart, std::uint64_t>);
 static_assert(!std::is_copy_assignable_v<WideMonotonic<1>> && !std::is_move_assignable_v<WideMonotonic<1>>);
+// A WideStep collapses onto its value too, and only its doors make one.
+static_assert(sizeof(::fixy::WideStep<8>) == sizeof(std::uint64_t));
+static_assert(!std::is_trivially_copyable_v<::fixy::WideStep<8>>);
+static_assert(!std::is_constructible_v<::fixy::WideStep<8>, std::uint64_t>);
+// A step of one bound does not step a count of another bound.
+template <class Count, class Step>
+concept StepsCount = requires(Count& count, Step step) { count.advance(step); };
+static_assert(StepsCount<WideMonotonic<8>, ::fixy::WideStep<8>>);
+static_assert(!StepsCount<WideMonotonic<4>, ::fixy::WideStep<8>>);
 
 // WriteOnce pays the optional tag; WriteOnceNonNull pays nothing.
 static_assert(sizeof(WriteOnce<int>) == sizeof(std::optional<int>));
@@ -492,6 +501,13 @@ int check_wide_monotonic() {
         return constant.get();
     }();
     static_assert(kStepped == 42);
+
+    // A WideStep from 1 thru MaxStep moves the count by its value.
+    WideMonotonic<8> stepped = ::fixy::mint_wide_monotonic<8>(WideStart::check_below_limit(10));
+    stepped.advance(::fixy::WideStep<8>::check_within_bound(8));
+    stepped.advance(::fixy::WideStep<8>::one());
+    if (stepped.get() != 19) return 228;
+    static_assert(::fixy::WideStep<8>::check_within_bound(5).value() == 5);
     return 0;
 }
 
@@ -906,6 +922,16 @@ int check_contracts_abort() {
         kStartAtLimit);
     if (wide.get() != 0) return 202;
 
+    // A step of zero, or past the bound of the step, aborts in each build,
+    // because the unchecked step of the count is sound only from 1 thru
+    // MaxStep.
+    std::uint64_t no_step = 0;
+    std::uint64_t past_bound = 9;
+    constexpr ::fixy::TextView kStepOutside{"foundation: fatal invariant failed: value >= 1 && value <= MaxStep"};
+    expect_dies(test, [&no_step] noexcept { (void)::fixy::WideStep<8>::check_within_bound(no_step); }, kStepOutside);
+    expect_dies(
+        test, [&past_bound] noexcept { (void)::fixy::WideStep<8>::check_within_bound(past_bound); }, kStepOutside);
+
     // A read of an empty slot gives none in the test process, and a second
     // set ends the child process.
     WriteOnce<int> once = ::fixy::mint_write_once<int>();
@@ -983,6 +1009,13 @@ int check_contracts_abort() {
     if (sole.get() != 10 || sole_copy.get() != 10) return 214;
     sole.advance_sole_writer_by_proof(ProofOwner::proof(), sole_copy, 11);
     if (sole.get() != 11 || sole_copy.get() != 11) return 215;
+
+    // The publish with a wide copy steps the copy by its step and stores the
+    // value of the copy, with no compare.
+    WideMonotonic<4> wide_copy = ::fixy::mint_wide_monotonic<4>(WideStart::check_below_limit(11));
+    sole.advance_sole_writer_by_wide_step(ProofOwner::proof(), wide_copy, ::fixy::WideStep<4>::check_within_bound(3));
+    sole.advance_sole_writer_by_wide_step(ProofOwner::proof(), wide_copy, ::fixy::WideStep<4>::one());
+    if (sole.get() != 15 || wide_copy.get() != 15) return 229;
 
     AtomicMonotonic<std::int64_t> signed_counter = ::fixy::mint_atomic_monotonic<std::int64_t>(0);
     expect_dies(

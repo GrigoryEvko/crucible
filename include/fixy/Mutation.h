@@ -685,8 +685,9 @@ mint_bounded_monotonic(T initial) noexcept(std::is_nothrow_move_constructible_v<
 //       WideStart, and its one door from a value checks the limit, one time
 //       for each mint or reset.
 //     - A step adds at least one and at most MaxStep (WideStepBound).  bump
-//       adds one.  A step of a plain integer does not compile, because its
-//       size has no bound.
+//       adds one, and advance adds a WideStep, whose one door from a value
+//       checks the two bounds.  A step of a plain integer does not compile,
+//       because its size has no bound.
 //   Each unit of the count stands for one item of work of the caller, such as
 //   an iteration of a region or a slot of a ring.  Each item takes at least
 //   one store, and a core does at most a few stores each nanosecond.  From a
@@ -713,6 +714,33 @@ public:
     [[nodiscard]] static constexpr WideStart check_below_limit(std::uint64_t value) noexcept {
         CRUCIBLE_FATAL_INVARIANT(value < wide_start_limit);
         return WideStart{value};
+    }
+
+    [[nodiscard]] constexpr std::uint64_t value() const noexcept { return value_; }
+};
+
+// A step of a WideMonotonic<MaxStep>: at least one and at most MaxStep.  The
+// count adds it with no compare (the wide counter).  The one door from a
+// value checks the two bounds, in each build and under each contract
+// semantic.  A caller whose value the optimizer already bounds, such as a
+// count that a test of zero and a precondition bound, pays no check, because
+// the check folds away.
+template <std::uint64_t MaxStep>
+    requires WideStepBound<MaxStep>
+class [[nodiscard]] WideStep {
+    std::uint64_t value_ = 1;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr explicit WideStep(std::uint64_t value) noexcept : value_{value} {}
+
+public:
+    // The step of one item.
+    [[nodiscard]] static constexpr WideStep one() noexcept { return WideStep{1}; }
+
+    // The step of value items, from 1 to MaxStep.
+    [[nodiscard]] static constexpr WideStep check_within_bound(std::uint64_t value) noexcept {
+        CRUCIBLE_FATAL_INVARIANT(value >= 1 && value <= MaxStep);
+        return WideStep{value};
     }
 
     [[nodiscard]] constexpr std::uint64_t value() const noexcept { return value_; }
@@ -756,6 +784,13 @@ public:
     // so the step is one add, with no compare.
     CRUCIBLE_INLINE constexpr void bump() noexcept {
         inner_.impl_ = Monotonic<std::uint64_t>::graded_type{inner_.get() + std::uint64_t{1}};
+    }
+
+    // A step of step.value() items.  The step is at least one and at most
+    // MaxStep, so the wide counter proves that it does not wrap, and the step
+    // is one add, with no compare.
+    CRUCIBLE_INLINE constexpr void advance(WideStep<MaxStep> step) noexcept {
+        inner_.impl_ = Monotonic<std::uint64_t>::graded_type{inner_.get() + step.value()};
     }
 
     template <class Count>
@@ -1189,6 +1224,24 @@ public:
         requires(!SoleWriterCounter<Writer>)
     = delete("AtomicMonotonic::advance_sole_writer_by_proof: a counter of many writers has no one writer for a proof "
              "to name.  Use advance, or name the proof of the one writer as the writer of a counter of one writer");
+
+    // The publish of the one writer with a wide copy (the wide counter).  own
+    // holds the value of the counter, as for advance_sole_writer_by_proof.
+    // own steps by step with one add, and the counter takes the value of own
+    // with a plain release store.  The step is at least one and at most
+    // MaxStep, and own started below wide_start_limit, so the step moves own
+    // forward and does not wrap.  The type proves the order of the publish,
+    // so the call holds no step check, and it loads nothing from the counter.
+    // The order of the counter goes up (Cmp puts 0 before 1), as the order of
+    // a wide copy does.
+    template <std::uint64_t MaxStep>
+    void advance_sole_writer_by_wide_step(sole_writer_proof_ const& /*proof*/, WideMonotonic<MaxStep>& own,
+                                          WideStep<MaxStep> step) noexcept
+        requires SoleWriterCounter<Writer> && std::same_as<T, std::uint64_t> && (Cmp{}(T{0}, T{1}))
+    {
+        own.advance(step);
+        value_.store(own.get(), std::memory_order_release);
+    }
 
     // The publish of the one writer from a value of the counter that the
     // writer knows from its own state, such as the consumer of a ring that

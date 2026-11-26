@@ -119,7 +119,8 @@ public:
     // the end of the buffer, or near the wrap of 32 bits.
     explicit RigLog(MetaIndex start = MetaIndex{0}) noexcept
         : log_{::fixy::concurrent::mint_held_spsc_split<MetaLog, RigLogSides>(
-              ::foundation::effects::testing::test().alloc, ::foundation::effects::testing::test().alloc, start)} {}
+              ::foundation::effects::testing::test().alloc, ::foundation::effects::testing::test().alloc,
+              ::fixy::WideStart::check_below_limit(start.raw()))} {}
 
     RigLog(RigLog const&) = delete("a BackgroundThread holds the side of a log, so the log does not copy");
     RigLog(RigLog&&) = delete("a BackgroundThread holds the side of a log, so the log does not move");
@@ -356,7 +357,7 @@ class OpenLog final {
 public:
     // The log starts at the index start.
     explicit OpenLog(MetaIndex start = MetaIndex{0}) noexcept
-        : local_{::foundation::effects::testing::test().alloc, start} {}
+        : local_{::foundation::effects::testing::test().alloc, ::fixy::WideStart::check_below_limit(start.raw())} {}
 
     [[nodiscard]] MetaIndex try_append(::fixy::View<const TensorMeta> metas) noexcept {
         return local_.with_producer(

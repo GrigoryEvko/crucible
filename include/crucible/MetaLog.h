@@ -69,12 +69,15 @@ struct CRUCIBLE_OWNER MetaLog {
     // take its end, write it.
     //
     // own_head is the copy of the head of the producer: the value of head_
-    // after each publish.  cached_tail is the view of the producer of tail_,
-    // refreshed only when it shows a full buffer.  A stale view can only
-    // under-report free space, so acting on it is safe.  Monotonic holds the
-    // direction, because a view that moved backwards is a lost acquire.
+    // after each publish.  It is a wide counter that starts at the start of
+    // the log and steps by the records of one append, at most CAPACITY, so a
+    // publish moves it forward with no compare.  cached_tail is the view of
+    // the producer of tail_, refreshed only when it shows a full buffer.  A
+    // stale view can only under-report free space, so acting on it is safe.
+    // Monotonic holds the direction, because a view that moved backwards is a
+    // lost acquire.
     struct alignas(64) producer_state {
-        ::fixy::Monotonic<uint64_t> own_head = ::fixy::mint_monotonic<uint64_t>(0);
+        ::fixy::WideMonotonic<CAPACITY> own_head = ::fixy::mint_wide_monotonic<CAPACITY>();
         ::fixy::Monotonic<uint64_t> cached_tail = ::fixy::mint_monotonic<uint64_t>(0);
     };
     // The consumer reads its own last store to tail_, so its end keeps no copy.
@@ -110,6 +113,11 @@ private:
     alignas(64)::fixy::AtomicMonotonic<uint64_t, head_writer> head_ =
         ::fixy::mint_atomic_monotonic<uint64_t, head_writer>(0);
 
+    // The start of the log, which the split gives to the producer end as the
+    // start of its wide copy of the head (first_producer_state).  No thread
+    // writes it after the construction.
+    ::fixy::WideStart start_ = ::fixy::WideStart::zero();
+
     // The buffer of the CAPACITY records, at the alignment of a huge page.
     // Its count is in its type, so a masked slot and the window of a run of
     // an append have no check that the optimizer keeps.  An indexed access on
@@ -126,17 +134,18 @@ public:
     // The caller gives the allocation capability of its context for the
     // buffer of the records.  The log is empty, and its first record takes
     // the index zero.
-    explicit MetaLog(::foundation::effects::Alloc allocation) : MetaLog{allocation, MetaIndex{0}} {}
+    explicit MetaLog(::foundation::effects::Alloc allocation) : MetaLog{allocation, ::fixy::WideStart::zero()} {}
 
     // The log is empty, and its first record takes the index start.  A test
     // puts the counters near the end of the buffer, or near the wrap of 32
-    // bits, with it.
-    MetaLog(::foundation::effects::Alloc allocation, MetaIndex start)
-        : head_{::fixy::mint_atomic_monotonic<uint64_t, head_writer>(start.raw())},
+    // bits, with it.  A WideStart is below 2^62, which its one door from a
+    // value checks one time, so each append of the log steps with no compare.
+    MetaLog(::foundation::effects::Alloc allocation, ::fixy::WideStart start)
+        : head_{::fixy::mint_atomic_monotonic<uint64_t, head_writer>(start.value())},
+          start_{start},
           records_{::fixy::mint_fixed_heap_array<TensorMeta, CAPACITY, crucible::warden::kHugePageBytes>(allocation,
                                                                                                          TensorMeta{})},
-          tail_{::fixy::mint_atomic_monotonic<uint64_t, tail_writer>(start.raw())} {
-        CRUCIBLE_PRE(start.is_valid());
+          tail_{::fixy::mint_atomic_monotonic<uint64_t, tail_writer>(start.value())} {
         // The allocation faults the whole buffer in here rather than one page
         // at a time under the recording thread.
         //
@@ -194,13 +203,13 @@ public:
     MetaLog(MetaLog&&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
     MetaLog& operator=(MetaLog&&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
 
-    // The first state of the producer end: the head and the tail that the
-    // constructor stored, so a log that starts at an index gives its producer
-    // that position.  The split runs before either end goes to its thread, so
-    // each relaxed load reads the store of the constructor.
-    [[nodiscard]] static producer_state first_producer_state(MetaLog const& log) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return producer_state{.own_head = ::fixy::mint_monotonic<uint64_t>(log.head_.peek_relaxed()),
-                              .cached_tail = ::fixy::mint_monotonic<uint64_t>(log.tail_.peek_relaxed())};
+    // The first state of the producer end: the start of the log, where the
+    // constructor put the head and the tail, so a log that starts at an index
+    // gives its producer that position.  The split of a log runs one time,
+    // after its construction and before either end goes to its thread.
+    [[nodiscard]] static producer_state first_producer_state(MetaLog const& log) noexcept {
+        return producer_state{.own_head = ::fixy::mint_wide_monotonic<CAPACITY>(log.start_),
+                              .cached_tail = ::fixy::mint_monotonic<uint64_t>(log.start_.value())};
     }
 
     // The first state of the consumer end, which keeps no copy.
@@ -217,11 +226,12 @@ public:
         producer_state& state = producer.state_;
         return log.fill_run_(state, metas)
             .match(
-                [&](MetaIndex start) noexcept {
-                    // This release publishes the copy of fill_run_ to the consumer.
-                    log.head_.advance_sole_writer_by_proof(prove_head_writer_(), state.own_head,
-                                                           start.raw() + metas.size());
-                    return start;
+                [&](FilledRun run) noexcept {
+                    // This release publishes the copy of fill_run_ to the
+                    // consumer.  The step of the run proves the order of the
+                    // publish (the wide counter of fixy/Mutation.h).
+                    log.head_.advance_sole_writer_by_wide_step(prove_head_writer_(), state.own_head, run.step);
+                    return run.start;
                 },
                 [] noexcept { return MetaIndex::none(); });
     }
@@ -280,7 +290,7 @@ public:
         log.head_.reset_under_quiescence();
         log.tail_.reset_under_quiescence();
         state.cached_tail.reset_under_quiescence();
-        state.own_head.reset_under_quiescence();
+        state.own_head.reset_under_quiescence(::fixy::WideStart::zero());
         CRUCIBLE_POST(0, log.head_.get() == 0);
         CRUCIBLE_POST(0, log.tail_.get() == 0);
         CRUCIBLE_POST(0, state.cached_tail.get() == 0);
@@ -380,12 +390,21 @@ private:
 
     [[nodiscard]] static constexpr tail_writer prove_tail_writer_() noexcept { return {}; }
 
-    // Writes the run of records at the head, and gives the index of its first
-    // record, or no value if the buffer is full or the run is empty.  The
-    // append then publishes the head past the run.  An Option and not the
-    // index none, so the optimizer folds the test of the append into the
-    // branch that wrote the run.
-    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<MetaIndex> fill_run_(producer_state& state,
+    // A run that fill_run_ wrote: the index of its first record, and its
+    // count as the step of the wide copy of the head.  fill_run_ is the one
+    // place that makes such a step, from a count that its test of zero and
+    // its precondition bound to 1 thru CAPACITY.
+    struct FilledRun {
+        MetaIndex start{};
+        ::fixy::WideStep<CAPACITY> step = ::fixy::WideStep<CAPACITY>::one();
+    };
+
+    // Writes the run of records at the head, and gives its run, or no value
+    // if the buffer is full or the run is empty.  The append then publishes
+    // the head past the run.  An Option and not the index none, so the
+    // optimizer folds the test of the append into the branch that wrote the
+    // run.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<FilledRun> fill_run_(producer_state& state,
                                                                       ::fixy::View<const TensorMeta> metas)
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(metas.size() <= CAPACITY);
@@ -443,7 +462,10 @@ private:
         // would name the slot past the block just written, and every reader
         // would skip the block.
         CRUCIBLE_POST(result, result.raw() == h);
-        return ::fixy::Option<MetaIndex>::some(result);
+        // n is at least one after the test of zero and at most CAPACITY by
+        // the precondition, so the check of the step folds away.
+        return ::fixy::Option<FilledRun>::some(
+            FilledRun{.start = result, .step = ::fixy::WideStep<CAPACITY>::check_within_bound(n)});
     }
 
     // The record in the slot of index: the index masked by MASK.  The mask

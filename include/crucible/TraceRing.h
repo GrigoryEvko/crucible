@@ -283,9 +283,10 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // space, which costs a real reload of tail and never an overwrite of a
     // slot the consumer has not read.  Monotonic enforces the direction: tail
     // only ever advances, so an observation that moved backwards is a lost
-    // acquire.
+    // acquire.  The copy of the head is a wide counter that starts at zero
+    // and steps by one entry, so a publish moves it forward with no compare.
     struct alignas(64) producer_state {
-        ::fixy::Monotonic<uint64_t> own_head = ::fixy::mint_monotonic<uint64_t>(0);
+        ::fixy::WideMonotonic<1> own_head = ::fixy::mint_wide_monotonic<1>();
         ::fixy::Monotonic<uint64_t> cached_tail = ::fixy::mint_monotonic<uint64_t>(0);
     };
     // The consumer keeps its copy of the tail.  The drains track their
@@ -456,7 +457,7 @@ public:
         ring.tail_.reset_under_quiescence();
         consumer.state_.consumer_tail = 0;
         producer.state_.cached_tail.reset_under_quiescence();
-        producer.state_.own_head.reset_under_quiescence();
+        producer.state_.own_head.reset_under_quiescence(::fixy::WideStart::zero());
         CRUCIBLE_POST(0, ring.head_.get() == 0);
         CRUCIBLE_POST(0, ring.tail_.get() == 0);
         CRUCIBLE_POST(0, consumer.state_.consumer_tail == 0);
@@ -534,14 +535,17 @@ private:
     // door cannot drop a field of the slot.  The release of the publish
     // carries the five slot writes to the consumer.  The producer end is the
     // proof of the one writer, so the publish loads nothing from the head
-    // (the two publishes).
+    // (the two publishes).  The reserved slot is the slot of own_head, because
+    // nothing appends between the room test and the commit.  So the publish
+    // is a step of one entry of the wide copy, with no compare.
     [[gnu::hot]] CRUCIBLE_INLINE static void commit_(Producer& producer, Reservation reserved, const Entry& e,
                                                      MetaIndex meta_start, ScopeHash scope_hash,
                                                      CallsiteHash callsite_hash, OpDepth depth) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         TraceRing& ring = *producer.owner_;
-        const uint64_t h = ring.fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
-        ring.head_.advance_sole_writer_by_proof(prove_head_writer_(), producer.state_.own_head, h + 1);
+        ring.fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
+        ring.head_.advance_sole_writer_by_wide_step(prove_head_writer_(), producer.state_.own_head,
+                                                    ::fixy::WideStep<1>::one());
     }
 
     // The proofs of the writers of the two counters.  The doors of a side
@@ -672,11 +676,10 @@ private:
     }
 
     // Writes the entry and its four parallel slots into the reserved slot,
-    // and warms the slot of the next append.  Gives the head of the
-    // reservation, which the commit publishes.
-    [[gnu::hot]] CRUCIBLE_INLINE uint64_t fill_slot_(Reservation const& reserved, const Entry& e, MetaIndex meta_start,
-                                                     ScopeHash scope_hash, CallsiteHash callsite_hash,
-                                                     OpDepth depth) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    // and warms the slot of the next append.
+    [[gnu::hot]] CRUCIBLE_INLINE void fill_slot_(Reservation const& reserved, const Entry& e, MetaIndex meta_start,
+                                                 ScopeHash scope_hash, CallsiteHash callsite_hash,
+                                                 OpDepth depth) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         const uint64_t h = reserved.head_;
         const RingSlot slot = mask_slot_(h);
         entries_.set(slot, e);
@@ -696,7 +699,6 @@ private:
         ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(scope_hashes_.at(next_slot));
         ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(callsite_hashes_.at(next_slot));
         ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(depths_.at(next_slot));
-        return h;
     }
 };
 

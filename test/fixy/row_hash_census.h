@@ -1632,6 +1632,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::WideStart,
      "the start of a WideMonotonic: a value below the start limit that the count takes at its mint or reset, and the "
      "count folds its claim"},
+    {^^::fixy::WideStep,
+     "the step of a WideMonotonic: a value of one thru its bound that the count adds, and the count folds its claim"},
     {^^::fixy::duplicate_atom_on, kMetafunction},
     {^^::fixy::malformed_atom, kMetafunction},
     {^^::fixy::unholdable_payload, kMetafunction},
