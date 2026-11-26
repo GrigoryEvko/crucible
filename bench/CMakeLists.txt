@@ -318,6 +318,9 @@ add_custom_command(TARGET bench_alloc_fast_paths POST_BUILD
   VERBATIM)
 crucible_bench(bench_decide_compile_time)
 crucible_bench(bench_dispatch)
+# A row of bench_dispatch calls crucible_dispatch_op_ex, the C entry of the
+# extended dispatch, as a ctypes caller reaches it.
+target_link_libraries(bench_dispatch PRIVATE crucible_vessel)
 crucible_bench(bench_fp_control)
 crucible_bench(bench_diag_emission)
 crucible_bench(bench_iteration_detector)

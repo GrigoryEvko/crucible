@@ -18,10 +18,12 @@
 
 #include "bench_harness.h"
 #include "../test/trace_rig.h"
+#include "../vessel/torch/vessel_api.h"
 
 #include <foundation/effects/Effect.h>
 #include <crucible/Vigil.h>
 
+#include <bit>
 #include <cstdint>
 
 using namespace crucible;
@@ -405,8 +407,8 @@ int main() {
     bench::print("  sizeof(TraceRing::Entry) : {} B\n", sizeof(TraceRing::Entry));
     bench::print("  sizeof(TensorMeta)       : {} B\n\n", sizeof(TensorMeta));
 
-    // The 19 rows of this function.
-    ::fixy::FixedList<bench::Report, 19> reports{};
+    // The 20 rows of this function.
+    ::fixy::FixedList<bench::Report, 20> reports{};
 
     // ── Sub-component baselines ────────────────────────────────────
     bench::print("--- sub-component baselines ---\n");
@@ -654,6 +656,63 @@ int main() {
                               bench::do_not_optimize(r);
                           });
         CRUCIBLE_BENCH_CHECK(recorded == tick);
+        return report;
+    }());
+
+    // The C entry of crucible_mode.py: the checks of the arrays of the
+    // caller, the fold of seven scalars, two of them past the five inline
+    // slots, the decode of the two records and the dispatch.  Each body gives
+    // the op a schema hash that no other body gives, so the Vigil stays in the
+    // RECORD mode, and the run stays below the room of the ring.
+    bench::add_report(reports, [&] {
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the bench calls the C entries of the vessel with the arrays of a caller")
+        CrucibleHandle handle = 0;
+        CRUCIBLE_BENCH_CHECK(crucible_create(0, &handle) == CRUCIBLE_HANDLE_LIVE);
+        ::fixy::FixedArray<CrucibleMeta, 2> records{};
+        for (::fixy::Index<2> position : ::fixy::FixedArray<CrucibleMeta, 2>::indices()) {
+            CrucibleMeta record{};
+            record.sizes[0] = 4;
+            record.strides[0] = 1;
+            record.ndim = 1;
+            record.dtype = static_cast<int8_t>(ScalarType::Float);
+            record.device_idx = -1;
+            record.flags = 0x02;
+            record.storage_nbytes = 16;
+            record.data_ptr = std::bit_cast<void*>(uintptr_t{0x10000} * (position.raw() + 1));
+            records.set(position, record);
+        }
+        // lr, beta1, beta2, weight_decay and eps of a fused Adam step as data
+        // doubles, then amsgrad and maximize as structural bools.
+        const ::fixy::FixedArray<int64_t, 7> values{std::bit_cast<int64_t>(0.001),
+                                                    std::bit_cast<int64_t>(0.9),
+                                                    std::bit_cast<int64_t>(0.999),
+                                                    std::bit_cast<int64_t>(0.0),
+                                                    std::bit_cast<int64_t>(1e-8),
+                                                    0,
+                                                    1};
+        const ::fixy::FixedArray<uint8_t, 7> tags{1, 1, 1, 1, 1, 2, 2};
+        const ::fixy::FixedArray<uint8_t, 7> roles{1, 1, 1, 1, 1, 0, 0};
+        const CrucibleMeta* const metas = &records.at(::fixy::index<0>());
+        const int64_t* const value_array = &values.at(::fixy::index<0>());
+        const uint8_t* const tag_array = &tags.at(::fixy::index<0>());
+        const uint8_t* const role_array = &roles.at(::fixy::index<0>());
+        uint64_t recorded = 0;
+        uint64_t tick = 0;
+        auto report = bench::Run("crucible_dispatch_op_ex [RECORDING, 2 records, 7 scalars]")
+                          .warmup(RECORD_WARMUP)
+                          .samples(RECORD_SAMPLES)
+                          .batch(RECORD_BATCH)
+                          .core(bench::env_core())
+                          .measure([&] {
+                              const CrucibleDispatchResult r =
+                                  crucible_dispatch_op_ex(handle, 0x1000000u + tick++, 1, 1, metas, 2, value_array,
+                                                          tag_array, role_array, 7, op_flag::GRAD_ENABLED);
+                              recorded += static_cast<uint64_t>(r.action == CRUCIBLE_ACTION_RECORD);
+                              bench::do_not_optimize(r);
+                          });
+        CRUCIBLE_BENCH_CHECK(recorded == tick);
+        CRUCIBLE_BENCH_CHECK(crucible_destroy(handle) == CRUCIBLE_HANDLE_LIVE);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         return report;
     }());
 
