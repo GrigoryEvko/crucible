@@ -217,6 +217,21 @@ static_assert(check_closure(^^HoldsContext, raw_policy, "raw").reason() == Refus
 static_assert(check_closure(^^ReadsLimit, raw_escape_policy, "raw").reason() == Refusal::Borrow);
 static_assert(check_closure(^^HoldsView, owned_thread_policy, "owned thread").reason() == Refusal::Borrow);
 static_assert(check_closure(^^HoldsScalarName, owned_thread_policy, "owned thread").reason() == Refusal::Borrow);
+
+// The escape rule reads an owner of the base by its type arguments
+// (holds_borrow_ of foundation/core/Choice.h).  A body that owns a Box of an
+// int by value owns the object of the Box, so it escapes.  A body that owns a
+// Box of a View holds a borrow, and the rule refuses it.
+struct OwnsBox {
+    ::foundation::core::Box<int> held;
+    void operator()() && noexcept {}
+};
+struct OwnsBoxOfView {
+    ::foundation::core::Box<View<int const>> held;
+    void operator()() && noexcept {}
+};
+static_assert(check_closure(^^OwnsBox, owned_thread_policy, "owned thread").is_admitted());
+static_assert(check_closure(^^OwnsBoxOfView, owned_thread_policy, "owned thread").reason() == Refusal::Borrow);
 static_assert(check_closure(^^HoldsScalarName, stage_policy, "stage").reason() == Refusal::NotSendable);
 static_assert(check_closure(^^HoldsScalarName, fork_policy, "fork").reason() == Refusal::NotSendable);
 static_assert(check_closure(^^ReadsLimit, owned_thread_policy, "owned thread").reason() == Refusal::Borrow);
