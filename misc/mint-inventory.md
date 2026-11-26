@@ -62,6 +62,8 @@ that the axis does not apply to the row.
 | `mint_validated_op(crucible::TraceRing::ValidatedEntry)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | · | token | · | HS14: 10 |
 | `mint_validated_op(crucible::TraceRing::ValidatedEntry, crucible::SealedRecords<T0_0>&)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_validated_op(crucible::TraceRing::ValidatedEntry, foundation::core::ViewMut<crucible::TensorMeta, T0_0, T0_1>&&)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | Y | token | · | HS14: 10 |
+| `mint_vigil` | `include/crucible/Vigil.h` | Y | - | Y | Y | ctx | Y | HS14: 16 |
+| `mint_vigil_with_deadline_watchdog` | `include/crucible/Vigil.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/crucible/cipher/
 
@@ -338,6 +340,7 @@ that the axis does not apply to the row.
 | `mint_box` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 37 |
 | `mint_box(T0_1, T0_2&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 37 |
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 37 |
+| `mint_box_built` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 33 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
@@ -431,5 +434,5 @@ that the axis does not apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 83 | 46 | 29 | 8 | 0 | 7 |
-| substrate (`include/foundation/`, `include/fixy/`) | 190 | 72 | 114 | 4 | 0 | 2 |
+| crucible (`include/crucible/`) | 85 | 48 | 29 | 8 | 0 | 7 |
+| substrate (`include/foundation/`, `include/fixy/`) | 191 | 72 | 115 | 4 | 0 | 2 |
