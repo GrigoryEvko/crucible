@@ -1378,6 +1378,10 @@ witness <fixy/os/Fd.h> private | fixy::fs::DescriptorStamp | fixy::fs::Descripto
 # descriptor.
 witness <fixy/os/Handle.h> private | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::OpenedDescriptor<fixy::fs::OpenedType::regular_file>>()}
 witness <fixy/os/Handle.h> private | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::DescriptorStamp>()}
+# A transit carries the descriptor of a Handle to another thread.  Its
+# constructor from a number is private, and its one friend is the Handle,
+# whose departure makes each borrow of the number stale first.
+witness <fixy/os/Handle.h> private | fixy::os::HandleInTransit<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::HandleInTransit<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<int>()}
 # A foreign ref names the descriptor of a socket that a Handle owns or that
 # a C library opened, with the stamp of its number.  Its constructor from a
 # stamp is private, and its one friend is the door that share_socket and
