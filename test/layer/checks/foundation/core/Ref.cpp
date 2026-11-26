@@ -78,6 +78,18 @@ static_assert(!std::is_trivially_copyable_v<box_word_key<WordAuthority>>);
 static_assert(!std::is_constructible_v<Box<int>, BoxWord<int, WordAuthority>>);
 static_assert(!std::is_constructible_v<Box<int>, BoxWord<int, WordAuthority>, box_word_key<OtherAuthority> const&>);
 
+// The borrow of a word takes the key of its own authority, and no other.  The
+// fixtures neg_core_box_word_borrow_with_no_key and
+// neg_core_box_word_borrow_by_another_authority show the two refusals with
+// their diagnostics.
+template <class Word, class Key>
+concept BorrowsWith = requires(Word const& word, Key const& key) { word.borrow(key); };
+template <class Word>
+concept BorrowsWithNoKey = requires(Word const& word) { word.borrow(); };
+static_assert(BorrowsWith<BoxWord<int, WordAuthority>, box_word_key<WordAuthority>>);
+static_assert(!BorrowsWith<BoxWord<int, WordAuthority>, box_word_key<OtherAuthority>>);
+static_assert(!BorrowsWithNoKey<BoxWord<int, WordAuthority>>);
+
 // The payload gate.
 static_assert(BoxPayload<int>);
 static_assert(BoxPayload<OverAligned>);
@@ -555,7 +567,7 @@ inline constexpr TextView ref_names{
     "Ref to as_ref same_object downcast KindFamily KindTagged Box mint_box BumpArena make "
     "array copy_text Slot emplace clear FnRef CallRef Address address_of is_aligned "
     "AddressKey mint_address_key of_null hash lower_by Hole mint_hole BoxWord box_word_key "
-    "release_to_word claim_box is_empty"};
+    "release_to_word claim_box is_empty borrow"};
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<int const, CheckBrand>, DereferenceProtocol);
 CRUCIBLE_CLOSED_SURFACE(ref_names, Ref<Abstract, CheckBrand>, DereferenceProtocol);

@@ -455,6 +455,26 @@ public:
     [[nodiscard]] static Box<T> receive(::foundation::core::BoxWord<T, WordCourier> word) noexcept {
         return ::foundation::core::claim_box(word, ::foundation::core::box_word_key<WordCourier>{});
     }
+
+    // The label of the object of a word that the courier holds, read through
+    // a borrow, and the address of the object.
+    [[nodiscard]] static int label_of(::foundation::core::BoxWord<CountedObject, WordCourier> word) noexcept {
+        return word.borrow(::foundation::core::box_word_key<WordCourier>{})->label();
+    }
+    [[nodiscard]] static ::foundation::core::Address
+    address_of(::foundation::core::BoxWord<CountedObject, WordCourier> word) noexcept {
+        return ::foundation::core::address_of(word.borrow(::foundation::core::box_word_key<WordCourier>{}));
+    }
+
+    // Writes the label of the object of a word through a borrow.
+    static void relabel(::foundation::core::BoxWord<CountedObject, WordCourier> word, int label) noexcept {
+        word.borrow(::foundation::core::box_word_key<WordCourier>{})->relabel(label);
+    }
+
+    // The borrow of a word, for the test of the empty word.
+    static void borrow_of(::foundation::core::BoxWord<int, WordCourier> word) noexcept {
+        static_cast<void>(word.borrow(::foundation::core::box_word_key<WordCourier>{}));
+    }
 };
 
 // A Box gives its object to a word and holds none after.  The claim of the
@@ -496,6 +516,34 @@ void test_word_of_no_object_aborts(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_FATAL_INVARIANT(*target == 3);
 }
 
+// The authority borrows the object of a word that it holds, two times, and
+// writes it through a borrow.  The word keeps the object: the claim after the
+// borrows gives a Box of the same object with the new label, and the object
+// ends one time.  The borrow of the empty word ends the process.
+void test_word_borrow(::fixy::TestRunnerCtx const& test) {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+    {
+        Box<CountedObject> sent = mint_box<CountedObject>(alloc, 5);
+        ::foundation::core::Address const address = ::foundation::core::address_of(sent.view());
+        ::foundation::core::BoxWord<CountedObject, WordCourier> const word = WordCourier::send(std::move(sent));
+        CRUCIBLE_FATAL_INVARIANT(WordCourier::address_of(word) == address);
+        CRUCIBLE_FATAL_INVARIANT(WordCourier::label_of(word) == 5);
+        WordCourier::relabel(word, 8);
+        CRUCIBLE_FATAL_INVARIANT(WordCourier::label_of(word) == 8);
+        CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
+
+        Box<CountedObject> received = WordCourier::receive(word);
+        CRUCIBLE_FATAL_INVARIANT(::foundation::core::address_of(received.view()) == address);
+        CRUCIBLE_FATAL_INVARIANT(received->label() == 8);
+        CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+    ::fixy::check::expect_dies(
+        test, [] { WordCourier::borrow_of(::foundation::core::BoxWord<int, WordCourier>{}); },
+        "a borrow of the empty box word");
+}
+
 }  // namespace
 
 int main() {
@@ -516,5 +564,6 @@ int main() {
     test_option_of_a_box_of_a_declared_type();
     test_word_round_trip(test);
     test_word_of_no_object_aborts(test);
+    test_word_borrow(test);
     return 0;
 }

@@ -515,6 +515,12 @@ concept BoxPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_cons
 template <BoxPayload T>
 class Box;
 
+// The word of a Box (the definition below).  RefDoor names it as a friend for
+// borrow(), so this declaration stands before the door.
+template <BoxPayload T, class Authority>
+    requires std::is_class_v<Authority>
+class BoxWord;
+
 // The payload of an Option as a Ref (the definition below).  RefDoor names it
 // as a friend, so this declaration stands before the door, and the default
 // argument of the brand belongs to it.
@@ -607,6 +613,9 @@ class RefDoor final : ::foundation::NoObject<RefDoor> {
     friend constexpr auto ::foundation::core::erase_brand(Ref<T, Brand> ref) noexcept;
     template <BoxPayload T>
     friend class ::foundation::core::Box;
+    template <BoxPayload T, class Authority>
+        requires std::is_class_v<Authority>
+    friend class ::foundation::core::BoxWord;
     template <RefTarget T, ::foundation::brand::IsBrand Brand>
     friend constexpr auto ref_of_word_(atomic_word_key<Ref<T, Brand>> const& key, T* word) noexcept -> Ref<T, Brand>;
     template <auto& Object>
@@ -1217,6 +1226,12 @@ class Box;
 // words that it made.  The authority gives each word to claim_box at most one
 // time.  At its own end it claims each word that it still holds, so the Box
 // of the claim ends the object.  A word that no claim takes leaks its object.
+//
+// An authority that holds a word for a long time, such as a table of handles,
+// reads the object through borrow, which takes the key too and leaves the
+// object with the word.  The Ref of a borrow is valid only while the word lives
+// in the authority.  So the authority ends each use of each such Ref before it
+// gives the word to claim_box.
 // No path consumes the object of such a word, so only a Box of a payload that
 // is not linear gives a word (DroppableBoxPayload).
 //
@@ -1237,9 +1252,9 @@ public:
 };
 
 // The object of a Box, given to the words of one authority (the word of a
-// Box).  Only a Box builds a word that holds an object, and only a Box reads
-// the object of a word.  The type is trivially copyable, so a ring cell
-// holds it.  A word owns the object behind its pointer, as the Box that made
+// Box).  Only a Box builds a word that holds an object.  Only a Box takes the
+// object of a word, and only a member of the authority borrows it.  The type
+// is trivially copyable, so a ring cell holds it.  A word owns the object behind its pointer, as the Box that made
 // it did, so it moves between threads as its payload does.  The authority
 // names no object that the word holds, and it can be a class that its own
 // body names while it is incomplete, so the mark names only the position of
@@ -1260,6 +1275,24 @@ public:
 
     // True for the empty word.
     [[nodiscard]] constexpr bool is_empty() const noexcept { return object_ == nullptr; }
+
+    // The object of the word as a Ref with the fresh brand of the call, for a
+    // member of the authority of the key.  The word keeps the object, so a
+    // borrow is no claim, and the authority can borrow one word many times.
+    // The rule of the caller: the Ref is valid only while the word lives in
+    // the authority, so the authority ends each use of the Ref before it gives
+    // the word to claim_box.  The empty word ends the process through
+    // fatal().  One test of the pointer.  The pack refuses each explicit
+    // argument, so no caller names the brand.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>
+    borrow(box_word_key<Authority> const& /*key*/) const noexcept {
+        if (object_ == nullptr) [[unlikely]] {
+            fatal("a borrow of the empty box word: no Box gave an object to the word");
+        }
+        return detail::RefDoor::lend<Fresh>(*object_);
+    }
 };
 
 // The core of foundation/core/Owner.h gives the moves and the end of a Box.

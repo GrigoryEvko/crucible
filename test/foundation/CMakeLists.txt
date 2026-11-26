@@ -4083,6 +4083,14 @@ foundation_neg_compile_test(neg_core_box_word_key_outside_authority
 foundation_neg_compile_test(neg_core_box_word_claim_by_another_authority
   "no matching function for call to .claim_box\\(foundation::core::BoxWord<int, Channel>&, foundation::core::box_word_key<Thief>\\)."
   "deduced conflicting types for parameter .Authority. \\(.Channel. and .Thief.\\)")
+# The borrow of a word takes the key of its own authority, so a call with no
+# key and a call with the key of another authority find no door.
+foundation_neg_compile_test(neg_core_box_word_borrow_with_no_key
+  "no matching function for call to .foundation::core::BoxWord<int, Channel>::borrow\\(\\) const."
+  "candidate expects 1 argument, 0 provided")
+foundation_neg_compile_test(neg_core_box_word_borrow_by_another_authority
+  "no matching function for call to .foundation::core::BoxWord<int, Channel>::borrow\\(foundation::core::box_word_key<Thief>\\)."
+  "cannot convert .foundation::core::box_word_key<Thief>\\(\\). \\(type .foundation::core::box_word_key<Thief>.\\) to type .const foundation::core::box_word_key<Channel>&.")
 # A word is not linear, so a Box of a linear payload gives no word.
 foundation_neg_compile_test(neg_core_box_word_of_linear_payload
   "no matching function for call to .foundation::core::Box<foundation::core::Hole<8, 8> >::release_to_word\\(foundation::core::box_word_key<Channel>\\)."
