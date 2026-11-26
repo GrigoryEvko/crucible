@@ -246,6 +246,8 @@ class HandleStatus(enum.IntEnum):
     # An argument other than the handle breaks its rule: an eager word that EagerNumerics does not name, or an out
     # pointer that is null or not aligned.
     REFUSED = 5
+    # The Vigil records and replays no compiled region, so it has no address of an output or an input.
+    NOT_REPLAYING = 6
 
 
 class TlsMode(enum.IntEnum):
@@ -301,6 +303,13 @@ class CrucibleFullError(CrucibleHandleError):
     """The process holds the most live Vigils that the vessel library admits (CRUCIBLE_VIGIL_SLOTS)."""
 
 
+class CrucibleNotReplayingError(RuntimeError):
+    """The Vigil records and replays no compiled region, so it gives no address of an output or an input.
+
+    The handle is live, and the Vigil stays as it is.
+    """
+
+
 # The error of each status of a handle other than LIVE and REFUSED.  REFUSED
 # names an argument other than the handle, so each caller gives its own error.
 _HANDLE_ERRORS: dict[HandleStatus, type[CrucibleHandleError]] = {
@@ -316,6 +325,7 @@ def check_handle_status(status: int, entry: str) -> None:
 
     Raises:
         CrucibleHandleError: A subclass for STALE, WRONG_THREAD, BUSY and FULL
+        CrucibleNotReplayingError: For NOT_REPLAYING, from a read of an address of the replay while the Vigil records
         ValueError: For REFUSED, which names an argument other than the handle, and for a status that HandleStatus
             does not name
     """
@@ -328,6 +338,10 @@ def check_handle_status(status: int, entry: str) -> None:
     if named == HandleStatus.REFUSED:
         raise ValueError(f"{entry} refused an argument other than the handle: an eager word that EagerNumerics "
                          f"does not name, or an out pointer that is null or not aligned")
+    if named == HandleStatus.NOT_REPLAYING:
+        raise CrucibleNotReplayingError(f"{entry} gives an address only while the Vigil replays a compiled "
+                                        f"region, and the Vigil records.  Call it after a dispatch that gave "
+                                        f"COMPILED")
     raise _HANDLE_ERRORS[named](f"{entry} refused the handle of the Vigil: {named.name}")
 
 
@@ -1212,6 +1226,11 @@ class _VesselLib:
             getattr(L, name).restype = status
             getattr(L, name).argtypes = [handle, out]
 
+        # The addresses of the slots of the current op of a replay
+        for name in ("crucible_output_ptr", "crucible_input_ptr"):
+            getattr(L, name).restype = status
+            getattr(L, name).argtypes = [handle, ctypes.c_uint16, ctypes.POINTER(ctypes.c_void_p)]
+
         # Trace export
         L.crucible_export_crtrace.restype = status
         L.crucible_export_crtrace.argtypes = [handle, ctypes.c_char_p, u32]
@@ -1340,6 +1359,28 @@ class _VesselLib:
     def active_num_ops(self, h: int) -> int:
         """The number of operations in the active region."""
         return self._read("crucible_active_num_ops", h, ctypes.c_uint32)
+
+    def output_ptr(self, h: int, position: int) -> int:
+        """The address of the slot of the output POSITION of the current op of the replay, or 0 for no slot.
+
+        Raises:
+            CrucibleNotReplayingError: If the Vigil records, so it has no address
+            CrucibleHandleError: If the library refuses the handle (check_handle_status)
+        """
+        address = ctypes.c_void_p(0)
+        check_handle_status(self._lib.crucible_output_ptr(h, position, ctypes.byref(address)), "crucible_output_ptr")
+        return address.value or 0
+
+    def input_ptr(self, h: int, position: int) -> int:
+        """The address of the slot of the input POSITION of the current op of the replay, or 0 for no slot.
+
+        Raises:
+            CrucibleNotReplayingError: If the Vigil records, so it has no address
+            CrucibleHandleError: If the library refuses the handle (check_handle_status)
+        """
+        address = ctypes.c_void_p(0)
+        check_handle_status(self._lib.crucible_input_ptr(h, position, ctypes.byref(address)), "crucible_input_ptr")
+        return address.value or 0
 
     def _count_into(self, name: str, h: int, buffer: Any, capacity: int) -> int:
         """The count that the array query NAME writes for the handle H, with at most CAPACITY items into BUFFER."""

@@ -131,7 +131,10 @@ enum {
     // An argument other than the handle breaks its rule: an eager word that
     // EagerNumerics does not name, or an out pointer that is null or not
     // aligned for its type.
-    CRUCIBLE_HANDLE_REFUSED = 5
+    CRUCIBLE_HANDLE_REFUSED = 5,
+    // The Vigil records, and it does not replay a compiled region, so
+    // crucible_output_ptr and crucible_input_ptr have no address to give.
+    CRUCIBLE_HANDLE_NOT_REPLAYING = 6
 };
 
 // Binary-compatible with crucible::TensorMeta (176 bytes).
@@ -371,10 +374,14 @@ CRUCIBLE_VESSEL_API uint32_t crucible_metalog_size(CrucibleHandle h, uint32_t* o
 
 // out: the pre-allocated output pointer for output j of the current op: the
 // first byte of the storage of the output.  A view at an offset starts
-// storage_offset elements later.  Null outside a compiled op.
+// storage_offset elements later.  Null when the replayed op has no such
+// output.  While the Vigil records, the status is NOT_REPLAYING, and the entry
+// writes nothing.
 CRUCIBLE_VESSEL_API uint32_t crucible_output_ptr(CrucibleHandle h, uint16_t j, void** out) CRUCIBLE_VESSEL_NOEXCEPT;
 
-// out: the pre-allocated input pointer for input j of the current op, or null.
+// out: the pre-allocated input pointer for input j of the current op, or
+// null.  While the Vigil records, the status is NOT_REPLAYING, and the entry
+// writes nothing.
 CRUCIBLE_VESSEL_API uint32_t crucible_input_ptr(CrucibleHandle h, uint16_t j, void** out) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Trace export ────────────────────────────────────────────────────

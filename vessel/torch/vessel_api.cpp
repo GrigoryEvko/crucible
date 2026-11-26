@@ -216,6 +216,23 @@ template <class Value, class Read>
     });
 }
 
+// The status of an entry that writes one address of the replay of the Vigil
+// of a handle to out: the address that read gives while the Vigil replays a
+// compiled region, and NOT_REPLAYING with no write while it records.  Only
+// the thread that holds the Vigil changes its mode, and that thread runs this
+// entry, so the mode stays the same from the test to the read.
+template <class Read>
+[[nodiscard]] static uint32_t answer_in_replay(CrucibleHandle handle, void** out, Read&& read) noexcept {
+    ::fixy::Option<crucible::vessel::TypedArray<void*>> checked = crucible::vessel::as_array_typed(out, 1);
+    if (checked.is_none()) return CRUCIBLE_HANDLE_REFUSED;
+    void** const target = std::move(checked).expect("the test above found the out value").value();
+    return on_held_vigil(handle, [target, &read](crucible::Vigil& vigil) noexcept -> uint32_t {
+        if (!vigil.is_compiled()) return CRUCIBLE_HANDLE_NOT_REPLAYING;
+        *target = read(vigil);
+        return CRUCIBLE_HANDLE_LIVE;
+    });
+}
+
 // ── FFI entry validation ─────────────────────────────────────────────
 //
 // The checks and the retag that carries an Entry from the first trust
@@ -560,11 +577,11 @@ uint32_t crucible_metalog_size(CrucibleHandle h, uint32_t* out) noexcept {
     return answer(h, out, [](crucible::Vigil& vigil) noexcept -> uint32_t { return vigil.meta_log_size().peek(); });
 }
 
-// A call outside a compiled op, while the context of the Vigil records, ends
-// the process (Vigil::output_ptr).  The C caller knows the device of its own
-// tensor.
+// A call while the Vigil records gives NOT_REPLAYING and reads nothing, so the
+// precondition of Vigil::output_ptr holds for each read.  The C caller knows
+// the device of its own tensor.
 uint32_t crucible_output_ptr(CrucibleHandle h, uint16_t j, void** out) noexcept {
-    return answer(h, out, [j](crucible::Vigil& vigil) noexcept -> void* {
+    return answer_in_replay(h, out, [j](crucible::Vigil& vigil) noexcept -> void* {
         const ::fixy::Option<::fixy::RunAddress> output =
             vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{j});
         return output.match(
@@ -574,7 +591,7 @@ uint32_t crucible_output_ptr(CrucibleHandle h, uint16_t j, void** out) noexcept 
 }
 
 uint32_t crucible_input_ptr(CrucibleHandle h, uint16_t j, void** out) noexcept {
-    return answer(h, out, [j](crucible::Vigil& vigil) noexcept -> void* {
+    return answer_in_replay(h, out, [j](crucible::Vigil& vigil) noexcept -> void* {
         const ::fixy::Option<::fixy::RunAddress> input =
             vigil.input_ptr(vigil.mint_producer_context(), crucible::InputPosition{j});
         return input.match(
