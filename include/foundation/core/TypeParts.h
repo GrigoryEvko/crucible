@@ -164,7 +164,7 @@ struct TypeParts {
     // A class that states refers{}, refers_unique{} or refers_deep{}.
     bool is_borrow = false;
     // A borrow whose const object gives only const access to its target: a
-    // class of the base (is_class_of_the_base_ of foundation/core/Owner.h) that
+    // class of the base (is_class_of_the_base_ of foundation/reflect/Members.h) that
     // states refers_deep{}.  A walk trusts the mark only in the base, and the
     // check file of each such class pins that each const door gives a borrow
     // of a const target.
@@ -469,7 +469,7 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
         }
     }
     if (!states_owner && !refers_deep && !keeps_own) return;
-    bool const is_of_the_base = is_class_of_the_base_(type);
+    bool const is_of_the_base = ::foundation::reflect::is_class_of_the_base_(type);
     parts.is_storage_owner = states_owner && is_of_the_base;
     parts.gives_const_access = refers_deep && is_of_the_base;
     parts.keeps_own_borrows = keeps_own && is_of_the_base;
@@ -579,7 +579,7 @@ consteval void list_parts_(TypeParts& parts, PartList<Room>& list, std::meta::in
     if (is_specialization && is_any_borrow && !lists_held_alone) return;
     std::vector<std::meta::info> const bases = std::meta::bases_of(type, unchecked);
     if (!parts.is_storage_owner && derives_from_owner_core_(bases)) {
-        parts.is_storage_owner = is_class_of_the_base_(type);
+        parts.is_storage_owner = ::foundation::reflect::is_class_of_the_base_(type);
     }
     parts.hides_members = is_any_borrow || parts.is_storage_owner;
     if (is_specialization && parts.is_storage_owner && !lists_held_alone) return;

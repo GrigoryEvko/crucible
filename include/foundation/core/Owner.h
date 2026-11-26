@@ -195,33 +195,10 @@ struct PartPath;
 template <class State>
 concept RunsElementCode = !detail::releases_no_code_(^^State, nullptr);
 
-namespace detail {
-
-// True when the class of type is declared in the namespace foundation or
-// fixy, or in a namespace inside them: the outermost scope of the class below
-// the global namespace is one of the two.  The walk goes up through each
-// enclosing class and function, so a local class and a closure of a function
-// of the base are classes of the base too.  A specialization gives the scope
-// of its template.  The walk stops at a scope with no parent: GCC gives the
-// function main no parent, so a class of main is no class of the base.  The
-// layer foundation declares no namespace fixy, so the test reads the name of
-// the namespace.  Complexity: the depth of the scopes.
-[[nodiscard]] consteval bool is_class_of_the_base_(std::meta::info type) {
-    std::meta::info outermost = std::meta::dealias(type);
-    while (std::meta::has_parent(outermost) && std::meta::parent_of(outermost) != ^^::) {
-        outermost = std::meta::parent_of(outermost);
-    }
-    return std::meta::is_namespace(outermost)
-        && (::foundation::reflect::has_identifier_named(outermost, "foundation")
-            || ::foundation::reflect::has_identifier_named(outermost, "fixy"));
-}
-
-}  // namespace detail
-
 // The Owner of a core: a class of the base (owner of a core).  A class
 // template gives the namespace of its template.
 template <class Owner>
-concept OwnerOfTheBase = std::is_class_v<Owner> && detail::is_class_of_the_base_(^^Owner);
+concept OwnerOfTheBase = std::is_class_v<Owner> && ::foundation::reflect::is_class_of_the_base_(^^Owner);
 
 template <OwnerState State, class Owner>
     requires OwnerOfTheBase<Owner>

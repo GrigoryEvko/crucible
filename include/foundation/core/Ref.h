@@ -382,7 +382,7 @@ struct BuiltByStatedArenaTest final {
     std::meta::info const stated = std::meta::dealias(brand);
     if (!std::meta::is_class_type(stated) || !names_arena_brand_(stated)) return BrandStatement::of_object;
     bool const is_owner = ::foundation::reflect::carries_annotation(carrier, ^^::foundation::brand::branded_arena)
-                       && is_class_of_the_base_(carrier);
+                       && ::foundation::reflect::is_class_of_the_base_(carrier);
     if (is_owner) return BrandStatement::of_owner;
     return std::meta::is_convertible_type(std::meta::add_pointer(carrier), ^^BuiltByStatedArenaTest)
              ? BrandStatement::of_object

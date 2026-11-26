@@ -445,7 +445,7 @@ struct names_owner_second {};
     std::meta::info const family = std::meta::template_of(type);
     bool const is_named_family = family == ^^Ref || family == ^^Link || family == ^^ArenaRun;
     if (!is_named_family) {
-        if (!is_class_of_the_base_(type)) return false;
+        if (!::foundation::reflect::is_class_of_the_base_(type)) return false;
         if (!::foundation::reflect::carries_annotation(type, ^^names_owner_second)) return false;
     }
     return outlives_objects_(std::meta::dealias(std::meta::template_arguments_of(type)[1]), brand);

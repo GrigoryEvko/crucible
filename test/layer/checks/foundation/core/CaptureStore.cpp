@@ -335,8 +335,8 @@ static_assert(is_stash_refused<OutsideDeep<core::Option<core::View<int>>> const>
 // The test of the namespace walks up through each enclosing class and
 // function, and an unnamed namespace and the global namespace are outside the
 // base.
-static_assert(!core::detail::is_class_of_the_base_(^^OwnerStash));
-static_assert(core::detail::is_class_of_the_base_(^^core::detail::capture_store_checks::MarkedOwnerOfTheBase));
-static_assert(core::detail::is_class_of_the_base_(^^core::HeapArray<int>));
+static_assert(!::foundation::reflect::is_class_of_the_base_(^^OwnerStash));
+static_assert(::foundation::reflect::is_class_of_the_base_(^^core::detail::capture_store_checks::MarkedOwnerOfTheBase));
+static_assert(::foundation::reflect::is_class_of_the_base_(^^core::HeapArray<int>));
 
 }  // namespace capture_store_outside_checks
