@@ -60,10 +60,13 @@ rule artifacts
 @build/vessel | needed | 1 | libasan.so.8 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | needed | 1 | libbpf.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | needed | 1 | libc.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | needed | 1 | libc10.so | libcrucible_dispatch.so links the libraries of the patched PyTorch of the vessel build, and it finds them through the run path of the PyTorch of .venv-torch in the tree
 @build/vessel | needed | 1 | libgcc_s.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | needed | 1 | libstdc++.so.6 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | needed | 1 | libtorch_cpu.so | libcrucible_dispatch.so links the libraries of the patched PyTorch of the vessel build, and it finds them through the run path of the PyTorch of .venv-torch in the tree
 @build/vessel | needed | 1 | libtsan.so.2 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | needed | 1 | libubsan.so.1 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
+@build/vessel | runpath | 1 | {source}/.venv-torch/lib/python3.14/site-packages/torch/lib | libcrucible_dispatch.so links the libraries of the patched PyTorch of the vessel build, and it finds them through the run path of the PyTorch of .venv-torch in the tree
 @build/vessel | runpath | 1 | {toolchain}/usr/lib64 | a kind of fact that the rule did not read before: the first ledger of the link facts of the linked artifacts
 @build/vessel | static-member | 1 | libc_nonshared.a(at_quick_exit.oS) | the perf loader reads its environment variables through the environment door, whose body is in src/fixy/os/ExitHooks.cpp, the one includer of <stdlib.h>.  An artifact that links the perf layer then links that object, and its references to atexit and at_quick_exit take the two static members of libc_nonshared.a
 @build/vessel | static-member | 1 | libc_nonshared.a(atexit.oS) | the perf loader reads its environment variables through the environment door, whose body is in src/fixy/os/ExitHooks.cpp, the one includer of <stdlib.h>.  An artifact that links the perf layer then links that object, and its references to atexit and at_quick_exit take the two static members of libc_nonshared.a
