@@ -1242,10 +1242,11 @@ public:
 // holds it.  A word owns the object behind its pointer, as the Box that made
 // it did, so it moves between threads as its payload does.  The authority
 // names no object that the word holds, and it can be a class that its own
-// body names while it is incomplete (foundation/Transfer.h, rule 6).
+// body names while it is incomplete, so the mark names only the position of
+// the payload (foundation/Transfer.h, rule 6).
 template <BoxPayload T, class Authority>
     requires std::is_class_v<Authority>
-class[[= ::foundation::transfer::by_arguments{}]] BoxWord {
+class[[= ::foundation::transfer::by_arguments<0>{}]] BoxWord {
     template <BoxPayload U>
     friend class Box;
 

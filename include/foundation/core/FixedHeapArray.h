@@ -144,7 +144,7 @@ class FixedHeapArrayFrameKeyDoor final : ::foundation::NoObject<FixedHeapArrayFr
 template <class T, std::size_t N, std::size_t Align = alignof(T), ::foundation::brand::IsBrand KeyBrand = Unkeyed>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && detail::HeapArrayAlignment<T, Align>
           && DroppablePayload<T>
-class [[nodiscard]][[= ::foundation::transfer::by_arguments{}]][[= loan_key_mark_when<IsKeyBrand<KeyBrand>>]]
+class [[nodiscard]][[= ::foundation::transfer::by_arguments<0>{}]][[= loan_key_mark_when<IsKeyBrand<KeyBrand>>]]
     FixedHeapArray final {
     HeapArray<T, Align> storage_;
 

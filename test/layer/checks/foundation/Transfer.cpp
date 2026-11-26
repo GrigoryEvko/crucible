@@ -48,23 +48,35 @@ struct[[= not_sendable{}]] RefusedSend {
 };
 static_assert(Sendable<StatedSend> && !Shareable<StatedSend> && !Sendable<RefusedSend> && Shareable<RefusedSend>);
 
-// Rule 6: a class that states by_arguments holds a property when its first
-// type argument holds it, and its member is not read: the member refers to a
-// plain int, which alone refuses each property.  The class holds no value of
-// its other type arguments, so the walk asks nothing of them, also of an
-// argument that is only declared.
+// Rule 6: a class of the base that states by_arguments holds a property when
+// each type argument that it owns holds it, and its member is not read: the
+// member refers to a plain int, which alone refuses each property.
+// by_arguments{} owns each type argument, so a second argument that is not
+// Sendable refuses the class.  by_arguments<0>{} owns only the first one, and
+// the walk asks nothing of the other arguments, also of one that is only
+// declared.
 template <class T>
 struct[[= by_arguments{}]] Owner {
     int& unread;
 };
+template <class T, class Other>
+struct[[= by_arguments{}]] OwnerOfTwo {
+    int& unread;
+};
 template <class T, class Authority>
-struct[[= by_arguments{}]] OwnerOfAuthority {
+struct[[= by_arguments<0>{}]] OwnerOfAuthority {
+    int& unread;
+};
+template <class Authority, class T>
+struct[[= by_arguments<1>{}]] OwnerOfSecond {
     int& unread;
 };
 struct DeclaredAuthority;
 static_assert(Sendable<Owner<int>> && !Sendable<Owner<int*>>);
+static_assert(Sendable<OwnerOfTwo<int, long>> && !Sendable<OwnerOfTwo<int, int*>> && !Sendable<OwnerOfTwo<int*, int>>);
 static_assert(Sendable<OwnerOfAuthority<int, int*>> && Sendable<OwnerOfAuthority<int, DeclaredAuthority>>);
 static_assert(!Sendable<OwnerOfAuthority<int*, int>>);
+static_assert(Sendable<OwnerOfSecond<int*, int>> && !Sendable<OwnerOfSecond<int, int*>>);
 static_assert(Sendable<::foundation::core::Box<int>>);
 static_assert(Sendable<::foundation::core::BoxWord<int, DeclaredAuthority>>);
 
@@ -566,7 +578,7 @@ static_assert(Sendable<ConstRef> && !SendableBeside<ConstRef> && !SendableBeside
 static_assert(SendableBeside<AtomicRef> && SendableBeside<int> && SendableBeside<Node>);
 static_assert(Sendable<IntRun> && !SendableBeside<IntRun> && !SendableBeside<IntRows>);
 static_assert(SendableBeside<StatedSend> && !SendableBeside<RefusedSend> && !SendableBeside<OwnerThreadCount>);
-static_assert(SendableBeside<Owner<int>> && !SendableBeside<Owner<int*>>);
+static_assert(SendableBeside<Owner<int>> && !SendableBeside<Owner<int*>> && !SendableBeside<OwnerOfTwo<int, int*>>);
 static_assert(SendableBeside<::foundation::core::Box<int>>);
 consteval bool are_refs_checked_beside() {
     ::foundation::core::Atomic<int> cell{0};
@@ -648,3 +660,20 @@ static_assert(!holds_its_statement(^^Plain), "a class with no statement holds no
 }  // namespace detail::transfer_self_test
 
 }  // namespace foundation::transfer
+
+// Rule 6 outside the base: a class outside foundation and fixy that states
+// by_arguments gets no property from the mark, and rule 8 reads its members.
+// The member refers to a plain int, which refuses each property.  Owner, the
+// twin of the class in the base, holds each property of its argument.
+namespace transfer_outside_checks {
+
+namespace transfer = ::foundation::transfer;
+
+template <class T>
+struct[[= transfer::by_arguments{}]] OutsideOwner {
+    int& unread;
+};
+static_assert(!transfer::Sendable<OutsideOwner<int>> && !transfer::Shareable<OutsideOwner<int>>);
+static_assert(transfer::Sendable<transfer::detail::transfer_self_test::Owner<int>>);
+
+}  // namespace transfer_outside_checks

@@ -1152,9 +1152,11 @@ enum class GateTarget : unsigned char {
         // such as the owner of a context, so the walk reads the arguments of a
         // class only when the class states that it holds their values in its
         // own bytes (by_arguments{} or payload_cell{} of foundation/Transfer.h).
+        // The walk reads each argument of such a class, also one that the mark
+        // does not name, so the search for a brand only grows.
         bool const holds_arguments =
             is_class
-            && (tr::detail::states(node.type, ^^tr::by_arguments) || tr::detail::states(node.type, ^^tr::payload_cell));
+            && (tr::detail::states_by_arguments(node.type) || tr::detail::states(node.type, ^^tr::payload_cell));
         bool const keeps_own_const = std::meta::is_pointer_type(node.type) || std::meta::is_function_type(node.type)
                                   || std::meta::is_member_pointer_type(node.type);
         if (!is_class || holds_arguments) {

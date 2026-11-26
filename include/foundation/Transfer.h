@@ -59,13 +59,16 @@
 //     5. A class or a union that states a property holds it or not as it
 //        states (the annotations).  A class that states thread_bound{} is not
 //        Sendable.
-//     6. A class that states by_arguments{} holds a property when its first
-//        type argument holds it, and the walk reads no member of it.  The
-//        class owns an object of that argument, so an argument that is only
-//        declared holds only what its statement gives (the opaque types), as
-//        the payload of a cell does.  The class holds no value of its other
-//        type arguments, such as the authority of a BoxWord, so the walk asks
-//        nothing of them.
+//     6. A class of the base that states by_arguments holds a property when
+//        each type argument that it owns holds it, and the walk reads no
+//        member of it.  The class owns an object of each such argument, so an
+//        argument that is only declared holds only what its statement gives
+//        (the opaque types), as the payload of a cell does.  The class holds
+//        no value of its other type arguments, such as the authority of a
+//        BoxWord, so the walk asks nothing of them.  The walk trusts the mark
+//        only in a class of the base (is_class_of_the_base_ of
+//        foundation/reflect/Members.h).  A class outside the base gets no
+//        property from it, and rule 8 reads its members.
 //     7. A class that holds state that the walk cannot read holds no property.
 //        A lambda with captures has this shape on a compiler that shows no
 //        field of a capture.  On a compiler that shows the fields, the
@@ -133,9 +136,16 @@
 //     that the code of the class orders, as the comment beside the statement
 //     tells, and the check reads the doors of the class that write it (the
 //     doors of a synchronized class).
-//     by_arguments{} states that the class owns the object of its first type
-//     argument behind its pointers, as a Box does, and that its other type
-//     arguments name no object that it holds.  refers{} states that the class
+//     by_arguments{} states that the class owns an object of each type
+//     argument behind its pointers, as a Box does.  by_arguments<0>{} names
+//     the positions of the type arguments that the class owns, and its other
+//     type arguments name no object that it holds, as the authority of a
+//     BoxWord does.  A position is the index of an argument in the list of
+//     the type and value arguments, where each argument of a pack counts as
+//     one, and a template argument that is a template counts as none.  The
+//     plugin counts the positions the same way.  A position that names no
+//     type argument stops the build, and so do two statements on one class.
+//     refers{} states that the class
 //     refers to the object of its first type argument, as a reference does.
 //     refers_unique{} states that the class refers to that object as its one
 //     writer, as a ViewMut does.  refers_deep{} states that the class refers
@@ -346,6 +356,10 @@ struct sendable final {};
 struct not_sendable final {};
 struct shareable final {};
 struct not_shareable final {};
+// An owner of the objects of its type arguments.  An empty list of positions
+// names each type argument.  The class deduces the empty list from {}.
+template <std::size_t... Positions>
+    requires((Positions < 64) && ...)
 struct by_arguments final {};
 struct refers final {};
 struct refers_unique final {};
@@ -506,6 +520,69 @@ private:
     return ::foundation::reflect::carries_annotation(type, annotation);
 }
 
+// Each function below has no constant definition.  A call to one stops the
+// constant evaluation, and the diagnostic names the fault of a statement of
+// by_arguments.
+void a_class_has_two_statements_of_by_arguments() noexcept;
+void an_owned_position_names_no_type_argument() noexcept;
+
+// The type arguments that a class owns, from its statement of by_arguments:
+// each type argument, or the named positions, one bit for each position.
+class OwnedArguments {
+public:
+    consteval OwnedArguments() noexcept = default;
+    consteval OwnedArguments(bool is_each, unsigned long long positions) noexcept
+        : is_stated_{true}, is_each_{is_each}, positions_{positions} {}
+
+    // True when the class states by_arguments.
+    [[nodiscard]] consteval bool is_stated() const noexcept { return is_stated_; }
+
+    // True when the class owns the argument at the position, which names a
+    // type argument.
+    [[nodiscard]] consteval bool owns(std::size_t position) const noexcept {
+        return is_stated_ && (is_each_ || (position < 64 && ((positions_ >> position) & 1ULL) != 0));
+    }
+
+private:
+    bool is_stated_ = false;
+    bool is_each_ = false;
+    unsigned long long positions_ = 0;
+};
+
+// True when the annotation is a statement of by_arguments.
+[[nodiscard]] consteval bool is_by_arguments(std::meta::info annotation) {
+    const std::meta::info mark = std::meta::dealias(std::meta::remove_cv(std::meta::type_of(annotation)));
+    return std::meta::has_template_arguments(mark) && std::meta::template_of(mark) == ^^by_arguments;
+}
+
+// The arguments that the class owns.  A named position that is no type
+// argument of the class, and two statements on one class, stop the build.
+// Complexity: linear in the annotations and the template arguments of the
+// class.
+[[nodiscard]] consteval OwnedArguments owned_arguments_of(std::meta::info type) {
+    namespace refl = ::foundation::reflect;
+    const refl::TemplateAnnotations statements = refl::template_annotations_of(type, ^^by_arguments);
+    if (statements.count == 0) return OwnedArguments{};
+    if (statements.count > 1) a_class_has_two_statements_of_by_arguments();
+    const unsigned long long named = refl::argument_bits_of(statements.first_type);
+    if (named == 0) return OwnedArguments{true, 0};
+    unsigned long long types = 0;
+    if (std::meta::has_template_arguments(type)) {
+        std::size_t position = 0;
+        for (const refl::TypeNode& argument : refl::argument_components_of(refl::TypeNode{type, true})) {
+            if (position < 64 && !argument.is_value_argument) types |= 1ULL << position;
+            ++position;
+        }
+    }
+    if ((named & ~types) != 0) an_owned_position_names_no_type_argument();
+    return OwnedArguments{false, named};
+}
+
+// True when the type states by_arguments, with each form of the positions.
+[[nodiscard]] consteval bool states_by_arguments(std::meta::info type) {
+    return ::foundation::reflect::template_annotations_of(type, ^^by_arguments).count != 0;
+}
+
 // The annotations of one complete class.  A walk asks for some of them, and a
 // class with no annotation answers each question with one read.
 class StatedMarks {
@@ -515,10 +592,31 @@ public:
 
     [[nodiscard]] consteval bool has(std::meta::info annotation) const { return has_any_ && states(type_, annotation); }
 
+    // The type arguments that the class owns (rule 6).
+    [[nodiscard]] consteval OwnedArguments owned() const {
+        return has_any_ ? owned_arguments_of(type_) : OwnedArguments{};
+    }
+
 private:
     std::meta::info type_{};
     bool has_any_ = false;
 };
+
+// The type arguments of a class that it owns, as the nodes of the walk of
+// foundation/reflect/TypeComponents.h.  Complexity: linear in the template
+// arguments of the class.
+[[nodiscard]] consteval ::foundation::reflect::TypeNodeList owned_argument_nodes(std::meta::info type,
+                                                                                 OwnedArguments owned) {
+    namespace refl = ::foundation::reflect;
+    refl::TypeNodeList nodes;
+    if (!owned.is_stated() || !std::meta::has_template_arguments(type)) return nodes;
+    std::size_t position = 0;
+    for (const refl::TypeNode& argument : refl::argument_components_of(refl::TypeNode{type, true})) {
+        if (owned.owns(position) && !argument.is_value_argument) nodes.push_back(argument);
+        ++position;
+    }
+    return nodes;
+}
 
 // Each function below has no constant definition.  A call to one stops the
 // constant evaluation, and the diagnostic names it (the opaque types).
@@ -1188,13 +1286,20 @@ struct DoorFinding {
         if (part.was_const) continue;
         if (part.type == owner || can_write_owner(part.type, owner, depth - 1)) return true;
     }
-    // A class that refers to or owns the object of its first type argument
-    // states it, as a Ref, a ChannelBinding and a Box do.  Each other type
-    // argument can be a tag or a brand, which names no object.
+    // A class that refers to or holds the object of its first type argument
+    // states it, as a Ref, a ChannelBinding and a cell do, and an owner
+    // states the arguments that it owns, as a Box does.  Each other type
+    // argument can be a tag or a brand, which names no object.  The walk
+    // follows the owned arguments of each class, also outside the base: the
+    // mark only adds a reach.
     if (!std::meta::has_template_arguments(bare)) return false;
     const StatedMarks marks{bare};
-    const bool is_first_argument_held = marks.has(^^refers) || marks.has(^^refers_unique) || marks.has(^^refers_deep)
-                                     || marks.has(^^by_arguments) || marks.has(^^payload_cell);
+    for (const refl::TypeNode& owned : owned_argument_nodes(bare, marks.owned())) {
+        if (owned.was_const) continue;
+        if (owned.type == owner || can_write_owner(owned.type, owner, depth - 1)) return true;
+    }
+    const bool is_first_argument_held =
+        marks.has(^^refers) || marks.has(^^refers_unique) || marks.has(^^refers_deep) || marks.has(^^payload_cell);
     if (!is_first_argument_held) return false;
     const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
     if (arguments.empty() || arguments.begin()->is_value_argument || arguments.begin()->was_const) return false;
@@ -1239,8 +1344,11 @@ consteval bool can_write_plain_through(std::meta::info type, std::meta::info own
     }
     if (!std::meta::has_template_arguments(bare)) return false;
     const StatedMarks marks{bare};
+    for (const refl::TypeNode& owned : owned_argument_nodes(bare, marks.owned())) {
+        if (!owned.was_const && holds_plain_borrow(owned.type, owner, depth - 1)) return true;
+    }
     const bool is_referred = marks.has(^^refers) || marks.has(^^refers_unique) || marks.has(^^refers_deep);
-    const bool is_owned = marks.has(^^by_arguments) || marks.has(^^payload_cell);
+    const bool is_owned = marks.has(^^payload_cell);
     if (!is_referred && !is_owned) return false;
     const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
     if (arguments.empty() || arguments.begin()->is_value_argument || arguments.begin()->was_const) return false;
@@ -1665,20 +1773,21 @@ struct ReferenceAnswer {
             if (answer.has_next) pending.push(answer.next);
             continue;
         }
-        // Rule 6.  The class holds an object of its first argument, and no
-        // value of its other arguments.
-        if (marks.has(^^by_arguments)) {
+        // Rule 6.  A class of the base holds an object of each argument that
+        // it owns, and no value of its other arguments.  Outside the base the
+        // mark gives nothing, and rule 8 reads the members.
+        const detail::OwnedArguments owned = marks.owned();
+        if (owned.is_stated() && refl::is_class_of_the_base_(bare)) {
             if (!is_specialization) return bare;
-            const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
-            if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
-            const refl::TypeNode owned = *arguments.begin();
-            if (!owned.was_reference) {
-                pending.push(detail::Goal{owned.type, goal.property, detail::Reach::Part});
-                continue;
+            for (const refl::TypeNode& argument : detail::owned_argument_nodes(bare, owned)) {
+                if (!argument.was_reference) {
+                    pending.push(detail::Goal{argument.type, goal.property, detail::Reach::Part});
+                    continue;
+                }
+                const detail::ReferenceAnswer answer = detail::answer_reference(argument, goal.property);
+                if (answer.is_refused) return bare;
+                if (answer.has_next) pending.push(answer.next);
             }
-            const detail::ReferenceAnswer answer = detail::answer_reference(owned, goal.property);
-            if (answer.is_refused) return bare;
-            if (answer.has_next) pending.push(answer.next);
             continue;
         }
         // Rule 7.  Only a class that shows no part can hold a state that the

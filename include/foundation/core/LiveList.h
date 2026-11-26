@@ -206,9 +206,10 @@ public:
 
 // Two threads use one list at the same time: each private part is a class that
 // two threads can write.  The list owns its elements, so it moves to another
-// thread behind an owner, such as a Box, as they do (by_arguments{}).
+// thread behind an owner, such as a Box, as they do (by_arguments<0>{}).  The
+// list holds no value of the type of its writer proof.
 template <LiveListElement T, LiveListWriter Writer>
-class [[nodiscard]][[= ::foundation::transfer::synchronized{}]][[= ::foundation::transfer::by_arguments{}]]
+class [[nodiscard]][[= ::foundation::transfer::synchronized{}]][[= ::foundation::transfer::by_arguments<0>{}]]
                    [[= owns_its_storage{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] LiveList final
     : ::foundation::Pinned<LiveList<T, Writer>> {
     using Segments = detail::LiveSegments<T, Writer>;

@@ -160,7 +160,7 @@ public:
 // class, and only the result of a claim door keeps it (the share of
 // foundation/Transfer.h).
 template <typename Tag, typename Brand>
-class [[nodiscard]][[= ::foundation::linear::scope_end_door{}]][[= ::foundation::transfer::by_arguments{}]]
+class [[nodiscard]][[= ::foundation::linear::scope_end_door{}]][[= ::foundation::transfer::by_arguments<0>{}]]
                    [[= ::foundation::linear::authority{}]][[= ::foundation::transfer::shares{}]] SharedPermissionGuard {
     // The pool, through a pointer to const: the guard writes only the count
     // of the pool, a mutable atomic cell, and never the parked permission.

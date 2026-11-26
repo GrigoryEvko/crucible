@@ -5104,6 +5104,12 @@ fixy_neg_compile_test(neg_channel_of_a_message_with_a_borrow
 fixy_neg_compile_test(neg_box_channel_of_unsendable_payload
   "template constraint failure for .template<fixy::concurrent::ChannelForm Form, class T, long unsigned int Capacity, class UserTag, class Brand>"
   "required for the satisfaction of .Sendable<T>. \\[with T = .*Parcel\\]")
+fixy_neg_compile_test(neg_box_channel_of_outside_owner_mark
+  "template constraint failure for .template<fixy::concurrent::ChannelForm Form, class T, long unsigned int Capacity, class UserTag, class Brand>"
+  "required for the satisfaction of .Sendable<T>. \\[with T = .*OutsideOwner<int>\\]")
+fixy_neg_compile_test(neg_box_channel_of_owner_of_a_value_position
+  "an_owned_position_names_no_type_argument"
+  "an_owned_position_names_no_type_argument")
 # A tag that names a class that is only declared answers for the tag alone, and
 # a Box of that class beside the tag still refuses.
 fixy_neg_compile_test(neg_box_channel_of_a_declared_box_beside_its_tag

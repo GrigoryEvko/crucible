@@ -457,9 +457,10 @@ struct MarkedClassTest final {
 //     give each borrow.  The handle of a PermissionedChannel names its payload
 //     in consumer_pops<Form, T, Handle> and holds none, and with the region of
 //     its class that handle would refuse a payload that it takes by value
-//   * a class that states by_arguments{}, such as a Box, owns the object of
-//     its first argument: that argument has the region of the class, and the
-//     walk reads no member
+//   * a class of the base that states by_arguments{}, such as a Box, owns the
+//     object of each argument that the mark names: such an argument has the
+//     region of the class, and the walk reads no member.  A marked class
+//     outside the base is read as each other class
 //   * a class that states synchronized{} or payload_cell{}, reached through a
 //     borrow, hands its values in and out by value (foundation/Transfer.h):
 //     the walk reads its arguments as held and no member.  The walk thus
@@ -498,7 +499,7 @@ struct MarkedClassTest final {
             BorrowRegion target = held;
             if (part.has(PartFact::was_reference) || (parts.is_borrow && part.has(PartFact::is_first))) {
                 target = borrowed;
-            } else if (parts.states_by_arguments && part.has(PartFact::is_first)) {
+            } else if (parts.states_by_arguments && part.has(PartFact::is_owned)) {
                 target = region;
             }
             KeyNode const argument = indirect_key_node_(part.type, target);

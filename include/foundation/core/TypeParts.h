@@ -74,8 +74,9 @@ namespace foundation::core::detail {
 
 // What a class tells of one of its parts, one bit each: a reference, a const
 // object (the referent of a reference, or the part itself), a mutable member,
-// a type argument that is a scope brand, a plain part, and the first template
-// argument that is no template.
+// a type argument that is a scope brand, a plain part, the first template
+// argument that is no template, and a type argument that the class owns (its
+// statement of by_arguments of foundation/Transfer.h).
 enum class PartFact : unsigned char {
     was_reference = 1,
     was_const = 2,
@@ -83,6 +84,7 @@ enum class PartFact : unsigned char {
     is_scope_brand = 8,
     is_plain = 16,
     is_first = 32,
+    is_owned = 64,
 };
 
 [[nodiscard]] consteval unsigned char bit_of_(PartFact fact) { return static_cast<unsigned char>(fact); }
@@ -146,8 +148,10 @@ struct TypeParts {
     // A loan key, a keyed owner or a token of a side: a class that states
     // loan_key_mark{} (foundation/core/LoanKeyTrait.h).
     bool is_key_marked = false;
-    // A class that states by_arguments{}, such as a Box: it owns the object of
-    // its first argument.
+    // A class of the base that states by_arguments{}, such as a Box: it owns
+    // the object of each argument with the fact is_owned.  A walk trusts the
+    // mark only in the base, so a marked class outside the base gives its
+    // members.
     bool states_by_arguments = false;
     // A class that states synchronized{} or payload_cell{}: it hands its values
     // in and out by value.
@@ -401,16 +405,25 @@ consteval void list_arguments_(TypeParts& parts, PartList<Room>& list, std::meta
     std::size_t const count = arguments.size();
     std::size_t first_place = count;
     bool has_value_arguments = false;
+    ::foundation::transfer::detail::OwnedArguments const owned =
+        ::foundation::reflect::has_annotations(type) ? ::foundation::transfer::detail::owned_arguments_of(type)
+                                                     : ::foundation::transfer::detail::OwnedArguments{};
+    // The position of an argument in the list of the type and value arguments,
+    // as by_arguments counts it (foundation/Transfer.h).
+    std::size_t next_position = 0;
     for (std::size_t index = 0; index < count; ++index) {
         std::meta::info const argument = first[index];
         if (!std::meta::is_type(argument)) {
             if (!is_value_argument_(argument)) continue;
+            ++next_position;
             if (first_place == count) first_place = index;
             std::meta::info const value_type = std::meta::dealias(std::meta::type_of(argument));
             has_value_arguments = has_value_arguments
                                || (!std::meta::is_arithmetic_type(value_type) && !std::meta::is_enum_type(value_type));
             continue;
         }
+        std::size_t const position = next_position;
+        ++next_position;
         bool const is_first = first_place == count;
         if (is_first) first_place = index;
         std::meta::info const declared = std::meta::dealias(argument);
@@ -423,6 +436,7 @@ consteval void list_arguments_(TypeParts& parts, PartList<Room>& list, std::meta
         if (is_leaf_(bare)) continue;
         unsigned char facts = is_const ? bit_of_(PartFact::was_const) : 0;
         if (is_first) facts = static_cast<unsigned char>(facts | bit_of_(PartFact::is_first));
+        if (owned.owns(position)) facts = static_cast<unsigned char>(facts | bit_of_(PartFact::is_owned));
         if (std::meta::is_reference_type(declared)) {
             facts = static_cast<unsigned char>(facts | bit_of_(PartFact::was_reference));
         }
@@ -442,6 +456,7 @@ consteval void list_arguments_(TypeParts& parts, PartList<Room>& list, std::meta
 consteval void read_marks_(TypeParts& parts, std::meta::info type) {
     namespace tr = ::foundation::transfer;
     bool states_owner = false;
+    bool owns_arguments = false;
     bool refers_deep = false;
     bool keeps_own = false;
     std::vector<std::meta::info> const annotations = std::meta::annotations_of(type);
@@ -454,9 +469,9 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
         } else if (mark == ^^tr::refers_deep) {
             parts.is_borrow = true;
             refers_deep = true;
-        } else if (mark == ^^tr::by_arguments) {
+        } else if (tr::detail::is_by_arguments(first[index])) {
             states_owner = true;
-            parts.states_by_arguments = true;
+            owns_arguments = true;
         } else if (mark == ^^tr::synchronized || mark == ^^tr::payload_cell) {
             states_owner = true;
             parts.states_cell = true;
@@ -471,6 +486,7 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
     if (!states_owner && !refers_deep && !keeps_own) return;
     bool const is_of_the_base = ::foundation::reflect::is_class_of_the_base_(type);
     parts.is_storage_owner = states_owner && is_of_the_base;
+    parts.states_by_arguments = owns_arguments && is_of_the_base;
     parts.gives_const_access = refers_deep && is_of_the_base;
     parts.keeps_own_borrows = keeps_own && is_of_the_base;
 }

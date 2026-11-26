@@ -6,6 +6,16 @@
 //                                      annotation of the type
 //   has_annotations(entity)            true when the entity carries an
 //                                      annotation
+//   template_annotations_of(entity, class_template)
+//                                      the count of the annotations whose type
+//                                      is a specialization of the template,
+//                                      and the type of the first one
+//   argument_bits_of(specialization)   the value arguments of type
+//                                      std::size_t below 64, one bit each
+//
+// The language gives the annotations and the template arguments only as a
+// std::vector of a constant evaluation.  This header holds the loops over
+// them, so a header above it names no std entity to read a mark.
 //
 // The marks of the base are annotations, and the walks of the base ask this of
 // each class that they read.  The query gives a list, and the read asks only
@@ -29,6 +39,42 @@ namespace foundation::reflect {
 // complete.  Complexity: linear in the number of annotations of the entity.
 [[nodiscard]] consteval bool carries_annotation(std::meta::info entity, std::meta::info annotation_type) {
     return std::meta::annotations_of_with_type(entity, annotation_type).size() != 0;
+}
+
+// The annotations of an entity whose type is a specialization of one class
+// template, such as the positions of by_arguments of foundation/Transfer.h.
+struct TemplateAnnotations {
+    std::size_t count = 0;
+    std::meta::info first_type{};
+};
+
+// The annotations of the entity whose type is a specialization of the class
+// template.  The entity is complete.  Complexity: linear in the number of
+// annotations of the entity.
+[[nodiscard]] consteval TemplateAnnotations template_annotations_of(std::meta::info entity,
+                                                                    std::meta::info class_template) {
+    TemplateAnnotations found{};
+    for (const std::meta::info annotation : std::meta::annotations_of(entity)) {
+        const std::meta::info type = std::meta::dealias(std::meta::remove_cv(std::meta::type_of(annotation)));
+        if (!std::meta::has_template_arguments(type) || std::meta::template_of(type) != class_template) continue;
+        if (found.count == 0) found.first_type = type;
+        ++found.count;
+    }
+    return found;
+}
+
+// The value arguments of the specialization whose type is std::size_t and
+// whose value is below 64, one bit for each value.  Each other argument gives
+// no bit.  Complexity: linear in the number of template arguments.
+[[nodiscard]] consteval unsigned long long argument_bits_of(std::meta::info specialization) {
+    unsigned long long bits = 0;
+    for (const std::meta::info argument : std::meta::template_arguments_of(specialization)) {
+        if (!std::meta::is_value(argument)) continue;
+        if (!std::meta::is_same_type(std::meta::type_of(argument), ^^std::size_t)) continue;
+        const std::size_t value = std::meta::extract<std::size_t>(argument);
+        if (value < 64) bits |= 1ULL << value;
+    }
+    return bits;
 }
 
 }  // namespace foundation::reflect

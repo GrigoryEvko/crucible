@@ -313,6 +313,29 @@ struct TagCompletedLater {
 static_assert(!reaches_key<Numbered<TagCompletedLater>>());
 static_assert(reaches_key<NamesType<Numbered<TagCompletedLater>>>() && reaches_key<NamesType<TagCompletedLater>>());
 
+// An owner of the base reads no member, so its reference to the target is no
+// borrow to the walk.  KeyWalk.cpp pins its twin outside the base below.
+template <class T>
+struct[[= ::foundation::transfer::by_arguments{}]] RefersToTarget {
+    T& target;
+};
+static_assert(!borrows_owner<RefersToTarget<KeyedArray>>() && borrows_owner<RefersToTarget<KeyedArray>*>());
+
 }  // namespace detail::key_walk_checks
 
 }  // namespace foundation::core
+
+// A class outside the base that states by_arguments gets no trust from the
+// walk, which reads its members as for each other class.  So its reference to
+// the keyed owner is a borrow of the owner.
+namespace key_walk_outside_checks {
+
+namespace checks = ::foundation::core::detail::key_walk_checks;
+
+template <class T>
+struct[[= ::foundation::transfer::by_arguments{}]] RefersToTarget {
+    T& target;
+};
+static_assert(checks::borrows_owner<RefersToTarget<checks::KeyedArray>>());
+
+}  // namespace key_walk_outside_checks
