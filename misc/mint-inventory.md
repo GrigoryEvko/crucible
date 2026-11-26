@@ -256,7 +256,7 @@ that the axis does not apply to the row.
 | `mint_character_device` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_character_device_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
-| `mint_duplicate` | `include/fixy/os/Handle.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
+| `mint_duplicate` | `include/fixy/os/Handle.h` | Y | - | Y | Y | ctx | Y | HS14: 6 |
 | `mint_durable_append_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_durable_truncate_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_empty_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |

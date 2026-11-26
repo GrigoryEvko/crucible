@@ -1390,11 +1390,25 @@ witness <fixy/os/Handle.h> private | fixy::os::HandleRef<fixy::os::kind::File, f
 # constructor from a number is private, and its one friend is the Handle,
 # whose departure makes each borrow of the number stale first.
 witness <fixy/os/Handle.h> private | fixy::os::HandleInTransit<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::HandleInTransit<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<int>()}
+# The key of a transit opens the doors of an owner that take a number back or
+# end it.  Its constructor is private, and its one friend is the transit.
+witness <fixy/os/Handle.h> private | fixy::os::TransitKey | fixy::os::TransitKey{}
 # A foreign ref names the descriptor of a socket that a Handle owns or that
 # a C library opened, with the stamp of its number.  Its constructor from a
 # stamp is private, and its one friend is the door that share_socket and
 # admit_foreign_socket call.
 witness <fixy/os/Socket.h> private | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read> | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::DescriptorStamp>()}
+# A half of a stream socket owns one number of the socket with the rights of
+# one direction.  Its constructor from a number is private.  Its one friend is
+# the door of the frame, which made the number stale for each borrow of the
+# Handle first, and the transit of the half takes the number back through a
+# door that needs the key of a transit.  The token of the end of a half has a
+# private constructor, and its one friend is the half, whose door ends the
+# number.
+witness <fixy/os/Socket.h> private | fixy::net::StreamReadHalf<fixy::os::kind::Socket<fixy::net::socket_kind::UnixStream>, fixy::net::socket_rights, foundation::brand::DefaultBrand> | fixy::net::StreamReadHalf<fixy::os::kind::Socket<fixy::net::socket_kind::UnixStream>, fixy::net::socket_rights, foundation::brand::DefaultBrand>{forge::rvalue<int>()}
+witness <fixy/os/Socket.h> private | fixy::net::StreamWriteHalf<fixy::os::kind::Socket<fixy::net::socket_kind::UnixStream>, fixy::net::socket_rights, foundation::brand::DefaultBrand> | fixy::net::StreamWriteHalf<fixy::os::kind::Socket<fixy::net::socket_kind::UnixStream>, fixy::net::socket_rights, foundation::brand::DefaultBrand>{forge::rvalue<int>()}
+witness <fixy/os/Socket.h> private | fixy::net::StreamReadEnded<foundation::brand::DefaultBrand> | fixy::net::StreamReadEnded<foundation::brand::DefaultBrand>{}
+witness <fixy/os/Socket.h> private | fixy::net::StreamWriteEnded<foundation::brand::DefaultBrand> | fixy::net::StreamWriteEnded<foundation::brand::DefaultBrand>{}
 # The doors of a descriptor handle.  No object of a door exists, its members
 # are private, and its friends are the gated mints that open or duplicate a
 # descriptor.

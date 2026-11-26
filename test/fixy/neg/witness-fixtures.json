@@ -1192,6 +1192,26 @@
       "constructor": "(?<!~)\\bSocketDoor\\("
     },
     {
+      "name": "neg_witness_net_streamreadended_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bStreamReadEnded\\("
+    },
+    {
+      "name": "neg_witness_net_streamreadhalf_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bStreamReadHalf\\("
+    },
+    {
+      "name": "neg_witness_net_streamwriteended_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bStreamWriteEnded\\("
+    },
+    {
+      "name": "neg_witness_net_streamwritehalf_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bStreamWriteHalf\\("
+    },
+    {
       "name": "neg_witness_numaplacement_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bNumaPlacement\\("
@@ -1275,6 +1295,11 @@
       "name": "neg_witness_os_reservedrange_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bReservedRange\\("
+    },
+    {
+      "name": "neg_witness_os_transitkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bTransitKey\\("
     },
     {
       "name": "neg_witness_ownedmmap_direct_construction",
@@ -2956,7 +2981,27 @@
       "header": "fixy/os/Handle.h"
     },
     {
+      "type": "fixy::os::TransitKey",
+      "header": "fixy/os/Handle.h"
+    },
+    {
       "type": "fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read>",
+      "header": "fixy/os/Socket.h"
+    },
+    {
+      "type": "fixy::net::StreamReadHalf<fixy::os::kind::Socket<fixy::net::socket_kind::UnixStream>, fixy::net::socket_rights, foundation::brand::DefaultBrand>",
+      "header": "fixy/os/Socket.h"
+    },
+    {
+      "type": "fixy::net::StreamWriteHalf<fixy::os::kind::Socket<fixy::net::socket_kind::UnixStream>, fixy::net::socket_rights, foundation::brand::DefaultBrand>",
+      "header": "fixy/os/Socket.h"
+    },
+    {
+      "type": "fixy::net::StreamReadEnded<foundation::brand::DefaultBrand>",
+      "header": "fixy/os/Socket.h"
+    },
+    {
+      "type": "fixy::net::StreamWriteEnded<foundation::brand::DefaultBrand>",
       "header": "fixy/os/Socket.h"
     },
     {

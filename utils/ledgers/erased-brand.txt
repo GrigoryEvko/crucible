@@ -38,6 +38,10 @@ test/fixy/neg/neg_shared_read_on_the_erased_brand.cpp | erased-brand | 1 | fixy:
 test/fixy/neg/neg_spin_lock_without_permission.cpp | erased-brand | 1 | fixy::spin::SpinGuard | -
 test/fixy/neg/neg_spsc_ends_body_keeps_its_end.cpp | erased-brand | 1 | foundation::core::Ref | a negative-compile fixture of the store check keeps an erased Ref of a lent object in a capture, and the door refuses the body
 test/fixy/neg/neg_witness_disjoint_direct_construction.cpp | erased-brand | 1 | fixy::Disjoint | -
+test/fixy/neg/neg_witness_net_streamreadended_direct_construction.cpp | erased-brand | 1 | fixy::net::StreamReadEnded | a witness row names one type, so the fixture spells the half or the token with the erased brand, and the brand does not reach the private constructor that the fixture probes
+test/fixy/neg/neg_witness_net_streamreadhalf_direct_construction.cpp | erased-brand | 1 | fixy::net::StreamReadHalf | a witness row names one type, so the fixture spells the half or the token with the erased brand, and the brand does not reach the private constructor that the fixture probes
+test/fixy/neg/neg_witness_net_streamwriteended_direct_construction.cpp | erased-brand | 1 | fixy::net::StreamWriteEnded | a witness row names one type, so the fixture spells the half or the token with the erased brand, and the brand does not reach the private constructor that the fixture probes
+test/fixy/neg/neg_witness_net_streamwritehalf_direct_construction.cpp | erased-brand | 1 | fixy::net::StreamWriteHalf | a witness row names one type, so the fixture spells the half or the token with the erased brand, and the brand does not reach the private constructor that the fixture probes
 test/fixy/neg/neg_witness_numaplacement_direct_construction.cpp | erased-brand | 1 | fixy::NumaBindableRegion | -
 test/fixy/neg/neg_witness_numaplacement_direct_construction.cpp | erased-brand | 1 | fixy::NumaPlacement | -
 test/fixy/neg/neg_witness_numapolicyplacement_direct_construction.cpp | erased-brand | 1 | fixy::NumaBindableRegion | the fixture or the check spells the region and the proof as its sibling of NumaPlacement does, and the brand does not reach the refusal that it probes
