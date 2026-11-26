@@ -17,6 +17,11 @@
 //   run.element(start)              the FrameElement of one element of a run
 //   run.window(start, count)        a part of a run, as a FrameRun of the same
 //                                   frame
+//   run.parallel(scope)             the run with the brand of a branded scope
+//                                   of the same count, as a BrandedFrameRun:
+//                                   one compare
+//   branded.element(index)          the element at an index of the scope, as
+//                                   a holder of a store: no compare
 //   frame.store(holder, &H::slot, value)
 //                                   fills a FrameLink or a FrameRunSlot of the
 //                                   holder with a value of the same frame
@@ -92,6 +97,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/Branded.h>
 #include <foundation/core/BumpArena.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Convert.h>
@@ -311,6 +317,10 @@ private:
     Ref<T, Family> ref_;
 };
 
+template <class T, ::foundation::brand::IsBrand Family, ::foundation::brand::IsBrand Fresh,
+          ::foundation::brand::IsBrand Brand>
+class BrandedFrameRun;
+
 // One element of a run that a frame made, with the brand of the frame.  It is
 // a holder of a store, as a FrameRef is.  It has no family Ref, because the
 // run gives no Ref of one element, so the element is no value of a store.
@@ -323,6 +333,8 @@ public:
 private:
     template <ViewElement, ::foundation::brand::IsBrand, ::foundation::brand::IsBrand>
     friend class FrameRun;
+    template <class, ::foundation::brand::IsBrand, ::foundation::brand::IsBrand, ::foundation::brand::IsBrand>
+    friend class BrandedFrameRun;
 
     constexpr explicit FrameElement(T& object) noexcept : object_{__builtin_addressof(object)} {}
 
@@ -361,12 +373,10 @@ public:
     // takes an element for each store, so the door always inlines.
     // Complexity: one compare.
     [[nodiscard]] CRUCIBLE_INLINE constexpr Option<FrameElement<T, Family, Fresh>> element(RunStart start) noexcept {
-        std::size_t const position = start.value().raw();
-        if (position >= run_.size()) {
-            return Option<FrameElement<T, Family, Fresh>>{};
-        }
-        T& object = *run_.view().get(position).expect("a position below the count of a run names an element");
-        return Option<FrameElement<T, Family, Fresh>>::some(FrameElement<T, Family, Fresh>{object});
+        using Element = FrameElement<T, Family, Fresh>;
+        auto const found = run_.view().get(start.value().raw());
+        return found.match([](auto const& object) noexcept { return Option<Element>::some(Element{*object}); },
+                           []() noexcept { return Option<Element>{}; });
     }
 
     // The count elements from start, as a run of this frame, or no run when
@@ -394,6 +404,21 @@ public:
             ConstRun{static_cast<Option<ArenaRun<T const, Family>>&&>(part).expect("the test above found the window")});
     }
 
+    // This run with the brand of a branded scope (foundation/core/Branded.h),
+    // or no value when the count of the run is not the count of the scope:
+    // one compare, as parallel of a BrandedView.  Then each index of the scope
+    // names an element of this run with no check.  A loop over the indices of
+    // a scope takes the holder of each element in this way.
+    template <class U, ::foundation::brand::IsBrand Brand>
+    [[nodiscard]] CRUCIBLE_INLINE constexpr Option<BrandedFrameRun<T, Family, Fresh, Brand>>
+    parallel(BrandedView<U, Brand> const& scope) & noexcept {
+        using Branded = BrandedFrameRun<T, Family, Fresh, Brand>;
+        auto const elements = scope.parallel(run_.view());
+        return elements.match(
+            [](BrandedView<T, Brand> const& found) noexcept { return Option<Branded>::some(Branded{found}); },
+            []() noexcept { return Option<Branded>{}; });
+    }
+
 private:
     friend class ArenaFrame<Family, Fresh>;
     friend class ArenaFrameDoor;
@@ -403,6 +428,32 @@ private:
     constexpr explicit FrameRun(ArenaRun<T, Family> run) noexcept : run_{run} {}
 
     ArenaRun<T, Family> run_{};
+};
+
+// A run of a frame with the brand of a branded scope (foundation/core/
+// Branded.h): its count is the count of the scope, so each index of the scope
+// names an element of the run with no check.  parallel() of a FrameRun makes
+// one with one compare.  It names the brand of the scope, so it stays in the
+// scope.
+template <class T, ::foundation::brand::IsBrand Family, ::foundation::brand::IsBrand Fresh,
+          ::foundation::brand::IsBrand Brand>
+class[[= ::foundation::transfer::refers_deep{}]] BrandedFrameRun final {
+public:
+    // The element at the index, as a holder of a store of the frame.  The
+    // index is below the count of the scope, which is the count of the run.
+    // Complexity: no compare.
+    [[nodiscard]] CRUCIBLE_INLINE constexpr FrameElement<T, Family, Fresh>
+    element(BrandedIndex<Brand> index) const noexcept {
+        return FrameElement<T, Family, Fresh>{elements_.at(index)};
+    }
+
+private:
+    template <ViewElement, ::foundation::brand::IsBrand, ::foundation::brand::IsBrand>
+    friend class FrameRun;
+
+    constexpr explicit BrandedFrameRun(BrandedView<T, Brand> elements) noexcept : elements_{elements} {}
+
+    BrandedView<T, Brand> elements_;
 };
 
 // The runs that one frame sealed for a parcel (the parcel).  It names the

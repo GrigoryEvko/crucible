@@ -1,11 +1,13 @@
 // Tests of foundation/core/ArenaFrame.h: the stores of a frame into the slots
 // of objects and of elements of its arena, a window of a run, a follow of a
-// slot, a link to a base, a frame on a Box, and the parcel of an arena across
-// two frames.
+// slot, a link to a base, a frame on a Box, the parcel of an arena across two
+// frames, and the holders of a run with the brand of a branded scope.
 
 #include <foundation/core/ArenaFrame.h>
 
 #include <foundation/Platform.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Branded.h>
 #include <foundation/core/BumpArena.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Quantity.h>
@@ -369,6 +371,38 @@ void test_parcel_carries_its_runs_to_a_second_frame() {
     CRUCIBLE_FATAL_INVARIANT(back.at(fc::index<1>()).retained_bytes() == 4096);
 }
 
+// parallel() gives the run with the brand of a branded scope of the same
+// count, and refuses a scope of another count.  Each index of the scope gives
+// the holder of the element at that index with no check, and a store through
+// the holder fills the slot of that element.
+void test_parallel_gives_the_holders_of_a_scope() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    fc::BumpArena<TestFamily> arena = fc::mint_bump_arena<TestFamily>(block);
+    fc::FixedArray<std::uint32_t, 3> const counts{1u, 2u, 3u};
+    std::uint32_t const total = fc::mint_branded_scope(counts.view(), [alloc, &arena](auto scope) noexcept {
+        return fc::with_arena_frame(arena, [alloc, scope](auto& frame) noexcept {
+            auto entries = frame.template build_array<Entry>(alloc, fc::ElementCount{3},
+                                                             [](fc::RunStart) noexcept { return Entry{}; });
+            auto shorter = frame.template build_array<Entry>(alloc, fc::ElementCount{2},
+                                                             [](fc::RunStart) noexcept { return Entry{}; });
+            CRUCIBLE_FATAL_INVARIANT(shorter.parallel(scope).is_none());
+            auto const branded = entries.parallel(scope).expect("the run holds one entry for each count");
+            for (auto const index : scope.indices()) {
+                auto const holder = branded.element(index);
+                holder->count = scope.at(index);
+                frame.store(holder, &Entry::items, frame.array(alloc, std::size_t{scope.at(index)}, std::uint32_t{7}));
+            }
+            std::uint32_t sum = 0;
+            for (Entry const& entry : entries.view()) {
+                CRUCIBLE_FATAL_INVARIANT(entry.items.size() == entry.count);
+                sum += entry.count;
+            }
+            return sum;
+        });
+    });
+    CRUCIBLE_FATAL_INVARIANT(total == 6);
+}
+
 }  // namespace
 
 int main() {
@@ -385,5 +419,6 @@ int main() {
     test_frame_ref_converts_to_a_base();
     test_frame_on_a_box_gives_the_box_back();
     test_parcel_carries_its_runs_to_a_second_frame();
+    test_parallel_gives_the_holders_of_a_scope();
     return 0;
 }

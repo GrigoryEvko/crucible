@@ -1164,6 +1164,9 @@ inline constexpr StatedZero kZeros[] = {
      "a borrow of one element of a run of a frame of an arena: it lives in the frame and owns nothing"},
     {^^::foundation::core::FrameRun,
      "a run of elements that a frame of an arena made: a borrow, as a View is, that lives in the frame"},
+    {^^::foundation::core::BrandedFrameRun,
+     "a run of a frame of an arena with the brand of one branded scope: a borrow, as a View is, that lives in the "
+     "frame and in the scope"},
     {^^::foundation::core::ArenaSeal,
      "the runs that one frame of an arena sealed for a parcel: it lives in the body of the frame, and it is never a "
      "value in a kernel signature"},

@@ -181,13 +181,13 @@ CopiedOps copy_ops_in_frame_(DagFrame<Fresh>& frame, crucible::test::OpenLog con
 
     started = bench::rdtsc_start();
 
-    const auto op_data = trace_data.parallel(ops_run.view()).expect("the op buffer holds one op for each entry");
+    const auto op_data = ops_run.parallel(trace_data).expect("the op buffer holds one op for each entry");
     uint32_t copied_ops = 0;
     for (const auto index : trace_data.indices()) {
         const TraceRing::Entry& re = trace_data.at(index);
         const MetaIndex ms = meta_data.at(index);
-        TraceEntry& te = op_data.at(index);
-        const auto op = hold_op(ops_run, index.raw());
+        const auto op = op_data.element(index);
+        TraceEntry& te = *op;
         ++copied_ops;
 
         te.schema_hash = re.schema_hash;

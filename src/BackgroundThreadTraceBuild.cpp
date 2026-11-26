@@ -221,15 +221,14 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
     const uint32_t slot_cap = totals.slot_cap;
     const NumericsHash numerics = totals.numerics;
 
-    // The ops of the region, one for each entry of the trace.  The column of
-    // the ops takes the brand of the scope, so one index of an op reads it
-    // with no check.  Each run of the region is a run of the frame, which
-    // the seal at the end takes.  The fill below writes the fields of an op
-    // through the family form of its run, and stores the arrays of the op
+    // The ops of the region, one for each entry of the trace.  The run of the
+    // ops takes the brand of the scope, so one index of an op gives the
+    // holder of the op with no check.  Each run of the region is a run of the
+    // frame, which the seal at the end takes.  The fill below writes the
+    // fields of an op through its holder, and stores the arrays of the op
     // through the frame.
     auto op_frame_run = make_op_run(a, frame, count);
-    ::fixy::ArenaRun<TraceEntry, DagArena> op_arena_run = op_frame_run.weaken();
-    const auto op_data = trace_data.parallel(op_arena_run.view()).expect("the op run holds one op for each entry");
+    const auto op_data = op_frame_run.parallel(trace_data).expect("the op run holds one op for each entry");
 
     auto meta_frame_run = frame.array(a, total_metas, TensorMeta{});
     ::fixy::ArenaRun<TensorMeta, DagArena> meta_arena_run = meta_frame_run.weaken();
@@ -306,9 +305,8 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
         const uint32_t i = ::fixy::narrow<uint32_t>(index.raw()).expect("a branded index fits in 32 bits");
         const TraceRing::Entry& re = trace_data.at(index);
         MetaIndex ms = meta_data.at(index);
-        TraceEntry& te = op_data.at(index);
-        // The same op as the holder of the stores of its arrays.
-        const auto op = hold_op(op_frame_run, i);
+        const auto op = op_data.element(index);
+        TraceEntry& te = *op;
 
         te.schema_hash = re.schema_hash;
         te.shape_hash = re.shape_hash;

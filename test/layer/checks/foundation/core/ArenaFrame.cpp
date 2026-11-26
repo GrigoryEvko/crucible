@@ -4,12 +4,14 @@
 
 #include <foundation/Brand.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/Branded.h>
 #include <foundation/core/BumpArena.h>
 #include <foundation/core/Link.h>
 #include <foundation/core/Ref.h>
 
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace foundation::core {
 
@@ -91,6 +93,21 @@ consteval bool is_frame_ref_only_of_a_frame() {
         && !std::is_constructible_v<FrameRun<std::uint32_t, Family, Fresh>, ArenaRun<std::uint32_t, Family>>;
 }
 static_assert(is_frame_ref_only_of_a_frame());
+
+// Only parallel() of a FrameRun makes a BrandedFrameRun: a BrandedView of the
+// scope gives none, so each element of a BrandedFrameRun is an element of a
+// run of its frame.  It takes the place of the View of its run, and the index
+// of its scope gives the holder of an element of the frame.
+consteval bool is_branded_run_only_of_a_run() {
+    using Fresh = CRUCIBLE_SCOPE_BRAND;
+    using Scope = CRUCIBLE_SCOPE_BRAND;
+    using Branded = BrandedFrameRun<std::uint32_t, Family, Fresh, Scope>;
+    return !std::is_constructible_v<Branded, BrandedView<std::uint32_t, Scope>>
+        && !std::is_default_constructible_v<Branded> && sizeof(Branded) == sizeof(View<std::uint32_t>)
+        && std::is_same_v<decltype(std::declval<Branded const&>().element(std::declval<BrandedIndex<Scope>>())),
+                          FrameElement<std::uint32_t, Family, Fresh>>;
+}
+static_assert(is_branded_run_only_of_a_run());
 
 // A parcel owns its family tag and each element type (rule 6 of
 // foundation/Transfer.h), so it holds a property when each element type holds
