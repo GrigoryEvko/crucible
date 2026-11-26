@@ -37,6 +37,7 @@
 #include <fixy/concurrent/PayloadRow.h>
 #include <fixy/concurrent/StageShape.h>
 #include <fixy/concurrent/WorkingSet.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/diag/RowHash.h>
@@ -203,7 +204,39 @@ template <auto FnPtr, std::size_t... Is>
 // stage when the body names it (the context of a stage in
 // fixy/concurrent/StageShape.h).  A body that names keys gets them from the
 // entry of the root doors, on the thread of the stage, and the entry checks
-// the handles and the context (the keys of a stage in the same header).
+// the handles and the context (the keys of a stage in the same header).  The
+// definition stands after StageFrameKeyDoor, which gives it the key of the
+// frame doors for that entry.
+template <auto FnPtr, class Ctx, class... Handles>
+void call_stage_(Ctx const& ctx, Handles&&... handles) noexcept;
+
+}  // namespace detail
+
+}  // namespace fixy::concurrent
+
+namespace foundation::core {
+
+// The door of the stage to the key of the frame doors (the doors of the owners
+// above foundation/core/Frame.h).  Its one member is private, and
+// call_stage_ of fixy/concurrent/Stage.h is its one friend.  The invariant:
+// call_stage_ gives the key only to the entry of the root doors
+// (foundation/core/RootKeys.h), which checks the body, the handles and the
+// context, and then mints the keys of one call of the body.  A home owner row
+// of utils/rule-table.txt keeps this definition in this header.
+class StageFrameKeyDoor final : ::foundation::NoObject<StageFrameKeyDoor> {
+    template <auto FnPtr, class Ctx, class... Handles>
+    friend void ::fixy::concurrent::detail::call_stage_(Ctx const& ctx, Handles&&... handles) noexcept;
+
+    // The key of the frame doors, for the keys of one call of a stage body.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
+}  // namespace foundation::core
+
+namespace fixy::concurrent {
+
+namespace detail {
+
 template <auto FnPtr, class Ctx, class... Handles>
 void call_stage_(Ctx const& ctx, Handles&&... handles) noexcept {
     constexpr std::size_t ctx_count = StageArity<FnPtr>::ctx_count;
@@ -215,11 +248,11 @@ void call_stage_(Ctx const& ctx, Handles&&... handles) noexcept {
         // A function pointer holds no capture, so the entry takes a copy of it.
         auto function = FnPtr;
         if constexpr (ctx_count == 0) {
-            ::foundation::core::detail::run_root_body_<sizeof...(Handles)>(function,
-                                                                           static_cast<Handles&&>(handles)...);
+            ::foundation::core::detail::run_root_body_<sizeof...(Handles)>(
+                ::foundation::core::StageFrameKeyDoor::key_(), function, static_cast<Handles&&>(handles)...);
         } else {
             ::foundation::core::detail::run_root_body_<sizeof...(Handles) + ctx_count>(
-                function, static_cast<Handles&&>(handles)..., ctx);
+                ::foundation::core::StageFrameKeyDoor::key_(), function, static_cast<Handles&&>(handles)..., ctx);
         }
     }
 }

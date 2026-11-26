@@ -27,7 +27,10 @@
 //     move, and no Ref, Box or View holds one, so the body keeps no key past
 //     the window.  So the door needs no walk of the type of the body.  The
 //     door takes the body by move into its own frame, and the body runs one
-//     time as an rvalue.
+//     time as an rvalue.  The entry of foundation/core/RootKeys.h mints the
+//     keys, and it takes the key of the frame doors, which DispatchFrameKeyDoor
+//     gives only to this door after it opens the window.  So no code mints a
+//     key of a dispatch brand outside a window.
 //
 // Gate
 //     The context of the call has a branded foreground source, which only a
@@ -53,6 +56,7 @@
 //     open windows.  The refusal of a nested dispatch is a cold function of
 //     src/fixy/concurrent/Dispatch.cpp.
 
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/RootKeys.h>
 #include <foundation/effects/Ctx.h>
@@ -110,12 +114,44 @@ concept DispatchBody = !std::is_reference_v<Body> && !std::is_const_v<Body> && r
 // Opens a dispatch window on the calling thread, calls the body one time with
 // the context and one fresh key of each brand that it names, closes the
 // window, and gives the value of the body (the window).  A call inside a
-// window of the same thread ends the process.
+// window of the same thread ends the process.  DispatchFrameKeyDoor names it
+// as its friend, so this declaration stands before the door.
+template <typename Ctx, typename Body>
+    requires(!std::is_lvalue_reference_v<Body>) && CtxOpensDispatch<Ctx> && DispatchBody<Body, Ctx>
+auto run_dispatch(Ctx const& ctx, Body&& body) noexcept;
+
+}  // namespace fixy::dispatch
+
+namespace foundation::core {
+
+// The door of the dispatch door to the key of the frame doors (the doors of
+// the owners above foundation/core/Frame.h).  Its one member is private, and
+// run_dispatch of fixy/concurrent/Dispatch.h is its one friend.  The
+// invariant: run_dispatch opens the window of the calling thread first, and
+// then it gives the key to the entry of the dispatch door
+// (foundation/core/RootKeys.h), which mints the keys of one call of the body.
+// So no key of a dispatch brand comes from outside a window.  A home owner row
+// of utils/rule-table.txt keeps this definition in this header.
+class DispatchFrameKeyDoor final : ::foundation::NoObject<DispatchFrameKeyDoor> {
+    template <typename Ctx, typename Body>
+        requires(!std::is_lvalue_reference_v<Body>)
+             && ::fixy::dispatch::CtxOpensDispatch<Ctx> && ::fixy::dispatch::DispatchBody<Body, Ctx>
+    friend auto ::fixy::dispatch::run_dispatch(Ctx const& ctx, Body&& body) noexcept;
+
+    // The key of the frame doors, for the keys of one dispatch.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
+}  // namespace foundation::core
+
+namespace fixy::dispatch {
+
 template <typename Ctx, typename Body>
     requires(!std::is_lvalue_reference_v<Body>) && CtxOpensDispatch<Ctx> && DispatchBody<Body, Ctx>
 auto run_dispatch(Ctx const& ctx, Body&& body) noexcept {
     detail::DispatchWindow_ const window{};
-    return ::foundation::core::detail::run_dispatch_body_<1>(static_cast<Body&&>(body), ctx);
+    return ::foundation::core::detail::run_dispatch_body_<1>(::foundation::core::DispatchFrameKeyDoor::key_(),
+                                                             static_cast<Body&&>(body), ctx);
 }
 
 // A body that the caller names as an lvalue stays an object of the caller,

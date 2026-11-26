@@ -266,7 +266,6 @@ class FixedHeapArrayFrameKeyDoor;
 class BoxFrameKeyDoor;
 class ChoiceFrameKeyDoor;
 class OneOfFrameKeyDoor;
-class RootKeysFrameKeyDoor;
 class WindowLoanFrameKeyDoor;
 class SortFrameKeyDoor;
 class ReduceFrameKeyDoor;
@@ -276,6 +275,8 @@ class OwnedRegionFrameKeyDoor;
 class CyclicBufferFrameKeyDoor;
 class KeyedMintFrameKeyDoor;
 class ThreadTasksFrameKeyDoor;
+class StageFrameKeyDoor;
+class DispatchFrameKeyDoor;
 class ParallelForFrameKeyDoor;
 class LaneRingFrameKeyDoor;
 
@@ -313,7 +314,6 @@ class FrameDoor final : ::foundation::NoObject<FrameDoor> {
     friend class ::foundation::core::BoxFrameKeyDoor;
     friend class ::foundation::core::ChoiceFrameKeyDoor;
     friend class ::foundation::core::OneOfFrameKeyDoor;
-    friend class ::foundation::core::RootKeysFrameKeyDoor;
     friend class ::foundation::core::WindowLoanFrameKeyDoor;
     friend class ::foundation::core::SortFrameKeyDoor;
     friend class ::foundation::core::ReduceFrameKeyDoor;
@@ -323,6 +323,8 @@ class FrameDoor final : ::foundation::NoObject<FrameDoor> {
     friend class ::foundation::core::CyclicBufferFrameKeyDoor;
     friend class ::foundation::core::KeyedMintFrameKeyDoor;
     friend class ::foundation::core::ThreadTasksFrameKeyDoor;
+    friend class ::foundation::core::StageFrameKeyDoor;
+    friend class ::foundation::core::DispatchFrameKeyDoor;
     friend class ::foundation::core::ParallelForFrameKeyDoor;
     friend class ::foundation::core::LaneRingFrameKeyDoor;
 

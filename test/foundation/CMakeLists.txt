@@ -2955,7 +2955,7 @@ foundation_neg_compile_test(neg_core_frame_door_lookalike
   "static constexpr foundation::core::detail::FrameKey foundation::core::detail::FrameDoor::key\\(\\). is private within this context"
   "Frame\\.h:[0-9]+:[0-9]+: note: declared private here")
 foreach(_frame_key_door region:Region array:Array list:List small_list:SmallList
-        fixed_heap_array:FixedHeapArray box:Box choice:Choice one_of:OneOf root_keys:RootKeys
+        fixed_heap_array:FixedHeapArray box:Box choice:Choice one_of:OneOf
         window_loan:WindowLoan sort:Sort reduce:Reduce protocol:Protocol aligned_bytes:AlignedBytes
         keyed_mint:KeyedMint)
   string(REPLACE ":" ";" _frame_key_parts "${_frame_key_door}")
@@ -2965,6 +2965,13 @@ foreach(_frame_key_door region:Region array:Array list:List small_list:SmallList
     "static constexpr foundation::core::detail::FrameKey foundation::core::${_frame_key_class}FrameKeyDoor::key_\\(\\). is private within this context"
     "neg_core_${_frame_key_file}_frame_key_door_private\\.cpp:[0-9]+:[0-9]+: error")
 endforeach()
+# The entry of the root doors takes the key of the frame doors first, and
+# only the door class of a door that starts a thread or of a stage gives it.
+# So a unit that names the entry with no key mints no key of a named brand.
+foundation_neg_compile_test(neg_core_root_entry_with_no_key
+  "no matching function for call to .run_root_body_<0>\\(.*lambda"
+  "foundation::core::detail::run_root_body_\\(const FrameKey&, Body, Args&& \\.\\.\\.\\)"
+  "candidate expects at least 2 arguments, 1 provided")
 foundation_neg_compile_test(neg_core_niche_ref_outside_specialization
   "no matching function for call to .foundation::core::Ref<Forged, ForgeBrand>::Ref\\(<brace-enclosed initializer list>\\)."
   "no known conversion for argument 1 from .Forged\\*. to .foundation::core::detail::RefNullTag.")

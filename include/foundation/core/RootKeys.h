@@ -13,16 +13,28 @@
 //                       names no key: KeyBrands<>
 //   NamesRootKeys<Body, Leading>
 //                       Body names one key or more after Leading parameters
-//   detail::run_root_body_<Leading>(body, leading...)
+//   detail::run_root_body_<Leading>(key, body, leading...)
 //                       the one entry of the root doors of the base: it checks
 //                       the body for each brand, takes the body by value, and
 //                       calls it one time through the once door call_once of
 //                       foundation/Linear.h with the leading arguments and one
 //                       fresh key of each brand.  The keys are lvalues of one
 //                       local cell, which lives for the call
-//   detail::run_dispatch_body_<Leading>(body, leading...)
+//   detail::run_dispatch_body_<Leading>(key, body, leading...)
 //                       the entry of the dispatch door: the same call, for
 //                       keys of dispatch brands only, with no walk
+//
+// Key of a caller
+//   Each entry takes the key of the frame doors (foundation/core/Frame.h) as
+//   its first parameter.  Only the door class of the header of a root door
+//   gives that key, and only to the root door that it befriends:
+//   ThreadTasksFrameKeyDoor to the joined body of fixy/os/ThreadTasks.h,
+//   StageFrameKeyDoor to the stage of fixy/concurrent/Stage.h, and
+//   DispatchFrameKeyDoor to the dispatch door of fixy/concurrent/Dispatch.h.
+//   So code that names an entry, and that no door befriends, does not compile,
+//   and no such code opens a second frame of one owner.  The dispatch door
+//   opens its window before it calls its entry, so no key of a dispatch brand
+//   comes from outside a window.
 //
 // Checks
 //   The brands are distinct key brands (IsKeyBrand), so no body gets two keys
@@ -36,8 +48,6 @@
 //   gets the arguments of the door only, so a body that names a key does not
 //   compile there.
 
-#include <foundation/NoObject.h>
-#include <foundation/Platform.h>
 #include <foundation/core/Frame.h>
 
 #include <cstddef>
@@ -195,48 +205,13 @@ template <class... Brands>
     requires(are_distinct_key_brands_<Brands...>())
 struct root_key_cell_ final : root_key_slot_<Brands>... {};
 
-// The two entries of the root doors (the definitions below).
-// RootKeysFrameKeyDoor names them as friends, so these declarations stand
-// before the door.
-template <std::size_t Leading, class Body, class... Args>
-    requires(sizeof...(Args) == Leading)
-constexpr decltype(auto) run_root_body_(Body body, Args&&... leading) noexcept;
-template <std::size_t Leading, class Body, class... Args>
-    requires(sizeof...(Args) == Leading)
-constexpr decltype(auto) run_dispatch_body_(Body body, Args&&... leading) noexcept;
-
-}  // namespace detail
-
-// The door of the entries of the root doors to the key of the frame doors
-// (the doors of the owners above foundation/core/Frame.h).  Its one member is
-// private, and run_root_body_ and run_dispatch_body_ are its friends.  The
-// invariant: an entry checks the brands that the body names and the walk of
-// each brand first, and then mints one key of each brand for one call of the
-// body.  Each entry passes the key to call_with_root_keys_, so no code mints a
-// key with no check.  A home owner row of utils/rule-table.txt keeps this
-// definition in this header.
-class RootKeysFrameKeyDoor final : ::foundation::NoObject<RootKeysFrameKeyDoor> {
-    template <std::size_t Leading, class Body, class... Args>
-        requires(sizeof...(Args) == Leading)
-    friend constexpr auto ::foundation::core::detail::run_root_body_(Body body, Args&&... leading) noexcept
-        -> decltype(auto);
-    template <std::size_t Leading, class Body, class... Args>
-        requires(sizeof...(Args) == Leading)
-    friend constexpr auto ::foundation::core::detail::run_dispatch_body_(Body body, Args&&... leading) noexcept
-        -> decltype(auto);
-
-    // The key of the frame doors, for the keys of one call of a body.
-    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
-};
-
-namespace detail {
-
 // Calls the body with the leading arguments and one fresh key of each brand,
 // in the order of the brands.  The keys are a local of this frame, so they live
 // for the call.  A closure goes through the once door call_once of
 // foundation/Linear.h, which owns it, calls it one time and ends it.  A
 // function pointer holds no capture, so the entry calls it with no door.  The
-// entry gives the key of the frame doors, so only an entry mints the keys.
+// entry gives the key of its caller (the key of a caller), so only an entry
+// mints the keys.
 // Each key initializes the one member of its slot through brace elision, so
 // each key starts in place: no key moves, and a key of a dispatch brand has
 // no move.
@@ -261,10 +236,12 @@ struct root_body_result_<Body, KeyBrands<Brands...>, Args...> {
 
 // The one entry of the root doors (see the checks): checks the body, and calls it
 // with the leading arguments and one fresh key of each brand that it names.
-// The body moves into the frame of the entry, and it runs one time.
+// The body moves into the frame of the entry, and it runs one time.  The key
+// comes from the door class of the root door that calls the entry (the key of
+// a caller).
 template <std::size_t Leading, class Body, class... Args>
     requires(sizeof...(Args) == Leading)
-constexpr decltype(auto) run_root_body_(Body body, Args&&... leading) noexcept {
+constexpr decltype(auto) run_root_body_(FrameKey const& key, Body body, Args&&... leading) noexcept {
     using Brands = root_key_brands_t<Body, Leading>;
     using Result = typename root_body_result_<Body, Brands, Args&&...>::type;
     // A function pointer holds no state, and its type names its own key
@@ -284,8 +261,7 @@ constexpr decltype(auto) run_root_body_(Body body, Args&&... leading) noexcept {
                       "the result of a body of a root door reaches a key of a brand of its keys, or an owner of such a "
                       "brand through a borrow");
     }
-    return call_with_root_keys_(RootKeysFrameKeyDoor::key_(), Brands{}, static_cast<Body&&>(body),
-                                static_cast<Args&&>(leading)...);
+    return call_with_root_keys_(key, Brands{}, static_cast<Body&&>(body), static_cast<Args&&>(leading)...);
 }
 
 // The entry of the dispatch door of fixy/concurrent/Dispatch.h (the dispatch
@@ -296,10 +272,12 @@ constexpr decltype(auto) run_root_body_(Body body, Args&&... leading) noexcept {
 // and the window of the door holds one key of a brand on a thread.  A key of a
 // dispatch brand does not move, and no Ref, Box or View holds one, so the body
 // keeps no key past its call.  The key cell builds each key in place, so such
-// a key needs no move there either.
+// a key needs no move there either.  The key of the frame doors comes from
+// DispatchFrameKeyDoor, which gives it only to the dispatch door after it
+// opens its window (the key of a caller).
 template <std::size_t Leading, class Body, class... Args>
     requires(sizeof...(Args) == Leading)
-constexpr decltype(auto) run_dispatch_body_(Body body, Args&&... leading) noexcept {
+constexpr decltype(auto) run_dispatch_body_(FrameKey const& key, Body body, Args&&... leading) noexcept {
     using Brands = root_key_brands_t<Body, Leading>;
     using Result = typename root_body_result_<Body, Brands, Args&&...>::type;
     static_assert(are_distinct_key_brands_of_(Brands{}),
@@ -310,8 +288,7 @@ constexpr decltype(auto) run_dispatch_body_(Body body, Args&&... leading) noexce
                   "starts a thread can mint such a key, so the window of the dispatch would not hold it alone");
     static_assert(!std::is_reference_v<Result>,
                   "a body of the dispatch door gives a reference, which outlives its keys");
-    return call_with_root_keys_(RootKeysFrameKeyDoor::key_(), Brands{}, static_cast<Body&&>(body),
-                                static_cast<Args&&>(leading)...);
+    return call_with_root_keys_(key, Brands{}, static_cast<Body&&>(body), static_cast<Args&&>(leading)...);
 }
 
 }  // namespace detail

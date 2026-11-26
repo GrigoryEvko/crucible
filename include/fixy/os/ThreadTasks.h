@@ -564,39 +564,11 @@ namespace detail {
 // Calls the body one time with the context that it takes, and gives its value.
 // The body moves from the frame of the door into the once door call_once of
 // foundation/Linear.h on the thread of the body, which calls it one time and
-// ends it, or into the entry of the root doors for a body with keys.
+// ends it, or into the entry of the root doors for a body with keys.  The
+// definition stands after ThreadTasksFrameKeyDoor, which gives it the key of
+// the frame doors for that entry.
 template <typename Ctx, typename Body>
-[[nodiscard]] joined_result_t_<Ctx, Body> call_joined_body_(Body&& body, Ctx const& ctx) noexcept {
-    constexpr JoinedForm form = joined_form_<Ctx, Body>();
-    if constexpr (form == JoinedForm::keys) {
-        // The keys are minted here, on the thread of the body (the keys of a body).
-        if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
-            ::foundation::core::detail::run_root_body_<0>(static_cast<Body&&>(body));
-            return ::foundation::core::Unit{};
-        } else {
-            return ::foundation::core::detail::run_root_body_<0>(static_cast<Body&&>(body));
-        }
-    } else if constexpr (form == JoinedForm::context_and_keys) {
-        if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
-            ::foundation::core::detail::run_root_body_<1>(static_cast<Body&&>(body), ctx);
-            return ::foundation::core::Unit{};
-        } else {
-            return ::foundation::core::detail::run_root_body_<1>(static_cast<Body&&>(body), ctx);
-        }
-    } else if constexpr (form == JoinedForm::context) {
-        if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
-            ::foundation::linear::call_once(static_cast<Body&&>(body), ctx);
-            return ::foundation::core::Unit{};
-        } else {
-            return ::foundation::linear::call_once(static_cast<Body&&>(body), ctx);
-        }
-    } else if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
-        ::foundation::linear::call_once(static_cast<Body&&>(body));
-        return ::foundation::core::Unit{};
-    } else {
-        return ::foundation::linear::call_once(static_cast<Body&&>(body));
-    }
-}
+[[nodiscard]] joined_result_t_<Ctx, Body> call_joined_body_(Body&& body, Ctx const& ctx) noexcept;
 
 // Takes the body out of its slot in the frame of the door, calls it one time,
 // and writes its value.  The slot is empty after the take, so the door reads
@@ -913,13 +885,15 @@ run_beside_each(Ctx const& ctx, ThreadOptions const& options, ::foundation::core
 
 namespace foundation::core {
 
-// The door of the counted door beside the caller to the key of the frame
-// doors (the doors of the owners above foundation/core/Frame.h).  Its one
-// member is private, and run_beside_each of fixy/os/ThreadTasks.h is its one
-// friend.  The invariant: the door reads the runs of the two FixedArrays of
-// the frames and the tasks that it builds in its own frame, and it joins each
-// thread that reads them before it returns.  A home owner row of
-// utils/rule-table.txt keeps this definition in this header.
+// The door of the thread doors of fixy/os/ThreadTasks.h to the key of the
+// frame doors (the doors of the owners above foundation/core/Frame.h).  Its
+// one member is private, and it has two friends.  run_beside_each reads the
+// runs of the two FixedArrays of the frames and the tasks that it builds in its
+// own frame, and it joins each thread that reads them before it returns.
+// call_joined_body_ gives the key to the entry of the root doors
+// (foundation/core/RootKeys.h) on the thread of a body of run_joined or of
+// run_beside, so the door of that thread mints the keys of the body.  A home
+// owner row of utils/rule-table.txt keeps this definition in this header.
 class ThreadTasksFrameKeyDoor final : ::foundation::NoObject<ThreadTasksFrameKeyDoor> {
     template <typename Ctx, std::size_t Bound, typename Body, typename Continuation>
         requires ::fixy::thread::CtxStartsThreads<Ctx> && ::fixy::thread::BesideEachBody<Body>
@@ -929,14 +903,59 @@ class ThreadTasksFrameKeyDoor final : ::foundation::NoObject<ThreadTasksFrameKey
                                                 Continuation continuation) noexcept
         -> ::foundation::core::Result<::fixy::thread::detail::beside_result_t_<Continuation>,
                                       ::fixy::thread::start_error_t<Continuation>>;
+    template <typename Ctx, typename Body>
+    friend auto ::fixy::thread::detail::call_joined_body_(Body&& body, Ctx const& ctx) noexcept
+        -> ::fixy::thread::detail::joined_result_t_<Ctx, Body>;
 
-    // The key of the frame doors, for the runs of the arrays of the door.
+    // The key of the frame doors, for the runs of the arrays of the door and
+    // for the keys of a body.
     [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
 };
 
 }  // namespace foundation::core
 
 namespace fixy::thread {
+
+namespace detail {
+
+template <typename Ctx, typename Body>
+[[nodiscard]] joined_result_t_<Ctx, Body> call_joined_body_(Body&& body, Ctx const& ctx) noexcept {
+    constexpr JoinedForm form = joined_form_<Ctx, Body>();
+    if constexpr (form == JoinedForm::keys) {
+        // The keys are minted here, on the thread of the body (the keys of a body).
+        if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
+            ::foundation::core::detail::run_root_body_<0>(::foundation::core::ThreadTasksFrameKeyDoor::key_(),
+                                                          static_cast<Body&&>(body));
+            return ::foundation::core::Unit{};
+        } else {
+            return ::foundation::core::detail::run_root_body_<0>(::foundation::core::ThreadTasksFrameKeyDoor::key_(),
+                                                                 static_cast<Body&&>(body));
+        }
+    } else if constexpr (form == JoinedForm::context_and_keys) {
+        if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
+            ::foundation::core::detail::run_root_body_<1>(::foundation::core::ThreadTasksFrameKeyDoor::key_(),
+                                                          static_cast<Body&&>(body), ctx);
+            return ::foundation::core::Unit{};
+        } else {
+            return ::foundation::core::detail::run_root_body_<1>(::foundation::core::ThreadTasksFrameKeyDoor::key_(),
+                                                                 static_cast<Body&&>(body), ctx);
+        }
+    } else if constexpr (form == JoinedForm::context) {
+        if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
+            ::foundation::linear::call_once(static_cast<Body&&>(body), ctx);
+            return ::foundation::core::Unit{};
+        } else {
+            return ::foundation::linear::call_once(static_cast<Body&&>(body), ctx);
+        }
+    } else if constexpr (std::is_void_v<raw_joined_result_t_<Ctx, Body>>) {
+        ::foundation::linear::call_once(static_cast<Body&&>(body));
+        return ::foundation::core::Unit{};
+    } else {
+        return ::foundation::linear::call_once(static_cast<Body&&>(body));
+    }
+}
+
+}  // namespace detail
 
 // Starts count threads with the options, and each calls the body with its
 // index.  The continuation runs on the calling thread at the same time, and

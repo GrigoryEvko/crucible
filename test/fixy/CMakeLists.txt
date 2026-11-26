@@ -2307,7 +2307,7 @@ fixy_neg_compile_test(neg_cyclic_buffer_capacity_not_a_power_of_two
 # gives the key of the frame doors only to the owners of that header, so a unit
 # that is no owner builds no ViewMut of a brand that it names.
 foreach(_frame_key_door owned_region:OwnedRegion cyclic_buffer:CyclicBuffer thread_tasks:ThreadTasks
-        parallel_for:ParallelFor lane_ring:LaneRing)
+        stage:Stage dispatch:Dispatch parallel_for:ParallelFor lane_ring:LaneRing)
   string(REPLACE ":" ";" _frame_key_parts "${_frame_key_door}")
   list(GET _frame_key_parts 0 _frame_key_file)
   list(GET _frame_key_parts 1 _frame_key_class)
@@ -7812,6 +7812,13 @@ fixy_neg_compile_test(neg_dispatch_from_a_bg_context
 fixy_neg_compile_test(neg_dispatch_body_as_an_lvalue
   "use of deleted function .void fixy::dispatch::run_dispatch"
   "run_dispatch takes its body by move")
+# The entry of the dispatch door takes the key of the frame doors first, and
+# only the dispatch door gets it, after it opens its window.  So a body that
+# names the entry with no key mints no second key of a dispatch brand.
+fixy_neg_compile_test(neg_dispatch_entry_with_no_key
+  "no matching function for call to .run_dispatch_body_<0>\\(.*lambda"
+  "foundation::core::detail::run_dispatch_body_\\(const FrameKey&, Body, Args&& \\.\\.\\.\\)"
+  "candidate expects at least 2 arguments, 1 provided")
 fixy_neg_compile_test(neg_thread_run_joined_one_body_two_times
   "neg_thread_run_joined_one_body_two_times\\.cpp:[0-9]+:[0-9]+: error: use of deleted function .void fixy::thread::run_joined"
   "run_joined takes each body by move, so that two bodies are two objects")
