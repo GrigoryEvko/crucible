@@ -6,6 +6,12 @@
 // writes pass after the end of the scope, reach a test context that a caller
 // narrowed to a row with no Test, write through a live scope with a context of
 // the background source, and end the process at a second arm.
+//
+// The rename fault of a test: RenameFaultScope::arm makes the next rename of
+// commit_atomic or commit_atomic_at on the calling thread fail with a stated
+// errno.  The cases spend the fault on one rename, rename through a live scope
+// with a context of the background source, and end the process at a second
+// arm.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -123,6 +129,60 @@ void test_second_arm_ends_the_process() {
     ::fixy::check::pass(kTest, "  second_arm_ends_the_process:    PASSED\n");
 }
 
+using Keep = fs::atomicity::RenameAt2NoReplace;
+using Replace = fs::atomicity::Rename;
+
+// True when an entry is at name under dir.
+[[nodiscard]] bool holds_entry(fs::TemporaryDirectory const& dir, ::fixy::CText name) {
+    return fs::has_entry_at(kTest, dir.ref(), name).value_or(false);
+}
+
+// The rename fault fails the next rename with its errno and makes no rename.
+// It is then spent, so the rename after it passes.
+void test_rename_fault_spends_one_rename() {
+    fs::TemporaryDirectory const dir = make_owner();
+    { WriteFile const file = open_file(dir, "from"); }
+    {
+        fs::RenameFaultScope const fault = fs::RenameFaultScope::arm(kTest, fs::RenameFailure::not_supported);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             is_error(fs::commit_atomic_at<Keep>(kTest, dir.ref(), "from", "to"), Errno::einval));
+        CRUCIBLE_TEST_ASSERT(kTest, holds_entry(dir, "from") && !holds_entry(dir, "to"));
+        CRUCIBLE_TEST_ASSERT(kTest, fs::commit_atomic_at<Keep>(kTest, dir.ref(), "from", "to").is_ok());
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, !holds_entry(dir, "from") && holds_entry(dir, "to"));
+    ::fixy::check::pass(kTest, "  rename_fault_spends_one_rename: PASSED\n");
+}
+
+// A context of the background source renames through a live scope, and the
+// fault stays due for the next rename of a context of the test source.
+void test_rename_source_picks_the_fault() {
+    fs::TemporaryDirectory const dir = make_owner();
+    { WriteFile const file = open_file(dir, "first"); }
+    { WriteFile const file = open_file(dir, "second"); }
+    BgFileCtx const background{eff::testing::bg()};
+    TestFileCtx const narrowed = kTest.in_row<FileRow>();
+    {
+        fs::RenameFaultScope const fault = fs::RenameFaultScope::arm(kTest, fs::RenameFailure::device_error);
+        CRUCIBLE_TEST_ASSERT(kTest, fs::commit_atomic_at<Replace>(background, dir.ref(), "first", "moved").is_ok());
+        CRUCIBLE_TEST_ASSERT(
+            kTest, is_error(fs::commit_atomic_at<Replace>(narrowed, dir.ref(), "second", "kept"), Errno::eio));
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, holds_entry(dir, "moved") && holds_entry(dir, "second") && !holds_entry(dir, "kept"));
+    ::fixy::check::pass(kTest, "  rename_source_picks_the_fault:  PASSED\n");
+}
+
+// A second rename arm while a scope lives ends the process.
+void test_second_rename_arm_ends_the_process() {
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            fs::RenameFaultScope const first = fs::RenameFaultScope::arm(kTest, fs::RenameFailure::no_space);
+            fs::RenameFaultScope const second = fs::RenameFaultScope::arm(kTest, fs::RenameFailure::device_error);
+        },
+        "the rename fault of a test: the thread holds a fault, so a second arm would hide the first");
+    ::fixy::check::pass(kTest, "  second_rename_arm_ends_the_process: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -131,5 +191,8 @@ int main() {
     test_budget_cuts_a_write();
     test_source_picks_the_fault();
     test_second_arm_ends_the_process();
+    test_rename_fault_spends_one_rename();
+    test_rename_source_picks_the_fault();
+    test_second_rename_arm_ends_the_process();
     return 0;
 }

@@ -7397,6 +7397,20 @@ fixy_neg_compile_test(neg_os_fs_write_fault_scope_copy
   "use of deleted function"
   "a scope is the one write fault of its thread")
 
+# The rename fault of a test: the next rename of commit_atomic and
+# commit_atomic_at on a thread fails, for a context of the test source only.
+fixy_neg_compile_test(neg_os_fs_rename_fault_arm_background_ctx
+  "no matching function for call"
+  "fixy::fs::RenameFaultScope::arm\\(const .*BackgroundCtx&")
+
+fixy_neg_compile_test(neg_os_fs_rename_fault_arm_narrowed_ctx
+  "no matching function for call"
+  "fixy::fs::RenameFaultScope::arm\\(const foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<")
+
+fixy_neg_compile_test(neg_os_fs_rename_fault_scope_copy
+  "use of deleted function"
+  "a scope is the one rename fault of its thread")
+
 # The temporary directory door, with no TMPDIR and with TMPDIR set to the
 # directory of the test.
 fixy_test(test_os_temporary_directory)

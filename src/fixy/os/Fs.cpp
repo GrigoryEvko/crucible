@@ -514,6 +514,20 @@ namespace {
     }
 }
 
+// The errno of a rename under the rename fault of a test.
+[[nodiscard]] constexpr os::Errno errno_of_(RenameFailure failure) noexcept {
+    switch (failure) {
+        case RenameFailure::not_supported:
+            return os::Errno::einval;
+        case RenameFailure::no_space:
+            return os::Errno::enospc;
+        case RenameFailure::device_error:
+            return os::Errno::eio;
+        default:
+            core::unreachable();
+    }
+}
+
 }  // namespace
 
 // The write fault of a thread (the write fault of a test of fixy/os/Fs.h).
@@ -544,6 +558,43 @@ void arm_write_fault_(core::ByteCount budget, WriteFailure failure) noexcept {
 }
 
 void end_write_fault_() noexcept { write_fault = WriteFaultCell{}; }
+
+// The rename fault of a thread (the rename fault of a test of fixy/os/Fs.h).
+struct RenameFaultCell {
+    // The error of the next rename.
+    os::Errno failure = os::Errno::einval;
+    // True from the arm of the fault to the end of its scope.
+    bool is_armed = false;
+    // True from the arm of the fault to the rename that spends it.
+    bool is_due = false;
+};
+
+// The rename fault of the calling thread.  Only the test source reaches the
+// cell.  take_rename_fault_ reads it, and only commit_atomic and
+// commit_atomic_at for a context of the test source call take_rename_fault_.
+// Only RenameFaultScope::arm, which takes a context that owns Test, starts a
+// fault.  The cell is one for each thread of the process, also across shared
+// libraries, as the cell of the write fault is.
+CRUCIBLE_PROCESS_WIDE [[gnu::tls_model("initial-exec")]] inline constinit thread_local RenameFaultCell rename_fault{};
+
+void arm_rename_fault_(RenameFailure failure) noexcept {
+    RenameFaultCell& cell = rename_fault;
+    if (cell.is_armed) [[unlikely]] {
+        core::fatal("the rename fault of a test: the thread holds a fault, so a second arm would hide the first");
+    }
+    cell = RenameFaultCell{.failure = errno_of_(failure), .is_armed = true, .is_due = true};
+}
+
+void end_rename_fault_() noexcept { rename_fault = RenameFaultCell{}; }
+
+UnitResult take_rename_fault_() noexcept {
+    RenameFaultCell& cell = rename_fault;
+    if (!cell.is_due) {
+        return core::Unit{};
+    }
+    cell.is_due = false;
+    return core::err(cell.failure);
+}
 
 UnitResult write_full_test_(int descriptor, void const* first, std::size_t count) noexcept {
     if (is_closed(descriptor)) {

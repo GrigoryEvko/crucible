@@ -423,6 +423,13 @@ write_full_(int descriptor, void const* first, std::size_t count) noexcept;
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 write_full_test_(int descriptor, void const* first, std::size_t count) noexcept;
 
+// Gives the error of the rename fault of the calling thread when the fault is
+// due, and spends the fault, or gives Unit (the rename fault of a test).  Only
+// commit_atomic and commit_atomic_at for a context of the test source call
+// it, before their rename.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+take_rename_fault_() noexcept;
+
 // Full transfers
 //   The loops of read_full_ and write_full_.  The step moves at most remaining
 //   bytes at offset, and gives the count that the kernel moved or the error of
@@ -995,7 +1002,8 @@ sync(Ctx const&, DirectoryRef<Rights> dir) noexcept {
 // flag reports EINVAL, and that is passed through rather than replaced
 // by a plain rename: the caller chose the no-replace semantics, and a
 // silent fallback would be a commit that overwrote what it promised not
-// to.  The gate refuses None.
+// to.  The gate refuses None.  A context of the test source takes the
+// rename fault of its thread first (the rename fault of a test).
 //
 // Not a mint: this renames existing paths and synthesizes nothing.
 template <typename Atomicity, eff::IsExecCtx Ctx>
@@ -1003,6 +1011,9 @@ template <typename Atomicity, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 commit_atomic(Ctx const&, Path<tags::source::Sanitized> const& tmp,
               Path<tags::source::Sanitized> const& target) noexcept {
+    if constexpr (CtxHasTestSource<Ctx>) {
+        CRUCIBLE_TRY(_, detail::take_rename_fault_());
+    }
     constexpr int here = ::foundation::os::kAtCurrentDirectory;
     char const* const source = ::foundation::core::detail::c_text_first_(tmp.value().c_text());
     char const* const destination = ::foundation::core::detail::c_text_first_(target.value().c_text());
@@ -1161,7 +1172,8 @@ concept CtxFitsCommitAtomicAt =
     && ::fixy::os::HoldsRights<Held, ::fixy::os::RightSet::create | ::fixy::os::RightSet::remove>;
 
 // Renames from to to, the two under dir, with the atomicity of
-// commit_atomic.  Not a mint.
+// commit_atomic.  A context of the test source takes the rename fault of its
+// thread before the rename (the rename fault of a test).  Not a mint.
 template <typename Atomicity, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsCommitAtomicAt<Ctx, Atomicity, Rights>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
@@ -1170,6 +1182,9 @@ commit_atomic_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText
     int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
     if (directory < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
+    if constexpr (CtxHasTestSource<Ctx>) {
+        CRUCIBLE_TRY(_, detail::take_rename_fault_());
     }
     return std::is_same_v<Atomicity, atomicity::Rename> ? detail::rename_replacing_beneath_(directory, from, to)
                                                         : detail::rename_no_replace_beneath_(directory, from, to);
@@ -1815,8 +1830,9 @@ write_full(Ctx const&, ::fixy::os::HandleRef<Kind, Rights> handle, ::foundation:
 //   fault.  The arm takes a context that owns Test.  A thread holds one fault
 //   at a time, and a second arm while a scope lives ends the process.  The
 //   scope does not copy or move, so it ends on the thread that armed it.  The
-//   fault covers the writes of write_full and no other call: a sync, a
-//   truncate and a rename run as before.
+//   fault covers the writes of write_full and no other call: a sync and a
+//   truncate run as before, and a rename has a fault of its own (the rename
+//   fault of a test).
 
 // The error of a write under the write fault of a test.
 enum class WriteFailure : std::uint8_t {
@@ -1861,6 +1877,69 @@ public:
 
 private:
     constexpr WriteFaultScope() noexcept = default;
+};
+
+// Rename fault of a test
+//   A test makes the next rename of its thread fail with a stated errno, so it
+//   can test the path of a failed rename: the error of a file system with no
+//   RENAME_NOREPLACE, a full disk, or an error of the device.
+//   RenameFaultScope::arm(test, failure) starts the fault on the calling
+//   thread.  The next rename of commit_atomic or commit_atomic_at gives the
+//   errno of failure and makes no system call, and the fault is then spent, so
+//   a rename after it runs as before.  The end of the scope ends a fault that
+//   no rename spent.
+//
+//   Only a context of the test source reaches the fault (CtxHasTestSource), as
+//   for the write fault of a test: the two rename doors read the fault only
+//   for such a context, under if constexpr.  The arm takes a context that owns
+//   Test.  A thread holds one rename fault at a time, and a second arm while a
+//   scope lives ends the process.  The scope does not copy or move.  The
+//   durable replace renames through commit_atomic_at, so the fault reaches it.
+
+// The error of the next rename under the rename fault of a test.
+enum class RenameFailure : std::uint8_t {
+    // EINVAL: the file system has no RENAME_NOREPLACE.
+    not_supported,
+    // ENOSPC: the file system has no room for the new entry.
+    no_space,
+    // EIO: the device gave an error.
+    device_error,
+};
+
+namespace detail {
+
+// Starts the rename fault of the calling thread with failure.  A thread that
+// holds a rename fault ends the process.
+void arm_rename_fault_(RenameFailure failure) noexcept;
+
+// Ends the rename fault of the calling thread.
+void end_rename_fault_() noexcept;
+
+}  // namespace detail
+
+// The rename fault of the calling thread, from its arm to its end (the rename
+// fault of a test).
+class [[nodiscard]] RenameFaultScope {
+public:
+    // Starts the rename fault of the calling thread.  A thread that holds a
+    // rename fault ends the process.
+    template <eff::IsExecCtx Ctx>
+        requires eff::CtxOwnsCapability<Ctx, eff::Effect::Test>
+    [[nodiscard]] static RenameFaultScope arm(Ctx const&, RenameFailure failure) noexcept {
+        detail::arm_rename_fault_(failure);
+        return RenameFaultScope{};
+    }
+
+    RenameFaultScope(RenameFaultScope const&) = delete("a scope is the one rename fault of its thread: keep it "
+                                                       "where the arm made it");
+    RenameFaultScope(RenameFaultScope&&) = delete("a scope is the one rename fault of its thread: keep it where "
+                                                  "the arm made it");
+    RenameFaultScope& operator=(RenameFaultScope const&) = delete("a scope is the one rename fault of its thread");
+    RenameFaultScope& operator=(RenameFaultScope&&) = delete("a scope is the one rename fault of its thread");
+    ~RenameFaultScope() { detail::end_rename_fault_(); }
+
+private:
+    constexpr RenameFaultScope() noexcept = default;
 };
 
 // The read-only open, spelled once.

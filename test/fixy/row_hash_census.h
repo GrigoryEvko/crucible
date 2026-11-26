@@ -1961,6 +1961,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::fs::WriteFaultScope,
      "the scope of the write fault of a test: it holds nothing, its end ends the fault of its thread, and it is "
      "never a value in a signature"},
+    {^^::fixy::fs::RenameFaultScope,
+     "the scope of the rename fault of a test: it holds nothing, its end ends the fault of its thread, and it is "
+     "never a value in a signature"},
     {^^::fixy::numa::PageNodeCensus, kPayload},
     {^^::fixy::NumaNodeMask, kPayload},
     {^^::fixy::numa::NodeAllocationCounters, kPayload},
