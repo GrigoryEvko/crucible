@@ -7,8 +7,10 @@
 // that each TCP option of the door reaches the TCP option of the kernel,
 // that the timestamp calls reach the kernel, that a shared ref of a socket
 // reaches the same socket, that a duplicate of a socket is a second handle of
-// it, and that a send and a full write of the file door to a socket with no
-// connection give an error and no signal.  The check file of the header holds
+// it, that a send and a full write of the file door to a socket with no
+// connection give an error and no signal, and that the two ends of a pair of
+// the local domain carry bytes in each direction and see the end of the
+// stream when the other end closes.  The check file of the header holds
 // the walk of the control data of each kind of message.
 
 #include <fixy/Core.h>
@@ -98,6 +100,8 @@ constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 
 using NetlinkSocket = fixy::net::SocketHandle<fixy::net::socket_kind::NetlinkRoute>;
 using TcpSocket = fixy::net::SocketHandle<fixy::net::socket_kind::TcpStream>;
+using UnixSocket = fixy::net::SocketHandle<fixy::net::socket_kind::UnixStream>;
+using UnixPair = fixy::net::SocketPair<fixy::net::socket_kind::UnixStream>;
 using TcpRef = fixy::net::SocketRef<fixy::net::socket_kind::TcpStream, fixy::net::socket_rights>;
 using SharedTcp = fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::net::socket_rights>;
 
@@ -136,6 +140,18 @@ template <class Socket>
 [[nodiscard]] Socket descriptor_of(fixy::Result<fixy::Linear<Socket>, foundation::os::Errno> minted) noexcept {
     return std::move(minted).match([](fixy::Linear<Socket> opened) -> Socket { return std::move(opened).consume(); },
                                    [](foundation::os::Errno) -> Socket { return Socket{}; });
+}
+
+// The two ends of a pair, or two empty handles when the open failed.
+[[nodiscard]] fixy::Record<UnixSocket, UnixSocket>
+ends_of(fixy::Result<UnixPair, foundation::os::Errno> minted) noexcept {
+    using Ends = fixy::Record<UnixSocket, UnixSocket>;
+    return std::move(minted).match(
+        [](UnixPair pair) -> Ends {
+            auto [first, second] = std::move(pair);
+            return Ends{std::move(first).consume(), std::move(second).consume()};
+        },
+        [](foundation::os::Errno) -> Ends { return Ends{UnixSocket{}, UnixSocket{}}; });
 }
 
 [[nodiscard]] int check_netlink_route_socket() noexcept {
@@ -479,6 +495,43 @@ struct LinkDumpRequest final {
     return 0;
 }
 
+// The pair of a stream socket of the local domain: two connected ends, each
+// with a number of its own that closes when a thread starts a program.  The
+// bytes that one end writes, the other end reads, in each direction.  After
+// one end closes, a read of the other end gives the end of the stream: the
+// full read stops with no byte.
+[[nodiscard]] int check_socket_pair() noexcept {
+    IoBlockCtx ctx{eff::testing::test()};
+    auto [first, second] = ends_of(fixy::net::mint_socket_pair<fixy::net::socket_kind::UnixStream>(ctx));
+    if (!first.is_open() || !second.is_open()) return 131;
+    if (fixy::net::share_socket(first.ref()).identity() == fixy::net::share_socket(second.ref()).identity()) {
+        return 132;
+    }
+    if (!is_close_on_exec(first.ref()) || !is_close_on_exec(second.ref())) return 133;
+    if (!socket_option_is(first.ref(), SO_TYPE, SOCK_STREAM) || !socket_option_is(second.ref(), SO_DOMAIN, AF_UNIX)) {
+        return 134;
+    }
+    using Four = fixy::FixedArray<std::byte, 4>;
+    Four const sent{std::byte{'p'}, std::byte{'a'}, std::byte{'i'}, std::byte{'r'}};
+    Four const back{std::byte{'b'}, std::byte{'a'}, std::byte{'c'}, std::byte{'k'}};
+    if (fixy::fs::write_full(ctx, first.ref(), fixy::TextView{"pair"}).is_err()) return 135;
+    auto const [count, read] = fixy::build_fixed_array<std::byte, 4>([&ctx, &second](auto run) noexcept {
+        return fixy::fs::read_full(ctx, second.ref(), std::move(run)).value_or(0);
+    });
+    if (count != 4 || !(read == sent)) return 136;
+    if (fixy::fs::write_full(ctx, second.ref(), fixy::TextView{"back"}).is_err()) return 137;
+    auto const [count_back, read_back] = fixy::build_fixed_array<std::byte, 4>([&ctx, &first](auto run) noexcept {
+        return fixy::fs::read_full(ctx, first.ref(), std::move(run)).value_or(9);
+    });
+    if (count_back != 4 || !(read_back == back)) return 138;
+    first = UnixSocket{};
+    auto const [count_at_end, unused] = fixy::build_fixed_array<std::byte, 4>([&ctx, &second](auto run) noexcept {
+        return fixy::fs::read_full(ctx, second.ref(), std::move(run)).value_or(9);
+    });
+    static_cast<void>(unused);
+    return count_at_end == 0 ? 0 : 139;
+}
+
 }  // namespace
 
 int main() {
@@ -494,6 +547,7 @@ int main() {
     if (failed == 0) failed = check_receive_with_timestamps_into_view();
     if (failed == 0) failed = check_send_raises_no_signal();
     if (failed == 0) failed = check_write_raises_no_signal();
+    if (failed == 0) failed = check_socket_pair();
     if (failed != 0) {
         std::fprintf(stderr, "test_os_socket: check %d failed\n", failed);
         return failed;

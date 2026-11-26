@@ -81,8 +81,9 @@ namespace fixy::net::detail {
 // SOL_SOCKET: the level of the options of each socket.
 inline constexpr int socket_level = 1;
 
-// AF_INET and AF_NETLINK: the address families of the socket kinds of
+// AF_UNIX, AF_INET and AF_NETLINK: the address families of the socket kinds of
 // fixy/os/Socket.h.
+inline constexpr int address_family_unix = 1;
 inline constexpr int address_family_inet = 2;
 inline constexpr int address_family_netlink = 16;
 
@@ -243,6 +244,19 @@ read_timestamp_control_(::foundation::core::View<std::byte const> control) noexc
 // once, so the call does not wait.
 [[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno> open_socket_(int domain, int type,
                                                                                     int protocol) noexcept;
+
+// The two descriptors of a pair of connected sockets, in the order that
+// socketpair(2) writes them.
+struct SocketPairNumbers final {
+    std::int32_t first = -1;
+    std::int32_t second = -1;
+};
+
+// Opens a pair of connected sockets of domain, type and protocol with
+// socket_close_on_exec_flag in its type, and gives their two descriptors.  The
+// kernel answers socketpair(2) at once, so the call does not wait.
+[[nodiscard]] ::foundation::core::Result<SocketPairNumbers, ::foundation::os::Errno>
+open_socket_pair_(int domain, int type, int protocol) noexcept;
 
 // Sets the TCP option option of socket to the size bytes at value.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>

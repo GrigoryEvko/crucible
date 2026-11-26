@@ -5,16 +5,19 @@
 // once for the effect row that the calling context must admit.
 //
 // mint_socket below makes the call through SocketDoor, the one door to
-// socket(2), so a socket handle holds a descriptor that the kernel returned
-// to a gated mint.  The door file src/fixy/os/Socket.cpp issues the call with
-// the raw primitive of foundation/os/Syscall.h.  The words of the calls come
-// from fixy/os/SocketCalls.h (the kernel words), so this header includes no
+// socket(2) and socketpair(2), so a socket handle holds a descriptor that the
+// kernel returned to a gated mint.  mint_socket_pair gives the two connected
+// ends of one stream socket of the local domain.  The door file
+// src/fixy/os/Socket.cpp issues the calls with the raw primitive of
+// foundation/os/Syscall.h.  The words of the calls come from
+// fixy/os/SocketCalls.h (the kernel words), so this header includes no
 // system header.
 //
-// Two kinds are declared: the netlink socket of the qdisc query, and the
-// TCP stream socket whose options the test of the socket calls reads back
-// from the kernel.  A new kind is a tag in fixy::net::socket_kind and a row
-// of socket_table.
+// Three kinds are declared: the netlink socket of the qdisc query, the TCP
+// stream socket whose options the test of the socket calls reads back from
+// the kernel, and the stream socket of the local domain, whose pair carries
+// bytes between two ends in one process.  A new kind is a tag in
+// fixy::net::socket_kind and a row of socket_table.
 // The walk at the foot of this header fails if the tag has no row.
 
 #include <fixy/Qtt.h>
@@ -29,6 +32,7 @@
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Id.h>
+#include <foundation/core/Record.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Text.h>
 #include <foundation/effects/Ctx.h>
@@ -58,6 +62,10 @@ struct NetlinkRoute final {};
 // A TCP stream socket of IPv4.
 struct TcpStream final {};
 
+// A stream socket of the local domain (AF_UNIX).  mint_socket_pair gives the
+// two connected ends of one such connection in one process.
+struct UnixStream final {};
+
 }  // namespace socket_kind
 
 namespace detail {
@@ -81,6 +89,7 @@ inline constexpr ::fixy::atom_pack::tag_row<detail::socket_triple> socket_table[
     {^^socket_kind::NetlinkRoute,
      {detail::address_family_netlink, detail::socket_type_raw, detail::netlink_route_protocol}},
     {^^socket_kind::TcpStream, {detail::address_family_inet, detail::socket_type_stream, 0}},
+    {^^socket_kind::UnixStream, {detail::address_family_unix, detail::socket_type_stream, 0}},
 };
 
 template <typename Kind>
@@ -93,6 +102,11 @@ concept MappedSocketKind = ::fixy::atom_pack::has_row(socket_table, ^^Kind);
     return ::fixy::atom_pack::value_for(socket_table, kind_tag);
 }
 
+// A kind of the local domain, whose two connected ends socketpair(2) can
+// give.  The kernel refuses a pair of each other domain of the table.
+template <typename Kind>
+concept PairedSocketKind = MappedSocketKind<Kind> && socket_triple_of(^^Kind).domain == detail::address_family_unix;
+
 // The row comes from the syscall atom, so the gate and the catalog in
 // fixy/atoms/Syscall.h cannot disagree.  The catalog puts socket in the
 // network family, which lifts to IO and Block.
@@ -100,6 +114,14 @@ using socket_row_t = eff::lift_row_t<::fixy::atom::syscall::per<::fixy::atom::sy
 
 template <typename Ctx, typename Kind>
 concept CtxFitsSocketMint = eff::IsExecCtx<Ctx> && eff::CtxAdmits<Ctx, socket_row_t> && MappedSocketKind<Kind>;
+
+// The row of socketpair(2), from its syscall atom, as the row of socket(2).
+using socket_pair_row_t = eff::lift_row_t<::fixy::atom::syscall::per<::fixy::atom::syscall::SyscallId::socketpair>>;
+
+// The gate of the pair mint: the context admits the row of socketpair(2), and
+// the kind is of the local domain.
+template <typename Ctx, typename Kind>
+concept CtxFitsSocketPairMint = eff::IsExecCtx<Ctx> && eff::CtxAdmits<Ctx, socket_pair_row_t> && PairedSocketKind<Kind>;
 
 // The rights of a socket: a read and a write of its bytes, and the control
 // calls of a socket (ioctl_socket): its ioctls and its options.
@@ -112,6 +134,13 @@ using SocketHandle = ::fixy::os::Handle<::fixy::os::kind::Socket<Kind>, socket_r
 
 template <typename Kind, ::fixy::os::RightSet Rights>
 using SocketRef = ::fixy::os::HandleRef<::fixy::os::kind::Socket<Kind>, Rights>;
+
+// The two connected ends of one connection of the kind Kind, from
+// mint_socket_pair: a byte that one end writes, the other end reads.  Each end
+// is a handle of its own with its own number, and the close of one end is the
+// end of the stream for the other.
+template <typename Kind>
+using SocketPair = ::foundation::core::Record<Linear<SocketHandle<Kind>>, Linear<SocketHandle<Kind>>>;
 
 // The identity of a socket: the number of its descriptor.  A table that only
 // keys or compares sockets holds the identity, and no door takes it.  The
@@ -343,16 +372,27 @@ template <typename Kind, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<Linear<SocketHandle<Kind>>, ::foundation::os::Errno>
 mint_socket(Ctx const&) noexcept;
 
-// The door to socket(2).  No object of it exists.  Its member is private,
-// and its one friend is mint_socket.  A Handle befriends this class, so a
-// socket handle comes only from mint_socket, after its gate.  The door
-// reads the triple of the kind, so no caller gives it a domain, a type or
-// a protocol.
+// Declared here and defined below SocketDoor, for the reason of mint_socket.
+template <typename Kind, eff::IsExecCtx Ctx>
+    requires CtxFitsSocketPairMint<Ctx, Kind>
+[[nodiscard]] inline ::foundation::core::Result<SocketPair<Kind>, ::foundation::os::Errno>
+mint_socket_pair(Ctx const&) noexcept;
+
+// The door to socket(2) and socketpair(2).  No object of it exists.  Its
+// members are private, and its friends are mint_socket and mint_socket_pair.
+// A Handle befriends this class, so a socket handle comes only from one of
+// the two mints, after its gate.  The door reads the triple of the kind, so
+// no caller gives it a domain, a type or a protocol.
 class SocketDoor final : ::foundation::NoObject<SocketDoor> {
     template <typename FriendKind, eff::IsExecCtx FriendCtx>
         requires CtxFitsSocketMint<FriendCtx, FriendKind>
     friend auto mint_socket(FriendCtx const&) noexcept
         -> ::foundation::core::Result<Linear<SocketHandle<FriendKind>>, ::foundation::os::Errno>;
+
+    template <typename FriendKind, eff::IsExecCtx FriendCtx>
+        requires CtxFitsSocketPairMint<FriendCtx, FriendKind>
+    friend auto mint_socket_pair(FriendCtx const&) noexcept
+        -> ::foundation::core::Result<SocketPair<FriendKind>, ::foundation::os::Errno>;
 
     // The open door of src/fixy/os/Socket.cpp adds SOCK_CLOEXEC, because a
     // descriptor that survives execve leaks into each child process.  It
@@ -367,6 +407,46 @@ class SocketDoor final : ::foundation::NoObject<SocketDoor> {
                 return mint_linear<SocketHandle<Kind>>(SocketHandle<Kind>{std::move(opened)});
             });
     }
+
+    // The pair door of src/fixy/os/Socket.cpp adds SOCK_CLOEXEC to the type of
+    // the two ends.  It gives the error of the kernel on failure and no handle.
+    template <PairedSocketKind Kind>
+    [[nodiscard]] static ::foundation::core::Result<SocketPair<Kind>, ::foundation::os::Errno> open_pair_() noexcept {
+        using Opened = ::foundation::core::Result<SocketPair<Kind>, ::foundation::os::Errno>;
+        constexpr detail::socket_triple triple = socket_triple_of(^^Kind);
+        return detail::open_socket_pair_(triple.domain, triple.type, triple.protocol)
+            .match([](detail::SocketPairNumbers numbers) noexcept -> Opened { return own_pair_<Kind>(numbers); },
+                   [](::foundation::os::Errno error) noexcept -> Opened { return ::foundation::core::err(error); });
+    }
+
+    // The two Handles of the numbers of a pair.  Each number goes through the
+    // door of an opened number (fixy/os/Fd.h), which closes a number past the
+    // slots of the generations and gives emfile.  When one number is refused,
+    // the Handle of the other one closes it at the end of this call, and the
+    // error is the result.
+    template <PairedSocketKind Kind>
+    [[nodiscard]] static ::foundation::core::Result<SocketPair<Kind>, ::foundation::os::Errno>
+    own_pair_(detail::SocketPairNumbers numbers) noexcept {
+        using Opened = ::foundation::core::Result<SocketPair<Kind>, ::foundation::os::Errno>;
+        using Owned = ::foundation::core::Result<SocketHandle<Kind>, ::foundation::os::Errno>;
+        auto const own = [](::fixy::fs::OpenedDescriptor<::fixy::fs::OpenedType::of_call> opened) noexcept {
+            return SocketHandle<Kind>{std::move(opened)};
+        };
+        Owned first = ::fixy::fs::detail::OpenedDescriptorDoor::admit<::fixy::fs::OpenedType::of_call>(
+            ::foundation::core::Result<int, ::foundation::os::Errno>{numbers.first}, own);
+        Owned second = ::fixy::fs::detail::OpenedDescriptorDoor::admit<::fixy::fs::OpenedType::of_call>(
+            ::foundation::core::Result<int, ::foundation::os::Errno>{numbers.second}, own);
+        return std::move(first).match(
+            [&second](SocketHandle<Kind> first_end) noexcept -> Opened {
+                return std::move(second).match(
+                    [&first_end](SocketHandle<Kind> second_end) noexcept -> Opened {
+                        return SocketPair<Kind>{mint_linear<SocketHandle<Kind>>(std::move(first_end)),
+                                                mint_linear<SocketHandle<Kind>>(std::move(second_end))};
+                    },
+                    [](::foundation::os::Errno error) noexcept -> Opened { return ::foundation::core::err(error); });
+            },
+            [](::foundation::os::Errno error) noexcept -> Opened { return ::foundation::core::err(error); });
+    }
 };
 
 template <typename Kind, eff::IsExecCtx Ctx>
@@ -374,6 +454,16 @@ template <typename Kind, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<Linear<SocketHandle<Kind>>, ::foundation::os::Errno>
 mint_socket(Ctx const&) noexcept {
     return SocketDoor::open_<Kind>();
+}
+
+// The two connected ends of one stream socket of the local domain (the socket
+// pair).  The kernel answers socketpair(2) at once.  A process with no free
+// number gives emfile, and each other error of the kernel is the result.
+template <typename Kind, eff::IsExecCtx Ctx>
+    requires CtxFitsSocketPairMint<Ctx, Kind>
+[[nodiscard]] inline ::foundation::core::Result<SocketPair<Kind>, ::foundation::os::Errno>
+mint_socket_pair(Ctx const&) noexcept {
+    return SocketDoor::open_pair_<Kind>();
 }
 
 // Socket calls

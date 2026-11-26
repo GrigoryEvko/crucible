@@ -7211,6 +7211,13 @@ fixy_neg_compile_test(neg_os_socket_ctx_lacks_block
 fixy_neg_compile_test(neg_os_socket_unmapped_kind
   "no matching function for call"
   "mint_socket<\\{anonymous\\}::NotASocketKind>\\(\\{anonymous\\}::IoBlockCtx&\\)")
+# The pair mint: a kind outside the local domain, and a context without Block.
+fixy_neg_compile_test(neg_os_socket_pair_of_a_tcp_stream
+  "no matching function for call to .mint_socket_pair<fixy::net::socket_kind::TcpStream>\\(\\{anonymous\\}::IoBlockCtx&\\)"
+  "required for the satisfaction of .PairedSocketKind<Kind>.")
+fixy_neg_compile_test(neg_os_socket_pair_ctx_lacks_block
+  "no matching function for call"
+  "mint_socket_pair<fixy::net::socket_kind::UnixStream>\\(\\{anonymous\\}::IoOnlyCtx&\\)")
 
 # A ref of a socket stays on its thread, so no body of a second thread carries
 # one.

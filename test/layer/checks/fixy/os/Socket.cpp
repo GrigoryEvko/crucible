@@ -20,6 +20,9 @@ static_assert(socket_triple_of(^^socket_kind::NetlinkRoute).type == SOCK_RAW);
 static_assert(socket_triple_of(^^socket_kind::NetlinkRoute).protocol == NETLINK_ROUTE);
 static_assert(socket_triple_of(^^socket_kind::TcpStream).domain == AF_INET);
 static_assert(socket_triple_of(^^socket_kind::TcpStream).type == SOCK_STREAM);
+static_assert(socket_triple_of(^^socket_kind::UnixStream).domain == AF_UNIX);
+static_assert(socket_triple_of(^^socket_kind::UnixStream).type == SOCK_STREAM);
+static_assert(socket_triple_of(^^socket_kind::UnixStream).protocol == 0);
 
 struct NotASocketKind final {};
 static_assert(MappedSocketKind<socket_kind::NetlinkRoute>);
@@ -39,7 +42,21 @@ static_assert(!CtxFitsSocketMint<IoOnlyCtx, socket_kind::NetlinkRoute>,
 static_assert(!CtxFitsSocketMint<IoBlockCtx, NotASocketKind>, "a kind with no triple must be refused.");
 static_assert(!std::is_default_constructible_v<SocketDoor> && !std::is_copy_constructible_v<SocketDoor>
                   && !std::is_move_constructible_v<SocketDoor>,
-              "No object of the socket door exists.  Its private member is the only call to socket(2).");
+              "No object of the socket door exists.  Its private members are the only calls to socket(2) and "
+              "socketpair(2).");
+
+// The pair: only a kind of the local domain, and the row of socketpair, which
+// is the row of socket.
+static_assert(std::is_same_v<socket_pair_row_t, eff::Row<eff::Effect::IO, eff::Effect::Block>>);
+static_assert(PairedSocketKind<socket_kind::UnixStream>);
+static_assert(!PairedSocketKind<socket_kind::TcpStream> && !PairedSocketKind<socket_kind::NetlinkRoute>,
+              "the kernel gives a pair only of the local domain.");
+static_assert(!PairedSocketKind<NotASocketKind>);
+static_assert(CtxFitsSocketPairMint<IoBlockCtx, socket_kind::UnixStream>);
+static_assert(!CtxFitsSocketPairMint<IoOnlyCtx, socket_kind::UnixStream>,
+              "a context without Block must not open a pair: the catalog puts socketpair in a family that can park.");
+static_assert(!CtxFitsSocketPairMint<IoBlockCtx, socket_kind::TcpStream>);
+static_assert(sizeof(detail::SocketPairNumbers) == 2 * sizeof(int), "socketpair writes two ints");
 
 // The foreign socket: a ref by value of one int and the generation of its
 // number, which no number converts to, and which the doors take beside the
@@ -78,7 +95,7 @@ static_assert(!SocketBorrowWith<ForeignSocketRef<socket_kind::TcpStream, ::fixy:
 // The kernel words of fixy/os/SocketCalls.h are the words of the system
 // headers.
 static_assert(socket_level == SOL_SOCKET);
-static_assert(address_family_inet == AF_INET && address_family_netlink == AF_NETLINK);
+static_assert(address_family_unix == AF_UNIX && address_family_inet == AF_INET && address_family_netlink == AF_NETLINK);
 static_assert(socket_type_stream == SOCK_STREAM && socket_type_raw == SOCK_RAW);
 static_assert(netlink_route_protocol == NETLINK_ROUTE);
 static_assert(max_pacing_rate_option == SO_MAX_PACING_RATE);
