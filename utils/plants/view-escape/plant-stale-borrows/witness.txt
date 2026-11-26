@@ -65,6 +65,11 @@
 # assignment of the whole Record (35), and after a change of the same part of a
 # std::tuple (42) and of a std::array (49).  The alternatives of a std::variant share
 # storage, so a change of a different alternative ends the borrow (56).
+#
+# In the unit linear_moves a move of an object of a linear class leaves it empty, so
+# a Ref of the object from to() is stale after the move (28).  The move changes the
+# address of each member too: a View of an inline FixedArray member (48), a View that
+# a door of the class gives from that member (60), and a Ref of the member (71).
 
 compile stale src/stale.cpp
 flag stale -freflection
@@ -323,3 +328,15 @@ error parts src/parts.cpp:35 | this use reads a borrow of parts in view after an
 error parts src/parts.cpp:42 | this use reads a borrow of parts in view after a call of planted::change with parts, which reaches a function with no body in this unit
 error parts src/parts.cpp:49 | this use reads a borrow of parts in view after a call of planted::change with parts, which reaches a function with no body in this unit
 error parts src/parts.cpp:56 | this use reads a borrow of sum in view after a call of planted::change with sum, which reaches a function with no body in this unit
+
+compile linear_moves src/linear_moves.cpp must-consume=on
+flag linear_moves -freflection
+exit linear_moves fail
+finding linear_moves view-escape stale-borrow src/linear_moves.cpp:28:22 | borrow of token in alias after a move of token
+finding linear_moves view-escape stale-borrow src/linear_moves.cpp:48:27 | borrow of token.items in all after a move of token
+finding linear_moves view-escape stale-borrow src/linear_moves.cpp:60:27 | borrow of token in all after a move of token
+finding linear_moves view-escape stale-borrow src/linear_moves.cpp:71:33 | borrow of token.items in items after a move of token
+error linear_moves src/linear_moves.cpp:28 | this use reads a borrow of token in alias after a move of token
+error linear_moves src/linear_moves.cpp:48 | this use reads a borrow of token.items in all after a move of token
+error linear_moves src/linear_moves.cpp:60 | this use reads a borrow of token in all after a move of token
+error linear_moves src/linear_moves.cpp:71 | this use reads a borrow of token.items in items after a move of token

@@ -1,0 +1,84 @@
+// A Ref of an object of a linear class lives until the move of the object, so a
+// read before the move gives no line.  A move of an owner that is no linear
+// class keeps the object, so a Ref of the moved-from owner gives no line either.
+// A linear class whose member owns a heap block keeps the block at its move, so a
+// View of the block lives on.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Ref.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+    int value = 1;
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&& other) noexcept : value{other.value} { other.value = 0; }
+    constexpr Token& operator=(Token&&) noexcept = default;
+    Token(const Token&) = delete;
+    [[nodiscard]] int read() const noexcept { return value; }
+};
+
+int read_before_a_move() noexcept {
+    Token token{};
+    auto const alias = ::foundation::core::to(token);
+    int const read = alias->read();
+    Token moved{std::move(token)};
+    int const total = read + moved.read();
+    ::foundation::linear::drop(std::move(moved));
+    return total;
+}
+
+unsigned long read_after_a_move_of_an_owner() noexcept {
+    ::foundation::core::HeapArray<int> items{};
+    auto const alias = ::foundation::core::to(items);
+    ::foundation::core::HeapArray<int> const moved{std::move(items)};
+    return alias->size() + moved.size();
+}
+
+struct [[= ::foundation::linear::linear{}]] Outside {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+    ::foundation::core::HeapArray<int> items{};
+    constexpr Outside() noexcept = default;
+    constexpr Outside(Outside&& other) noexcept : items{std::move(other.items)} {}
+    constexpr Outside& operator=(Outside&&) noexcept = default;
+    Outside(const Outside&) = delete;
+};
+
+int read_a_heap_block_after_a_move() noexcept {
+    Outside token{};
+    auto const all = token.items.view();
+    Outside moved{std::move(token)};
+    int total = 0;
+    for (int const item : all) {
+        total += item;
+    }
+    ::foundation::linear::drop(std::move(moved));
+    return total;
+}
+
+struct [[= ::foundation::linear::linear{}]] Inline {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+    ::foundation::core::FixedArray<int, 4> items{};
+    constexpr Inline() noexcept = default;
+    constexpr Inline(Inline&& other) noexcept : items{other.items} { other.items = {}; }
+    constexpr Inline& operator=(Inline&&) noexcept = default;
+    Inline(const Inline&) = delete;
+};
+
+int read_an_inline_array_before_a_move() noexcept {
+    Inline token{};
+    auto const all = token.items.view();
+    int total = 0;
+    for (int const item : all) {
+        total += item;
+    }
+    Inline moved{std::move(token)};
+    ::foundation::linear::drop(std::move(moved));
+    return total;
+}
+
+}  // namespace planted

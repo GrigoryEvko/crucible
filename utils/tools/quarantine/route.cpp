@@ -130,6 +130,7 @@ RouteAnswers<TypeSet> behind_answers;
 RouteAnswers<TypeSet> own_behind_answers;
 RouteAnswers<TypeSet> part_answers;
 RouteAnswers<TypeSet> cell_answers;
+RouteAnswers<TypeSet> inline_answers;
 RouteAnswers<TypeSet> held_answers;
 RouteAnswers<std::vector<OwnerClass>> owner_answers;
 RouteAnswers<BorrowRoute> route_answers;
@@ -681,6 +682,34 @@ void add_cells(tree type, TypeSet& set, Visits& visits, bool is_in_union) {
     visit_fields(type, [&](tree field) { add_cells(TREE_TYPE(field), set, visits, is_union); });
 }
 
+// Adds each type that an object of TYPE holds in its own bytes to SET: each class of
+// a member by value, and the element type of each array, at each depth.  A scalar
+// member that is no array element adds nothing, so a count beside a pointer does
+// not meet a borrow of the run that the pointer names.  An element of one byte
+// adds the erased type, because such a run can hold each object.  A pointer and a
+// reference name storage outside the bytes.  Complexity: linear in the members
+// that the walk reaches, one time for each class.
+void add_inline(tree type, TypeSet& set, Visits& visits) {
+    bool const is_array = TREE_CODE(type) == ARRAY_TYPE;
+    tree const element = element_class(type);
+    if (element == NULL_TREE) {
+        return;
+    }
+    if (is_array) {
+        add_id(set, is_erased_type(element) ? kErasedType : TYPE_UID(element));
+    }
+    tree const readable = readable_class(element);
+    if (readable == NULL_TREE || !visits.enter(readable)) {
+        return;
+    }
+    add_id(set, TYPE_UID(readable));
+    visit_fields(readable, [&](tree field) {
+        if (!is_indirect_type(TREE_TYPE(field))) {
+            add_inline(TREE_TYPE(field), set, visits);
+        }
+    });
+}
+
 // Adds each type that a value of TYPE can hold to SET: its parts by value and its
 // type arguments, at each depth.
 void add_held(tree type, TypeSet& set) {
@@ -786,6 +815,7 @@ void begin_route_reading(bool is_wide) {
     own_behind_answers.clear_open();
     part_answers.clear_open();
     cell_answers.clear_open();
+    inline_answers.clear_open();
     held_answers.clear_open();
     owner_answers.clear_open();
     route_answers.clear_open();
@@ -878,6 +908,24 @@ const TypeSet& ended_cells(tree type) {
         TypeSet set;
         Visits visits;
         add_cells(type, set, visits, false);
+        return set;
+    });
+}
+
+const TypeSet& inline_types(tree type) {
+    static const TypeSet none;
+    if (type == NULL_TREE || !TYPE_P(type)) {
+        return none;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    return inline_answers.get(TYPE_UID(type), [type] {
+        TypeSet set;
+        Visits visits;
+        tree const element = element_class(type);
+        if (element != NULL_TREE) {
+            add_id(set, is_erased_type(element) ? kErasedType : TYPE_UID(element));
+        }
+        add_inline(type, set, visits);
         return set;
     });
 }

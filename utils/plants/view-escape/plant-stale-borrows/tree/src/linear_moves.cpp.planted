@@ -1,0 +1,76 @@
+// A move of an object of a linear class leaves it empty.  A Ref of the object
+// from to() is stale after the move, as a Ref of a channel handle is after its
+// move to a different name.  The move also changes the address of each member,
+// so a View of an inline array member and a Ref of a member are stale too.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Ref.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+    int value = 1;
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&& other) noexcept : value{other.value} { other.value = 0; }
+    constexpr Token& operator=(Token&&) noexcept = default;
+    Token(const Token&) = delete;
+    [[nodiscard]] int read() const noexcept { return value; }
+};
+
+int read_after_a_move() noexcept {
+    Token token{};
+    auto const alias = ::foundation::core::to(token);
+    Token moved{std::move(token)};
+    int const read = alias->read() + moved.read();
+    ::foundation::linear::drop(std::move(moved));
+    return read;
+}
+
+struct [[= ::foundation::linear::linear{}]] Inline {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+    ::foundation::core::FixedArray<int, 4> items{};
+    constexpr Inline() noexcept = default;
+    constexpr Inline(Inline&& other) noexcept : items{other.items} { other.items = {}; }
+    constexpr Inline& operator=(Inline&&) noexcept = default;
+    Inline(const Inline&) = delete;
+    [[nodiscard]] ::foundation::core::View<int const, 4> view() const& noexcept { return items.view(); }
+};
+
+int read_an_inline_array_after_a_move() noexcept {
+    Inline token{};
+    auto const all = token.items.view();
+    Inline moved{std::move(token)};
+    int total = 0;
+    for (int const item : all) {
+        total += item;
+    }
+    ::foundation::linear::drop(std::move(moved));
+    return total;
+}
+
+int read_a_view_of_a_member_door_after_a_move() noexcept {
+    Inline token{};
+    auto const all = token.view();
+    Inline moved{std::move(token)};
+    int total = 0;
+    for (int const item : all) {
+        total += item;
+    }
+    ::foundation::linear::drop(std::move(moved));
+    return total;
+}
+
+unsigned long read_a_member_after_a_move() noexcept {
+    Inline token{};
+    auto const items = ::foundation::core::to(token.items);
+    Inline moved{std::move(token)};
+    unsigned long const count = items->size();
+    ::foundation::linear::drop(std::move(moved));
+    return count;
+}
+
+}  // namespace planted

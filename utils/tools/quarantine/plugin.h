@@ -3645,6 +3645,10 @@ bool can_name_one_object(const TypeSet& named, const TypeSet& lent);
 const TypeSet& ended_parts(tree type);
 // Each class with an end that an object of TYPE holds in a member of a union.
 const TypeSet& ended_cells(tree type);
+// The types in the own bytes of an object of TYPE: TYPE, each class of a member by
+// value, and the element type of each array, at each depth.  An element of one
+// byte gives ~0U.  A move changes the address of each of them.
+const TypeSet& inline_types(tree type);
 // True when a value of TYPE can hold an object of HELD: TYPE itself, a part by
 // value or a type argument, at each depth.
 bool can_hold_object(tree type, tree held);
@@ -3805,8 +3809,12 @@ void check_static_linear_sum(tree decl, const std::string& entity);
 // linear.cpp: true for a linear class, which states linear{} or holds a linear
 // value, and true for a function of a base file with the annotation
 // two_names_door of foundation/Linear.h.  The kind two-names of live.cpp reads
-// them.
+// them.  states_linear() is true only for a class that states linear{} itself and
+// is no sum, such as a handle, whose moved-from object only ends.  A class that
+// only holds a linear value, and a sum such as an Option, stay usable objects
+// after a move of the payload.
 bool is_linear_class(tree type);
+bool states_linear(tree type);
 bool is_two_names_door(tree function);
 
 // An object of static or thread storage duration DECL that holds a borrow

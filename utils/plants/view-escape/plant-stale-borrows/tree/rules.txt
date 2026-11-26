@@ -14,6 +14,7 @@ admit foundation::permissions | the permission of a lock
 admit foundation::brand | the annotation of the family tag of an arena
 admit foundation::transfer | the marks of the owner and the borrow of a resource by its number
 admit foundation::lifetime | the byte seal of the borrow of a resource by its number
+admit foundation::linear | the mark of the linear class
 admit fixy | the locks and the regions of the planted code
 admit std::move | a cast to an rvalue reference
 admit std::tuple | the tuple whose parts a door of std lends

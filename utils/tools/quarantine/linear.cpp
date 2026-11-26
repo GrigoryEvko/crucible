@@ -7315,6 +7315,8 @@ void on_linear_collection(void*, void*) {
 
 bool is_linear_class(tree type) { return is_linear_type(type); }
 
+bool states_linear(tree type) { return linearity_of(type) == Linearity::direct && !is_linear_sum(type); }
+
 // True when FUNCTION carries the annotation two_names_door and a base file
 // declares it.  A function outside the base can carry the annotation, but the
 // kind two-names does not trust it there, as moves_own_storage().

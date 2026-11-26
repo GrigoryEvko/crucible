@@ -8,6 +8,7 @@ admit foundation::effects | the capability of an allocation
 admit foundation::brand | the annotation of the family tag of the planted arena
 admit foundation::transfer | the marks of the owner and the borrow of a resource by its number
 admit foundation::lifetime | the byte seal of the borrow of a resource by its number
+admit foundation::linear | the mark of the linear class
 admit fixy | the end of a channel
 admit std::move | a cast to an rvalue reference
 admit std::tuple | the tuple whose parts a door of std lends

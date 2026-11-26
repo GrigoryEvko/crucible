@@ -24,7 +24,11 @@
 # and lives on past the end of the scope of the local (29) and past a change of it
 # (36): a class of the base that states refers_static{} holds no borrow.  In the
 # unit parts a change of a different part leaves a borrow of a part alone: a Record,
-# a std::tuple, a std::pair and a std::array.
+# a std::tuple, a std::pair and a std::array.  In the unit linear_moves a Ref of a
+# linear object reads it before its move, and a Ref of an owner that is no linear
+# class reads the moved-from owner.  A View of the heap block of a member of a
+# linear object lives past the move, and a View of an inline array is read before
+# the move.
 
 compile live src/live.cpp
 flag live -freflection
@@ -73,3 +77,7 @@ exit static_texts pass
 compile parts src/parts.cpp
 flag parts -freflection
 exit parts pass
+
+compile linear_moves src/linear_moves.cpp must-consume=on
+flag linear_moves -freflection
+exit linear_moves pass

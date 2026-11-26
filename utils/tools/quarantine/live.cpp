@@ -42,7 +42,8 @@
 //       the end of the full expression of a temporary that a move gave the owner
 //       an assignment of an object that has an owner of the route in its bytes, or
 //           a target in a member of a union
-//       a move of an object that has a target in its bytes
+//       a move of an object that has a target in its bytes, and a move of an
+//           object of a class that states linear{} for a loan of its own bytes
 //       a call that takes such an object by a move, when its result cannot hold
 //           the owner and its body ends it
 //       a call that takes the place by a reference that is not const, when its
@@ -176,6 +177,13 @@
 //     only a loan whose route or targets hold that class.  So an end through such a
 //     class, of an owner that it reaches by a path that the unit cannot see, is no
 //     finding.  The control control-live-limits pins each form.
+//     A move of a spent linear object ends a loan of its own bytes only when the
+//     types of the loan meet the types in those bytes (names_own_bytes).  A scalar
+//     member that is no array element is in no such set, because a count beside a
+//     pointer would meet each borrow of the run behind the pointer.  So a borrow of
+//     such a member through a door of its class stays past the move.  A borrow of an
+//     erased type, as a void pointer, meets the bytes only through a run of one-byte
+//     elements.
 
 #include "plugin.h"
 
@@ -1680,9 +1688,37 @@ private:
             && can_hold_each_owner(result, loan.direct);
     }
 
+    // True when LOAN, with no owner of the moved object in its route, names the own
+    // bytes of the object at FROM: no dereference step leads from FROM to its place,
+    // and its types are none or meet the types in the bytes of its place.  So a Ref
+    // of the object, a View of an inline FixedArray member and a Ref of a member name
+    // them.  A View of a run that a pointer member names, as an arena run, meets no
+    // such type.  A place of no known type, and bytes with a run of one-byte elements,
+    // which can hold an object of each type, name them (fail closed).  A borrow of an
+    // erased type, as a void pointer, meets other bytes only through such a run.
+    bool names_own_bytes(int from, const Loan& loan) const {
+        for (int place = loan.place; place != from; place = places_.parent(place)) {
+            if (place == kNoPlace || places_.kind(place) == StepKind::dereference) {
+                return false;
+            }
+        }
+        tree const type = places_.type(loan.place);
+        if (loan.types.empty() || type == NULL_TREE) {
+            return true;
+        }
+        const TypeSet& own = inline_types(type);
+        bool const holds_byte_run = std::binary_search(own.begin(), own.end(), ~0U);
+        return holds_byte_run || have_common_type(loan.types, own);
+    }
+
     // The loans of FROM go to TO with the owner that the route names (the
-    // transfer).  A move ends a loan of a part of the moved object.  With RESULT, only
-    // an owner inside the object goes into the value of RESULT at TO.
+    // transfer).  A move ends a loan of a part of the moved object.  A move of an
+    // object of a class that states linear{} leaves it spent, so it also ends a loan
+    // of its own bytes (names_own_bytes): the object itself, as the Ref that to()
+    // gives, and a member or an inline array in it.  A class that only holds a
+    // linear value, and a sum such as an Option, stay usable after the move of the
+    // payload (states_linear of linear.cpp).
+    // With RESULT, only an owner inside the object goes into the value of RESULT at TO.
     void transfer_loans(int from, int to, tree type, tree result = NULL_TREE) {
         if (!state_.is_reachable || from == kNoPlace) {
             return;
@@ -1690,6 +1726,11 @@ private:
         const TypeSet& parts = ended_parts(type);
         tree object = element_class(type);
         unsigned const object_id = object != NULL_TREE ? TYPE_UID(object) : 0U;
+        // The moved value is the object at FROM itself, and not a payload that a
+        // consume moves out of it.
+        tree const moved_class = element_class(places_.type(from));
+        bool const is_linear_object =
+            object != NULL_TREE && CLASS_TYPE_P(object) && moved_class == object && states_linear(object);
         std::map<int, int> moved;
         std::size_t const count = loans_.size();
         for (std::size_t index = 0; index < count; ++index) {
@@ -1703,7 +1744,7 @@ private:
                     names_part =
                         names_part || (target != object_id && std::binary_search(parts.begin(), parts.end(), target));
                 }
-                if (names_part) {
+                if (names_part || (is_linear_object && names_own_bytes(from, loans_[index]))) {
                     end_loan(loan, make_end(EndKind::move, from));
                 }
                 continue;

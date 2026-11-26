@@ -58,6 +58,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/Quarantine.h>
 #include <foundation/SwissTableBuffer.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/BitSet.h>
@@ -627,16 +628,20 @@ struct HoleProbe {
 
     // Empty: a consume of a moved-from Hole ends through fatal().  The body of
     // the death test takes a Ref of the spent Hole by value, so no closure
-    // captures the linear Hole.
+    // captures the linear Hole.  The rule view-escape refuses a use of that
+    // Ref after the move, so the death test reads it in an opt-out region of
+    // the class PROBE.
     static void empty() {
         ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
         Owner source = ::foundation::core::mint_hole<16, 8>(kAlloc);
         auto const spent = ::foundation::core::to(source);
         Owner target{static_cast<Owner&&>(source)};
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a death test consumes a moved-from Hole through a Ref of it")
         expect_dies(
             test, [spent] noexcept { static_cast<Owner&&>(*spent).consume(); },
             ::foundation::core::TextView{
                 "foundation: fatal: a spend of a Hole that holds no storage: the Hole was moved from or spent"});
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         static_cast<Owner&&>(target).consume();
     }
 };
