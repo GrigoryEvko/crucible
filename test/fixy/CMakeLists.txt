@@ -7170,6 +7170,23 @@ fixy_neg_compile_test(neg_os_duplicate_ctx_lacks_block
   "no matching function for call to .mint_duplicate<fixy::net::socket_rights>\\(const \\{anonymous\\}::IoOnlyCtx&"
   "required for the satisfaction of .CtxOwnsAllOf<Ctx, foundation::effects::Effect::IO, foundation::effects::Effect::Block>.")
 
+# The transit of a handle to another thread: the borrows of the sender are
+# stale after the departure, the handle arrives on a second thread, and a
+# borrow that the sender kept fails closed while the second thread closes the
+# handle and opens later sockets on its number.  The fixtures are a handle that
+# a thread body takes by move while its sender keeps a borrow, a transit that
+# the drop door ends, and a departure whose transit the code discards.
+fixy_test(test_os_handle_transit)
+fixy_neg_compile_test(neg_os_handle_send_with_a_kept_borrow
+  "the body captures .moved. \\(field __moved, type fixy::os::Handle<fixy::os::kind::Socket<fixy::net::socket_kind::TcpStream>"
+  "The value moves to another thread, and its type is not Sendable")
+fixy_neg_compile_test(neg_os_handle_transit_dropped
+  "use of deleted function"
+  "the drop door ends no class that owes a consume at its end")
+fixy_neg_compile_test(neg_os_handle_departure_discarded
+  "ignoring return value of .fixy::os::HandleInTransit<"
+  "declared with attribute .nodiscard.")
+
 # The fixtures, each named for what it refuses.  Every second
 # regex is a string the compiler emits and the fixture source does not:
 # the anonymous-namespace prefix on the context type, the libstdc++
