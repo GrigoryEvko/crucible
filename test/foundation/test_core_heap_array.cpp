@@ -239,6 +239,10 @@ void test_order() {
     HeapArray<double> const positive_zero = mint_heap_array(alloc, 2, 0.0);
     CRUCIBLE_FATAL_INVARIANT(negative_zero < positive_zero);
     CRUCIBLE_FATAL_INVARIANT(!(negative_zero == positive_zero));
+    // The canonical NaN equals itself, by the float rule of equal.
+    HeapArray<double> const first_nan = mint_heap_array(alloc, 2, ::foundation::core::quiet_nan_of<double>);
+    HeapArray<double> const second_nan = mint_heap_array(alloc, 2, ::foundation::core::quiet_nan_of<double>);
+    CRUCIBLE_FATAL_INVARIANT(first_nan == second_nan);
 }
 
 // A count whose View would be longer than the largest View ends the process

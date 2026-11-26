@@ -62,6 +62,15 @@ static_assert(!b_default.satisfies(BitsBudgetBound{::foundation::core::max_of<st
               "a value that nothing measured must not pass a finite gate");
 static_assert(B::unbounded(11).is_unbounded() && B::unbounded(11).peek() == 11);
 
+// The float rule of equal, the pin of the mark equal_parts: the == of a
+// Budgeted tells +0 from -0, and the canonical NaN equals itself.
+static_assert(Budgeted<double>::unbounded(0.0) != Budgeted<double>::unbounded(-0.0));
+static_assert(Budgeted<double>::unbounded(::foundation::core::quiet_nan_of<double>)
+              == Budgeted<double>::unbounded(::foundation::core::quiet_nan_of<double>));
+// The == of a Budgeted compares the grade with ==, so the grade holds no float
+// that its == compares by IEEE 754.
+static_assert(::foundation::core::Equatable<B::budget_t> && !std::is_floating_point_v<B::budget_t>);
+
 struct Lookalike {
     using value_type = int;
     using budget_t = int;

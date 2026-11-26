@@ -13,8 +13,9 @@
 //                     the parts, in declaration order
 //   derive_protocol   the annotation of a class that takes the operations of
 //                     the family from its parts
-//   equal_parts       the annotation of a class whose own == compares each of
-//                     its parts with equal, such as Option and FixedArray
+//   equal_parts       the annotation of a class of the base whose own ==
+//                     compares each of its parts with equal, such as Option
+//                     and FixedArray
 //   ieee_equality     the annotation of a class whose own == compares a float
 //                     with the == of IEEE 754
 //   local_part        the annotation of a member whose value is local to one
@@ -70,8 +71,13 @@
 //   base refuse it.  A class with derive_protocol and no own == compares its
 //   parts by the float rule.  The mark ieee_equality keeps an own == and
 //   makes the class a PartialEquatable type only.  The walk of the parts
-//   stops at a class with the mark equal_parts, whose own == compares each
-//   part with equal.
+//   stops at a class of the base with the mark equal_parts, whose own ==
+//   compares each part with equal.  The walk trusts the mark only in the
+//   base, as the walks of foundation/core/TypeParts.h trust refers_deep{}.
+//   For each such class, a check file or a test pins that its == tells +0
+//   from -0 and that the canonical NaN equals itself.
+//   The walk reads the parts of a class outside the base with the mark, as
+//   the parts of a class with no mark.
 //
 // Marks of a member
 //   equal and order read each part, a local part and a pad part too.  hash,
@@ -84,6 +90,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/core/Number.h>
+#include <foundation/reflect/Members.h>
 
 #include <compare>
 #include <concepts>
@@ -108,7 +115,9 @@ struct pad_part final {};
 // The annotation of a class whose own == compares each of its parts with
 // equal, so a float part compares by the float rule: Option, Result, OneOf,
 // Record, FixedArray, HeapArray, FixedList and the wrappers of fixy that
-// compare their value with equal.  Its == asks for Equatable parts.
+// compare their value with equal.  Its == asks for Equatable parts.  The
+// walk of the float rule trusts the mark only on a class of the base
+// (is_class_of_the_base_ of foundation/reflect/Members.h).
 struct equal_parts final {};
 
 // The annotation of a class whose own == compares a float or a double with
@@ -203,9 +212,11 @@ enum class CompareKind : std::uint8_t {
 // True when an own == of a class that holds the type compares a float by
 // the == of IEEE 754: the type is a floating type (float, double, long
 // double or an extended type such as std::float16_t), or it holds one by
-// value at a depth of its parts.  The walk stops at a class with the mark
-// equal_parts, whose == compares its parts by the float rule, and it reads
-// a class with the mark ieee_equality as such a compare.  A union is no
+// value at a depth of its parts.  The walk stops at a class of the base with
+// the mark equal_parts, whose == compares its parts by the float rule, and it
+// reads a class with the mark ieee_equality as such a compare.  A class
+// outside the base can state equal_parts with an == that compares a float by
+// IEEE 754, so the walk reads its parts as if it had no mark.  A union is no
 // walked part.  A class cannot hold itself by value, so the walk ends.  The
 // walk reads the list of parts of each class one time, so it is linear in
 // the number of parts that it reaches.
@@ -214,7 +225,7 @@ enum class CompareKind : std::uint8_t {
     if (std::meta::is_floating_point_type(type)) return true;
     if (std::meta::is_array_type(type)) return compares_float_by_ieee_at(std::meta::remove_all_extents(type));
     if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return false;
-    if (carries_mark_at(type, ^^equal_parts)) return false;
+    if (carries_mark_at(type, ^^equal_parts) && ::foundation::reflect::is_class_of_the_base_(type)) return false;
     if (carries_mark_at(type, ^^ieee_equality)) return true;
     auto const bases = std::meta::bases_of(type, std::meta::access_context::unchecked());
     for (std::size_t index = 0; index < bases.size(); ++index) {

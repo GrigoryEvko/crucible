@@ -61,6 +61,15 @@ static_assert(v_genesis.generation() == GenerationLattice::bottom());
 static_assert(!v_genesis.is_at_least(EpochBound{1}, GenerationBound{0}));
 static_assert(v_genesis.is_at_least(EpochBound{0}, GenerationBound{0}));
 
+// The float rule of equal, the pin of the mark equal_parts: the == of an
+// EpochVersioned tells +0 from -0, and the canonical NaN equals itself.
+static_assert(EpochVersioned<double>::at_genesis(0.0) != EpochVersioned<double>::at_genesis(-0.0));
+static_assert(EpochVersioned<double>::at_genesis(::foundation::core::quiet_nan_of<double>)
+              == EpochVersioned<double>::at_genesis(::foundation::core::quiet_nan_of<double>));
+// The == of an EpochVersioned compares the version with ==, so the version
+// holds no float that its == compares by IEEE 754.
+static_assert(::foundation::core::Equatable<EV::version_t> && !std::is_floating_point_v<EV::version_t>);
+
 // A payload whose equality comes from its parts compares by equal of the
 // Protocol family: a leaf, or a class with the annotation derive_protocol.
 // A payload whose operator== is hand-written is refused, because that

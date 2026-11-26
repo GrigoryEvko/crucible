@@ -4,6 +4,10 @@
 
 #include <foundation/Quarantine.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/List.h>
+#include <foundation/core/OneOf.h>
+#include <foundation/core/Record.h>
 
 #include <compare>
 #include <cstdint>
@@ -131,6 +135,21 @@ struct HoldsFloatLanes {
     friend constexpr bool operator==(HoldsFloatLanes const&, HoldsFloatLanes const&) noexcept = default;
 };
 
+// A class of the base with the mark equal_parts and its own == over a double.
+// The walk trusts the mark in the base, so the class is Equatable.
+// test_core_protocol and a fixture hold the same mark outside the base.
+struct[[= equal_parts{}]] StatesEqualParts {
+    double value = 0.0;
+    friend constexpr bool operator==(StatesEqualParts const& left, StatesEqualParts const& right) noexcept {
+        return equal(left.value, right.value);
+    }
+};
+
+// The error of a Result in the pins of the float rule.
+enum class PinFault : std::uint8_t {
+    lost,
+};
+
 // A class whose == can throw.
 struct ThrowingEqual {
     int value = 0;
@@ -199,6 +218,37 @@ static_assert(std::is_lt(order(-infinity_of<float>, -1.0f)) && std::is_lt(order(
 static_assert(std::is_lt(order(1.0, 2.0)) && std::is_lt(order(-2.0, -1.0))
               && std::is_lt(order(2.0, infinity_of<double>)));
 static_assert(std::is_lt(order(min_subnormal_of<double>, min_normal_of<double>)));
+
+// The mark equal_parts on a class of the base: the walk stops at it, and its
+// == compares the double by the float rule.
+static_assert(Equatable<StatesEqualParts>);
+static_assert(StatesEqualParts{0.0} != StatesEqualParts{-0.0});
+static_assert(StatesEqualParts{quiet_nan_of<double>} == StatesEqualParts{quiet_nan_of<double>});
+
+// The pins of the float rule for each class of foundation with the mark
+// equal_parts: the == of the class tells +0 from -0, and the canonical NaN
+// equals itself.  The walk trusts the mark on these classes because of the
+// pins.  HeapArray needs an allocator, so test_core_heap_array holds its pin.
+// The check files of Tagged, Budgeted and EpochVersioned hold the pins of fixy.
+static_assert(Record<int, double>{1, 0.0} != Record<int, double>{1, -0.0});
+static_assert(Record<int, double>{1, quiet_nan_of<double>} == Record<int, double>{1, quiet_nan_of<double>});
+static_assert(Option<double>::some(0.0) != Option<double>::some(-0.0));
+static_assert(Option<double>::some(quiet_nan_of<double>) == Option<double>::some(quiet_nan_of<double>));
+static_assert(Result<double, PinFault>{0.0} != Result<double, PinFault>{-0.0});
+static_assert(Result<double, PinFault>{quiet_nan_of<double>} == Result<double, PinFault>{quiet_nan_of<double>});
+static_assert(OneOf<double, int>{0.0} != OneOf<double, int>{-0.0});
+static_assert(OneOf<double, int>{quiet_nan_of<double>} == OneOf<double, int>{quiet_nan_of<double>});
+static_assert(FixedArray<double, 2>{1.0, 0.0} != FixedArray<double, 2>{1.0, -0.0});
+static_assert(FixedArray<double, 2>{1.0, quiet_nan_of<double>} == FixedArray<double, 2>{1.0, quiet_nan_of<double>});
+
+// A list of one double.
+[[nodiscard]] consteval FixedList<double, 2> list_of_one(double value) {
+    FixedList<double, 2> list{};
+    static_cast<void>(list.append(value).expect("the list has room"));
+    return list;
+}
+static_assert(list_of_one(0.0) != list_of_one(-0.0));
+static_assert(list_of_one(quiet_nan_of<double>) == list_of_one(quiet_nan_of<double>));
 
 // The walk reads the base first, then each member in declaration order, the
 // private members, the array, the local part and the pad part too.

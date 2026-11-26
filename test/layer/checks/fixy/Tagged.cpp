@@ -36,6 +36,12 @@ static_assert(IsTagged<T_int_user>);
 static_assert(IsTagged<T_int_db const&>);
 static_assert(!IsTagged<int>);
 
+// The float rule of equal, the pin of the mark equal_parts: the == of a
+// Tagged tells +0 from -0, and the canonical NaN equals itself.
+static_assert(mint_tagged<tags::source::FromUser>(0.0) != mint_tagged<tags::source::FromUser>(-0.0));
+static_assert(mint_tagged<tags::source::FromUser>(::foundation::core::quiet_nan_of<double>)
+              == mint_tagged<tags::source::FromUser>(::foundation::core::quiet_nan_of<double>));
+
 }  // namespace detail::tagged_self_test
 
 // The sentinel pair, rather than a production pair, is what makes the

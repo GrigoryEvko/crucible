@@ -725,10 +725,30 @@ void test_format_names_each_part() {
     CRUCIBLE_FATAL_INVARIANT(format(short_out, sample).is_err());
 }
 
+// The mark equal_parts outside the base.  The walk trusts the mark only on a
+// class of the base, so it reads the parts of these classes as the parts of
+// a class with no mark.  A double part makes the class no Equatable type.  A
+// class whose parts hold no float, or hold a float in a FixedArray, stays
+// Equatable.
+struct[[= ::foundation::core::equal_parts{}]] StatesEqualPartsOverDouble {
+    double value = 0.0;
+    friend constexpr bool operator==(StatesEqualPartsOverDouble const&,
+                                     StatesEqualPartsOverDouble const&) noexcept = default;
+};
+
+struct[[= ::foundation::core::equal_parts{}]] StatesEqualPartsOverLanes {
+    std::uint32_t word = 0;
+    FixedArray<double, 2> lanes{};
+    friend constexpr bool operator==(StatesEqualPartsOverLanes const&,
+                                     StatesEqualPartsOverLanes const&) noexcept = default;
+};
+
 // The float rule over the whole walk: +0 and -0 differ, a NaN with one set
 // of bits equals itself, and the hash and the image tell the two zeros
 // apart.
 void test_float_rule() {
+    static_assert(!::foundation::core::Equatable<StatesEqualPartsOverDouble>);
+    static_assert(::foundation::core::Equatable<StatesEqualPartsOverLanes>);
     Sample positive{};
     Sample negative{};
     negative.scale = -0.0;
