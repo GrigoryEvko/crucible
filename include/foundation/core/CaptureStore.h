@@ -45,8 +45,10 @@
 //       const, and read_only then.  This holds in each region, also behind a
 //       const pointer and in a read_only object.  A pointer is a borrow slot
 //       only in the writable region
-//     * a borrow names its target: the first type argument of a View or a
-//       Ref.  A class of the base that states refers_deep{}, such as a Link,
+//     * a borrow names its target: borrow_target of its parts
+//       (foundation/core/TypeParts.h), the type that its statement names or
+//       else its first type argument, such as the T of a View<T> or a
+//       Ref<T, Brand>.  A class of the base that states refers_deep{}, such as a Link,
 //       gives only const access to its target when it is const, so its target
 //       is read_only in a read_only object
 //     * a class whose state the walk cannot read is a borrow slot in each
@@ -340,9 +342,8 @@ struct SlotPlan {
 // parent, ends with the visited list and asks no memo in the middle of its own
 // walk.  A plan that reads each slot puts the target of each one on the list
 // of targets and goes on into the target: the type that a pointer names, the
-// first type argument of a borrow, and a null type, which is erased, for a
-// borrow with no type argument and for a class whose state the walk cannot
-// read.
+// target of a borrow (borrow_target), and a null type, which is erased, for a
+// borrow with no target and for a class whose state the walk cannot read.
 [[nodiscard]] consteval bool drain_slots_(StoreWalk& walk, SlotPlan const& plan,
                                           ::foundation::reflect::TypeNodeList& targets) {
     constexpr StoreRegion read_only = StoreRegion::read_only;
@@ -400,12 +401,12 @@ struct SlotPlan {
             if (region == writable && !holds_no_epoch_borrow) {
                 if (plan.read == SlotRead::first) return true;
                 has_slot = true;
-                targets.push_back(::foundation::reflect::TypeNode{parts.first_argument});
+                targets.push_back(::foundation::reflect::TypeNode{parts.borrow_target});
             }
             bool const gives_const = region == read_only && parts.gives_const_access;
-            bool const is_read = gives_const || parts.is_first_argument_const;
-            if (parts.first_argument != std::meta::info{}) {
-                walk.push(indirect_node_(parts.first_argument, is_read ? read_only : writable));
+            bool const is_read = gives_const || parts.is_borrow_target_const;
+            if (parts.borrow_target != std::meta::info{}) {
+                walk.push(indirect_node_(parts.borrow_target, is_read ? read_only : writable));
             }
             continue;
         }
@@ -564,8 +565,9 @@ consteval void push_given_(StoreWalk& walk, ::foundation::reflect::TypeNodeList&
 // type gives (the check of synchronized_by_proof).  A reference gives its
 // object, a pointer gives the object that it names, and each part of such an
 // object and each object behind a borrow of it are storage of the caller too.
-// A value gives each object behind a borrow in it.  A borrow of the base names
-// its target with its first type argument, and its pointers too.  A class of
+// A value gives each object behind a borrow in it.  A borrow names its target
+// (borrow_target_of of foundation/Transfer.h), each type argument, and its
+// pointers too.  A class of
 // the base that states refers_static{} names static storage with its pointers.
 // A probe type and a class whose parts the walk cannot read give an erased
 // target in each region.  Complexity: linear in the parts that the parameter
@@ -607,6 +609,10 @@ consteval void push_given_(StoreWalk& walk, ::foundation::reflect::TypeNodeList&
         for (refl::TypeNode const& argument : refl::argument_components_of(refl::TypeNode{bare, true})) {
             if (argument.is_value_argument) continue;
             push_given_(walk, given, argument.type, is_borrow ? writable : node.region);
+        }
+        if (is_borrow) {
+            tr::detail::BorrowTarget const target = tr::detail::borrow_target_of(bare);
+            if (target.is_found) push_given_(walk, given, target.node.type, writable);
         }
         for (refl::TypeNode const& part : refl::member_components_of(refl::TypeNode{bare, true})) {
             if (is_static && std::meta::is_pointer_type(part.type)) continue;

@@ -111,7 +111,7 @@ class BindingKey final {
 // The constructor takes the key of the channel, BindingKey<Channel>, which
 // only the channel builds.
 template <typename Channel>
-class[[= ::foundation::transfer::refers{}]] ChannelBinding {
+class[[= ::foundation::transfer::refers{^^Channel}]] ChannelBinding {
 public:
     using channel_type = Channel;
 

@@ -681,7 +681,7 @@ public:
 // build one.
 template <class Const>
     requires PrefixElement<Const>
-class [[nodiscard]][[= ::foundation::transfer::refers{}]] SegmentPrefix final {
+class [[nodiscard]][[= ::foundation::transfer::refers{^^Const}]] SegmentPrefix final {
     using T = std::remove_const_t<Const>;
     using State = detail::owner::SegmentListState<T>;
 

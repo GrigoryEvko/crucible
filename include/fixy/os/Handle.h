@@ -468,7 +468,7 @@ struct HandleDoor final : ::foundation::NoObject<HandleDoor> {
 
 template <class Kind, RightSet Rights>
     requires HandleKind<Kind>
-class [[nodiscard]][[= ::foundation::transfer::refers{}]][[= ::foundation::transfer::refers_by_number{}]]
+class [[nodiscard]][[= ::foundation::transfer::refers{^^Kind}]][[= ::foundation::transfer::refers_by_number{}]]
                    [[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]]
     HandleRef final {
     // The number of the descriptor of the Handle and its generation, or the

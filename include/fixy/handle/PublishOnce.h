@@ -106,7 +106,7 @@ concept PublishesInto = std::is_convertible_v<Target*, T*>;
 // the type names no owner, so no product code takes this slot.  Product code
 // takes BrandedPublishOnce below.
 template <typename T>
-class CRUCIBLE_OWNER[[= ::foundation::transfer::refers{}]] PublishOnce {
+class CRUCIBLE_OWNER[[= ::foundation::transfer::refers{^^T}]] PublishOnce {
     static_assert(PublishOncePointee<T>, "PublishOnce<T> hands off a T*, so T is the pointee.  PublishOnce<Foo*> "
                                          "publishes the address of a pointer variable, not the handle — write "
                                          "PublishOnce<Foo>.  A reference type has no pointer to form.");

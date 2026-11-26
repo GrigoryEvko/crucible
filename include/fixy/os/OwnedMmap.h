@@ -636,7 +636,7 @@ namespace detail {
 //   view() and view_at() of a mapping of share::Shared give it.
 template <typename T, std::size_t Extent = ::foundation::core::dynamic_extent>
     requires SharedElement<std::remove_const_t<T>>
-class [[nodiscard]][[= ::foundation::transfer::refers{}]] SharedView final {
+class [[nodiscard]][[= ::foundation::transfer::refers{^^T}]] SharedView final {
     using Value = std::remove_const_t<T>;
     static constexpr std::size_t kWords = (sizeof(Value) + sizeof(std::uint64_t) - 1) / sizeof(std::uint64_t);
     using Words = ::foundation::core::FixedArray<std::uint64_t, kWords>;

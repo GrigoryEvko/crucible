@@ -316,4 +316,18 @@ static_assert(core::detail::type_parts_v<OwnerNamedOutside<int, OutsideFamily>>.
 static_assert(!core::detail::type_parts_v<AddressOutside<void*>>.states_stated_address);
 static_assert(!core::detail::is_stated_address_(core::detail::type_parts_v<AddressOutside<void*>>));
 
+// The target of a borrow is the type that its statement names, or else its
+// first type argument (borrow_target_of of foundation/Transfer.h), in each
+// class: a View of the base, and a class outside the base whose first type
+// argument is const and whose named target is not.
+template <class First, class Target>
+struct[[= transfer::refers{^^Target}]] NamedOutside {
+    core::View<Target> targets{};
+};
+static_assert(core::detail::type_parts_v<core::View<int const>>.borrow_target == ^^int);
+static_assert(core::detail::type_parts_v<core::View<int const>>.is_borrow_target_const);
+static_assert(core::detail::type_parts_v<NamedOutside<int const, long>>.borrow_target == ^^long);
+static_assert(!core::detail::type_parts_v<NamedOutside<int const, long>>.is_borrow_target_const);
+static_assert(core::detail::type_parts_v<OwnerOutside>.borrow_target == std::meta::info{});
+
 }  // namespace type_parts_outside_checks

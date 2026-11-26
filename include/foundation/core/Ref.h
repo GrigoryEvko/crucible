@@ -440,7 +440,7 @@ void to(T&& object) = delete("a Ref of a temporary dangles at the end of the ful
 // reference to T does (foundation/Transfer.h).  Its brand names the owner of
 // its target (names_owner_second of foundation/core/TypeParts.h).
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
-class[[= ::foundation::transfer::refers{}]][[= detail::names_owner_second{}]] Ref {
+class[[= ::foundation::transfer::refers{^^T}]][[= detail::names_owner_second{}]] Ref {
     static_assert(!detail::is_loan_key_type_(^^T),
                   "a Ref of a LoanKey would keep a borrow of the key past the frame that lent it: borrow the key "
                   "with LoanKey<B>& for the call (THE DISPATCH BRAND of foundation/core/Frame.h)");

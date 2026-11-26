@@ -125,7 +125,7 @@ namespace detail {
 // writes the pointer, from a run of its own brand.  So the class names the
 // owner (names_owner_second of foundation/core/TypeParts.h).
 template <class T, class Brand, std::size_t I>
-class[[= ::foundation::transfer::refers{}]][[= names_owner_second{}]] RunFirst_ {
+class[[= ::foundation::transfer::refers{^^T}]][[= names_owner_second{}]] RunFirst_ {
     template <UnsignedInteger Count, class TableBrand, class... Runs>
         requires RunsOfSet<Runs...>
     friend class RunTable_;

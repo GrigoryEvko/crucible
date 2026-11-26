@@ -363,6 +363,28 @@ struct[[= transfer::refers_deep{}]] OutsideDeep {
 };
 static_assert(is_stash_refused<OutsideDeep<core::Option<core::View<int>>> const>());
 
+// The walk reads the target of a borrow that its statement names
+// (borrow_target of foundation/core/TypeParts.h).  A borrow by value whose
+// first type argument is const and whose named target holds a writable View
+// reaches that View, and a borrow whose named target is const does not.
+struct ViewHolder {
+    core::Option<core::View<int>> kept{};
+};
+template <class First, class Target>
+struct[[= transfer::refers{^^Target}]] NamedTarget {
+    core::View<Target> targets{};
+};
+template <class Borrow>
+struct CapturesBorrow {
+    Borrow borrow;
+};
+template <class Borrow>
+consteval bool is_borrow_refused() {
+    return core::detail::stores_borrow_outside_(^^CapturesBorrow<Borrow>, core::detail::BodyForm::unnamed);
+}
+static_assert(is_borrow_refused<NamedTarget<ViewHolder const, ViewHolder>>());
+static_assert(!is_borrow_refused<NamedTarget<ViewHolder, ViewHolder const>>());
+
 // The test of the namespace walks up through each enclosing class and
 // function, and an unnamed namespace and the global namespace are outside the
 // base.

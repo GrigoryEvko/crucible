@@ -36,16 +36,18 @@
 //        threads can write an object of T at the same time (the shared
 //        write): the thread that gives the reference can still write the
 //        object, and no type tells that only one of the two threads writes.
-//        A class that states refers{}, such as a Ref, is a reference to its
-//        first type argument, and this rule applies to it.  A class that
-//        states refers_unique{}, such as a ViewMut, is the one writer of the
-//        object of its first type argument.  It is Sendable when that type is
-//        Sendable.  It is Shareable only when two threads can write that type,
-//        because a reference to const of it can still write the object.  A
-//        class that states refers_deep{}, such as a Link, refers to the object
-//        of its target as a reference does.  The target is the type that the
-//        statement names, or else the first type argument.  A const object of
-//        the class gives only const access to the object.  It is Shareable
+//        The target of a class that states refers{}, refers_unique{} or
+//        refers_deep{} is the type that the statement names, or else the
+//        first type argument (borrow_target_of).  A class that states
+//        refers{}, such as a Ref, is a reference to its target, and this rule
+//        applies to it.  A class that states refers_unique{}, such as a
+//        ViewMut, is the one writer of the object of its target.  It is
+//        Sendable when that type is Sendable.  It is Shareable only when two
+//        threads can write that type, because a reference to const of it can
+//        still write the object.  A class that states refers_deep{}, such as a
+//        Link, refers to the object of its target as a reference does.  A
+//        const object of the class gives only const access to the object.  It
+//        is Shareable
 //        when the target is Shareable.  A copy of an object that is not const
 //        refers to the same object, so for each other property the class is a
 //        reference to the object.  A class that states refers_deep{} and
@@ -151,15 +153,16 @@
 //     plugin counts the positions the same way.  A position that names no
 //     type argument stops the build, and so do two statements on one class.
 //     refers{} states that the class
-//     refers to the object of its first type argument, as a reference does.
+//     refers to the object of its target, as a reference does.
 //     refers_unique{} states that the class refers to that object as its one
 //     writer, as a ViewMut does.  refers_deep{} states that the class refers
 //     to that object, and that a const object of the class gives only const
-//     access to it and does not copy, as a Link does.  refers_deep{^^T}
-//     names the target T in place of the first type argument.  A const
-//     object of a class whose statement names a const target can copy, as a
-//     Link of a const target does.  Two statements on one class, and a named
-//     target that is no type, stop the build.
+//     access to it and does not copy, as a Link does.  A statement names the
+//     target T as refers{^^T}, refers_unique{^^T} or refers_deep{^^T}.  A
+//     statement that names no target takes the first type argument.  A const
+//     object of a class whose statement of refers_deep names a const target
+//     can copy, as a Link of a const target does.  Two statements of a borrow
+//     on one class, and a named target that is no type, stop the build.
 //     refers_static{} states that each pointer that the class holds as its
 //     own data member names an object of static storage, as the pointer of a
 //     StaticText does.  No frame holds such an object, so the pointer is no
@@ -413,10 +416,15 @@ struct not_shareable final {};
 template <std::size_t... Positions>
     requires((Positions < 64) && ...)
 struct by_arguments final {};
-struct refers final {};
-struct refers_unique final {};
-// The target of the borrow, such as ^^T of a Link<T, Brand>, or a null
-// reflection when the statement names no target (the annotations).
+// The three statements of a borrow.  target is the target of the borrow, such
+// as ^^T of a Ref<T, Brand>, or a null reflection when the statement names no
+// target (the annotations).  borrow_target_of below reads it.
+struct refers final {
+    std::meta::info target{};
+};
+struct refers_unique final {
+    std::meta::info target{};
+};
 struct refers_deep final {
     std::meta::info target{};
 };
@@ -647,21 +655,54 @@ private:
 // Each function below has no constant definition.  A call to one stops the
 // constant evaluation, and the diagnostic names the fault of a statement of
 // refers_deep.
-void a_class_has_two_statements_of_refers_deep() noexcept;
-void a_statement_of_refers_deep_names_no_type() noexcept;
+void a_class_has_two_statements_of_a_borrow() noexcept;
+void a_statement_of_a_borrow_names_no_type() noexcept;
 
-// The target that the statement of refers_deep of the class names, or a null
-// reflection when the statement names none.  Two statements on one class, and
-// a named target that is no type, stop the build.  Complexity: linear in the
-// annotations of the class.
-[[nodiscard]] consteval std::meta::info stated_deep_target(std::meta::info type) {
+// The target of a borrow (rule 1): the node of the target, and whether the
+// statement names it.  is_found is false for a class that states no borrow,
+// and for a borrow that names no target and takes no type argument.
+struct BorrowTarget {
+    ::foundation::reflect::TypeNode node{};
+    bool is_stated = false;
+    bool is_found = false;
+};
+
+// The target that a statement of the mark names on the class, or a null
+// reflection.  count counts the statements of each borrow mark.
+template <class Mark>
+[[nodiscard]] consteval std::meta::info named_borrow_target(std::meta::info type, std::size_t& count) {
     const ::foundation::reflect::TypedAnnotations statements =
-        ::foundation::reflect::typed_annotations_of(type, ^^refers_deep);
+        ::foundation::reflect::typed_annotations_of(type, ^^Mark);
+    count += statements.count;
     if (statements.count == 0) return std::meta::info{};
-    if (statements.count > 1) a_class_has_two_statements_of_refers_deep();
-    const std::meta::info target = std::meta::extract<refers_deep>(statements.first).target;
-    if (target != std::meta::info{} && !std::meta::is_type(target)) a_statement_of_refers_deep_names_no_type();
-    return target;
+    return std::meta::extract<Mark>(statements.first).target;
+}
+
+// The target of a borrow of the class that states refers{}, refers_unique{}
+// or refers_deep{}: the type that the statement names, or else the first type
+// argument.  It is the one reader of the target of a borrow: rule 1, the
+// check of synchronized{}, TypeParts of foundation/core/TypeParts.h and the
+// walks of an array of foundation/core/Array.h read the target here.  Two
+// statements of a borrow on one class, and a named target that is no type,
+// stop the build.  Complexity: linear in the annotations and the template
+// arguments of the class.
+[[nodiscard]] consteval BorrowTarget borrow_target_of(std::meta::info type) {
+    namespace refl = ::foundation::reflect;
+    std::size_t count = 0;
+    std::meta::info target = named_borrow_target<refers>(type, count);
+    const std::meta::info unique = named_borrow_target<refers_unique>(type, count);
+    const std::meta::info deep = named_borrow_target<refers_deep>(type, count);
+    if (count == 0) return BorrowTarget{};
+    if (count > 1) a_class_has_two_statements_of_a_borrow();
+    if (target == std::meta::info{}) target = unique != std::meta::info{} ? unique : deep;
+    if (target != std::meta::info{}) {
+        if (!std::meta::is_type(target)) a_statement_of_a_borrow_names_no_type();
+        return BorrowTarget{refl::node_reached_indirectly(target), true, true};
+    }
+    if (!std::meta::has_template_arguments(type)) return BorrowTarget{};
+    const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{type, true});
+    if (arguments.empty() || arguments.begin()->is_value_argument) return BorrowTarget{};
+    return BorrowTarget{*arguments.begin(), false, true};
 }
 
 // The annotations of one complete class.  A walk asks for some of them, and a
@@ -1367,21 +1408,26 @@ struct DoorFinding {
         if (part.was_const) continue;
         if (part.type == owner || can_write_owner(part.type, owner, depth - 1)) return true;
     }
-    // A class that refers to or holds the object of its first type argument
-    // states it, as a Ref, a ChannelBinding and a cell do, and an owner
-    // states the arguments that it owns, as a Box does.  Each other type
+    // A class that refers to an object states it, as a Ref and a
+    // ChannelBinding do, and the target is the one that borrow_target_of
+    // reads.  A cell holds the object of its first type argument, and an
+    // owner states the arguments that it owns, as a Box does.  Each other type
     // argument can be a tag or a brand, which names no object.  The walk
     // follows the owned arguments of each class, also outside the base: the
     // mark only adds a reach.
-    if (!std::meta::has_template_arguments(bare)) return false;
     const StatedMarks marks{bare};
-    for (const refl::TypeNode& owned : owned_argument_nodes(bare, marks.owned())) {
-        if (owned.was_const) continue;
-        if (owned.type == owner || can_write_owner(owned.type, owner, depth - 1)) return true;
+    if (std::meta::has_template_arguments(bare)) {
+        for (const refl::TypeNode& owned : owned_argument_nodes(bare, marks.owned())) {
+            if (owned.was_const) continue;
+            if (owned.type == owner || can_write_owner(owned.type, owner, depth - 1)) return true;
+        }
     }
-    const bool is_first_argument_held =
-        marks.has(^^refers) || marks.has(^^refers_unique) || marks.has(^^refers_deep) || marks.has(^^payload_cell);
-    if (!is_first_argument_held) return false;
+    if (marks.has(^^refers) || marks.has(^^refers_unique) || marks.has(^^refers_deep)) {
+        const BorrowTarget borrowed = borrow_target_of(bare);
+        if (!borrowed.is_found || borrowed.node.was_const) return false;
+        return borrowed.node.type == owner || can_write_owner(borrowed.node.type, owner, depth - 1);
+    }
+    if (!marks.has(^^payload_cell) || !std::meta::has_template_arguments(bare)) return false;
     const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
     if (arguments.empty() || arguments.begin()->is_value_argument || arguments.begin()->was_const) return false;
     return arguments.begin()->type == owner || can_write_owner(arguments.begin()->type, owner, depth - 1);
@@ -1423,18 +1469,21 @@ consteval bool can_write_plain_through(std::meta::info type, std::meta::info own
                                                  : holds_plain_borrow(part.type, owner, depth - 1);
         if (is_plain) return true;
     }
-    if (!std::meta::has_template_arguments(bare)) return false;
     const StatedMarks marks{bare};
-    for (const refl::TypeNode& owned : owned_argument_nodes(bare, marks.owned())) {
-        if (!owned.was_const && holds_plain_borrow(owned.type, owner, depth - 1)) return true;
+    if (std::meta::has_template_arguments(bare)) {
+        for (const refl::TypeNode& owned : owned_argument_nodes(bare, marks.owned())) {
+            if (!owned.was_const && holds_plain_borrow(owned.type, owner, depth - 1)) return true;
+        }
     }
-    const bool is_referred = marks.has(^^refers) || marks.has(^^refers_unique) || marks.has(^^refers_deep);
-    const bool is_owned = marks.has(^^payload_cell);
-    if (!is_referred && !is_owned) return false;
+    if (marks.has(^^refers) || marks.has(^^refers_unique) || marks.has(^^refers_deep)) {
+        const BorrowTarget borrowed = borrow_target_of(bare);
+        if (!borrowed.is_found || borrowed.node.was_const) return false;
+        return can_write_plain_through(borrowed.node.type, owner, depth - 1);
+    }
+    if (!marks.has(^^payload_cell) || !std::meta::has_template_arguments(bare)) return false;
     const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
     if (arguments.empty() || arguments.begin()->is_value_argument || arguments.begin()->was_const) return false;
-    return is_referred ? can_write_plain_through(arguments.begin()->type, owner, depth - 1)
-                       : holds_plain_borrow(arguments.begin()->type, owner, depth - 1);
+    return holds_plain_borrow(arguments.begin()->type, owner, depth - 1);
 }
 
 // True when a borrow that is not const of an object of the type can write a
@@ -1955,24 +2004,24 @@ struct ReferenceAnswer {
         }
         if (marks.has(detail::stating_annotation(goal.property))) continue;
         const bool is_specialization = std::meta::has_template_arguments(bare);
-        // Rule 1, a class that refers to the object of its first argument.
+        // Rule 1, a class that refers to the object of its target, the type
+        // that its statement names or else its first type argument
+        // (borrow_target_of).
         if (marks.has(^^refers)) {
-            if (!is_specialization) return bare;
-            const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
-            if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
-            const detail::ReferenceAnswer answer = detail::answer_reference(*arguments.begin(), goal.property);
+            const detail::BorrowTarget target = detail::borrow_target_of(bare);
+            if (!target.is_found) return bare;
+            const detail::ReferenceAnswer answer = detail::answer_reference(target.node, goal.property);
             if (answer.is_refused) return bare;
             if (answer.has_next) pending.push(answer.next);
             continue;
         }
-        // Rule 1, a class that is the one writer of the object of its first
-        // argument.  A value moves with its target, and a read through a
-        // reference to const of it can still write the target.
+        // Rule 1, a class that is the one writer of the object of its target.
+        // A value moves with its target, and a read through a reference to
+        // const of it can still write the target.
         if (marks.has(^^refers_unique)) {
-            if (!is_specialization) return bare;
-            const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
-            if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
-            const std::meta::info target = arguments.begin()->type;
+            const detail::BorrowTarget borrowed = detail::borrow_target_of(bare);
+            if (!borrowed.is_found) return bare;
+            const std::meta::info target = borrowed.node.type;
             // The target can end before the value (the value that outlives
             // its sender).
             if (goal.property == Property::SendOwned) return bare;
@@ -1991,15 +2040,12 @@ struct ReferenceAnswer {
         // argument.  A copy of a const object would give a writer, so such a
         // class refuses, unless its statement names a const target.
         if (marks.has(^^refers_deep)) {
-            if (!is_specialization) return bare;
-            const std::meta::info stated = detail::stated_deep_target(bare);
-            const bool is_stated = stated != std::meta::info{};
-            const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
-            if (!is_stated && (arguments.empty() || arguments.begin()->is_value_argument)) return bare;
-            const refl::TypeNode target = is_stated ? refl::node_reached_indirectly(stated) : *arguments.begin();
+            const detail::BorrowTarget borrowed = detail::borrow_target_of(bare);
+            if (!borrowed.is_found) return bare;
+            const refl::TypeNode target = borrowed.node;
             const bool copies_from_const =
                 std::meta::is_copy_constructible_type(bare) || std::meta::is_copy_assignable_type(bare);
-            if (copies_from_const && !(is_stated && target.was_const)) return bare;
+            if (copies_from_const && !(borrowed.is_stated && target.was_const)) return bare;
             if (goal.property == Property::Share) {
                 pending.push(detail::Goal{target.type, Property::Share});
                 continue;

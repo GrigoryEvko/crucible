@@ -177,6 +177,13 @@ struct TypeParts {
     std::size_t member_start = 0;
     std::meta::info first_argument{};
     bool is_first_argument_const = false;
+    // The target of a borrow, bare, and whether it is const: the type that
+    // the statement of refers, refers_unique or refers_deep names, or else the
+    // first type argument (borrow_target_of of foundation/Transfer.h).  Null
+    // for a class that states no borrow.  The store check reads the target
+    // here.
+    std::meta::info borrow_target{};
+    bool is_borrow_target_const = false;
     // A loan key, a keyed owner or a token of a side: a class that states
     // loan_key_mark{} (foundation/core/LoanKeyTrait.h).
     bool is_key_marked = false;
@@ -551,8 +558,8 @@ consteval void list_arguments_(TypeParts& parts, PartList<Room>& list, std::meta
     return std::meta::info{};
 }
 
-// Reads the marks of the class that a walk reads: is_borrow and
-// gives_const_access, is_storage_owner and the marks of an owner, the key
+// Reads the marks of the class that a walk reads: is_borrow, borrow_target
+// and gives_const_access, is_storage_owner and the marks of an owner, the key
 // mark, keeps_own_borrows, refers_static, is_share, the statement of
 // synchronized_by_proof, owner_brand and states_stated_address.
 consteval void read_marks_(TypeParts& parts, std::meta::info type) {
@@ -596,6 +603,13 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
             names_owner = true;
         } else if (mark == ^^stated_address) {
             states_address = true;
+        }
+    }
+    if (parts.is_borrow) {
+        tr::detail::BorrowTarget const target = tr::detail::borrow_target_of(type);
+        if (target.is_found) {
+            parts.borrow_target = target.node.type;
+            parts.is_borrow_target_const = target.node.was_const;
         }
     }
     if (!states_owner && !refers_deep && !keeps_own && !refers_static && !names_owner && !states_address) return;

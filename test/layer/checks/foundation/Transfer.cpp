@@ -219,8 +219,50 @@ static_assert(Sendable<CopiesStatedTarget<int const>> && !SendableBeside<CopiesS
 static_assert(!Sendable<CopiesStatedTarget<int>> && !Shareable<CopiesStatedTarget<int>>);
 static_assert(!Sendable<CopiesOtherTarget<int const, int>> && !Shareable<CopiesOtherTarget<int const, int>>);
 static_assert(Sendable<CopiesOtherTarget<int, int const>>);
-static_assert(detail::stated_deep_target(^^CopiesOtherTarget<int const, int>) == ^^int);
-static_assert(detail::stated_deep_target(^^CopiesFromConst<int const>) == std::meta::info{});
+
+// The one reader of the target of a borrow: the type that the statement of
+// refers, refers_unique or refers_deep names, or else the first type argument.
+// A borrow whose first type argument is const and whose named target is not
+// reads as a writer of its target in each rule.
+template <class First, class T>
+struct[[= refers{^^T}]] RefersOther {
+    T& target;
+};
+template <class First, class T>
+struct[[= refers_unique{^^T}]] UniqueOther {
+    T& target;
+};
+static_assert(detail::borrow_target_of(^^CopiesOtherTarget<int const, int>).node.type == ^^int);
+static_assert(detail::borrow_target_of(^^CopiesOtherTarget<int const, int>).is_stated);
+static_assert(!detail::borrow_target_of(^^CopiesFromConst<int const>).is_stated);
+static_assert(detail::borrow_target_of(^^CopiesFromConst<int const>).node.was_const);
+static_assert(!detail::borrow_target_of(^^RefersOther<int const, int>).node.was_const);
+static_assert(detail::borrow_target_of(^^RefersOther<int, int const>).node.was_const);
+static_assert(!detail::borrow_target_of(^^MutableCount).is_found);
+static_assert(!Sendable<RefersOther<int const, int>> && Sendable<RefersOther<int, int const>>);
+static_assert(!Shareable<UniqueOther<int const, int>> && Sendable<UniqueOther<int const, int>>);
+static_assert(Shareable<UniqueOther<int, ::foundation::core::Atomic<int>>>);
+static_assert(!Shareable<UniqueOther<::foundation::core::Atomic<int>, int>>);
+
+// The walks of the check of synchronized{} read the same target: a borrow
+// whose named target is the owner can write the owner, and a borrow whose
+// named target is a plain part that is not const is a plain borrow.  The
+// borrow holds no member that reaches its target, so only the reader of the
+// target gives the answer.
+struct OwnerOfDoors {
+    int count = 0;
+};
+template <class First, class T>
+struct[[= refers{^^T}]] NamesTargetOnly {
+    int count = 0;
+};
+static_assert(detail::can_write_owner(^^NamesTargetOnly<OwnerOfDoors const, OwnerOfDoors>, ^^OwnerOfDoors,
+                                      detail::nested_walk_depth));
+static_assert(!detail::can_write_owner(^^NamesTargetOnly<OwnerOfDoors, OwnerOfDoors const>, ^^OwnerOfDoors,
+                                       detail::nested_walk_depth));
+static_assert(detail::holds_plain_borrow(^^NamesTargetOnly<int const, int>, ^^OwnerOfDoors, detail::nested_walk_depth));
+static_assert(!detail::holds_plain_borrow(^^NamesTargetOnly<int, int const>, ^^OwnerOfDoors,
+                                          detail::nested_walk_depth));
 
 // A class whose parts are Synchronized is a target that two threads can
 // write.  EndpointClaim holds one Atomic of the base.

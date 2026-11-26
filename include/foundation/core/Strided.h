@@ -521,7 +521,7 @@ template <class T, std::size_t Rank, class Brand>
 
 template <class T, std::size_t Rank>
     requires ViewElement<T> && StridedRank<Rank>
-class[[= ::foundation::transfer::refers{}]] StridedView {
+class[[= ::foundation::transfer::refers{^^T}]] StridedView {
     using Lanes = detail::StridedLanes<Rank>;
     using Axis = detail::strided_axis_t<Rank>;
 
@@ -1038,7 +1038,7 @@ template <class Lanes>
 // class does not copy, so no member gives an Option of this class.
 template <class T, std::size_t Rank, ::foundation::brand::IsBrand Brand>
     requires ViewElement<T> && (!std::is_const_v<T>) && StridedRank<Rank>
-class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] StridedViewMut final {
+class [[nodiscard]][[= ::foundation::transfer::refers_unique{^^T}]] StridedViewMut final {
     using Axis = detail::strided_axis_t<Rank>;
 
     // The seal of the view keeps this class from being trivially copyable,

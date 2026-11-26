@@ -79,7 +79,7 @@ public:
 // The class of a Published<T, Brand>, over the const type T const.
 template <class Const, ::foundation::brand::IsFreshBrand Brand>
     requires std::is_const_v<Const>
-class[[= ::foundation::transfer::refers{}]] PublishedObject final {
+class[[= ::foundation::transfer::refers{^^Const}]] PublishedObject final {
 public:
     constexpr PublishedObject(published_key const& /*key*/, ::foundation::core::Ref<Const, Brand> target) noexcept
         : target_{target} {}

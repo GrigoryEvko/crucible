@@ -712,7 +712,7 @@ namespace foundation::core {
 
 template <class T, std::size_t Extent>
     requires ViewElement<T> && ViewExtent<T, Extent>
-class[[= ::foundation::transfer::refers{}]] View {
+class[[= ::foundation::transfer::refers{^^T}]] View {
     static_assert(!detail::is_loan_key_type_(^^T),
                   "a View of LoanKeys would keep a borrow of the keys past the frame that lent them (THE DISPATCH "
                   "BRAND of foundation/core/Frame.h)");
@@ -1324,7 +1324,7 @@ public:
 // a const reference of a ViewMut only when they can write its element.
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent = dynamic_extent>
     requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
-class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] ViewMut final {
+class [[nodiscard]][[= ::foundation::transfer::refers_unique{^^T}]] ViewMut final {
     static_assert(!detail::is_loan_key_type_(^^T),
                   "a ViewMut of LoanKeys would keep a borrow of the keys past the frame that lent them (THE "
                   "DISPATCH BRAND of foundation/core/Frame.h)");

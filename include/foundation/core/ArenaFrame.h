@@ -129,7 +129,7 @@ class ArenaFrameDoor;
 // copy would carry its link into an object of a different arena with no store
 // of a frame.
 template <RefTarget T, ::foundation::brand::IsBrand Family>
-class[[= ::foundation::transfer::refers_deep{}]][[= detail::names_owner_second{}]] FrameLink final {
+class[[= ::foundation::transfer::refers_deep{^^T}]][[= detail::names_owner_second{}]] FrameLink final {
 public:
     constexpr FrameLink() noexcept = default;
     FrameLink(FrameLink const&) = delete("a slot takes a link only through a store of a frame");
@@ -184,7 +184,7 @@ private:
 // A slot of a run of the family: the run, or the empty run.  Its reads are
 // the reads of an ArenaRun, and only a frame fills it, as for FrameLink.
 template <ViewElement T, ::foundation::brand::IsBrand Family>
-class[[= ::foundation::transfer::refers_deep{}]][[= detail::names_owner_second{}]] FrameRunSlot final {
+class[[= ::foundation::transfer::refers_deep{^^T}]][[= detail::names_owner_second{}]] FrameRunSlot final {
 public:
     constexpr FrameRunSlot() noexcept = default;
     FrameRunSlot(FrameRunSlot const&) = delete("a slot takes a run only through a store of a frame");
@@ -292,7 +292,7 @@ template <class Base, class Derived, class Family>
 // One object that a frame made, with the brand of the frame.  It gives the
 // object, and weaken() gives the family Ref (the scope brand).
 template <RefTarget T, ::foundation::brand::IsBrand Family, ::foundation::brand::IsBrand Fresh>
-class[[= ::foundation::transfer::refers{}]] FrameRef final {
+class[[= ::foundation::transfer::refers{^^T}]] FrameRef final {
 public:
     // The FrameRef of a public base of the object, of the same frame
     // (detail::FrameUpcast).  The object and the frame stay the same, so the
@@ -325,7 +325,7 @@ class BrandedFrameRun;
 // a holder of a store, as a FrameRef is.  It has no family Ref, because the
 // run gives no Ref of one element, so the element is no value of a store.
 template <class T, ::foundation::brand::IsBrand Family, ::foundation::brand::IsBrand Fresh>
-class[[= ::foundation::transfer::refers{}]] FrameElement final {
+class[[= ::foundation::transfer::refers{^^T}]] FrameElement final {
 public:
     [[nodiscard]] constexpr T& operator*() const noexcept { return *object_; }
     [[nodiscard]] constexpr T* operator->() const noexcept { return object_; }
@@ -438,7 +438,7 @@ private:
 // scope.
 template <class T, ::foundation::brand::IsBrand Family, ::foundation::brand::IsBrand Fresh,
           ::foundation::brand::IsBrand Brand>
-class[[= ::foundation::transfer::refers_deep{}]] BrandedFrameRun final {
+class[[= ::foundation::transfer::refers_deep{^^T}]] BrandedFrameRun final {
 public:
     // The element at the index, as a holder of a store of the frame.  The
     // index is below the count of the scope, which is the count of the run.

@@ -4582,6 +4582,14 @@ foundation_neg_compile_test(neg_transfer_statement_outside_its_seal
 foundation_neg_compile_test(neg_transfer_deep_copy_names_a_writable_target
   "static assertion failed"
   "deep_target::WritesOtherTarget<const int, int>")
+# The target of a borrow is the type that its statement names, also when the
+# first type argument is const, in the transfer rule and in the store check.
+foundation_neg_compile_test(neg_transfer_borrow_names_a_writable_target
+  "static assertion failed"
+  "borrow_target::WritesNamedTarget<const int, int>")
+foundation_neg_compile_test(neg_core_store_borrow_names_a_writable_target
+  "use of deleted function .void foundation::core::with_bump_arena\\(Marker, ArenaBlockSize, Body&&\\)"
+  "a body of a frame door stores no borrow outside the frame")
 # A binding takes the key of its channel, and only the channel builds the
 # key, so code outside the channel binds nothing.
 foundation_neg_compile_test(neg_channel_binding_with_a_key_from_outside_its_channel
