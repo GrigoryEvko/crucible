@@ -105,8 +105,8 @@
 //       names the other.  That instance identity needs a run-time id, or a
 //       graph type that takes the brand of its own arena.
 //     - The scope brand of with_bump_arena.  The arena lives in the frame of
-//       the door, and the result of the body holds no borrow and names no
-//       brand of the scope.
+//       the door, the result of the body holds no borrow and names no brand
+//       of the scope, and the body stores no borrow outside the scope.
 //   make, array and build_array take the arena by a parameter that
 //   CRUCIBLE_LIFETIMEBOUND marks.  So the rule view-escape refuses a return of a Ref or a run of a
 //   local arena.  erase_brand of foundation/core/Ref.h refuses the scope
@@ -1341,11 +1341,14 @@ concept BumpScopeResult = std::is_void_v<Given> || (HoldsNoBorrow<Given> && !det
 
 // The body of with_bump_arena: it takes the arena of the scope by reference
 // with no throw, it holds no linear value by value, because the door calls it
-// and a call is no consume, and its result leaves the scope.
+// and a call is no consume, and its result leaves the scope.  The arena ends
+// at the end of the scope, so the body stores no borrow outside the scope
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h): a View of a run
+// that a capture keeps would dangle.
 template <class Body, class Brand>
 concept BumpScopeBody =
     std::is_nothrow_invocable_v<Body&&, BumpArena<Brand>&> && ::foundation::linear::HoldsNoLinearValue<Body>
-    && BumpScopeResult<detail::bump_scope_result_t<Body, Brand>, Brand>;
+    && BumpScopeResult<detail::bump_scope_result_t<Body, Brand>, Brand> && StoresNoBorrowOutside<Body>;
 
 // A body whose result does not leave the scope: the refused twin of the door
 // binds to it.
@@ -1381,5 +1384,13 @@ template <class... Refused, class Marker, class Body, ::foundation::brand::IsBra
     requires(sizeof...(Refused) == 0) && AllocationCapability<Marker> && std::is_invocable_v<Body&&, BumpArena<Fresh>&>
              && (!::foundation::linear::HoldsNoLinearValue<Body>)
 void with_bump_arena(Marker allocation, ArenaBlockSize block_size, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A body that can store a borrow outside the scope binds to this overload, so
+// the refusal gives its reason.
+template <class... Refused, class Marker, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && AllocationCapability<Marker>
+             && std::is_nothrow_invocable_v<Body&&, BumpArena<Fresh>&> && ::foundation::linear::HoldsNoLinearValue<Body>
+             && BumpScopeResult<detail::bump_scope_result_t<Body, Fresh>, Fresh> && (!StoresNoBorrowOutside<Body>)
+void with_bump_arena(Marker allocation, ArenaBlockSize block_size, Body&& body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 }  // namespace foundation::core

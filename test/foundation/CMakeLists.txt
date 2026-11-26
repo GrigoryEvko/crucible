@@ -3862,6 +3862,12 @@ foundation_neg_compile_test(neg_core_bump_arena_family_erase
 foundation_neg_compile_test(neg_core_bump_arena_scope_linear_body
   "use of deleted function .void foundation::core::with_bump_arena\\(Marker, ArenaBlockSize, Body&&\\)"
   "the body holds a linear value by value, and the door calls it with no consume")
+# The arena of the scope ends with the scope, so a body that keeps the View of a
+# run in an Option that it captures by reference would give the caller a View
+# of freed bytes.  The store twin refuses it.
+foundation_neg_compile_test(neg_core_bump_arena_scope_keeps_a_view
+  "use of deleted function .void foundation::core::with_bump_arena\\(Marker, ArenaBlockSize, Body&&\\)"
+  "a body of a frame door stores no borrow outside the frame")
 # The field walk refuses a class that hides an address: a Ref, a View, a Box
 # and a class with a private View.
 foundation_neg_compile_test(neg_core_for_each_field_ref

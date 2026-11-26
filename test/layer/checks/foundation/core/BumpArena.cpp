@@ -693,6 +693,18 @@ inline constexpr TextView epoch_shape_names{"EpochShape make array build_array b
 static_assert(closed_surface<EpochShape<EpochOf<Member>, false>>(epoch_shape_names).is_closed());
 static_assert(!closed_surface<EpochShape<EpochOf<Member>, true>>(epoch_shape_names).is_closed());
 
+// The arena of with_bump_arena ends with the scope, so the door refuses a body
+// that can store a borrow outside the scope, such as a body with a reference to
+// an Option of a View, and admits the same body with a reference to a count
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
+template <class Kept>
+struct KeepsByReference final {
+    Kept& kept;
+    void operator()(BumpArena<Family>& /*arena*/) const noexcept {}
+};
+static_assert(!BumpScopeBody<KeepsByReference<Option<View<int const>>>, Family>);
+static_assert(BumpScopeBody<KeepsByReference<std::size_t>, Family>);
+
 }  // namespace detail::bump_arena_checks
 
 }  // namespace foundation::core
