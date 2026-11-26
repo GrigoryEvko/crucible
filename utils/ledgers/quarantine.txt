@@ -489,7 +489,7 @@ test/fixy/ | std-entity | 1939 | - | -
 test/fixy/ | std-object | 616 | - | -
 test/fixy/neg/ | c-array-object | 25 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
-test/fixy/neg/ | detail-use | 347 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor, the context witness or the state of an owner core in the witness of the core
+test/fixy/neg/ | detail-use | 348 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor, the context witness or the state of an owner core in the witness of the core
 test/fixy/neg/ | door-use | 1 | - | the fixture names the entry of the dispatch door with no key of the frame doors, and its probe shows that the call does not compile
 test/fixy/neg/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/fixy/neg/ | lifetime-start | 2 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it

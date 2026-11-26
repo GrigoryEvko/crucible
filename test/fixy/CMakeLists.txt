@@ -7819,6 +7819,11 @@ fixy_neg_compile_test(neg_dispatch_entry_with_no_key
   "no matching function for call to .run_dispatch_body_<0>\\(.*lambda"
   "foundation::core::detail::run_dispatch_body_\\(const FrameKey&, Body, Args&& \\.\\.\\.\\)"
   "candidate expects at least 2 arguments, 1 provided")
+# A private member function of the dispatch window holds the flag of a
+# thread, so no body writes it and closes the window of its door.
+fixy_neg_compile_test(neg_dispatch_window_flag_private
+  "static bool& fixy::dispatch::detail::DispatchWindow_::flag_of_thread_\\(\\). is private within this context"
+  "neg_dispatch_window_flag_private\\.cpp:[0-9]+:[0-9]+: error")
 fixy_neg_compile_test(neg_thread_run_joined_one_body_two_times
   "neg_thread_run_joined_one_body_two_times\\.cpp:[0-9]+:[0-9]+: error: use of deleted function .void fixy::thread::run_joined"
   "run_joined takes each body by move, so that two bodies are two objects")

@@ -49,7 +49,9 @@
 //     outer window opens.
 //
 // Flag
-//     The flag is one bool of the static TLS of each thread, with the
+//     The flag is one bool of the static TLS of each thread.  It is the static
+//     local of a private member function of the window, so only the
+//     constructor and the destructor of a window write it.  It has the
 //     initial-exec model, so an open and a close cost one load and two stores
 //     relative to the thread pointer and no call.  CRUCIBLE_PROCESS_WIDE makes
 //     one flag of each thread for the process, also when two shared libraries
@@ -67,31 +69,37 @@ namespace fixy::dispatch {
 
 namespace detail {
 
-// True while the calling thread is inside a dispatch window (the flag).  Only
-// DispatchWindow_ changes it.
-CRUCIBLE_PROCESS_WIDE [[gnu::tls_model("initial-exec")]] inline constinit thread_local bool is_in_dispatch_window_ =
-    false;
-
 // Ends the process for a dispatch that opens inside a dispatch window of the
 // same thread (the window).
 [[noreturn]] CRUCIBLE_COLD void refuse_nested_dispatch_() noexcept;
 
 // The window of one dispatch on the calling thread: the constructor opens it,
 // and the destructor closes it.  It has no copy and no move, so it stays in
-// the frame of the door.
+// the frame of the door.  A private member function holds the flag as its
+// static local, so only a window changes it, and no body closes the window of
+// its door.
 class [[nodiscard]] DispatchWindow_ final {
 public:
     DispatchWindow_() noexcept {
+        bool& is_in_dispatch_window = flag_of_thread_();
         // The check stands for fact 2 of foundation/Brand.h, because no type tells two runs of one site apart.
-        if (is_in_dispatch_window_) [[unlikely]] {
+        if (is_in_dispatch_window) [[unlikely]] {
             refuse_nested_dispatch_();
         }
-        is_in_dispatch_window_ = true;
+        is_in_dispatch_window = true;
     }
 
     DispatchWindow_(DispatchWindow_ const&) = delete("a dispatch window belongs to the frame of its door");
     DispatchWindow_& operator=(DispatchWindow_ const&) = delete("a dispatch window belongs to the frame of its door");
-    ~DispatchWindow_() noexcept { is_in_dispatch_window_ = false; }
+    ~DispatchWindow_() noexcept { flag_of_thread_() = false; }
+
+private:
+    // The flag of the calling thread: true while the thread is inside a
+    // dispatch window (the flag).
+    [[nodiscard]] CRUCIBLE_PROCESS_WIDE static bool& flag_of_thread_() noexcept {
+        [[gnu::tls_model("initial-exec")]] constinit thread_local bool is_in_dispatch_window = false;
+        return is_in_dispatch_window;
+    }
 };
 
 }  // namespace detail
