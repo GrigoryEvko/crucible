@@ -258,10 +258,127 @@ void test_agrees_with_plain_model() {
     }
 }
 
+// The value doors: set_masked puts a value at the masked key, exchange_masked
+// gives the old element back, and update_masked gives the body a copy and puts
+// it back.  A key past the count wraps through the mask.
+void test_value_doors() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    MaskedArray<std::uint64_t> words = mint_masked_array<std::uint64_t>(alloc, 4);
+    std::uint64_t const nine = 9;
+    words.set_masked(1, nine);
+    words.set_masked(6, std::uint64_t{5});
+    CRUCIBLE_FATAL_INVARIANT(words.at_masked(1) == 9);
+    CRUCIBLE_FATAL_INVARIANT(words.at_masked(2) == 5);
+    std::uint64_t const old = words.exchange_masked(5, 11);
+    CRUCIBLE_FATAL_INVARIANT(old == 9);
+    CRUCIBLE_FATAL_INVARIANT(words.at_masked(1) == 11);
+    std::uint64_t const sum = words.update_masked(2, [](std::uint64_t& word) noexcept {
+        word += 3;
+        return word;
+    });
+    CRUCIBLE_FATAL_INVARIANT(sum == 8);
+    CRUCIBLE_FATAL_INVARIANT(words.at_masked(2) == 8);
+    CRUCIBLE_FATAL_INVARIANT(words.at_masked(0) == 0);
+    CRUCIBLE_FATAL_INVARIANT(words.at_masked(3) == 0);
+
+    // An element with an end: set_masked ends the old one, and exchange_masked
+    // gives it back whole.
+    using Inner = ::foundation::core::HeapArray<int>;
+    MaskedArray<Inner> nested = mint_masked_array<Inner>(alloc, 2);
+    nested.set_masked(0, ::foundation::core::mint_heap_array(alloc, 3, 1));
+    nested.set_masked(0, ::foundation::core::mint_heap_array(alloc, 2, 4));
+    Inner const taken = nested.exchange_masked(2, ::foundation::core::mint_heap_array(alloc, 1, 6));
+    CRUCIBLE_FATAL_INVARIANT(taken.size() == 2);
+    CRUCIBLE_FATAL_INVARIANT(nested.at_masked(0).size() == 1);
+}
+
+// The count of the move assignments of AssignCounted.
+int assignments = 0;
+
+// An element whose move and end run no code of a caller, and whose move
+// assignment is code of its own.  MoveRunsCode reads no assignment.
+class AssignCounted {
+public:
+    AssignCounted() noexcept = default;
+    explicit AssignCounted(int label) noexcept : label_{label} {}
+    AssignCounted(AssignCounted&&) noexcept = default;
+    AssignCounted& operator=(AssignCounted&& other) noexcept {
+        ++assignments;
+        label_ = other.label_;
+        return *this;
+    }
+    AssignCounted(AssignCounted const&) = delete("an element of the test only moves");
+    AssignCounted& operator=(AssignCounted const&) = delete("an element of the test only moves");
+    ~AssignCounted() = default;
+
+    [[nodiscard]] int label() const noexcept { return label_; }
+
+private:
+    int label_ = 0;
+};
+static_assert(!::foundation::core::MoveRunsCode<AssignCounted>);
+
+// An element whose move assignment is code.  update_masked puts the copy back
+// while the array holds its storage, so it takes only a trivially copyable
+// element, and this one has no update_masked.
+struct AssignedWithCode {
+    int value = 0;
+    AssignedWithCode() noexcept = default;
+    AssignedWithCode(AssignedWithCode const&) noexcept = default;
+    AssignedWithCode(AssignedWithCode&&) noexcept = default;
+    AssignedWithCode& operator=(AssignedWithCode const&) noexcept = default;
+    AssignedWithCode& operator=(AssignedWithCode&& other) noexcept {
+        value = other.value;
+        return *this;
+    }
+    ~AssignedWithCode() = default;
+};
+static_assert(::foundation::core::UpdatableElement<AssignedWithCode>);
+static_assert(!::foundation::core::HeapUpdatableElement<AssignedWithCode>);
+template <class Element>
+concept HasUpdateMasked = requires(MaskedArray<Element>& array) { array.update_masked(0, [](Element&) noexcept {}); };
+static_assert(!HasUpdateMasked<AssignedWithCode> && HasUpdateMasked<std::uint64_t>);
+
+// exchange_masked and set_masked of an element whose move runs no code of a
+// caller end the moved-from element in its slot and start the value there.
+// They run no assignment of the element, because an assignment can reach the
+// array through a second name while the array holds its storage.
+void test_exchange_runs_no_assignment() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    MaskedArray<AssignCounted> array = mint_masked_array<AssignCounted>(alloc, 2);
+    AssignCounted const held = array.exchange_masked(2, AssignCounted{5});
+    array.set_masked(3, AssignCounted{6});
+    CRUCIBLE_FATAL_INVARIANT(held.label() == 0 && assignments == 0);
+    CRUCIBLE_FATAL_INVARIANT(array.at_masked(0).label() == 5 && array.at_masked(1).label() == 6);
+}
+
+// A value door of an empty array ends the process, as at_masked does.
+void test_value_door_of_an_empty_array_aborts(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            MaskedArray<int> empty{};
+            empty.set_masked(0, 1);
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: an element of a MaskedArray that holds no storage: the array is default or moved from"});
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            MaskedArray<int> empty{};
+            empty.update_masked(0, [](int& element) noexcept { element = 1; });
+        },
+        ::foundation::core::TextView{
+            "foundation: fatal: an element of a MaskedArray that holds no storage: the array is default or moved from"});
+}
+
 }  // namespace
 
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+    test_value_doors();
+    test_value_door_of_an_empty_array_aborts(test);
+    test_exchange_runs_no_assignment();
     test_empty_array();
     test_element_of_an_empty_array_aborts(test);
     test_counts_and_wrapping_keys();

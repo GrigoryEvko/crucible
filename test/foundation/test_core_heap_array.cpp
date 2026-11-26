@@ -549,6 +549,145 @@ void test_exchange_past_the_count_aborts(::fixy::TestRunnerCtx const& test) {
         ::foundation::core::TextView{"foundation: fatal: an exchange at the position 2 of a HeapArray of 2 elements"});
 }
 
+// The count of the move assignments of AssignCounted.
+int assignments = 0;
+
+// An element whose move and end run no code of a caller, and whose move
+// assignment is code of its own.  MoveRunsCode reads no assignment.
+class AssignCounted {
+public:
+    explicit AssignCounted(int label) noexcept : label_{label} {}
+    AssignCounted(AssignCounted&&) noexcept = default;
+    AssignCounted& operator=(AssignCounted&& other) noexcept {
+        ++assignments;
+        label_ = other.label_;
+        return *this;
+    }
+    AssignCounted(AssignCounted const&) = delete("an element of the test only moves");
+    AssignCounted& operator=(AssignCounted const&) = delete("an element of the test only moves");
+    ~AssignCounted() = default;
+
+    [[nodiscard]] int label() const noexcept { return label_; }
+
+private:
+    int label_ = 0;
+};
+static_assert(!::foundation::core::MoveRunsCode<AssignCounted>);
+
+// An element whose copy is code.  update copies the element out of the heap
+// storage and puts it back while the array holds the storage, so it takes
+// only a trivially copyable element, and this one has no update.
+struct CopiedWithCode {
+    int value = 0;
+    CopiedWithCode() noexcept = default;
+    CopiedWithCode(CopiedWithCode const& other) noexcept : value{other.value} {}
+    CopiedWithCode(CopiedWithCode&&) noexcept = default;
+    CopiedWithCode& operator=(CopiedWithCode const&) noexcept = default;
+    CopiedWithCode& operator=(CopiedWithCode&&) noexcept = default;
+    ~CopiedWithCode() = default;
+};
+static_assert(::foundation::core::UpdatableElement<CopiedWithCode>);
+static_assert(!::foundation::core::HeapUpdatableElement<CopiedWithCode>);
+static_assert(::foundation::core::HeapUpdatableElement<std::uint64_t>);
+template <class Element>
+concept HasUpdate = requires(HeapArray<Element>& array) { array.update(0, [](Element&) noexcept {}); };
+static_assert(!HasUpdate<CopiedWithCode> && HasUpdate<std::uint64_t>);
+
+// exchange and set of an element whose move runs no code of a caller end the
+// moved-from element in its slot and start the value there.  They run no
+// assignment of the element, because an assignment can reach the array
+// through a second name while the array holds its storage.
+void test_exchange_runs_no_assignment() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    HeapArray<AssignCounted> array = mint_heap_array_with<AssignCounted>(
+        alloc, 2, [](std::size_t position) noexcept { return AssignCounted{static_cast<int>(position) + 1}; });
+    AssignCounted const held = array.exchange(0, AssignCounted{5});
+    array.set(1, AssignCounted{6});
+    CRUCIBLE_FATAL_INVARIANT(held.label() == 1 && assignments == 0);
+    CRUCIBLE_FATAL_INVARIANT(array.view().get(0).expect("the array holds two elements")->label() == 5);
+    CRUCIBLE_FATAL_INVARIANT(array.view().get(1).expect("the array holds two elements")->label() == 6);
+}
+
+// set puts a value at its position and ends the element that the position
+// held.  The other elements stay, and the count of the array stays.
+void test_set_puts_a_value_and_ends_the_old_one() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    HeapArray<MoveOnly> array = mint_heap_array_with<MoveOnly>(
+        alloc, 3, [](std::size_t position) noexcept { return MoveOnly{static_cast<int>(position) + 1}; });
+    array.set(1, MoveOnly{7});
+    CRUCIBLE_FATAL_INVARIANT(array.size() == 3);
+    CRUCIBLE_FATAL_INVARIANT(array.view().get(0).expect("the array holds three elements")->label() == 1);
+    CRUCIBLE_FATAL_INVARIANT(array.view().get(1).expect("the array holds three elements")->label() == 7);
+    CRUCIBLE_FATAL_INVARIANT(array.view().get(2).expect("the array holds three elements")->label() == 3);
+
+    HeapArray<int> words = mint_heap_array(alloc, 2, 4);
+    int const nine = 9;
+    words.set(0, nine);
+    words.set(1, 5);
+    CRUCIBLE_FATAL_INVARIANT(*words.view().get(0).expect("the array holds two elements") == 9);
+    CRUCIBLE_FATAL_INVARIANT(*words.view().get(1).expect("the array holds two elements") == 5);
+
+    // The end of the old element: a HeapArray element frees its block, and
+    // the new one holds its own.
+    HeapArray<HeapArray<int>> nested = mint_heap_array_with<HeapArray<int>>(
+        alloc, 2, [alloc](std::size_t) noexcept { return mint_heap_array(alloc, 4, 1); });
+    nested.set(0, mint_heap_array(alloc, 2, 8));
+    CRUCIBLE_FATAL_INVARIANT(nested.view().get(0).expect("the array holds two elements")->size() == 2);
+    CRUCIBLE_FATAL_INVARIANT(*nested.view()
+                                  .get(0)
+                                  .expect("the array holds two elements")
+                                  ->view()
+                                  .get(1)
+                                  .expect("the inner array holds two elements")
+                             == 8);
+}
+
+// A set at or past the count ends the process, as an exchange does.
+void test_set_past_the_count_aborts(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            HeapArray<int> array = mint_heap_array(::foundation::effects::testing::test().alloc, 2, 0);
+            array.set(2, 5);
+        },
+        ::foundation::core::TextView{"foundation: fatal: an exchange at the position 2 of a HeapArray of 2 elements"});
+}
+
+// update gives the body a copy of the element and puts the copy back after
+// the body.  The door gives the result of the body.
+void test_update_puts_the_copy_back() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    HeapArray<std::uint64_t> words = mint_heap_array(alloc, 3, std::uint64_t{7});
+    std::uint64_t const sum = words.update(1, [](std::uint64_t& word) noexcept {
+        word += 5;
+        return word;
+    });
+    CRUCIBLE_FATAL_INVARIANT(sum == 12);
+    CRUCIBLE_FATAL_INVARIANT(*words.view().get(0).expect("the array holds three elements") == 7);
+    CRUCIBLE_FATAL_INVARIANT(*words.view().get(1).expect("the array holds three elements") == 12);
+    CRUCIBLE_FATAL_INVARIANT(*words.view().get(2).expect("the array holds three elements") == 7);
+
+    struct Pair {
+        std::uint32_t first = 0;
+        std::uint32_t second = 0;
+    };
+    HeapArray<Pair> pairs = mint_heap_array(alloc, 2, Pair{.first = 1, .second = 2});
+    pairs.update(0, [](Pair& pair) noexcept { pair.second = pair.first + 10; });
+    CRUCIBLE_FATAL_INVARIANT(pairs.view().get(0).expect("the array holds two elements")->second == 11);
+    CRUCIBLE_FATAL_INVARIANT(pairs.view().get(1).expect("the array holds two elements")->second == 2);
+}
+
+// An update at or past the count ends the process before the body runs.
+void test_update_past_the_count_aborts(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            HeapArray<int> array = mint_heap_array(::foundation::effects::testing::test().alloc, 2, 0);
+            array.update(2, [](int& element) noexcept { element = 1; });
+        },
+        ::foundation::core::TextView{"foundation: fatal: an update at the position 2 of a HeapArray of 2 elements"});
+}
+
 }  // namespace
 
 int main() {
@@ -570,5 +709,10 @@ int main() {
     test_written_aborts(test);
     test_exchange_moves_in_and_gives_back();
     test_exchange_past_the_count_aborts(test);
+    test_exchange_runs_no_assignment();
+    test_set_puts_a_value_and_ends_the_old_one();
+    test_set_past_the_count_aborts(test);
+    test_update_puts_the_copy_back();
+    test_update_past_the_count_aborts(test);
     return 0;
 }

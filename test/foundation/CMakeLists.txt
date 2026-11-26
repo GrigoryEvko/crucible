@@ -3746,6 +3746,16 @@ foundation_neg_compile_test(neg_core_heap_array_exchange_on_temporary
 foundation_neg_compile_test(neg_core_heap_array_exchange_on_const
   "use of deleted function .void foundation::core::HeapArray<T, Align>::exchange\\(std::size_t, T\\) const &"
   "a const HeapArray has no writer of its elements")
+# The update doors of a HeapArray and of a MaskedArray copy the element out of
+# the heap storage and put it back while the array holds the storage, so they
+# take only a trivially copyable element: code of a copy or of an assignment
+# could free the storage under the slot.
+foundation_neg_compile_test(neg_core_heap_array_update_element_code
+  "use of deleted function .void foundation::core::HeapArray<T, Align>::update\\(std::size_t, Body&&\\) &"
+  "update of a HeapArray copies the element out of the storage and puts it back while the array holds the")
+foundation_neg_compile_test(neg_core_masked_array_update_element_code
+  "use of deleted function .void foundation::core::MaskedArray<T, Align>::update_masked\\([a-z:]*uint64_t, Body&&\\) &"
+  "update_masked copies the element out of the storage and puts it back while the array holds the storage")
 # The position of an object of a BumpArena: only position_of builds one, and
 # a temporary arena gives no object of a position.
 foundation_neg_compile_test(neg_core_arena_position_built_by_hand

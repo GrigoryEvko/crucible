@@ -651,6 +651,15 @@ concept PutBackElement = std::is_nothrow_move_assignable_v<T>
 template <class T>
 concept UpdatableElement = CopiedOutElement<T> && PutBackElement<T>;
 
+// The element of the update door of an owner of heap storage (a HeapArray or
+// a MaskedArray).  The door copies the element out of its slot and puts the
+// copy back while the owner holds its storage.  Code of the copy or of the
+// assignment could reach the owner through a second name and free the storage
+// under the slot (the code of an element of foundation/core/Owner.h).  So the
+// element is trivially copyable, and the copy and the put-back run no code.
+template <class T>
+concept HeapUpdatableElement = UpdatableElement<T> && std::is_trivially_copyable_v<T>;
+
 namespace detail {
 
 [[noreturn]] CRUCIBLE_COLD inline void report_lost_update_() noexcept {
@@ -1533,6 +1542,72 @@ template <class T, std::size_t Align>
     fatal("the code of an element changed a HeapArray while an exchange moved an element");
 }
 
+// The fatal exit of an exchange of a MaskedArray whose element put a value
+// into the array while the array held no storage.
+[[noreturn]] CRUCIBLE_COLD inline void report_masked_array_changed_() noexcept {
+    fatal("the code of an element changed a MaskedArray while an exchange moved an element");
+}
+
+// The fatal exit of an update of a HeapArray at a position at or past its
+// count: before the body, or after a body that made the array shorter through
+// a second name of the array.
+[[noreturn]] CRUCIBLE_COLD inline void report_heap_update_past_count_(std::size_t position,
+                                                                      std::size_t count) noexcept {
+    fatal("an update at the position {} of a HeapArray of {} elements", position, count);
+}
+
+// The frame of one call of update of an owner of heap storage (a HeapArray or
+// a MaskedArray): the copy of the element and the place of the element.  The
+// body gets the copy, so no reference into the storage lives while it runs.
+// The body can reach the owner through a second name and replace its storage.
+// So the destructor finds the slot again through the owner (its private
+// slot_of_update_, which names this frame as a friend), and puts the copy back
+// there.  The result of the body exists before the destructor runs.  The copy
+// and the put-back run no code of the element (HeapUpdatableElement), so no
+// code reaches the owner while the frame names a slot of it.
+template <class T, class Owner, class Place>
+    requires HeapUpdatableElement<T>
+class HeapUpdateFrame final {
+    Owner& owner_;
+    Place place_;
+    T held_;
+    [[no_unique_address]] LostUpdateOracle<T> oracle_;
+
+public:
+    constexpr HeapUpdateFrame(Owner& owner, Place place, T const& slot) noexcept
+        : owner_{owner}, place_{place}, held_(slot), oracle_{slot} {}
+    HeapUpdateFrame(HeapUpdateFrame const&) = delete("the frame of update puts its copy back one time");
+    HeapUpdateFrame& operator=(HeapUpdateFrame const&) = delete("the frame of update puts its copy back one time");
+    // An element with no assignment ends, and the copy starts in its place.
+    // Its end and its move are trivial (PutBackElement), so no code of the
+    // element runs while the slot holds no element.
+    constexpr ~HeapUpdateFrame() {
+        T& slot = owner_.slot_of_update_(place_);
+        oracle_.require_unwritten(slot);
+        if constexpr (std::is_nothrow_move_assignable_v<T>) {
+            slot = static_cast<T&&>(held_);
+        } else {
+            slot.~T();
+            ::new(static_cast<void*>(__builtin_launder(__builtin_addressof(slot)))) T(static_cast<T&&>(held_));
+        }
+    }
+    // The call of the body with the copy.  It gives the result of the body.
+    template <class Body>
+    constexpr auto run(Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
+        return static_cast<Body&&>(body)(held_);
+    }
+};
+
+// Ends the moved-from element of a slot of an owner of heap storage, and
+// starts value in its place.  The exchange of an element whose move and end
+// run no code of a caller (MoveRunsCode) calls it, so no code reaches the
+// owner between the end and the start.  Complexity: O(1).
+template <class T>
+CRUCIBLE_INLINE constexpr void restart_moved_slot_(T* slot, T&& value) noexcept {
+    slot->~T();
+    ::new(static_cast<void*>(__builtin_launder(slot))) T(static_cast<T&&>(value));
+}
+
 // The fatal exit of a writer of mint_heap_array_written that left elements
 // with no write, or that gave elements past the last one.
 [[noreturn]] CRUCIBLE_COLD inline void refuse_written_array_(std::size_t count, std::size_t unwritten,
@@ -1666,6 +1741,19 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
     using Core = OwnerCore<State, HeapArray>;
     // The key of the run, for the frame door frame_run_, a friend.
     using Core::run_key_;
+
+    template <class Element, class Owner, class Place>
+        requires HeapUpdatableElement<Element>
+    friend class detail::HeapUpdateFrame;
+
+    // The slot at position for the frame of update, before and after its
+    // body.  A position at or past the count of this time ends the process.
+    [[nodiscard]] constexpr T& slot_of_update_(std::size_t position) noexcept {
+        if (position >= this->state_.count) [[unlikely]] {
+            detail::report_heap_update_past_count_(position, this->state_.count);
+        }
+        return this->state_.first[position];
+    }
 
 public:
     using element_type = T;
@@ -1914,8 +2002,13 @@ public:
     // that moves a value with a borrow into the element must capture that
     // value, and the store check of the door refuses such a capture.  The
     // position is below size(): no type holds the count of a HeapArray, so a
-    // position at or past it ends the process.  Complexity: O(1).
-    [[nodiscard]] constexpr T exchange(std::size_t position, T value) & noexcept
+    // position at or past it ends the process.  An element whose move and
+    // end run no code of a caller (MoveRunsCode of foundation/core/Owner.h)
+    // moves in place: it moves out, the moved-from element ends in its slot,
+    // and the value starts there.  MoveRunsCode reads no assignment, so the
+    // door assigns only a trivial element and a bare owner.  The door inlines,
+    // because the value doors run in the loops of each op.  Complexity: O(1).
+    [[nodiscard]] CRUCIBLE_INLINE constexpr T exchange(std::size_t position, T value) & noexcept
         requires std::is_nothrow_move_constructible_v<T> && std::is_nothrow_move_assignable_v<T>
     {
         if (position >= this->state_.count) [[unlikely]] {
@@ -1925,6 +2018,10 @@ public:
                       || BareOwner<T>) {
             T held = std::move(this->state_.first[position]);
             this->state_.first[position] = std::move(value);
+            return held;
+        } else if constexpr (!MoveRunsCode<T>) {
+            T held = static_cast<T&&>(this->state_.first[position]);
+            detail::restart_moved_slot_(this->state_.first + position, static_cast<T&&>(value));
             return held;
         } else {
             // The move and the assignment of an element can reach the array
@@ -1944,6 +2041,79 @@ public:
     void exchange(std::size_t position, T value) && =
         delete("an exchange in a temporary HeapArray writes storage that the full expression frees");
     void exchange(std::size_t position, T value) const& = delete("a const HeapArray has no writer of its elements");
+
+    // The value doors of one element: set puts value at position and ends the
+    // old element.  The door takes the value as an argument, so no code of the
+    // caller runs while it writes.  It runs through exchange, so the code of
+    // the element runs while the array holds no storage, and the old element
+    // ends after the door.  A position at or past size() ends the process, as
+    // for exchange.  Complexity: O(1), and the cost of the move and of the end.
+    CRUCIBLE_INLINE constexpr void set(std::size_t position, T const& value) & noexcept
+        requires std::is_nothrow_copy_constructible_v<T> && std::is_nothrow_move_constructible_v<T>
+              && std::is_nothrow_move_assignable_v<T> && DroppablePayload<T>
+    {
+        static_cast<void>(exchange(position, T(value)));
+    }
+    CRUCIBLE_INLINE constexpr void set(std::size_t position, T&& value) & noexcept
+        requires std::is_nothrow_move_constructible_v<T> && std::is_nothrow_move_assignable_v<T> && DroppablePayload<T>
+    {
+        static_cast<void>(exchange(position, static_cast<T&&>(value)));
+    }
+    void set(std::size_t position,
+             T value) && = delete("a set in a temporary HeapArray writes storage that the full expression frees");
+    void set(std::size_t position, T value) const& = delete("a const HeapArray has no writer of its elements");
+
+    // The update door of one element: body gets a copy of the element at
+    // position, and then the door puts the copy in the place of the element
+    // (detail::HeapUpdateFrame).  The door gives the result of body, which
+    // holds no borrow.  No reference into the storage lives while body runs,
+    // so a second door of the array, through a helper or a second name, finds
+    // whole elements.  Such a door can replace the storage, so the frame finds
+    // the slot again after body, and a position at or past the count of that
+    // time ends the process.  A nested update or a nested set of the same
+    // element loses its write when the door puts the copy back.  That is a
+    // wrong value and no memory error, and a build with the test oracles ends
+    // the process then, as update of a FixedArray does.  The copy and the
+    // put-back run while the array holds its storage, so the element is
+    // trivially copyable (HeapUpdatableElement): no code of it runs there.
+    // Complexity: O(1), and the cost of body, of one copy and of one move.
+    template <class Body>
+        requires HeapUpdatableElement<T> && std::is_invocable_v<Body, T&>
+              && HoldsNoBorrow<detail::body_result_t<Body, T&>> && ::foundation::linear::HoldsNoLinearValue<Body>
+              && StoresNoBorrowOutside<Body>
+    [[= ::foundation::linear::borrow_match{}]]
+        CRUCIBLE_INLINE constexpr auto update(std::size_t position,
+                                              Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
+        detail::HeapUpdateFrame<T, HeapArray, std::size_t> frame{*this, position, slot_of_update_(position)};
+        return frame.run(static_cast<Body&&>(body));
+    }
+    template <class Body>
+        requires LinearElementBody<Body, T>
+    void update(std::size_t position, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires UpdatableElement<T> && (!std::is_trivially_copyable_v<T>)
+                  && std::is_invocable_v<Body, T&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    void update(std::size_t position, Body&& body) & =
+        delete("update of a HeapArray copies the element out of the storage and puts it back while the array holds the "
+               "storage, and code of the copy or of the assignment could free the storage: take a trivially copyable "
+               "element, or take exchange or set");
+    template <class Body>
+        requires(!CopiedOutElement<T>)
+                 && std::is_invocable_v<Body, T&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    void update(std::size_t position, Body&& body) & = delete(
+        "update gives the body a copy of the element and moves the copy back, so the element copies and moves with no "
+        "throw: take an element that does not copy with exchange");
+    template <class Body>
+        requires CopiedOutElement<T> && (!PutBackElement<T>)
+                  && std::is_invocable_v<Body, T&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    void update(std::size_t position, Body&& body) & = delete(
+        "update of an element with no nothrow assignment ends the element in its slot and starts the copy there, so "
+        "the move and the end of the element run no code: give the element a nothrow assignment, or take exchange");
+    template <class Body>
+    void update(std::size_t position, Body&& body) && =
+        delete("an update in a temporary HeapArray writes storage that the full expression frees");
+    template <class Body>
+    void update(std::size_t position, Body&& body) const& = delete("a const HeapArray has no writer of its elements");
 
     // The iteration verbs of the View of the const elements.
     [[nodiscard]] constexpr auto reverse() const& noexcept { return view().reverse(); }
@@ -2113,6 +2283,14 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
         return this->state_.first;
     }
 
+    template <class Element, class Owner, class Place>
+        requires HeapUpdatableElement<Element>
+    friend class detail::HeapUpdateFrame;
+
+    // The slot at key & (count - 1) for the frame of update_masked, before and
+    // after its body, through the storage and the mask of this time.
+    [[nodiscard]] constexpr T& slot_of_update_(std::uint64_t key) noexcept { return held_()[key & this->state_.mask]; }
+
 public:
     using element_type = T;
 
@@ -2224,6 +2402,116 @@ public:
     template <class Body>
     void with_masked(std::uint64_t key, Body&& body) const&& =
         delete("a frame door of a temporary MaskedArray lends an element of storage that the full expression frees");
+
+    // Moves value into the element at key & (count - 1), and gives back the
+    // element that it held.  The door takes no body.  The move and the
+    // assignment of an element with code can reach the array through a second
+    // name (the code of an element of foundation/core/Owner.h), so the array
+    // holds no storage while they run, and a value that they put into it ends
+    // the process.  An element whose move and end run no code of a caller
+    // (MoveRunsCode) moves in place, in the form of exchange of a HeapArray.
+    // An empty array ends the process, as at_masked does.  The door inlines,
+    // because the value doors run in the loops of each op.  Complexity: O(1).
+    [[nodiscard]] CRUCIBLE_INLINE constexpr T exchange_masked(std::uint64_t key, T value) & noexcept
+        requires std::is_nothrow_move_constructible_v<T> && std::is_nothrow_move_assignable_v<T>
+    {
+        T* const first = held_();
+        std::uint64_t const position = key & this->state_.mask;
+        if constexpr ((std::is_trivially_move_constructible_v<T> && std::is_trivially_move_assignable_v<T>)
+                      || BareOwner<T>) {
+            T held = std::move(first[position]);
+            first[position] = std::move(value);
+            return held;
+        } else if constexpr (!MoveRunsCode<T>) {
+            T held = static_cast<T&&>(first[position]);
+            detail::restart_moved_slot_(first + position, static_cast<T&&>(value));
+            return held;
+        } else {
+            State lent = this->take_state_();
+            T held = std::move(lent.first[position]);
+            lent.first[position] = std::move(value);
+            if (this->state_.first != nullptr) [[unlikely]] {
+                detail::report_masked_array_changed_();
+            }
+            this->state_ = lent;
+            return held;
+        }
+    }
+    void exchange_masked(std::uint64_t key, T value) && =
+        delete("an exchange in a temporary MaskedArray writes storage that the full expression frees");
+    void exchange_masked(std::uint64_t key,
+                         T value) const& = delete("a const MaskedArray has no writer of its elements");
+
+    // The value doors of one element: set_masked puts value at key & (count -
+    // 1) and ends the old element, through exchange_masked.  The door takes
+    // the value as an argument, so no code of the caller runs while it writes.
+    // Complexity: O(1), and the cost of the move and of the end.
+    CRUCIBLE_INLINE constexpr void set_masked(std::uint64_t key, T const& value) & noexcept
+        requires std::is_nothrow_copy_constructible_v<T> && std::is_nothrow_move_constructible_v<T>
+              && std::is_nothrow_move_assignable_v<T> && DroppablePayload<T>
+    {
+        static_cast<void>(exchange_masked(key, T(value)));
+    }
+    CRUCIBLE_INLINE constexpr void set_masked(std::uint64_t key, T&& value) & noexcept
+        requires std::is_nothrow_move_constructible_v<T> && std::is_nothrow_move_assignable_v<T> && DroppablePayload<T>
+    {
+        static_cast<void>(exchange_masked(key, static_cast<T&&>(value)));
+    }
+    void set_masked(std::uint64_t key, T value) && =
+        delete("a set in a temporary MaskedArray writes storage that the full expression frees");
+    void set_masked(std::uint64_t key, T value) const& = delete("a const MaskedArray has no writer of its elements");
+
+    // The update door of one element: body gets a copy of the element at
+    // key & (count - 1), and then the door puts the copy in the place of the
+    // element (detail::HeapUpdateFrame).  No reference into the storage lives
+    // while body runs, so a second door of the array finds whole elements.
+    // Such a door can replace the storage, so the frame finds the slot again
+    // after body, through the mask of that time.  The door gives the result of
+    // body, which holds no borrow.  A nested update or a nested set of the same
+    // element loses its write: a wrong value and no memory error, which a
+    // build with the test oracles ends.  The element is trivially copyable, as
+    // for update of a HeapArray.  An empty array ends the process, as
+    // at_masked does.  Complexity: O(1), and the cost of body, of one copy and
+    // of one move.
+    template <class Body>
+        requires HeapUpdatableElement<T> && std::is_invocable_v<Body, T&>
+              && HoldsNoBorrow<detail::body_result_t<Body, T&>> && ::foundation::linear::HoldsNoLinearValue<Body>
+              && StoresNoBorrowOutside<Body>
+    [[= ::foundation::linear::borrow_match{}]]
+        CRUCIBLE_INLINE constexpr auto update_masked(std::uint64_t key,
+                                                     Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
+        detail::HeapUpdateFrame<T, MaskedArray, std::uint64_t> frame{*this, key, slot_of_update_(key)};
+        return frame.run(static_cast<Body&&>(body));
+    }
+    template <class Body>
+        requires LinearElementBody<Body, T>
+    void update_masked(std::uint64_t key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires UpdatableElement<T> && (!std::is_trivially_copyable_v<T>)
+                  && std::is_invocable_v<Body, T&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    void update_masked(std::uint64_t key, Body&& body) & = delete(
+        "update_masked copies the element out of the storage and puts it back while the array holds the storage, and "
+        "code of the copy or of the assignment could free the storage: take a trivially copyable element, or take "
+        "exchange_masked or set_masked");
+    template <class Body>
+        requires(!CopiedOutElement<T>)
+                 && std::is_invocable_v<Body, T&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    void update_masked(std::uint64_t key, Body&& body) & = delete(
+        "update_masked gives the body a copy of the element and moves the copy back, so the element copies and moves "
+        "with no throw: take an element that does not copy with exchange_masked");
+    template <class Body>
+        requires CopiedOutElement<T> && (!PutBackElement<T>)
+                  && std::is_invocable_v<Body, T&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    void update_masked(std::uint64_t key, Body&& body) & = delete(
+        "update_masked of an element with no nothrow assignment ends the element in its slot and starts the copy "
+        "there, so the move and the end of the element run no code: give the element a nothrow assignment, or take "
+        "exchange_masked");
+    template <class Body>
+    void update_masked(std::uint64_t key, Body&& body) && =
+        delete("an update in a temporary MaskedArray writes storage that the full expression frees");
+    template <class Body>
+    void update_masked(std::uint64_t key,
+                       Body&& body) const& = delete("a const MaskedArray has no writer of its elements");
 };
 
 // The one door of a MaskedArray: count elements from their default
