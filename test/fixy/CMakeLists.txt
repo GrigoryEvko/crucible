@@ -7377,6 +7377,10 @@ fixy_neg_compile_test(neg_os_fs_replace_external_path
   "no matching function for call"
   "replace_file\\(.*Tagged<foundation::os::PathText<4096>, fixy::tags::source::External>")
 
+fixy_neg_compile_test(neg_os_fs_replace_commit_none
+  "no matching function for call"
+  "replace_file_at<fixy::fs::atomicity::None>")
+
 # The write fault of a test: the writes of write_full on a thread fail after
 # a budget of bytes, for a context of the test source only.
 fixy_test(test_os_fs_write_fault)

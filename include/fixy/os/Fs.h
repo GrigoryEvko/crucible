@@ -1894,16 +1894,31 @@ read_whole_at(Ctx const& ctx, Marker allocation, DirectoryRef<Rights> dir, ::fou
 //   file whole, and the temporary file stays.  A step that gives an error
 //   removes the temporary file and gives that error, and the old file stays
 //   whole.  An error of the last sync comes after the rename: the new file is
-//   at name, but its entry is not sure to be on the disk.
+//   at name, but its entry is not sure to be on the disk.  The sync of dir is
+//   part of the commit, because the rename returns before its entry reaches
+//   the disk.  A truncate and a write of the file in place is no alternative:
+//   a crash between them leaves the file empty or cut.
+//
+//   The commit of the door is a tag of fixy::fs::atomicity.  With Rename,
+//   the rename replaces each entry at name, and the door gives Unit.  With
+//   RenameAt2NoReplace, the rename keeps an entry at name: the door then
+//   removes its own temporary file and gives ReplaceOutcome::kept_entry, and
+//   it gives ReplaceOutcome::written when it made the entry.  A file system
+//   with no RENAME_NOREPLACE gives einval, and the door passes it through
+//   with no plain rename in its place, as commit_atomic_at does: the caller
+//   chose the keep, and a rename that replaces would break it.
 //
 //   The temporary name is name, ".tmp-" and two hexadecimal digits.  The open
 //   of a temporary name is exclusive, so a name that another writer or a crash
-//   holds gives eexist, and the door tries the next name.  After
+//   holds gives eexist, and the door tries the next name.  So each writer has
+//   a temporary file of its own, and two writers of one name cannot cut the
+//   file of each other.  After
 //   kReplaceTries names in use, the door gives eexist.  So name and seven
 //   characters must fit in one entry of the file system.  name is one final
 //   name: a name that is empty, that holds a slash, or that is "." or ".."
 //   gives einval.  The new file has the permission bits
-//   owner_read_write_others_read.
+//   owner_read_write_others_read.  The bytes are a View of bytes or the
+//   characters of a TextView, the buffers that write_full takes.
 //
 //   replace_file takes the sanitized path of the file.  It opens the
 //   directory part of the path with the slash after it, so a symbolic link at
@@ -1917,18 +1932,42 @@ read_whole_at(Ctx const& ctx, Marker allocation, DirectoryRef<Rights> dir, ::fou
 // The count of the temporary names that a replace tries (the durable replace).
 inline constexpr std::uint64_t kReplaceTries = 64;
 
-// The gate of a replace under a directory with the rights Held (the durable
-// replace): the exclusive open of the temporary file under the directory, the
-// rename onto the name and the remove after an error, and the sync of the
-// directory.
-template <typename Ctx, ::fixy::os::RightSet Held>
-concept CtxFitsReplaceAt =
-    CtxFitsFileMintAt<Ctx, Held, ::fixy::atom::fs::mode<open_mode::WriteExclusive>>
-    && CtxFitsCommitAtomicAt<Ctx, atomicity::Rename, Held> && CtxFitsDirectorySync<Ctx, sync_op::FsyncParentDir, Held>;
+// What the keep commit of a durable replace did at the name (the durable
+// replace).
+enum class ReplaceOutcome : std::uint8_t {
+    // The new file is at the name.
+    written,
+    // An entry was at the name, and the door kept it.  The door removed its
+    // own temporary file.
+    kept_entry,
+};
 
-// The gate of a replace of a path: a replace under the directory of the path.
+// A commit of a durable replace: Rename replaces the entry at the name, and
+// RenameAt2NoReplace keeps it.
+template <typename Commit>
+concept ReplaceCommit =
+    std::is_same_v<Commit, atomicity::Rename> || std::is_same_v<Commit, atomicity::RenameAt2NoReplace>;
+
+// The gate of a replace with the commit Commit under a directory with the
+// rights Held (the durable replace): the exclusive open of the temporary file
+// under the directory, the rename onto the name and the remove after an
+// error, and the sync of the directory.
+template <typename Ctx, typename Commit, ::fixy::os::RightSet Held>
+concept CtxFitsReplaceAt =
+    ReplaceCommit<Commit> && CtxFitsFileMintAt<Ctx, Held, ::fixy::atom::fs::mode<open_mode::WriteExclusive>>
+    && CtxFitsCommitAtomicAt<Ctx, Commit, Held> && CtxFitsDirectorySync<Ctx, sync_op::FsyncParentDir, Held>;
+
+// The gate of a replace of a path: a replace that replaces, under the
+// directory of the path.
 template <typename Ctx>
-concept CtxFitsReplace = CtxFitsReplaceAt<Ctx, directory_rights>;
+concept CtxFitsReplace = CtxFitsReplaceAt<Ctx, atomicity::Rename, directory_rights>;
+
+// The result of a durable replace with the commit Commit: Unit for Rename,
+// and the ReplaceOutcome for RenameAt2NoReplace.
+template <ReplaceCommit Commit>
+using ReplaceResult = ::foundation::core::Result<
+    std::conditional_t<std::is_same_v<Commit, atomicity::Rename>, ::foundation::core::Unit, ReplaceOutcome>,
+    ::foundation::os::Errno>;
 
 namespace detail {
 
@@ -1939,18 +1978,20 @@ namespace detail {
         && name != ::foundation::core::TextView{"."} && name != ::foundation::core::TextView{".."};
 }
 
-// Durable replace, with the write of the temporary file in write.
-// write(file) writes the bytes to file, the borrow of the temporary file, and
-// gives the result of the write.  replace_file_at gives a write that calls
-// write_full.  A test gives a write of its own, such as one that stops after a
-// part of the bytes.
-template <class Ctx, ::fixy::os::RightSet Rights, class Write>
-[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+// Durable replace with the commit Commit, with the write of the temporary
+// file in write.  write(file) writes the bytes to file, the borrow of the
+// temporary file, and gives the result of the write.  replace_file_at gives a
+// write that calls write_full.  A test gives a write of its own, such as one
+// that stops after a part of the bytes.  The keep commit gives kept_entry for
+// an entry at name, and the replace commit never gives it.
+template <ReplaceCommit Commit, class Ctx, ::fixy::os::RightSet Rights, class Write>
+[[nodiscard]] ::foundation::core::Result<ReplaceOutcome, ::foundation::os::Errno>
 replace_file_steps_(Ctx const& ctx, DirectoryRef<Rights> dir, ::foundation::core::CText name, Write&& write) noexcept {
     namespace core = ::foundation::core;
     using ::foundation::os::Errno;
     using Exclusive = ::fixy::atom::fs::mode<open_mode::WriteExclusive>;
     using Step = core::Result<core::Unit, Errno>;
+    using Placed = core::Result<ReplaceOutcome, Errno>;
     if (!is_one_final_name_(name.view())) return core::err(Errno::einval);
     for (std::uint64_t attempt = 0; attempt < kReplaceTries; ++attempt) {
         ::foundation::os::PathText<kPathBytes> temporary{};
@@ -1958,10 +1999,10 @@ replace_file_steps_(Ctx const& ctx, DirectoryRef<Rights> dir, ::foundation::core
                            && temporary.append_hex<2>(attempt).is_ok();
         if (!is_named) return core::err(Errno::enametoolong);
         // No value: another writer or a crash holds the name, and the door tries the next one.
-        core::Option<Step> const ended =
+        core::Option<Placed> ended =
             mint_file_at<Exclusive>(ctx, dir, temporary.c_text())
                 .match(
-                    [&](Linear<FileOf<Exclusive>> opened) noexcept -> core::Option<Step> {
+                    [&](Linear<FileOf<Exclusive>> opened) noexcept -> core::Option<Placed> {
                         Step done{core::Unit{}};
                         {
                             // The scope closes the temporary file before the rename.
@@ -1971,37 +2012,76 @@ replace_file_steps_(Ctx const& ctx, DirectoryRef<Rights> dir, ::foundation::core
                                 done = sync<sync_op::Fdatasync>(ctx, file.ref());
                             }
                         }
+                        // An entry at name refuses the rename of the keep
+                        // commit with eexist.  Only that error of that rename
+                        // keeps the entry: an error of the write or of the
+                        // sync, and each error of the replace commit, is the
+                        // error of the door.
+                        bool is_kept = false;
                         if (done.is_ok()) {
-                            done = commit_atomic_at<atomicity::Rename>(ctx, dir, temporary.c_text(), name);
+                            done = commit_atomic_at<Commit>(ctx, dir, temporary.c_text(), name);
+                            if constexpr (std::is_same_v<Commit, atomicity::RenameAt2NoReplace>) {
+                                is_kept =
+                                    done.is_err_and([](Errno const& error) noexcept { return error == Errno::eexist; });
+                            }
                         }
                         if (done.is_err()) {
                             static_cast<void>(unlink_at(ctx, dir, temporary.c_text()).is_ok());
-                            return core::Option<Step>::some(std::move(done));
+                            if (is_kept) {
+                                return core::Option<Placed>::some(Placed{ReplaceOutcome::kept_entry});
+                            }
+                            return core::Option<Placed>::some(Placed{core::err(done.err().value_or(Errno::eio))});
                         }
-                        return core::Option<Step>::some(sync<sync_op::FsyncParentDir>(ctx, dir));
+                        return core::Option<Placed>::some(sync<sync_op::FsyncParentDir>(ctx, dir).map(
+                            [](core::Unit) noexcept { return ReplaceOutcome::written; }));
                     },
-                    [](Errno error) noexcept -> core::Option<Step> {
+                    [](Errno error) noexcept -> core::Option<Placed> {
                         if (error == Errno::eexist) return core::none;
-                        return core::Option<Step>::some(Step{core::err(error)});
+                        return core::Option<Placed>::some(Placed{core::err(error)});
                     });
-        for (Step const& result : ended) {
-            return result;
+        if (ended.is_some()) {
+            return std::move(ended).expect("the test above found the end of the replace");
         }
     }
     return core::err(Errno::eexist);
 }
 
+// The result of a durable replace with the commit Commit from the placement
+// of its steps.  The replace commit gives Unit, because it never keeps an
+// entry.
+template <ReplaceCommit Commit>
+[[nodiscard]] constexpr ReplaceResult<Commit>
+replace_result_(::foundation::core::Result<ReplaceOutcome, ::foundation::os::Errno> placed) noexcept {
+    if constexpr (std::is_same_v<Commit, atomicity::Rename>) {
+        return std::move(placed).map([](ReplaceOutcome) noexcept { return ::foundation::core::Unit{}; });
+    } else {
+        return placed;
+    }
+}
+
 }  // namespace detail
 
-// Puts bytes in place of the file name under dir (the durable replace).  Not
-// a mint: the door writes and renames files, and it gives no handle.
-template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
-    requires CtxFitsReplaceAt<Ctx, Rights>
-[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-replace_file_at(Ctx const& ctx, DirectoryRef<Rights> dir, ::foundation::core::CText name,
-                ::foundation::core::View<std::byte const> bytes) noexcept {
-    return detail::replace_file_steps_(ctx, dir, name,
-                                       [&ctx, bytes](auto file) noexcept { return write_full(ctx, file, bytes); });
+// Puts bytes in place of the file name under dir with the commit Commit (the
+// durable replace).  Not a mint: the door writes and renames files, and it
+// gives no handle.
+template <ReplaceCommit Commit, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsReplaceAt<Ctx, Commit, Rights>
+[[nodiscard]] inline ReplaceResult<Commit> replace_file_at(Ctx const& ctx, DirectoryRef<Rights> dir,
+                                                           ::foundation::core::CText name,
+                                                           ::foundation::core::View<std::byte const> bytes) noexcept {
+    return detail::replace_result_<Commit>(detail::replace_file_steps_<Commit>(
+        ctx, dir, name, [&ctx, bytes](auto file) noexcept { return write_full(ctx, file, bytes); }));
+}
+
+// Puts the characters of text in place of the file name under dir with the
+// commit Commit (the durable replace).
+template <ReplaceCommit Commit, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
+    requires CtxFitsReplaceAt<Ctx, Commit, Rights>
+[[nodiscard]] inline ReplaceResult<Commit> replace_file_at(Ctx const& ctx, DirectoryRef<Rights> dir,
+                                                           ::foundation::core::CText name,
+                                                           ::foundation::core::TextView text) noexcept {
+    return detail::replace_result_<Commit>(detail::replace_file_steps_<Commit>(
+        ctx, dir, name, [&ctx, text](auto file) noexcept { return write_full(ctx, file, text); }));
 }
 
 // Puts bytes in place of the file at path (the durable replace).  The parts of
@@ -2023,7 +2103,7 @@ replace_file(Ctx const& ctx, Path<tags::source::Sanitized> const& path,
     CRUCIBLE_TRY(directory,
                  open_directory(ctx, sanitize_path(mint_tagged<tags::source::External>(parent))
                                          .expect("the directory part of a sanitized path passes the check")));
-    return replace_file_at(ctx, directory.ref(), name.c_text(), bytes);
+    return replace_file_at<atomicity::Rename>(ctx, directory.ref(), name.c_text(), bytes);
 }
 
 // The durable and atomic_write atoms only declare intent.  The mint

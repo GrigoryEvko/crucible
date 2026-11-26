@@ -4,8 +4,10 @@
 //
 // The cases replace a file two times, stop the write of the temporary file
 // after half of the bytes with an error and with a crash, refuse a name that
-// is not one final name, give eexist when each temporary name is in use, and
-// replace a file through a path whose directory part is a symbolic link.
+// is not one final name, give eexist when each temporary name is in use, keep
+// an entry with the keep commit, replace a file with the characters of a
+// text, and replace a file through a path whose directory part is a symbolic
+// link.
 // CMake makes that link in the directory of the test before each run
 // (replace_fixture.cmake).
 
@@ -30,6 +32,12 @@ using ::foundation::os::Errno;
 using Exclusive = ::fixy::atom::fs::mode<fs::open_mode::WriteExclusive>;
 using ReadFile = fs::FileOf<fs::read_only>;
 using Step = ::fixy::Result<::fixy::Unit, Errno>;
+using Placed = ::fixy::Result<fs::ReplaceOutcome, Errno>;
+
+// The two commits of a replace: the rename replaces the entry at the name, or
+// keeps it.
+using Rename = fs::atomicity::Rename;
+using Keep = fs::atomicity::RenameAt2NoReplace;
 
 // The context of each door of the test.
 constexpr ::fixy::TestRunnerCtx kCtx{eff::testing::test()};
@@ -112,9 +120,9 @@ template <::fixy::os::RightSet Rights>
     fs::TemporaryDirectory const dir = make_owner();
     Contents const old_bytes = contents_of(kOldText);
     Contents const new_bytes = contents_of(kNewText);
-    if (fs::replace_file_at(kCtx, dir.ref(), "file", old_bytes.view()).is_err()) return 1;
+    if (fs::replace_file_at<Rename>(kCtx, dir.ref(), "file", old_bytes.view()).is_err()) return 1;
     if (!holds_bytes(dir.ref(), "file", old_bytes.view())) return 2;
-    if (fs::replace_file_at(kCtx, dir.ref(), "file", new_bytes.view()).is_err()) return 3;
+    if (fs::replace_file_at<Rename>(kCtx, dir.ref(), "file", new_bytes.view()).is_err()) return 3;
     if (!holds_bytes(dir.ref(), "file", new_bytes.view())) return 4;
     ::foundation::os::PathText<64> const first = temporary_name(0);
     if (holds_entry(dir.ref(), first.c_text())) return 5;
@@ -128,11 +136,12 @@ template <::fixy::os::RightSet Rights>
     fs::TemporaryDirectory const dir = make_owner();
     Contents const old_bytes = contents_of(kOldText);
     Contents const new_bytes = contents_of(kNewText);
-    if (fs::replace_file_at(kCtx, dir.ref(), "file", old_bytes.view()).is_err()) return 11;
-    Step const replaced = fs::detail::replace_file_steps_(kCtx, dir.ref(), "file", [&new_bytes](auto file) -> Step {
-        static_cast<void>(fs::write_full(kCtx, file, half_of(new_bytes)).is_ok());
-        return fixy::err(Errno::enospc);
-    });
+    if (fs::replace_file_at<Rename>(kCtx, dir.ref(), "file", old_bytes.view()).is_err()) return 11;
+    Placed const replaced =
+        fs::detail::replace_file_steps_<Rename>(kCtx, dir.ref(), "file", [&new_bytes](auto file) -> Step {
+            static_cast<void>(fs::write_full(kCtx, file, half_of(new_bytes)).is_ok());
+            return fixy::err(Errno::enospc);
+        });
     if (!replaced.is_err_and([](Errno const& error) { return error == Errno::enospc; })) return 12;
     if (!holds_bytes(dir.ref(), "file", old_bytes.view())) return 13;
     ::foundation::os::PathText<64> const first = temporary_name(0);
@@ -148,21 +157,22 @@ template <::fixy::os::RightSet Rights>
     fs::TemporaryDirectory const dir = make_owner();
     Contents const old_bytes = contents_of(kOldText);
     Contents const new_bytes = contents_of(kNewText);
-    if (fs::replace_file_at(kCtx, dir.ref(), "file", old_bytes.view()).is_err()) return 21;
+    if (fs::replace_file_at<Rename>(kCtx, dir.ref(), "file", old_bytes.view()).is_err()) return 21;
     fixy::check::expect_dies(
         kCtx,
         [&dir, &new_bytes] {
-            static_cast<void>(fs::detail::replace_file_steps_(kCtx, dir.ref(), "file", [&new_bytes](auto file) -> Step {
-                                  static_cast<void>(fs::write_full(kCtx, file, half_of(new_bytes)).is_ok());
-                                  fixy::fatal("the write of the temporary file stops after half of the bytes");
-                              }).is_ok());
+            static_cast<void>(
+                fs::detail::replace_file_steps_<Rename>(kCtx, dir.ref(), "file", [&new_bytes](auto file) -> Step {
+                    static_cast<void>(fs::write_full(kCtx, file, half_of(new_bytes)).is_ok());
+                    fixy::fatal("the write of the temporary file stops after half of the bytes");
+                }).is_ok());
         },
         kCrashText);
     ::foundation::os::PathText<64> const first = temporary_name(0);
     ::foundation::os::PathText<64> const second = temporary_name(1);
     if (!holds_bytes(dir.ref(), "file", old_bytes.view())) return 22;
     if (!holds_bytes(dir.ref(), first.c_text(), half_of(new_bytes))) return 23;
-    if (fs::replace_file_at(kCtx, dir.ref(), "file", new_bytes.view()).is_err()) return 24;
+    if (fs::replace_file_at<Rename>(kCtx, dir.ref(), "file", new_bytes.view()).is_err()) return 24;
     if (!holds_bytes(dir.ref(), "file", new_bytes.view())) return 25;
     if (holds_entry(dir.ref(), second.c_text())) return 26;
     return 0;
@@ -176,7 +186,7 @@ template <::fixy::os::RightSet Rights>
     fixy::FixedArray<fixy::CText, 4> const names{fixy::CText{""}, fixy::CText{"inner/file"}, fixy::CText{"."},
                                                  fixy::CText{".."}};
     for (fixy::CText const name : names) {
-        if (!fs::replace_file_at(kCtx, dir.ref(), name, bytes.view()).is_err_and([](Errno const& error) {
+        if (!fs::replace_file_at<Rename>(kCtx, dir.ref(), name, bytes.view()).is_err_and([](Errno const& error) {
                 return error == Errno::einval;
             })) {
             return 32;
@@ -191,7 +201,7 @@ template <::fixy::os::RightSet Rights>
 [[nodiscard]] int check_each_name_in_use_gives_eexist() {
     fs::TemporaryDirectory const dir = make_owner();
     Contents const old_bytes = contents_of(kOldText);
-    if (fs::replace_file_at(kCtx, dir.ref(), "file", old_bytes.view()).is_err()) return 41;
+    if (fs::replace_file_at<Rename>(kCtx, dir.ref(), "file", old_bytes.view()).is_err()) return 41;
     for (std::uint64_t attempt = 0; attempt < fs::kReplaceTries; ++attempt) {
         ::foundation::os::PathText<64> const name = temporary_name(attempt);
         bool const is_made = fs::mint_file_at<Exclusive>(kCtx, dir.ref(), name.c_text())
@@ -204,12 +214,64 @@ template <::fixy::os::RightSet Rights>
         if (!is_made) return 42;
     }
     Contents const new_bytes = contents_of(kNewText);
-    if (!fs::replace_file_at(kCtx, dir.ref(), "file", new_bytes.view()).is_err_and([](Errno const& error) {
+    if (!fs::replace_file_at<Rename>(kCtx, dir.ref(), "file", new_bytes.view()).is_err_and([](Errno const& error) {
             return error == Errno::eexist;
         })) {
         return 43;
     }
     if (!holds_bytes(dir.ref(), "file", old_bytes.view())) return 44;
+    return 0;
+}
+
+// The keep commit makes a missing name and gives written.  At a name that an
+// entry holds, it gives kept_entry, the entry stays whole, and the door
+// removes its own temporary file.
+[[nodiscard]] int check_keep_commit_keeps_an_entry() {
+    fs::TemporaryDirectory const dir = make_owner();
+    Contents const old_bytes = contents_of(kOldText);
+    Contents const new_bytes = contents_of(kNewText);
+    if (!fs::replace_file_at<Keep>(kCtx, dir.ref(), "file", old_bytes.view()).is_ok_and([](fs::ReplaceOutcome placed) {
+            return placed == fs::ReplaceOutcome::written;
+        })) {
+        return 61;
+    }
+    if (!holds_bytes(dir.ref(), "file", old_bytes.view())) return 62;
+    if (!fs::replace_file_at<Keep>(kCtx, dir.ref(), "file", new_bytes.view()).is_ok_and([](fs::ReplaceOutcome placed) {
+            return placed == fs::ReplaceOutcome::kept_entry;
+        })) {
+        return 63;
+    }
+    if (!holds_bytes(dir.ref(), "file", old_bytes.view())) return 64;
+    ::foundation::os::PathText<64> const first = temporary_name(0);
+    if (holds_entry(dir.ref(), first.c_text())) return 65;
+    return 0;
+}
+
+// Only the rename of the keep commit turns eexist into kept_entry.  A write of
+// the temporary file that gives eexist gives that error with each commit, the
+// old file stays whole, and the door removes the temporary file.
+[[nodiscard]] int check_write_error_is_no_kept_entry() {
+    fs::TemporaryDirectory const dir = make_owner();
+    Contents const old_bytes = contents_of(kOldText);
+    if (fs::replace_file_at<Rename>(kCtx, dir.ref(), "file", old_bytes.view()).is_err()) return 81;
+    auto const fail_the_write = [](auto) -> Step { return fixy::err(Errno::eexist); };
+    auto const is_eexist = [](Errno const& error) { return error == Errno::eexist; };
+    Placed const replaced = fs::detail::replace_file_steps_<Rename>(kCtx, dir.ref(), "file", fail_the_write);
+    if (!replaced.is_err_and(is_eexist)) return 82;
+    Placed const kept = fs::detail::replace_file_steps_<Keep>(kCtx, dir.ref(), "file", fail_the_write);
+    if (!kept.is_err_and(is_eexist)) return 83;
+    if (!holds_bytes(dir.ref(), "file", old_bytes.view())) return 84;
+    ::foundation::os::PathText<64> const first = temporary_name(0);
+    if (holds_entry(dir.ref(), first.c_text())) return 85;
+    return 0;
+}
+
+// The door takes the characters of a TextView as it takes a View of bytes.
+[[nodiscard]] int check_replace_of_a_text() {
+    fs::TemporaryDirectory const dir = make_owner();
+    if (fs::replace_file_at<Rename>(kCtx, dir.ref(), "file", kOldText).is_err()) return 71;
+    Contents const old_bytes = contents_of(kOldText);
+    if (!holds_bytes(dir.ref(), "file", old_bytes.view())) return 72;
     return 0;
 }
 
@@ -249,6 +311,9 @@ int main() {
     if (failed == 0) failed = check_crash_before_the_rename_keeps_the_old_file();
     if (failed == 0) failed = check_name_is_one_final_name();
     if (failed == 0) failed = check_each_name_in_use_gives_eexist();
+    if (failed == 0) failed = check_keep_commit_keeps_an_entry();
+    if (failed == 0) failed = check_write_error_is_no_kept_entry();
+    if (failed == 0) failed = check_replace_of_a_text();
     if (failed == 0) failed = check_replace_of_a_path();
     if (failed != 0) {
         fixy::report(fixy::Sink::Err, "test_os_fs_replace: check {} failed\n", failed);
