@@ -7736,6 +7736,46 @@ endif()
 set_property(SOURCE test_fp_polynomial_contracted.cpp APPEND PROPERTY
   COMPILE_DEFINITIONS CRUCIBLE_TEST_FP_CONTRACTED=1)
 
+# test_fp_elementary checks the special values and the edges of exp, log and
+# erf of fixy/fp, and the digests of their results on a fixed sample.  On
+# x86_64 the units of the levels compute the digests with their own bodies:
+# x86-64 and x86-64-v2 run the exact integer form of fp::fma, and x86-64-v3
+# and x86-64-v4 run the instruction.  The build compiles the unit of a level
+# only when the level of the build is a different level, as for
+# test_mimic_cpu_kernels.  The units of the test come first on the link line.
+set(_fp_units test_fp_elementary.cpp)
+foreach(_fp_level v1 v2 v3 v4)
+  set(_fp_has_${_fp_level}_unit 0)
+endforeach()
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+  foreach(_fp_level v1 v2 v3 v4)
+    if(NOT "${CRUCIBLE_X86_LEVEL}" STREQUAL "${_fp_level}")
+      set(_fp_has_${_fp_level}_unit 1)
+      list(APPEND _fp_units fp_elementary_unit_${_fp_level}.cpp)
+      if(_fp_level STREQUAL "v1")
+        set_source_files_properties(fp_elementary_unit_v1.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64)
+      else()
+        set_source_files_properties(fp_elementary_unit_${_fp_level}.cpp PROPERTIES
+          COMPILE_OPTIONS -march=x86-64-${_fp_level})
+      endif()
+    endif()
+  endforeach()
+endif()
+fixy_test(test_fp_elementary ${_fp_units})
+target_compile_definitions(test_fp_elementary PRIVATE CRUCIBLE_TEST_HAS_V1_UNIT=${_fp_has_v1_unit}
+                                                      CRUCIBLE_TEST_HAS_V2_UNIT=${_fp_has_v2_unit}
+                                                      CRUCIBLE_TEST_HAS_V3_UNIT=${_fp_has_v3_unit}
+                                                      CRUCIBLE_TEST_HAS_V4_UNIT=${_fp_has_v4_unit})
+
+# The probes of exp, log and erf at x86-64-v3 and x86-64-v4 hold no fma that
+# no fp::fma gives.  The check compiles fp_elementary_unit_v3.cpp with the
+# command of test_fp_elementary.cpp, with the flags of the build and again
+# with -ffp-contract=off at the end, and the two counts of each function must
+# be equal (test/fixy/check_fp_fma.py).  A host that is not x86_64 gives a skip.
+crucible_script_test(NAME fp_elementary_no_contraction
+  COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/check_fp_fma.py ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR})
+set_tests_properties(fp_elementary_no_contraction PROPERTIES SKIP_RETURN_CODE 77 LABELS "fixy")
+
 # A constant evaluation that reaches a domain precondition of the
 # polynomials stops at its consteval trap.  Three fixtures refuse angles
 # outside one turn, at sin_poly, cos_poly and reduce_quarter_pi, and three
