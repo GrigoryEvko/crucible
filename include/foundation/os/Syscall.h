@@ -168,6 +168,9 @@ enum class Syscall : std::uint8_t {
     // The type of the file of an opened descriptor, which the door of an open
     // reads (the opened descriptor of fixy/os/Fd.h).
     statx,
+    // The two connected ends of a stream socket of the local domain, which the
+    // pair door of fixy/os/Socket.h opens.
+    socketpair,
 };
 
 // True when the call can wait for a long time: for another thread or process

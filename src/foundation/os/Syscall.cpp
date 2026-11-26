@@ -328,6 +328,8 @@ constexpr long kNoCall = -1;
             return __NR_fcntl;
         case Syscall::statx:
             return __NR_statx;
+        case Syscall::socketpair:
+            return __NR_socketpair;
         default:
             return kNoCall;
     }
@@ -516,7 +518,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // unlinkat, mkdirat and newfstatat came in 2.6.16.  mbind, get_mempolicy and
 // set_mempolicy came in 2.6.7, and the memory policy door uses
 // MPOL_MF_MOVE, which came in 2.6.16.  move_pages came in 2.6.18, and pipe2
-// and dup3 came in 2.6.27.  futex came
+// and dup3 came in 2.6.27.  socketpair came before 2.6.0, and the pair door
+// gives it SOCK_CLOEXEC in its type, which came in 2.6.27.  futex came
 // in 2.6.0, and the futex door uses FUTEX_WAIT_BITSET, which came in 2.6.25.
 // perf_event_open came in 2.6.31, sched_setattr and sched_getattr in 3.14,
 // renameat2 in 3.15, mlock2 in 4.4, copy_file_range in 4.5, io_uring_setup in
@@ -557,6 +560,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
             break;
         case Syscall::pipe2:
         case Syscall::dup3:
+        case Syscall::socketpair:
             added = KernelVersion{2, 6, 27};
             break;
         case Syscall::futex:

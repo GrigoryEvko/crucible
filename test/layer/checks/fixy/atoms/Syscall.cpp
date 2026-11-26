@@ -72,7 +72,7 @@ static_assert(syscall_family_table.size() == ::foundation::reflect::enum_count<S
               "fixy/atoms/Syscall.h: the table and the catalog must have the same size.");
 
 // The catalog is append-only.  A new call raises this count.
-static_assert(::foundation::reflect::enum_count<SI> == 50,
+static_assert(::foundation::reflect::enum_count<SI> == 51,
               "fixy/atoms/Syscall.h: SyscallId has a different number of calls than this pin records.  A new "
               "call appends at the next free ordinal and raises the count.  A call that disappeared moves "
               "stored federation keys, and somebody has to justify it.");
@@ -122,11 +122,11 @@ static_assert(every_roster_member_on_axis_<syscall_atom_roster, Axis::SyscallSur
               "fixy/atoms/Syscall.h: every system-call atom engages Axis::SyscallSurface.");
 static_assert(every_roster_member_lifts_<syscall_atom_roster>(),
               "fixy/atoms/Syscall.h: every system-call atom lifts to an effect row.");
-static_assert(std::tuple_size_v<syscall_atom_roster> == 50 + 9,
+static_assert(std::tuple_size_v<syscall_atom_roster> == 51 + 9,
               "fixy/atoms/Syscall.h: the roster holds one atom per call and one per family.");
 static_assert(std::is_same_v<std::tuple_element_t<41, syscall_atom_roster>, syscall::per<SI::bpf>>);
 static_assert(std::is_same_v<std::tuple_element_t<49, syscall_atom_roster>, syscall::per<SI::clock_nanosleep>>);
-static_assert(std::is_same_v<std::tuple_element_t<50 + 8, syscall_atom_roster>, syscall::family<SF::Privilege>>);
+static_assert(std::is_same_v<std::tuple_element_t<51 + 8, syscall_atom_roster>, syscall::family<SF::Privilege>>);
 
 // The family of a call, read off the atom, at one call per family.
 static_assert(syscall::per<SI::clock_gettime>::family == SF::VdsoOnly);
@@ -142,6 +142,7 @@ static_assert(syscall::per<SI::eventfd>::family == SF::ThreadSync);
 static_assert(syscall::per<SI::nanosleep>::family == SF::ThreadSync);
 static_assert(syscall::per<SI::clock_nanosleep>::family == SF::ThreadSync);
 static_assert(syscall::per<SI::socket>::family == SF::NetworkIo);
+static_assert(syscall::per<SI::socketpair>::family == SF::NetworkIo);
 static_assert(syscall::per<SI::execve>::family == SF::ProcessControl);
 static_assert(syscall::per<SI::bpf>::family == SF::Privilege);
 static_assert(syscall::per<SI::perf_event_open>::family == SF::Privilege);
@@ -166,6 +167,7 @@ static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::eventfd>>, fe::Row<
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::recvmsg>>,
                              fe::Row<fe::Effect::IO, fe::Effect::Block, fe::Effect::Nondet>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::sendmsg>>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::socketpair>>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::per<SI::bpf>>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<syscall::family<SF::NoSyscall>>, fe::Row<>>);
 
@@ -233,7 +235,7 @@ concept per_is_admitted_ = requires { typename syscall::per<Id>; };
 template <SF F>
 concept family_is_admitted_ = requires { typename syscall::family<F>; };
 static_assert(per_is_admitted_<SI::bpf>);
-static_assert(!per_is_admitted_<static_cast<SI>(50)>);
+static_assert(!per_is_admitted_<static_cast<SI>(51)>);
 static_assert(family_is_admitted_<SF::Privilege>);
 static_assert(!family_is_admitted_<static_cast<SF>(9)>);
 
@@ -243,5 +245,6 @@ static_assert(std::to_underlying(SI::bpf) == 41);
 static_assert(std::to_underlying(SI::sched_getattr) == 44);
 static_assert(std::to_underlying(SI::poll) == 45);
 static_assert(std::to_underlying(SI::clock_nanosleep) == 49);
+static_assert(std::to_underlying(SI::socketpair) == 50);
 
 }  // namespace fixy::atom::detail::syscall_atom_self_test

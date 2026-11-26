@@ -149,6 +149,9 @@ enum class SyscallId : std::uint16_t {
     eventfd = 47,
     nanosleep = 48,
     clock_nanosleep = 49,
+
+    // The two connected ends of a socket of the local domain.
+    socketpair = 50,
 };
 
 }  // namespace fixy::atom::syscall
@@ -159,7 +162,7 @@ namespace sc = ::fixy::atom::syscall;
 
 // One row per call.  The check file of this header requires each
 // enumerator of SyscallId to hold exactly one row.
-inline constexpr std::array<std::pair<sc::SyscallId, sc::SyscallFamily>, 50> syscall_family_table{{
+inline constexpr std::array<std::pair<sc::SyscallId, sc::SyscallFamily>, 51> syscall_family_table{{
     {sc::SyscallId::clock_gettime, sc::SyscallFamily::VdsoOnly},
     {sc::SyscallId::clock_getres, sc::SyscallFamily::VdsoOnly},
     {sc::SyscallId::getcpu_vdso, sc::SyscallFamily::VdsoOnly},
@@ -215,6 +218,7 @@ inline constexpr std::array<std::pair<sc::SyscallId, sc::SyscallFamily>, 50> sys
     {sc::SyscallId::connect, sc::SyscallFamily::NetworkIo},
     {sc::SyscallId::sendmsg, sc::SyscallFamily::NetworkIo},
     {sc::SyscallId::recvmsg, sc::SyscallFamily::NetworkIo},
+    {sc::SyscallId::socketpair, sc::SyscallFamily::NetworkIo},
 
     {sc::SyscallId::clone, sc::SyscallFamily::ProcessControl},
     {sc::SyscallId::execve, sc::SyscallFamily::ProcessControl},
@@ -469,7 +473,8 @@ using syscall_call_atom_roster = std::tuple<
     syscall::per<sc::SyscallId::prctl>, syscall::per<sc::SyscallId::bpf>, syscall::per<sc::SyscallId::perf_event_open>,
     syscall::per<sc::SyscallId::sched_getaffinity>, syscall::per<sc::SyscallId::sched_getattr>,
     syscall::per<sc::SyscallId::poll>, syscall::per<sc::SyscallId::epoll_wait>, syscall::per<sc::SyscallId::eventfd>,
-    syscall::per<sc::SyscallId::nanosleep>, syscall::per<sc::SyscallId::clock_nanosleep>>;
+    syscall::per<sc::SyscallId::nanosleep>, syscall::per<sc::SyscallId::clock_nanosleep>,
+    syscall::per<sc::SyscallId::socketpair>>;
 
 // Every family, in the order of the chain.  The check file holds this
 // list to the enumerators of SyscallFamily in the same way.
