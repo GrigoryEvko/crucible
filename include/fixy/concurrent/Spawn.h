@@ -818,13 +818,17 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
         }
     }
 
-    // The first element of the region that the split cut: the first element
-    // of shard 0, which starts at the position zero of the region.  No body
-    // reaches a shard, so no shard moves while the bodies run.
+    // The address of the first element of the region that the split cut, as a
+    // word: the first element of shard 0, which starts at the position zero of
+    // the region.  No body reaches a shard, so no shard moves while the bodies
+    // run.  A word holds no loan of the shards, so the frame of a shard gets the
+    // shards under one name.
     template <typename Shards>
-    [[nodiscard]] static auto first_of_whole_(Shards& shards) noexcept {
-        return first_of_(::foundation::core::detail::BaseLayerRead{},
-                         frame_run_(::foundation::core::ParallelForFrameKeyDoor::key_(), std::get<0>(shards)));
+    [[nodiscard]] static __UINTPTR_TYPE__ first_of_whole_(Shards& shards) noexcept {
+        return __builtin_bit_cast(
+            __UINTPTR_TYPE__,
+            first_of_(::foundation::core::detail::BaseLayerRead{},
+                      frame_run_(::foundation::core::ParallelForFrameKeyDoor::key_(), std::get<0>(shards))));
     }
 
     // The frame of shard I (design note 3): body gets the ViewMut of the
@@ -835,16 +839,16 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     // shard of const elements gives the View of its elements (shard_run_t).
     // The shard stays in the tuple, and only this frame lends its run.
     // Complexity: O(1), and the cost of body.
-    template <std::size_t I, std::size_t N, typename Shards, typename Body, typename Element, typename... Runs>
-    static void run_shard_(Shards& shards, Body& body, Element* whole_first, Runs const&... inputs) noexcept {
+    template <std::size_t I, std::size_t N, typename Shards, typename Body, typename... Runs>
+    static void run_shard_(Shards& shards, Body& body, __UINTPTR_TYPE__ whole_first, Runs const&... inputs) noexcept {
         auto& shard = std::get<I>(shards);
         using Shard = std::remove_reference_t<decltype(shard)>;
-        static_assert(std::is_same_v<Element, typename Shard::value_type>);
+        using Element = typename Shard::value_type;
         ::foundation::core::View<Element> const run =
             frame_run_(::foundation::core::ParallelForFrameKeyDoor::key_(), shard);
-        ShardPlace<N> const place{
-            ::foundation::core::index<I>(),
-            static_cast<std::size_t>(first_of_(::foundation::core::detail::BaseLayerRead{}, run) - whole_first)};
+        __UINTPTR_TYPE__ const first =
+            __builtin_bit_cast(__UINTPTR_TYPE__, first_of_(::foundation::core::detail::BaseLayerRead{}, run));
+        ShardPlace<N> const place{::foundation::core::index<I>(), (first - whole_first) / sizeof(Element)};
         if constexpr (std::is_const_v<Element>) {
             static_cast<void>(body(run, place, inputs...));
         } else {
@@ -865,7 +869,7 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
         using Frame = worker_frame_<Shards, Runs, Body>;
         Frame const& source = frame.restore<Frame>();
         Body body = *source.body;
-        auto* const whole_first = first_of_whole_(*source.shards);
+        __UINTPTR_TYPE__ const whole_first = first_of_whole_(*source.shards);
         auto const [... inputs] = *source.runs;
         ((Is % source.threads == source.worker
               ? run_shard_<Is, sizeof...(Is)>(*source.shards, body, whole_first, inputs...)
@@ -898,7 +902,7 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     // Runs each shard on the calling thread, in shard order.
     template <typename Shards, typename Runs, typename Body, std::size_t... Is>
     static void run_inline_(Shards& shards, Runs const& runs, Body& body, std::index_sequence<Is...>) noexcept {
-        auto* const whole_first = first_of_whole_(shards);
+        __UINTPTR_TYPE__ const whole_first = first_of_whole_(shards);
         auto const& [... inputs] = runs;
         (run_shard_<Is, sizeof...(Is)>(shards, body, whole_first, inputs...), ...);
     }
