@@ -701,8 +701,9 @@ void for_each_register_run(core::View<First> first, core::View<Second> second,
 
 // A body that takes the ViewMut of one register run of the run of a frame
 // and the View of one register run of a second View, gives void, and does
-// not throw.  It holds no linear value by value, as a RegisterRunBody does
-// (ChunkPairMutBody of foundation/core/Region.h).
+// not throw.  It holds no linear value by value, and it stores no borrow
+// outside the walk, as a RegisterRunBody does (ChunkPairMutBody of
+// foundation/core/Region.h).
 template <typename Body, typename V, typename First, typename Brand, typename Second>
 concept RegisterRunMutBody = core::ChunkPairMutBody<Body, First, Brand, Second, sizeof(typename V::raw_type)>;
 
@@ -729,6 +730,14 @@ template <typename V, typename First, ::foundation::brand::IsBrand Brand, std::s
     requires(!::foundation::linear::HoldsNoLinearValue<Body>)
 void for_each_register_run(core::ViewMut<First, Brand, Extent>&& first, core::View<Second> second,
                            Body body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A body that can store a borrow outside the walk binds to this overload, so
+// the refusal gives its reason (RegisterRunMutBody).
+template <typename V, typename First, ::foundation::brand::IsBrand Brand, std::size_t Extent, typename Second,
+          typename Body>
+    requires ::foundation::linear::HoldsNoLinearValue<Body> && (!core::StoresNoBorrowOutside<Body>)
+void for_each_register_run(core::ViewMut<First, Brand, Extent>&& first, core::View<Second> second,
+                           Body body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 // A named ViewMut stays with the caller, so the runs would be second writers
 // of its run.  A const ViewMut writes nothing, so it gives no writer of a run.

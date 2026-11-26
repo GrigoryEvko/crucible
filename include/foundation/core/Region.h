@@ -540,11 +540,13 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 
 // A body of for_each_chunk: it takes the ViewMut of one part of Width
 // elements with the brand of the run, gives void, does not throw, and holds
-// no linear value by value.
+// no linear value by value.  It stores no borrow outside the walk
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h), so no part has a
+// second writer after the walk.
 template <class Body, class T, class Brand, std::size_t Width>
 concept ChunkBody = std::is_nothrow_invocable_v<Body&, ViewMut<T, Brand, Width>>
                  && std::is_void_v<detail::body_result_t<Body&, ViewMut<T, Brand, Width>>>
-                 && ::foundation::linear::HoldsNoLinearValue<Body>;
+                 && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>;
 
 template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent, class Body>
     requires ViewExtent<T, Width> && (Width != dynamic_extent) && ChunkBody<Body, T, Brand, Width>
@@ -553,12 +555,13 @@ template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::s
 
 // A body of for_each_chunk_pair: it takes the ViewMut of one part of Width
 // elements with the brand of the run and the View of the part at the same
-// position of the second run.  It gives void, does not throw, and holds no
-// linear value by value.
+// position of the second run.  It gives void, does not throw, holds no
+// linear value by value, and stores no borrow outside the walk, as a
+// ChunkBody does.
 template <class Body, class T, class Brand, class U, std::size_t Width>
 concept ChunkPairMutBody = std::is_nothrow_invocable_v<Body&, ViewMut<T, Brand, Width>, View<U, Width>>
                         && std::is_void_v<std::invoke_result_t<Body&, ViewMut<T, Brand, Width>, View<U, Width>>>
-                        && ::foundation::linear::HoldsNoLinearValue<Body>;
+                        && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>;
 
 template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent, class U, class Body>
     requires ViewExtent<T, Width> && ViewExtent<U, Width> && (Width != dynamic_extent)
@@ -1767,6 +1770,20 @@ void for_each_chunk_pair(ViewMut<T, Brand, Extent>&, View<U>,
 template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent, class U, class Body>
 void for_each_chunk_pair(ViewMut<T, Brand, Extent> const&, View<U>,
                          Body) = delete("a const ViewMut writes nothing, so it gives no writer of a part");
+
+// A body that can store a borrow outside the walk binds to these overloads, so
+// the refusal gives its reason, and not the reason of a const ViewMut.
+template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent, class Body>
+    requires ViewExtent<T, Width> && (Width != dynamic_extent)
+              && std::is_nothrow_invocable_v<Body&, ViewMut<T, Brand, Width>>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && (!StoresNoBorrowOutside<Body>)
+void for_each_chunk(ViewMut<T, Brand, Extent>&& whole, Body body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+template <std::size_t Width, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent, class U, class Body>
+    requires ViewExtent<T, Width> && ViewExtent<U, Width> && (Width != dynamic_extent)
+              && std::is_nothrow_invocable_v<Body&, ViewMut<T, Brand, Width>, View<U, Width>>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && (!StoresNoBorrowOutside<Body>)
+void for_each_chunk_pair(ViewMut<T, Brand, Extent>&& first, View<U> second,
+                         Body body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 namespace detail {
 

@@ -129,6 +129,14 @@ static_assert(!RegisterRunBody<RunBodyThatKeeps<core::Option<core::View<std::byt
                                std::byte const>);
 static_assert(RegisterRunBody<RunBodyThatKeeps<int>, RunBytes, std::byte const, std::byte const>);
 
+// The run of a frame refuses the same body, and admits the same body with a
+// count, because the door gives the rest of the run back to the caller as its
+// one writer.
+struct RunBrand final {};
+static_assert(!RegisterRunMutBody<RunBodyThatKeeps<core::Option<core::View<std::byte const>>>, RunBytes, std::byte,
+                                  RunBrand, std::byte const>);
+static_assert(RegisterRunMutBody<RunBodyThatKeeps<int>, RunBytes, std::byte, RunBrand, std::byte const>);
+
 }  // namespace detail::simd_self_test
 
 }  // namespace foundation::simd

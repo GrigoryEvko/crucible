@@ -564,6 +564,23 @@ consteval bool gives_the_first_address() {
 static_assert(gives_the_first_address());
 static_assert(std::is_same_v<decltype(foreign_first(std::declval<View<int const>>())), int const*>);
 
+// The walks of the parts of a ViewMut give the rest of the run back to the
+// caller as its one writer, so each refuses a body that can store a borrow
+// outside the walk, such as a body with a reference to an Option of a View,
+// and admits the same body with a reference to a count (StoresNoBorrowOutside
+// of foundation/core/CaptureStore.h).
+template <class Kept>
+struct KeepsPartByReference final {
+    Kept& kept;
+    void operator()(ViewMut<int, UniqueBrand, 4> /*part*/) const noexcept {}
+    void operator()(ViewMut<int, UniqueBrand, 4> /*part*/, View<int const, 4> /*other*/) const noexcept {}
+};
+using KeptView = Option<View<int const>>;
+static_assert(!ChunkBody<KeepsPartByReference<KeptView>, int, UniqueBrand, 4>);
+static_assert(ChunkBody<KeepsPartByReference<int>, int, UniqueBrand, 4>);
+static_assert(!ChunkPairMutBody<KeepsPartByReference<KeptView>, int, UniqueBrand, int const, 4>);
+static_assert(ChunkPairMutBody<KeepsPartByReference<int>, int, UniqueBrand, int const, 4>);
+
 }  // namespace detail::region_checks
 
 }  // namespace foundation::core

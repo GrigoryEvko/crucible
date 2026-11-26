@@ -5503,6 +5503,19 @@ foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_of_named
 foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_of_const
   "neg_core_view_mut_for_each_chunk_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::for_each_chunk\\(const ViewMut<T, Brand, Extent>&, Body\\)"
   "a const ViewMut writes nothing, so it gives no writer of a part")
+# The parts of a walk refuse a body that captures by reference an Option of a
+# View, because the door gives the rest of the run back to the caller as its
+# one writer.  The store twin of each walk gives the reason, also for the run
+# of a frame of for_each_register_run.
+foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_keeps_a_part
+  "use of deleted function .void foundation::core::for_each_chunk\\(ViewMut<T, Brand, Extent>&&, Body\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_pair_keeps_a_part
+  "use of deleted function .void foundation::core::for_each_chunk_pair\\(ViewMut<T, Brand, Extent>&&, View<U>, Body\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_simd_register_run_mut_keeps_a_view
+  "use of deleted function .void foundation::simd::[a-z0-9_]+::for_each_register_run\\(foundation::core::ViewMut<T, Brand, Extent>&&, foundation::core::View<U>, Body\\)"
+  "a body of a frame door stores no borrow outside the frame")
 # The total prefix of a ViewMut takes it by move, so the prefix is the one
 # writer of its part.  The prefix of a named ViewMut and of a const one do
 # not compile.
