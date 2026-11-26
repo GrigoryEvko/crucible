@@ -11,7 +11,7 @@ auto claim_through(const crucible::Vigil& vigil) { return vigil.mint_producer_co
 }  // namespace
 
 int main() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     (void)claim_through(vigil);
     return 0;
 }

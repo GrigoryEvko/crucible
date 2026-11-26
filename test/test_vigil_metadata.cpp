@@ -124,7 +124,7 @@ void write_over_each_slot(crucible::Vigil& vigil) {
 void test_region_keeps_its_metadata_after_the_log_wraps() {
     using crucible::DispatchResult;
 
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const auto fg = vigil.mint_producer_context();
 
     // Two whole iterations and the head of a third: the shortest input that

@@ -123,7 +123,7 @@ void feed_one_region(crucible::Vigil& vigil, uint32_t first_iter) {
 // publishing the region fed just before it, so the log sees a rollback and
 // a publication close together on every round.
 void rollback_while_regions_are_in_flight() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     feed_one_region(vigil, 0);
     crucible::test::flush_and_wait_region_published(kTest, vigil);
 
@@ -152,7 +152,7 @@ void rollback_while_regions_are_in_flight() {
 // freed region shows under the address sanitizer, and a race of the sweep and
 // the read shows under the thread sanitizer preset.
 void rollback_reads_its_region_while_the_store_sweeps() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     feed_one_region(vigil, 0);
     crucible::test::flush_and_wait_region_published(kTest, vigil);
     feed_one_region(vigil, 4);
@@ -176,7 +176,7 @@ void rollback_reads_its_region_while_the_store_sweeps() {
 }
 
 void rollback_on_a_fresh_vigil() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     if (vigil.rollback()) fail("a rollback on an empty log restored a transaction");
 }
 

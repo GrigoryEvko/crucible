@@ -7,7 +7,7 @@
 #include <crucible/Vigil.h>
 
 int main() {
-    ::crucible::Vigil first;
+    ::crucible::Vigil first = ::crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     ::crucible::Vigil second{first};
     return second.is_compiled() ? 0 : 1;
 }

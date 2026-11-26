@@ -93,6 +93,14 @@ struct VigilLogSides final {
     using consumer_proof = BackgroundThread::PublishStage;
 };
 
+// The context that starts a Vigil: the startup load context of the init door.
+// The start seals the schema table and the kernel table, which spins (Div), a
+// store flushes its objects (Block), and the background thread starts under
+// the Init atom.  A hot foreground context and a background context start no
+// Vigil.
+template <class Ctx>
+concept CtxFitsVigil = ::foundation::effects::IsExecCtx<Ctx> && std::same_as<Ctx, ::fixy::InitLoadCtx>;
+
 class Vigil {
 public:
     // The mode types live in a smaller header, so an observer names them
@@ -126,21 +134,6 @@ public:
         uint64_t device_capability = 0;
         // The root directory of the store.  An empty path gives no store.
         ::fixy::GrowText cipher_path = ::fixy::mint_grow_text(CIPHER_PATH_MAX);
-
-        // Enabling this loads the scheduler-switch tracing subprogram and
-        // observes the dispatcher's preempt count once per region
-        // transition, publishing the verdict through the watchdog
-        // accessors.  This is observation only: nothing here changes the
-        // scheduler class, and a caller acts on the verdict itself.
-        //
-        // Off by default because it needs CAP_BPF and a kernel carrying the
-        // sched_switch tracepoint's type information.  Attaching fails
-        // gracefully, but then every observation returns InsufficientData,
-        // so the cost buys no signal.
-        bool enable_deadline_watchdog = false;
-
-        // Only the deadline-miss budget and the window length are read here.
-        warden::Policy watchdog_policy = warden::Policy::production();
 
         // The numerics policy of the run, fixed for the life of the Vigil,
         // and the eager word that the front end read at the attach.  The
@@ -202,27 +195,28 @@ public:
     // an unlikely function.  A hot dispatch loop in that caller then
     // compiles for size.
 
-    // No persistence, no distributed context.
-    Vigil() : Vigil(Config{}) {}
-
-    // The constructor runs at process startup, so it opens the init door one
-    // time and hands that one context to every startup step below.
-    explicit Vigil(Config cfg)
-        : Vigil(std::move(cfg), ::fixy::InitLoadCtx{::foundation::effects::host::InitOwner::mint_init_context()}) {}
-
 private:
     // Makes the ring and the metadata log, opens the store when the
-    // configuration names a path, loads the watchdog when the configuration
-    // asks for it, and starts the background thread.  A store that does not
-    // open gives a report of the reason and a Vigil with no store, and
-    // has_store tells the caller.  The body is in
-    // src/Vigil.cpp, so a translation unit that makes a Vigil compiles no
-    // part of the background pipeline.
+    // configuration names a path, loads the watchdog when the mint gives its
+    // policy, and starts the background thread.  A store that does not open
+    // gives a report of the reason and a Vigil with no store, and has_store
+    // tells the caller.  The body is in src/Vigil.cpp, so a translation unit
+    // that makes a Vigil compiles no part of the background pipeline.
     //
-    // The program load of the watchdog waits in the kernel for the verifier,
-    // so the constructor takes the startup load context.  The transaction log
-    // reads no clock and takes no context.
-    Vigil(Config cfg, ::fixy::InitLoadCtx const& startup);
+    // The constructor is private, and the two mints below the class are its
+    // friends.  So each Vigil comes from the startup load context of a
+    // caller, which the start of the background thread, the seals and the
+    // store need.  The transaction log reads no clock and takes no context.
+    Vigil(Config cfg, ::fixy::InitLoadCtx const& startup, ::fixy::Option<warden::Policy> const& watchdog);
+
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires CtxFitsVigil<Ctx>
+    friend auto mint_vigil(Ctx const& startup, Config&& config) noexcept -> Vigil;
+
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires CtxFitsVigil<Ctx>
+    friend auto mint_vigil_with_deadline_watchdog(Ctx const& startup, Config&& config, warden::Policy policy) noexcept
+        -> Vigil;
 
 public:
     // src/Vigil.cpp defines it.  The destruction order of the members is
@@ -932,11 +926,12 @@ private:
             });
     }
 
-    // Opens the store and the watchdog of the configuration, and gives the
-    // numerics of the start of the pipeline.  The initializer of bg_ calls it
-    // before the start, while each other member is complete.  The body is in
-    // src/Vigil.cpp.
-    [[nodiscard, gnu::cold]] NumericsHash prepare_start_(::fixy::InitLoadCtx const& startup);
+    // Opens the store of the configuration and the watchdog of the policy,
+    // and gives the numerics of the start of the pipeline.  The initializer
+    // of bg_ calls it before the start, while each other member is complete.
+    // The body is in src/Vigil.cpp.
+    [[nodiscard, gnu::cold]] NumericsHash prepare_start_(::fixy::InitLoadCtx const& startup,
+                                                         ::fixy::Option<warden::Policy> const& watchdog);
 
     // Runs on the background thread when a new region is ready.  It must
     // not touch the persistence store: that owns mutable resident-cache and
@@ -1840,5 +1835,32 @@ decltype(auto) Vigil::with_foreign_op_nest(VigilFgCtx const& fg, Body&& body) & 
     return static_cast<Body&&>(body)(nest.depth());
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// A Vigil of the configuration with no deadline watchdog.  A Vigil cannot
+// move, so the caller takes the result in place, such as
+// `Vigil vigil = mint_vigil(startup, Vigil::Config{});`, or in a Box through
+// mint_box_built.  The mint takes the configuration by an rvalue reference:
+// the Vigil consumes it, and the result borrows no part of it.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsVigil<Ctx>
+[[nodiscard]] auto mint_vigil(Ctx const& startup, Vigil::Config&& config) noexcept -> Vigil {
+    return Vigil{std::move(config), startup, ::fixy::Option<warden::Policy>{::fixy::none}};
+}
+
+// A Vigil of the configuration with the deadline watchdog of the policy.  The
+// start loads the scheduler-switch tracing subprogram, and the watchdog
+// observes the preempt count of the dispatcher once at each region
+// transition.  The verdict is observation only: nothing here changes the
+// scheduler class, and a caller acts on the verdict itself.  The load needs
+// CAP_BPF and a kernel with the type information of the sched_switch
+// tracepoint.  A load that fails is no error, but each observation then gives
+// InsufficientData.  Only the deadline-miss budget and the window length of
+// the policy are read.
+template <::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsVigil<Ctx>
+[[nodiscard]] auto mint_vigil_with_deadline_watchdog(Ctx const& startup, Vigil::Config&& config,
+                                                     warden::Policy policy) noexcept -> Vigil {
+    return Vigil{std::move(config), startup, ::fixy::Option<warden::Policy>::some(policy)};
+}
 
 }  // namespace crucible

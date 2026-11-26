@@ -29,7 +29,7 @@ using crucible::test::flush_and_wait_region_published;
 // cached, every switch must come from the cache and none may fall back
 // to recording.
 void test_cache_repeated_switching() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_record(vigil, SHAPE_A, 0, 0);
     feed_record(vigil, SHAPE_A, 0, 1);

@@ -53,7 +53,7 @@ int main() {
                                     && "the parameter count must match the "
                                        "reference implementation");
 
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_iter(vigil, net.ops, 0);
     feed_iter(vigil, net.ops, 1);

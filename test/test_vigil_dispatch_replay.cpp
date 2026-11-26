@@ -26,7 +26,7 @@ namespace test_vigil_dispatch {
 using crucible::test::flush_and_wait_region_published;
 
 void test_dispatch_basic() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_record(vigil, 0);
     feed_record(vigil, 1);
@@ -71,7 +71,7 @@ void test_dispatch_basic() {
 }
 
 void test_dispatch_divergence() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_record(vigil, 0);
     feed_record(vigil, 1);
@@ -112,7 +112,7 @@ void test_dispatch_divergence() {
 }
 
 void test_dispatch_recovery() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_record(vigil, 0);
     feed_record(vigil, 1);

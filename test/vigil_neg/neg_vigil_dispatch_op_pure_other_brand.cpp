@@ -13,7 +13,7 @@ struct Stranger {};
 }  // namespace
 
 int main() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const crucible::TraceRing::SealedEntry entry{::fixy::build_sealed,
                                                  []() noexcept { return crucible::TraceRing::Entry{}; }};
     const crucible::ValidatedOp op =

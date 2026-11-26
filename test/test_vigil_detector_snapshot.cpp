@@ -58,7 +58,7 @@ void record(Vigil& vigil, uint64_t position) {
 // the loop.  No reset restarts the detector, so its count of boundaries only
 // rises, and the last count is the largest.
 void test_detector_reads_while_the_pipeline_runs(::fixy::TestRunnerCtx const& test) {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     uint32_t largest_seen = 0;
     uint64_t confirmed_reads = 0;
     for (uint64_t position = 0; position < kPeriod * kIterations; ++position) {

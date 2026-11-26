@@ -7,7 +7,7 @@
 #include <crucible/Vigil.h>
 
 int main() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     auto const out = vigil.output_ptr(::foundation::effects::testing::foreground(), crucible::OutputPosition{0});
     (void)out;
     return 0;

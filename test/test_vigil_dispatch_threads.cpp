@@ -48,7 +48,7 @@ void test_second_producer_is_rejected(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            Vigil vigil;
+            Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
             // Claims this thread as the producer.
             auto first = make_op(0, 0);
@@ -64,7 +64,7 @@ void test_second_producer_is_rejected(::fixy::TestRunnerCtx const& test) {
 
     // The same call from the claiming thread keeps working, so the gate is a
     // gate and not a blanket refusal.
-    Vigil vigil;
+    Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     auto d = make_op(0, 0);
     auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
     CRUCIBLE_TEST_ASSERT(test, r.action == DispatchResult::Action::RECORD);
@@ -89,7 +89,7 @@ void expect_gate_refuses_the_intruder(::fixy::TestRunnerCtx const& test, Gate ga
     ::fixy::check::expect_dies(
         test,
         [gate] noexcept {
-            Vigil vigil;
+            Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
             const VigilFgCtx fg = vigil.mint_producer_context();
             std::thread intruder([&vigil, &fg, gate] { gate(vigil, fg); });
             intruder.join();
@@ -115,7 +115,7 @@ void test_cold_gates_reject_a_context_on_another_thread(::fixy::TestRunnerCtx co
         kNotTheBrandThread);
 
     // The claiming thread passes the same gates.
-    Vigil vigil;
+    Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const VigilFgCtx fg = vigil.mint_producer_context();
     static_cast<void>(global_schema_table().mint_mutable_view(fg));
     static_cast<void>(global_ckernel_table().value()->mint_mutable_view(fg));
@@ -137,7 +137,7 @@ void test_second_producer_gets_no_proof(::fixy::TestRunnerCtx const& test) {
         },
         kNotTheHolder);
 
-    Vigil vigil;
+    Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     auto first = make_op(0, 0);
     const bool took = crucible::test::record_synthetic(vigil, first.entry, first.metas, first.n_metas);
     CRUCIBLE_TEST_ASSERT(test, took);
@@ -175,7 +175,7 @@ void test_second_thread_cannot_claim_the_brand(::fixy::TestRunnerCtx const& test
     // brand of the Vigil.
     bool is_later_claim_admitted = false;
     std::thread later_thread([&is_later_claim_admitted] {
-        Vigil later;
+        Vigil later = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         static_cast<void>(later.mint_producer_context());
         is_later_claim_admitted = later.is_producer_thread();
     });
@@ -237,7 +237,7 @@ void test_released_claim_lets_another_thread_claim(::fixy::TestRunnerCtx const& 
 
     // A Vigil gives up its claim in the same way: a thread that did not create
     // it records into it after the release.
-    Vigil vigil;
+    Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     auto op = make_op(0, 0);
     static_cast<void>(crucible::test::dispatch_synthetic(vigil, op.entry, op.metas, op.n_metas));
     vigil.release_producer_claim();
@@ -287,7 +287,7 @@ void test_try_claim_refuses_a_wrong_thread(::fixy::TestRunnerCtx const& test) {
     });
     CRUCIBLE_TEST_ASSERT(test, is_released_claim_taken && "a released claim goes to the next caller");
 
-    Vigil vigil;
+    Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     CRUCIBLE_TEST_ASSERT(test, vigil.try_claim_producer() && "a new Vigil goes to the caller");
     bool is_vigil_refused = false;
     ::fixy::Atomic<std::uint64_t> vigil_address{::crucible::test::address_of_thread_bound(vigil)};

@@ -30,7 +30,7 @@ namespace test_vigil {
 // is read back, so the read carries a happens-before edge and the recorded
 // op stream stays single-threaded throughout.
 void test_record_op_claims_the_producer_role() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     CRUCIBLE_TEST_ASSERT(kTest,
                          vigil.is_producer_thread() && "an unclaimed Vigil admits the first thread that arrives");
 
@@ -51,7 +51,7 @@ void test_record_op_claims_the_producer_role() {
 // The counters of the ring and of the metadata log take no context, and they
 // count the op and the records that record_op put into them.
 void test_counters_count_the_recorded_op() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const uint64_t ring_before = vigil.ring_total_produced();
     const uint64_t log_before = vigil.meta_log_total_produced().raw();
     auto first = divrig::op_at(0, 0);
@@ -71,7 +71,7 @@ void test_counters_count_the_recorded_op() {
 // that copy.  A publish that left the copy behind ends the process at the next
 // publish, and the count of the ring shows a lost or a doubled op.
 void test_each_record_moves_the_head_by_one_op() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const uint64_t first_produced = vigil.ring_total_produced();
 
     constexpr uint32_t kRounds = 64;
@@ -93,7 +93,7 @@ void test_each_record_moves_the_head_by_one_op() {
 // until it moves, with no other synchronization with the pipeline.  A count
 // that is not atomic gives a data race here, and ThreadSanitizer reports it.
 void test_foreground_reads_the_iteration_count() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     divrig::feed_one_region(vigil, 0);
     CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     const uint32_t after_flush = vigil.bg_iterations_completed();

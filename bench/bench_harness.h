@@ -1039,7 +1039,8 @@ template <class Fn>
 // the set.  The pipeline of a Vigil does so for its four stages (fixy/
 // concurrent/StageCpus.h):
 //
-//   Vigil vigil = bench::run_on_cores(cores.from_slot(bench::ThreadSlot{1}), [] { return Vigil{}; });
+//   Vigil vigil = bench::run_on_cores(cores.from_slot(bench::ThreadSlot{1}),
+//                                     [] { return mint_vigil(startup, Vigil::Config{}); });
 //
 // An empty set calls fn with no pin.
 template <class Fn>

@@ -106,7 +106,7 @@ void record_ops(Vigil& vigil, Iteration iter, uint32_t count) {
 // step size gave its op another word: the loop had no period, and the wait
 // for a region below failed at its bound.
 void test_dispatch_binds_each_data_scalar() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     record_ops(vigil, Iteration{0}, NUM_OPS);
     record_ops(vigil, Iteration{1}, NUM_OPS);
     record_ops(vigil, Iteration{2}, IterationDetector::K);

@@ -72,12 +72,9 @@ void drive_one_region(crucible::Vigil& vigil) {
 }
 
 void test_disabled_watchdog() {
-    crucible::Vigil::Config cfg;
-    // Spelled out although false is already the default.
-    cfg.enable_deadline_watchdog = false;
-    crucible::Vigil vigil(std::move(cfg));
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
-    CRUCIBLE_TEST_ASSERT(kTest, !vigil.watchdog_enabled() && "default Config disables the watchdog");
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.watchdog_enabled() && "mint_vigil gives a Vigil with no watchdog");
     CRUCIBLE_TEST_ASSERT(kTest, vigil.last_watchdog_verdict() == ::crucible::warden::WatchdogVerdict::InsufficientData
                                     && "default verdict on disabled watchdog is InsufficientData");
     CRUCIBLE_TEST_ASSERT(kTest, vigil.watchdog_healthy_count() == 0);
@@ -100,13 +97,12 @@ void test_disabled_watchdog() {
 }
 
 void test_enabled_watchdog() {
-    crucible::Vigil::Config cfg;
-    cfg.enable_deadline_watchdog = true;
-    // The default policy allows ten misses over a sixty-second window.
-    crucible::Vigil vigil(std::move(cfg));
+    // The production policy allows ten misses over a sixty-second window.
+    crucible::Vigil vigil = crucible::mint_vigil_with_deadline_watchdog(
+        ::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {}, ::crucible::warden::Policy::production());
 
     CRUCIBLE_TEST_ASSERT(kTest,
-                         vigil.watchdog_enabled() && "enable_deadline_watchdog=true must construct senses_ + wd_");
+                         vigil.watchdog_enabled() && "mint_vigil_with_deadline_watchdog must construct senses_ + wd_");
 
     CRUCIBLE_TEST_ASSERT(kTest, vigil.watchdog_healthy_count() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, vigil.watchdog_downgrade_count() == 0);

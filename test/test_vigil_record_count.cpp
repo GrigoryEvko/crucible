@@ -40,7 +40,7 @@ template <std::size_t N>
 }
 
 void test_count_that_disagrees_with_the_entry_is_refused() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{0x51};
     entry.shape_hash = crucible::ShapeHash{0x52};

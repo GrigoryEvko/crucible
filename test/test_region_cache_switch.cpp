@@ -28,7 +28,7 @@ using crucible::test::flush_and_wait_region_published;
 // Once both variants are cached, a switch between them at the first
 // diverging op must come out of the cache.
 void test_cache_switch_mid_iter() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_record(vigil, SHAPE_A, 0, 0);
     feed_record(vigil, SHAPE_A, 0, 1);
@@ -94,7 +94,7 @@ void test_cache_switch_mid_iter() {
 }
 
 void test_cache_miss_fallback() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_record(vigil, SHAPE_A, 0, 0);
     feed_record(vigil, SHAPE_A, 0, 1);

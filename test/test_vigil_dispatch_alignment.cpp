@@ -86,7 +86,7 @@ OpData new_trace_op(uint32_t index) {
 // fifth A does not match B.  The four ops before it still end with A A A,
 // which with this A is a match of four, so the B after it completes the head.
 void test_alignment_continues_inside_the_matched_ops() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     record_bordered(vigil, 0, NUM_OPS);
     record_bordered(vigil, 1, NUM_OPS);
@@ -117,7 +117,7 @@ void test_alignment_continues_inside_the_matched_ops() {
 // Vigil::alignment_bound ops.  No op of the alignment goes to the ring, and
 // the op after the bound does, so the background can publish a new region.
 void test_alignment_ends_after_its_bound() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_record(vigil, 0);
     feed_record(vigil, 1);
@@ -147,7 +147,7 @@ void test_alignment_ends_after_its_bound() {
 // test records only the ops that complete the first detection of the new
 // trace, so the background publishes no region before the flush.
 void test_alignment_bound_returns_to_replay() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_record(vigil, 0);
     feed_record(vigil, 1);

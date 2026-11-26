@@ -183,7 +183,9 @@ constexpr std::size_t kVigilThreads = 5;
 
 // A Vigil whose background threads run on the cores of the slots 1 to 5.
 [[nodiscard]] Vigil make_vigil(RowCores const& cores) {
-    return bench::run_on_cores(cores.vigil, [] { return Vigil{}; });
+    return bench::run_on_cores(cores.vigil, [] {
+        return mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, Vigil::Config{});
+    });
 }
 
 // The core of the producer: the core of slot 0, or the core of

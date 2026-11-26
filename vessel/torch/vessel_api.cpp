@@ -274,8 +274,11 @@ uint32_t crucible_create(uint32_t eager_numerics, CrucibleHandle* out) noexcept 
     if (!crucible::vessel::vigil_handles.has_free_slot()) return CRUCIBLE_HANDLE_FULL;
     crucible::Vigil::Config config{};
     config.eager = eager;
+    // The create runs at the start of a session, so it opens the init door
+    // one time, and the mint builds the Vigil in the storage of its Box.
     const ::fixy::InitLoadCtx init{::foundation::effects::host::InitOwner::mint_init_context()};
-    ::fixy::Box<crucible::Vigil> vigil = ::fixy::mint_box<crucible::Vigil>(init.cap().alloc, std::move(config));
+    ::fixy::Box<crucible::Vigil> vigil = ::fixy::mint_box_built<crucible::Vigil>(
+        init.cap().alloc, [&init, &config]() noexcept { return crucible::mint_vigil(init, std::move(config)); });
     return crucible::vessel::vigil_handles.admit(std::move(vigil))
         .match(
             [target](crucible::vessel::VigilHandle handle) noexcept -> uint32_t {

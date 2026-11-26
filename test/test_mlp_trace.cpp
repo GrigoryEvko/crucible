@@ -45,7 +45,7 @@ int main() {
                    static_cast<long long>(OUT_DIM));
     ::fixy::report(::fixy::Sink::Out, "Ops per iteration: {} (5 forward + 5 backward)\n\n", NUM_OPS);
 
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     ::fixy::report(::fixy::Sink::Out, "── Iteration 0: RECORDING (building signature) ──\n");
     feed_iteration(vigil, 0);

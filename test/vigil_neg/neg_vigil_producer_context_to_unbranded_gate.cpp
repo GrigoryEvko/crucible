@@ -13,7 +13,7 @@ void unbranded_gate(const ::fixy::HotFgCtx&) noexcept {}
 }  // namespace
 
 int main() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     unbranded_gate(vigil.mint_producer_context());
     return 0;
 }

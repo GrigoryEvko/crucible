@@ -11,7 +11,7 @@
 #include <fixy/os/ThreadTasks.h>
 
 int main() {
-    crucible::Vigil vigil{};
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
     auto body = [&vigil]() noexcept { vigil.release_producer_claim(); };
     [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body));

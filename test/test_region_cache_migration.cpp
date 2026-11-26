@@ -30,7 +30,7 @@ using crucible::test::flush_and_wait_region_published;
 // Output written before a switch must survive the move to the other
 // region's pool.
 void test_cache_data_migration() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_record(vigil, SHAPE_A, 0, 0);
     feed_record(vigil, SHAPE_A, 0, 1);

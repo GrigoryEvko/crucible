@@ -491,7 +491,7 @@ int main() {
     }());
 
     bench::add_report(reports, [&] {
-        Vigil vigil;
+        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         return bench::run("Vigil::is_compiled() [true]", [&] {
             bench::do_not_optimize(vigil);
@@ -595,7 +595,7 @@ int main() {
     // The seal of a copy of the entry with the hash is the one cost that this
     // adds.
     bench::add_report(reports, [&] {
-        Vigil vigil;
+        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         uint64_t refused = 0;
         uint64_t tick = 0;
         auto report = bench::Run("Vigil::record_op (0 metas, profiler hook)")
@@ -614,7 +614,7 @@ int main() {
     }());
 
     bench::add_report(reports, [&] {
-        Vigil vigil;
+        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         auto d = make_op(0, 1);
         uint64_t refused = 0;
         uint64_t tick = 0;
@@ -640,7 +640,7 @@ int main() {
     // stays below the room of the ring, so no body meets a full ring.  The
     // count of RECORD answers shows that the Vigil stayed in the RECORD mode.
     bench::add_report(reports, [&] {
-        Vigil vigil;
+        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         auto d = make_op(0, 1);
         uint64_t recorded = 0;
         uint64_t tick = 0;
@@ -720,7 +720,7 @@ int main() {
     bench::print("\n--- dispatch_op COMPILED ---\n");
 
     bench::add_report(reports, [&] {
-        Vigil vigil;
+        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         Ops ops = make_compiled_ops();
         const Cycle cycle = cycle_of(ops);
@@ -735,7 +735,7 @@ int main() {
     }());
 
     bench::add_report(reports, [&] {
-        Vigil vigil;
+        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         Ops ops = make_compiled_ops();
         const Cycle cycle = cycle_of(ops);
@@ -755,7 +755,7 @@ int main() {
     }());
 
     bench::add_report(reports, [&] {
-        Vigil vigil;
+        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         Ops ops = make_compiled_ops();
         const Cycle cycle = cycle_of(ops);
@@ -779,7 +779,7 @@ int main() {
     }());
 
     bench::add_report(reports, [&] {
-        Vigil vigil;
+        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         Ops ops = make_compiled_ops();
         const Cycle cycle = cycle_of(ops);
@@ -796,7 +796,7 @@ int main() {
     // result, so each body waits for that position.  The row times the path
     // of the position from the guard to the result.
     bench::add_report(reports, [&] {
-        Vigil vigil;
+        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         Ops ops = make_compiled_ops();
         const Cycle cycle = cycle_of(ops);
@@ -814,7 +814,7 @@ int main() {
     // reads one parameter, so the replay binds one external slot for it.  The
     // region has one external slot for each parameter.
     bench::add_report(reports, [&] {
-        Vigil vigil;
+        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil, InputSource::Parameter) == 0);
         CRUCIBLE_BENCH_CHECK(count_external_slots(vigil) == NUM_OPS - 1);
         Ops ops = make_compiled_ops(InputSource::Parameter);
@@ -830,7 +830,7 @@ int main() {
     }());
 
     bench::add_report(reports, [&] {
-        Vigil vigil;
+        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil, InputSource::Parameter) == 0);
         CRUCIBLE_BENCH_CHECK(count_external_slots(vigil) == NUM_OPS - 1);
         Ops ops = make_compiled_ops(InputSource::Parameter);
@@ -861,7 +861,7 @@ int main() {
         if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
         uint32_t unexpected_results = 0;
         auto report = r.samples(100).warmup(2).batch(1).measure([&] {
-            Vigil vigil;
+            Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
             unexpected_results += setup_compiled_vigil(vigil);
             for (uint32_t i = 0; i < 3; i++) {
                 auto d = make_op(10, i);

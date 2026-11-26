@@ -85,7 +85,7 @@ void test_divergence_drops_the_unobserved_region() {
     using crucible::DispatchResult;
     using crucible::ReplayStatus;
 
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     // Phase 1: the background thread publishes a region and the foreground
     // aligns onto it, which leaves the context compiled.
@@ -168,7 +168,7 @@ void test_divergence_drops_the_regions_of_the_backlog() {
     // holders while it replays.
     constexpr uint32_t BACKLOG_ITERATIONS = 48;
 
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     feed_one_region(vigil, 0);
     crucible::test::flush_and_wait_region_published(kTest, vigil);
     for (uint32_t i = 0; i < NUM_OPS; i++) {
@@ -224,7 +224,7 @@ void test_divergence_drops_a_half_finished_alignment() {
     using crucible::DispatchResult;
     using crucible::ReplayStatus;
 
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     // Two published regions, so the transaction log has one superseded
     // entry for rollback() to restore.  Neither is observed by the
@@ -320,7 +320,7 @@ void test_rollback_drops_the_region_in_the_slot() {
     using namespace divrig;
     using crucible::DispatchResult;
 
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     publish_planless_then_planned(vigil);
     CRUCIBLE_TEST_ASSERT(kTest, vigil.has_pending_region());
 
@@ -351,7 +351,7 @@ void test_rollback_closes_an_open_alignment() {
     using namespace divrig;
     using crucible::DispatchResult;
 
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     publish_planless_then_planned(vigil);
     for (uint32_t i = 0; i < 2; i++) {
         auto recorded = op_at(3, i);
@@ -422,7 +422,7 @@ void test_region_store_stays_bounded() {
     // and the last published region with the handed region.
     constexpr uint32_t MAX_HELD = crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE + 16 + 11 + 2;
 
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     uint32_t base = 0;
     for (uint32_t cycle = 0; cycle < CYCLES; ++cycle) {
         feed_cycle_region(vigil, cycle, base);
@@ -462,7 +462,8 @@ void test_small_region_store_discards_and_counts() {
     const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     crucible::Vigil::Config config{};
     config.limits.region_store = ::fixy::Quantity<::fixy::unit::Element, uint32_t>{1};
-    crucible::Vigil vigil{std::move(config)};
+    crucible::Vigil vigil =
+        crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, std::move(config));
     for (uint32_t iter = 0; iter < 12; ++iter) {
         for (uint32_t i = 0; i < divrig::NUM_OPS; i++)
             record_cycle_op(vigil, 0, iter, i);
@@ -526,7 +527,7 @@ void check_store_publishes_again(crucible::Vigil& vigil, uint32_t base) {
 // view of the foreground at that one write of the holders, so no sweep releases
 // it before the next write.
 void check_full_store_sweeps_again(uint32_t backlog) {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     feed_cycle_region(vigil, 0, 0);
     crucible::test::flush_and_wait_region_published(kTest, vigil);
     align_on_cycle(vigil, 0, 3);
@@ -569,7 +570,7 @@ void test_full_region_store_sweeps_again() {
 void test_full_region_store_counts_each_drop() {
     constexpr uint32_t ITERATIONS = 300;
     constexpr uint32_t MORE = 10;
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const auto record_iterations = [&vigil](uint32_t first, uint32_t count) {
         for (uint32_t iter = first; iter < first + count; ++iter) {
             for (uint32_t i = 0; i < divrig::NUM_OPS; i++)
@@ -604,7 +605,7 @@ void test_full_region_store_counts_each_drop() {
 void test_divergence_leaves_no_stale_active_region() {
     using namespace divrig;
 
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     feed_cycle_region(vigil, 0, 0);
     crucible::test::flush_and_wait_region_published(kTest, vigil);
     for (uint32_t i = 0; i < NUM_OPS; i++) {
@@ -647,7 +648,7 @@ void test_divergence_leaves_no_stale_active_region() {
 void test_same_region_keeps_the_alignment() {
     using namespace divrig;
 
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     feed_one_region(vigil, 0);
     crucible::test::flush_and_wait_region_published(kTest, vigil);
     for (uint32_t i = 0; i < 2; i++) {

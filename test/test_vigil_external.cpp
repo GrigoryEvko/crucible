@@ -151,7 +151,7 @@ void test_external_follows_the_live_op() {
     auto memory_run = take_memory();
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<std::byte> const memory = memory_run.view();
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const auto fg = vigil.mint_producer_context();
     publish_and_align(vigil, memory, kOutputOfOp0);
 
@@ -176,7 +176,7 @@ void test_views_of_an_external_bind_its_storage() {
     auto memory_run = take_memory();
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<std::byte> const memory = memory_run.view();
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const auto fg = vigil.mint_producer_context();
     publish_and_align(vigil, memory, kViewFirst);
 
@@ -205,7 +205,7 @@ void test_internal_slot_of_a_nest_keeps_its_pool_bytes() {
     auto memory_run = take_memory();
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<std::byte> const memory = memory_run.view();
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const auto fg = vigil.mint_producer_context();
     publish_and_align(vigil, memory, kNestResult);
 
@@ -238,7 +238,7 @@ void test_register_external_checks_the_plan() {
     auto memory_run = take_memory();
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<std::byte> const memory = memory_run.view();
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const auto fg = vigil.mint_producer_context();
     publish_and_align(vigil, memory, kOutputOfOp0);
 

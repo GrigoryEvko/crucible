@@ -4794,6 +4794,24 @@ crucible_neg_compile_test(neg_vigil_copy_attempt
     "use of deleted function .crucible::Vigil::Vigil\\(const crucible::Vigil&\\)."
     "the Refs of bg_ name the sides of ring_ and meta_log_ of this Vigil, so a Vigil has no copy")
 
+# A Vigil comes only from its two mints, and each mint takes only the startup
+# load context: the start seals two tables and can open a store.
+crucible_neg_compile_test(neg_vigil_direct_construction
+    "is private within this context"
+    "crucible::Vigil::Vigil\\(Config, const fixy::InitLoadCtx&, const foundation::core::Option<crucible::warden::Policy>&\\).")
+crucible_neg_compile_test(neg_vigil_mint_hot_fg_ctx
+    "no matching function for call to .mint_vigil\\(const fixy::HotFgCtx&, <brace-enclosed initializer list>\\)."
+    "required for the satisfaction of .CtxFitsVigil<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+crucible_neg_compile_test(neg_vigil_mint_bg_ctx
+    "no matching function for call to .mint_vigil\\(const fixy::BgLoadCtx&, <brace-enclosed initializer list>\\)."
+    "required for the satisfaction of .CtxFitsVigil<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg,")
+crucible_neg_compile_test(neg_vigil_watchdog_mint_cold_init_ctx
+    "no matching function for call to .mint_vigil_with_deadline_watchdog\\(const fixy::ColdInitCtx&, <brace-enclosed initializer list>, crucible::warden::Policy\\)."
+    "required for the satisfaction of .CtxFitsVigil<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, foundation::effects::Row<foundation::effects::Effect::Init, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO> >\\]")
+crucible_neg_compile_test(neg_vigil_watchdog_mint_hot_fg_ctx
+    "no matching function for call to .mint_vigil_with_deadline_watchdog\\(const fixy::HotFgCtx&, <brace-enclosed initializer list>, crucible::warden::Policy\\)."
+    "required for the satisfaction of .CtxFitsVigil<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+
 # Vigil::AlignmentPos is fixy::Refined<bounded_above<5>, uint8_t>, and
 # Vigil::alignment_pos_at is its one door.  A constant above the bound
 # stops the constant evaluation of the mint.  The first fixture passes 6,

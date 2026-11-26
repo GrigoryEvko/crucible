@@ -37,6 +37,10 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 using crucible::SchemaHash;
 using crucible::ShapeHash;
 
+// The startup load context of the test door, which each Vigil of the test
+// takes.
+constexpr ::fixy::InitLoadCtx kStartup{::foundation::effects::testing::init()};
+
 static crucible::TraceRing::Entry make_entry(SchemaHash schema_hash) {
     crucible::TraceRing::Entry e{};
     e.schema_hash = schema_hash;
@@ -80,7 +84,7 @@ static void test_store_that_does_not_open_gives_no_store() {
     for (const char character : ::fixy::TextView{"/dev/null/store"}) {
         cfg.cipher_path.append(ctx.cap().alloc, character).expect("the store path fits the bound of the path");
     }
-    crucible::Vigil vigil(std::move(cfg));
+    crucible::Vigil vigil = crucible::mint_vigil(kStartup, std::move(cfg));
     if (vigil.has_store() || static_cast<bool>(vigil.head_hash()) || vigil.persist(ctx)) {
         ::fixy::fatal("a store path under /dev/null gave a Vigil with a store");
     }
@@ -109,7 +113,7 @@ static void test_refused_load_reports_its_reason(::fixy::TextView directory) {
         store.record_event(ctx, open_view, crucible::ContentHash{0x0123456789ABCDEFULL}, 1)
             .expect("the store commits a head that names no object");
     });
-    crucible::Vigil vigil(std::move(cfg));
+    crucible::Vigil vigil = crucible::mint_vigil(kStartup, std::move(cfg));
     if (!vigil.has_store()) ::fixy::fatal("the store of the test does not open");
     const ::fixy::process::ChildReport report =
         ::fixy::process::wait(::fixy::process::spawn_child(ctx,
@@ -156,7 +160,7 @@ static void test_store_of_an_earlier_run_takes_a_later_step(::fixy::TextView dir
                 .expect("the earlier run commits its step");
         }
     });
-    crucible::Vigil vigil(std::move(cfg));
+    crucible::Vigil vigil = crucible::mint_vigil(kStartup, std::move(cfg));
     if (!vigil.has_store()) ::fixy::fatal("the store of the earlier run does not open");
     divrig::feed_one_region(vigil, 0);
     crucible::test::flush_and_wait_region_published(kTest, vigil);
@@ -181,8 +185,8 @@ static void test_region_hashes_under_the_numerics_of_the_config() {
     crucible::Vigil::Config strict_config;
     strict_config.numerics.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
     strict_config.eager.bits = crucible::EagerNumerics::FLUSH_DENORMAL;
-    crucible::Vigil strict{std::move(strict_config)};
-    crucible::Vigil ordered;
+    crucible::Vigil strict = crucible::mint_vigil(kStartup, std::move(strict_config));
+    crucible::Vigil ordered = crucible::mint_vigil(kStartup, {});
     divrig::feed_one_region(strict, 0);
     divrig::feed_one_region(ordered, 0);
     crucible::test::flush_and_wait_region_published(kTest, strict);
@@ -231,7 +235,8 @@ static void test_region_hashes_under_the_numerics_of_the_config() {
 static void test_region_of_other_numerics_does_not_replay(::fixy::TextView directory) {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     {
-        crucible::Vigil recorder{config_with_store(directory, crucible::NumericsPolicy{})};
+        crucible::Vigil recorder =
+            crucible::mint_vigil(kStartup, config_with_store(directory, crucible::NumericsPolicy{}));
         divrig::feed_one_region(recorder, 0);
         crucible::test::flush_and_wait_region_published(kTest, recorder);
         for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {
@@ -244,12 +249,12 @@ static void test_region_of_other_numerics_does_not_replay(::fixy::TextView direc
 
     crucible::NumericsPolicy strict{};
     strict.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
-    crucible::Vigil other{config_with_store(directory, strict)};
+    crucible::Vigil other = crucible::mint_vigil(kStartup, config_with_store(directory, strict));
     CRUCIBLE_TEST_ASSERT(kTest, other.load(ctx, ctx.cap().alloc) && "the store gives the region of its head");
     CRUCIBLE_TEST_ASSERT(kTest, !other.context().is_compiled() && "a region of other numerics must not replay");
     CRUCIBLE_TEST_ASSERT(kTest, !other.is_compiled());
 
-    crucible::Vigil same{config_with_store(directory, crucible::NumericsPolicy{})};
+    crucible::Vigil same = crucible::mint_vigil(kStartup, config_with_store(directory, crucible::NumericsPolicy{}));
     CRUCIBLE_TEST_ASSERT(kTest, same.load(ctx, ctx.cap().alloc) && "the store gives the region of its head");
     CRUCIBLE_TEST_ASSERT(kTest, same.context().is_compiled() && "the region replays under its own numerics");
     ::fixy::check::pass(kTest, "  region_of_other_numerics_does_not_replay: PASSED\n");
@@ -266,7 +271,7 @@ static void test_region_of_other_numerics_does_not_replay(::fixy::TextView direc
 static void test_repeated_loads_keep_a_bounded_heap(::fixy::TextView directory) {
     constexpr uint32_t kLoads = 2000;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    crucible::Vigil loader{config_with_store(directory, crucible::NumericsPolicy{})};
+    crucible::Vigil loader = crucible::mint_vigil(kStartup, config_with_store(directory, crucible::NumericsPolicy{}));
     const crucible::VigilFgCtx fg = loader.mint_producer_context();
     for (uint32_t load = 0; load < kLoads; ++load) {
         CRUCIBLE_TEST_ASSERT(ctx, loader.load(ctx, ctx.cap().alloc));
@@ -284,7 +289,7 @@ static void test_repeated_loads_keep_a_bounded_heap(::fixy::TextView directory) 
 // does.  The old Vigil had no door for the eager word after the attach, so
 // the region of the old word kept on replaying.
 static void test_eager_word_change_is_a_divergence() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(kStartup, {});
     const crucible::VigilFgCtx fg = vigil.mint_producer_context();
     divrig::feed_one_region(vigil, 0);
     crucible::test::flush_and_wait_region_published(kTest, vigil);
@@ -383,7 +388,7 @@ int main() {
         test_region_of_other_numerics_does_not_replay(path);
         test_repeated_loads_keep_a_bounded_heap(path);
     });
-    crucible::Vigil vigil(std::move(cfg));
+    crucible::Vigil vigil = crucible::mint_vigil(kStartup, std::move(cfg));
 
     CRUCIBLE_TEST_ASSERT(kTest, !vigil.is_compiled());
     CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() == 0);

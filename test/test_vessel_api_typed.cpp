@@ -480,7 +480,7 @@ void test_ffi_records_reuse_the_slots_of_the_producer() {
         return typed_records(&record, count);
     };
 
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     crucible::OpRecordStack& stack = vigil.op_record_stack(vigil.mint_producer_context());
 
     EXPECT(has_ranks(decode_in_frame(stack, typed_at(first, 3), 3).value_or(Ranks{}),
@@ -593,7 +593,7 @@ abi_name(::fixy::TextView name) noexcept {
 // The process lives through each case.
 void test_schema_name_registration_codes() {
     constexpr uint64_t held_hash = 0xC1C2C3C4C5C6C7C8ULL;
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     EXPECT(crucible::vessel::register_schema_name_typed(vigil, held_hash, abi_name("aten::first"))
                == CRUCIBLE_SCHEMA_NAME_REGISTERED,
            "a first name registers");
@@ -669,7 +669,7 @@ void test_schema_name_registration_codes() {
 void test_schema_name_full_code() {
     constexpr uint64_t first_hash = 0xFFFF000000000000ULL;
     {
-        crucible::Vigil vigil;
+        crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         uint32_t registered = 0;
         int code = CRUCIBLE_SCHEMA_NAME_REGISTERED;
         while (code == CRUCIBLE_SCHEMA_NAME_REGISTERED && registered <= crucible::LATE_SCHEMA_TABLE_CAP) {
@@ -707,7 +707,7 @@ void test_schema_name_reserved_hash() {
     static_assert(plain.overload.size() == 0 && overloaded.overload.size() != 0,
                   "the first row has no overload, and the second row has one");
     constexpr crucible::SchemaHash plain_hash{plain.schema_hash};
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     EXPECT(crucible::vessel::register_schema_name_typed(vigil, plain.schema_hash, abi_name("crucible::other"))
                == CRUCIBLE_SCHEMA_NAME_COLLISION,

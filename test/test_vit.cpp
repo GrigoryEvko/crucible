@@ -40,7 +40,7 @@ int main() {
                    static_cast<long long>(CL));
     ::fixy::report(::fixy::Sink::Out, "Ops/iteration: {} (19 fwd + 11 bwd)\n\n", NUM_OPS);
 
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_iteration(vigil, 0);
     feed_iteration(vigil, 1);

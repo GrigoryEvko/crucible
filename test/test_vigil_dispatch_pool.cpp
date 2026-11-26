@@ -31,7 +31,7 @@ using crucible::test::flush_and_wait_region_published;
 // back from its input.  The pattern differs per op so that a stale or
 // aliased slot shows up as the wrong byte rather than as a pass.
 void test_dispatch_data_flow() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_record(vigil, 0);
     feed_record(vigil, 1);
@@ -82,7 +82,7 @@ void test_dispatch_data_flow() {
 }
 
 void test_dispatch_pool_bounds() {
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     feed_record(vigil, 0);
     feed_record(vigil, 1);

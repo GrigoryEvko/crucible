@@ -56,7 +56,7 @@ void dispatch_with_depth(crucible::Vigil& vigil, uint32_t iter, uint32_t op_idx)
 }  // namespace
 
 void test_region_keeps_the_depth_of_each_op() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
     // Two whole iterations and the head of a third: the shortest input that
     // makes the detector publish a region.
@@ -86,7 +86,7 @@ void test_region_keeps_the_depth_of_each_op() {
 void test_region_keeps_the_depth_past_a_growth_of_the_held_ops() {
     constexpr uint32_t kLongPeriod = 5000;
     constexpr uint16_t kDepths = 5;
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const auto dispatch = [&vigil](uint32_t op) {
         crucible::TraceRing::Entry entry{};
         entry.schema_hash = crucible::SchemaHash{0x10000 + op};
@@ -118,7 +118,7 @@ void test_region_keeps_the_depth_past_a_growth_of_the_held_ops() {
 }
 
 void test_op_nest_counts_the_open_records() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     crucible::OpRecordStack& stack = vigil.op_record_stack(vigil.mint_producer_context());
     CRUCIBLE_TEST_ASSERT(kTest, stack.depth().is_top());
     stack.with_nest([&stack](crucible::OpDepth outer) {
@@ -165,7 +165,7 @@ void give_op_at(crucible::Vigil& vigil, uint64_t schema, crucible::OpDepth depth
 // reached the Vigil and its own op did not.  The record stack counts each op
 // that reaches the Vigil, so the count and the last depth show each entry.
 void test_unrecorded_nest_gives_its_closing_entry() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const crucible::VigilFgCtx fg = vigil.mint_producer_context();
     const crucible::OpRecordStack& stack = vigil.op_record_stack(fg);
     const crucible::OpDepth top{0};
@@ -254,7 +254,7 @@ constexpr uint32_t kIterations = 6;
 // it, so the loop stays eager.  The same loop with no raise builds a region.
 void test_unrecorded_nest_keeps_the_loop_eager() {
     {
-        crucible::Vigil vigil;
+        crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         for (uint32_t iter = 0; iter < kIterations; ++iter)
             give_iteration(vigil, true);
         CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
@@ -264,7 +264,7 @@ void test_unrecorded_nest_keeps_the_loop_eager() {
                                         && "a region that holds the closing entry of a nest must not build");
     }
     {
-        crucible::Vigil vigil;
+        crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         for (uint32_t iter = 0; iter < kIterations; ++iter)
             give_iteration(vigil, false);
         crucible::test::flush_and_wait_region_published(kTest, vigil);
@@ -331,7 +331,7 @@ public:
         }
     }
 
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
 
 private:
     void give_op(const divrig::OpData& made, crucible::OpDepth depth) {

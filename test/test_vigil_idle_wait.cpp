@@ -181,7 +181,7 @@ void test_idle_pipeline_runs_few_instructions() {
 void test_parked_pipeline_publishes_a_region() {
     // Each iteration comes after an idle interval, so each stage parks
     // before it takes the ops of the iteration.
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     uint64_t iteration = 0;
     for (; iteration < 16 && vigil.current_step() == 0; ++iteration) {
         idle_for(20);

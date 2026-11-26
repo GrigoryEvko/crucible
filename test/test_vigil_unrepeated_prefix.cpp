@@ -126,7 +126,7 @@ uint32_t iterations_to_region(Vigil& vigil, uint64_t prefix_ops) {
 void test_prefix_that_never_recurs_publishes_a_region() {
     // Five ops before the loop, as an initialization records them.  The
     // region comes a few iterations after the loop starts.
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const uint32_t iterations = iterations_to_region(vigil, 5);
     CRUCIBLE_TEST_ASSERT(kTest, iterations != 0 && "the loop after the prefix published no region");
     CRUCIBLE_TEST_ASSERT(kTest, iterations <= 8);
@@ -138,7 +138,7 @@ void test_prefix_of_more_records_than_the_log_publishes_a_region() {
     // the log, which holds 2^20.  The commit markers of the pipeline release
     // each record that no later iteration can claim, so the log has room
     // when the loop starts, and the loop publishes its region.
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     const uint32_t iterations = iterations_to_region(vigil, 600000);
     CRUCIBLE_TEST_ASSERT(kTest, iterations != 0 && "the loop after 1.2 M records of a prefix published no region");
     CRUCIBLE_TEST_ASSERT(kTest, iterations <= 8);
@@ -150,7 +150,7 @@ void test_log_that_fills_is_released_again() {
     // so the log fills and refuses ops.  The floor still passes each op that
     // no iteration can claim, so the log has room again, and the loop after
     // the prefix publishes its region.
-    Vigil vigil;
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     uint64_t refused_ops = 0;
     for (uint64_t i = 0; i < 600000; ++i) {
         if (record_wide(vigil, 0x5000000 + i, 0x6000000 + i, 0x10000000 + i * 0x200)) ++refused_ops;

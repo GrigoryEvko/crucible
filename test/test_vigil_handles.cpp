@@ -54,7 +54,9 @@ static_assert(crucible::vessel::next_generation(::fixy::max_of<std::uint32_t>) =
 
 // A new Vigil on the heap.
 [[nodiscard]] ::fixy::Box<Vigil> make_vigil() noexcept {
-    return ::fixy::mint_box<Vigil>(::foundation::effects::testing::test().alloc, Vigil::Config{});
+    return ::fixy::mint_box_built<Vigil>(::foundation::effects::testing::test().alloc, []() noexcept {
+        return crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, Vigil::Config{});
+    });
 }
 
 // The handle of a new Vigil that the table admits.

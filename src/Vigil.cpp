@@ -21,7 +21,7 @@ namespace crucible {
 static_assert(Vigil::Config::CIPHER_PATH_MAX == Cipher::MAX_ROOT_PATH_BYTES,
               "the bound of Vigil::Config::cipher_path must be the bound of the root of the store");
 
-Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
+Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup, ::fixy::Option<warden::Policy> const& watchdog)
     : cfg_(std::move(cfg)),
       ring_{::fixy::concurrent::mint_held_spsc_split<TraceRing, VigilRingSides>(startup.cap().alloc)},
       meta_log_{
@@ -38,13 +38,13 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
           BackgroundThread::Setup{.on_region_ready = ::fixy::some(::fixy::erase_brand(::fixy::to(region_ready_))),
                                   .region_marks = ::fixy::some(::fixy::erase_brand(::fixy::to(region_marks_))),
                                   .limits = cfg_.limits},
-          prepare_start_(startup),
+          prepare_start_(startup, watchdog),
           BackgroundThread::PlanTarget{
               .rank = cfg_.rank,
               .world_size = cfg_.world_size,
               .device_capability = ::fixy::mint_tagged<::fixy::tags::source::Meridian>(cfg_.device_capability)}} {}
 
-NumericsHash Vigil::prepare_start_(::fixy::InitLoadCtx const& startup) {
+NumericsHash Vigil::prepare_start_(::fixy::InitLoadCtx const& startup, ::fixy::Option<warden::Policy> const& watchdog) {
     // An empty path gives no store.  The configured path is operator-supplied,
     // so it crosses the trust boundary here and is declared external until
     // the store's own sanitizer promotes it.  A root that does not open gives
@@ -82,15 +82,14 @@ NumericsHash Vigil::prepare_start_(::fixy::InitLoadCtx const& startup) {
     // so on_region_ready can observe on the very first region transition
     // without a null check.  Attach failure is not an error here: every
     // observation then returns InsufficientData.
-    if (cfg_.enable_deadline_watchdog) {
+    for (const warden::Policy& policy : watchdog) {
         // The Box of the Senses moves into the watchdog, which owns it.
         ::crucible::warden::WatchdogSource senses =
             ::crucible::warden::WatchdogSource::some(::fixy::mint_box<::crucible::perf::Senses>(
                 startup.cap().alloc,
                 ::crucible::perf::Senses::load_subset(startup, ::crucible::perf::SensesMask{.sched_switch = true})));
         wd_ = ::fixy::some(::fixy::mint_box<::crucible::warden::DeadlineWatchdog>(
-            startup.cap().alloc,
-            ::crucible::warden::mint_deadline_watchdog(startup, std::move(senses), cfg_.watchdog_policy)));
+            startup.cap().alloc, ::crucible::warden::mint_deadline_watchdog(startup, std::move(senses), policy)));
     }
 
     eager_ = cfg_.eager;

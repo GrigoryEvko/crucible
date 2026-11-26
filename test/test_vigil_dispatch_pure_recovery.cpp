@@ -31,7 +31,7 @@ using crucible::test::flush_and_wait_region_published;
 void test_dispatch_pure_divergence_and_recovery() {
     // Divergence.
     {
-        Vigil vigil;
+        Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
@@ -69,7 +69,7 @@ void test_dispatch_pure_divergence_and_recovery() {
 
     // Divergence and recovery end to end.
     {
-        Vigil vigil;
+        Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
@@ -123,7 +123,7 @@ void test_dispatch_pure_divergence_and_recovery() {
     // A context minted before the first op, while the Vigil records, still
     // serves the compiled iterations after the region activates.
     {
-        Vigil vigil;
+        Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         const VigilFgCtx fg = vigil.mint_producer_context();
         feed_record(vigil, 0);
         feed_record(vigil, 1);

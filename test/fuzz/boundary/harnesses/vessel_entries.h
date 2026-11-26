@@ -119,7 +119,7 @@ enum class TableState : std::uint8_t {
 // table.
 [[nodiscard]] inline Vigil& harness_vigil() noexcept {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the harness keeps one Vigil of its thread for each input, as the vessel does")
-    thread_local Vigil vigil{};
+    thread_local Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, Vigil::Config{});
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return vigil;
 }
@@ -373,7 +373,9 @@ struct HandleState {
     thread_local HandleState state{};
     if (state.live_word == 0) {
         ::fixy::Box<Vigil> vigil =
-            ::fixy::mint_box<Vigil>(::foundation::effects::testing::test().alloc, Vigil::Config{});
+            ::fixy::mint_box_built<Vigil>(::foundation::effects::testing::test().alloc, []() noexcept {
+                return mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, Vigil::Config{});
+            });
         state.live_word = state.table.admit(std::move(vigil)).expect("the slot of the harness is free").raw();
     }
     return state;

@@ -12,7 +12,7 @@ struct Stranger {};
 }  // namespace
 
 int main() {
-    crucible::Vigil vigil;
+    crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
     crucible::OpRecordStack& stack = vigil.op_record_stack(::foundation::effects::testing::foreground<Stranger>());
     (void)stack;
     return 0;

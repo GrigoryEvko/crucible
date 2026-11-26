@@ -31,7 +31,7 @@ using crucible::test::flush_and_wait_region_published;
 void test_dispatch_pure_matches_dispatch_op() {
     // A fresh context for each call, and one context for several calls.
     {
-        Vigil vigil;
+        Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         auto d0 = make_op(0, 0);
         auto r0 = crucible::test::dispatch_pure_synthetic(vigil, vigil.mint_producer_context(), d0.entry, d0.metas,
                                                           d0.n_metas);
@@ -47,7 +47,7 @@ void test_dispatch_pure_matches_dispatch_op() {
 
     // Alternating the two entry points must not perturb ring order.
     {
-        Vigil vigil;
+        Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         for (uint32_t i = 0; i < NUM_OPS; ++i) {
             auto d = make_op(0, i);
             DispatchResult r;
@@ -62,7 +62,7 @@ void test_dispatch_pure_matches_dispatch_op() {
     }
 
     {
-        Vigil vigil;
+        Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
         feed_record(vigil, 0);
         feed_record(vigil, 1);
         feed_trigger(vigil, 2);
