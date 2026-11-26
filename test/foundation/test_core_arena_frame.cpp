@@ -1,6 +1,7 @@
 // Tests of foundation/core/ArenaFrame.h: the stores of a frame into the slots
-// of objects and of elements of its arena, a link to a base, a frame on a Box,
-// and the parcel of an arena across two frames.
+// of objects and of elements of its arena, a window of a run, a follow of a
+// slot, a link to a base, a frame on a Box, and the parcel of an arena across
+// two frames.
 
 #include <foundation/core/ArenaFrame.h>
 
@@ -17,6 +18,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 
 namespace {
@@ -220,6 +222,61 @@ void test_store_runs_fills_a_set_of_runs() {
     CRUCIBLE_FATAL_INVARIANT(total == 41);
 }
 
+// A window of a run of the frame is a run of the same frame, so a store puts
+// it in a slot.  A window past the end of the run gives no run, and a const
+// run gives a window of const elements.
+void test_window_gives_a_part_of_a_run() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    fc::BumpArena<TestFamily> arena = fc::mint_bump_arena<TestFamily>(block);
+    std::uint32_t const total = fc::with_arena_frame(arena, [alloc](auto& frame) noexcept {
+        auto const node = frame.template make<Node>(alloc);
+        auto items = frame.template build_array<std::uint32_t>(
+            alloc, fc::ElementCount{5}, [](fc::RunStart at) noexcept { return std::uint32_t{1} << at.value().raw(); });
+        auto part =
+            items.window(fc::RunStart{fc::ElementCount{1}}, fc::ElementCount{3}).expect("the run holds five items");
+        frame.store(node, &Node::items, part);
+        CRUCIBLE_FATAL_INVARIANT(items.window(fc::RunStart{fc::ElementCount{3}}, fc::ElementCount{3}).is_none());
+        auto const& reader = items;
+        auto const tail =
+            reader.window(fc::RunStart{fc::ElementCount{4}}, fc::ElementCount{1}).expect("the run holds five items");
+        std::uint32_t sum = 0;
+        for (std::uint32_t const item : node->items.view()) {
+            sum += item;
+        }
+        for (std::uint32_t const item : tail.view()) {
+            sum += item;
+        }
+        return sum;
+    });
+    CRUCIBLE_FATAL_INVARIANT(total == 2 + 4 + 8 + 16);
+}
+
+// A follow gives the object of a link slot of a holder of the frame as a
+// FrameRef of the frame, so a walk in the frame stores the object that it
+// reached.  An empty slot gives no value, and a slot of const gives a FrameRef
+// of const.
+void test_follow_gives_the_object_of_a_slot() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    fc::BumpArena<TestFamily> arena = fc::mint_bump_arena<TestFamily>(block);
+    std::uint32_t const total = fc::with_arena_frame(arena, [alloc](auto& frame) noexcept {
+        auto const first = frame.template make<Node>(alloc);
+        auto const second = frame.template make<Node>(alloc);
+        auto const third = frame.template make<Node>(alloc);
+        second->value = 7;
+        frame.store(first, &Node::next, second);
+        CRUCIBLE_FATAL_INVARIANT(frame.follow(second, &Node::next).is_none());
+        auto const reached = frame.follow(first, &Node::next).expect("the store linked the second node");
+        frame.store(third, &Node::next, reached);
+        auto entries = frame.template build_array<Entry>(alloc, fc::ElementCount{1},
+                                                         [](fc::RunStart) noexcept { return Entry{}; });
+        auto const entry = entries.element(fc::RunStart{fc::ElementCount{0}}).expect("the run holds one entry");
+        frame.store(entry, &Entry::owner, reached);
+        auto const owner = frame.follow(entry, &Entry::owner).expect("the store linked the owner");
+        return third->next.expect("the store linked the reached node")->value + owner->value;
+    });
+    CRUCIBLE_FATAL_INVARIANT(total == 14);
+}
+
 // A link slot of a base takes an object of a derived class: to() of the base
 // gives the Ref of the family.
 void test_store_links_a_derived_object_to_a_base_slot() {
@@ -237,6 +294,26 @@ void test_store_links_a_derived_object_to_a_base_slot() {
         return tail->extra;
     });
     CRUCIBLE_FATAL_INVARIANT(extra == 9);
+}
+
+// A FrameRef of a derived object converts to a FrameRef of its base of the
+// family.  The FrameRef of the base names the same object, and a store takes
+// it as it takes the derived FrameRef.
+void test_frame_ref_converts_to_a_base() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    fc::BumpArena<TestFamily> arena = fc::mint_bump_arena<TestFamily>(block);
+    std::uint32_t const extra = fc::with_arena_frame(arena, [alloc](auto& frame) noexcept {
+        auto const head = frame.template make<Base>(alloc);
+        auto const tail = frame.template make<Derived>(alloc);
+        tail->extra = 3;
+        std::remove_const_t<decltype(head)> const up = tail;
+        Base& tail_base = *tail;
+        CRUCIBLE_FATAL_INVARIANT(fc::same_object(up.weaken(), fc::to(tail_base)));
+        frame.store(head, &Base::next, up);
+        CRUCIBLE_FATAL_INVARIANT(head->next.is_some());
+        return tail->extra;
+    });
+    CRUCIBLE_FATAL_INVARIANT(extra == 3);
 }
 
 // A frame on the arena of a Box takes the Box by move and gives it back, with
@@ -297,7 +374,10 @@ int main() {
     test_store_fills_the_slots_of_an_element();
     test_store_fills_a_run_of_arms();
     test_store_runs_fills_a_set_of_runs();
+    test_window_gives_a_part_of_a_run();
+    test_follow_gives_the_object_of_a_slot();
     test_store_links_a_derived_object_to_a_base_slot();
+    test_frame_ref_converts_to_a_base();
     test_frame_on_a_box_gives_the_box_back();
     test_parcel_carries_its_runs_to_a_second_frame();
     return 0;

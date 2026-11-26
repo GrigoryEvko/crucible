@@ -9,14 +9,20 @@
 //   with_arena_frame(std::move(box), body)
 //                                   the same frame on the arena of a Box.  The
 //                                   door gives the Box back
-//   frame.make<T>(alloc, args...)   one T in the arena, as a FrameRef
+//   frame.make<T>(alloc, args...)   one T in the arena, as a FrameRef.  A
+//                                   FrameRef of a derived class converts to a
+//                                   FrameRef of a base of the family
 //   frame.array(alloc, count, fill), frame.build_array<T>(alloc, count, make)
 //                                   a run in the arena, as a FrameRun
 //   run.element(start)              the FrameElement of one element of a run
+//   run.window(start, count)        a part of a run, as a FrameRun of the same
+//                                   frame
 //   frame.store(holder, &H::slot, value)
 //                                   fills a FrameLink or a FrameRunSlot of the
 //                                   holder with a value of the same frame
 //   frame.clear(holder, &H::slot)   empties a FrameLink of the holder
+//   frame.follow(holder, &H::slot)  the object of a FrameLink of the holder, as
+//                                   a FrameRef of the frame
 //   frame.store_runs<Slot, Is...>(holder, &H::slot, runs...)
 //                                   fills one slot of counts of a
 //                                   FrameRunSetSlot and its runs Is
@@ -242,14 +248,47 @@ private:
     template <class FrameFamily, class Fresh>
     friend class ArenaFrame;
 
-    ArenaRunSet<Count, Family, Runs...> set_{};
+    // The set may overlap, so the members that follow a slot of an object
+    // take the bytes of pad at the end of the set, as they take them after
+    // the set itself.  The slot then keeps the size of its object.
+    [[no_unique_address]] ArenaRunSet<Count, Family, Runs...> set_{};
 };
+
+namespace detail {
+
+// True when a FrameRef of Derived converts to a FrameRef of Base: Base is a
+// public and unambiguous base of Derived, or that base as const, and it
+// states the family as its brand_type.  So to() of the base gives a Ref of
+// the family, as for a link to a base (LinkTakes below).
+template <class Base, class Derived, class Family>
+concept FrameUpcast =
+    (!std::same_as<std::remove_cv_t<Base>, std::remove_cv_t<Derived>>)
+    && std::is_convertible_v<Derived*, Base*> && requires { typename std::remove_const_t<Base>::brand_type; }
+    && std::same_as<typename std::remove_const_t<Base>::brand_type, Family>;
+
+// The family Ref of the base of the object of a family Ref.
+template <class Base, class Derived, class Family>
+[[nodiscard]] constexpr Ref<Base, Family> base_ref_(Ref<Derived, Family> const& derived) noexcept {
+    Base& base = *derived;
+    return to(base);
+}
+
+}  // namespace detail
 
 // One object that a frame made, with the brand of the frame.  It gives the
 // object, and weaken() gives the family Ref (the scope brand).
 template <RefTarget T, ::foundation::brand::IsBrand Family, ::foundation::brand::IsBrand Fresh>
 class[[= ::foundation::transfer::refers{}]] FrameRef final {
 public:
+    // The FrameRef of a public base of the object, of the same frame
+    // (detail::FrameUpcast).  The object and the frame stay the same, so the
+    // FrameRef is sound.  No door converts a base to a derived class, and no
+    // conversion changes the family or the frame.
+    template <class Derived>
+        requires detail::FrameUpcast<T, Derived, Family>
+    constexpr FrameRef(FrameRef<Derived, Family, Fresh> const& derived) noexcept
+        : ref_{detail::base_ref_<T>(derived.weaken())} {}
+
     [[nodiscard]] constexpr T& operator*() const noexcept { return *ref_; }
     [[nodiscard]] constexpr T* operator->() const noexcept { return __builtin_addressof(*ref_); }
 
@@ -319,6 +358,30 @@ public:
         }
         T& object = *run_.view().get(position).expect("a position below the count of a run names an element");
         return Option<FrameElement<T, Family, Fresh>>::some(FrameElement<T, Family, Fresh>{object});
+    }
+
+    // The count elements from start, as a run of this frame, or no run when
+    // they do not fit in this run (window of an ArenaRun).  A window holds
+    // elements of this run, so it is in the arena of the frame too.  A const
+    // run gives a run of const elements.  The result is an Option<FrameRun>,
+    // which the class cannot name before it is complete.  Complexity: one
+    // compare.
+    [[nodiscard]] constexpr auto window(RunStart start, ElementCount count) & noexcept {
+        Option<ArenaRun<T, Family>> part = run_.window(start, count);
+        if (part.is_none()) {
+            return Option<FrameRun>{};
+        }
+        return Option<FrameRun>::some(
+            FrameRun{static_cast<Option<ArenaRun<T, Family>>&&>(part).expect("the test above found the window")});
+    }
+    [[nodiscard]] constexpr auto window(RunStart start, ElementCount count) const& noexcept {
+        using ConstRun = FrameRun<T const, Family, Fresh>;
+        Option<ArenaRun<T const, Family>> part = run_.window(start, count);
+        if (part.is_none()) {
+            return Option<ConstRun>{};
+        }
+        return Option<ConstRun>::some(
+            ConstRun{static_cast<Option<ArenaRun<T const, Family>>&&>(part).expect("the test above found the window")});
     }
 
 private:
@@ -458,6 +521,39 @@ public:
         requires FrameHolder<Holder, Family, Fresh> && std::is_base_of_v<Base, detail::held_t_<Holder>>
     constexpr void clear(Holder const& holder, FrameLink<Target, Family> Base::* slot) noexcept {
         ((*holder).*slot).set_(Option<Ref<Target, Family>>{});
+    }
+
+    // The object of the link slot of the holder, as a FrameRef of this frame,
+    // or no value for an empty slot.  A walk in a frame takes each node of a
+    // chain through it.  Complexity: one load.
+    //
+    // The proof is an induction over the steps of each frame on the arenas of
+    // the family.  The claim holds two facts.  A FrameRef or a FrameElement
+    // of a frame names an object in the arena of the frame.  And the object of
+    // each link slot is in the arena of the holder of the slot.
+    //   - A new slot is empty.  A slot has no copy, and only a store or a
+    //     clear of a frame fills it.
+    //   - make, array, build_array, window and element of a frame give objects
+    //     of its own arena.  A parcel gives back runs that a frame on its Box
+    //     sealed, and the Box holds that one arena.
+    //   - A store takes a holder and a value of one frame, so both are in the
+    //     arena of that frame, and the object of the slot is in the arena of
+    //     its holder.
+    //   - A follow takes a holder of this frame, which is in the arena of this
+    //     frame.  The object of its slot is in the arena of the holder, so it
+    //     is in the arena of this frame too, and the FrameRef is sound.
+    // No other step makes a FrameRef or fills a slot, so each step keeps the
+    // two facts.
+    template <class Holder, class Base, class Target>
+        requires FrameHolder<Holder, Family, Fresh> && std::is_base_of_v<Base, detail::held_t_<Holder>>
+    [[nodiscard]] constexpr Option<FrameRef<Target, Family, Fresh>>
+    follow(Holder const& holder, FrameLink<Target, Family> Base::* slot) const noexcept {
+        Option<Ref<Target, Family>> target = ((*holder).*slot).link_.option();
+        if (target.is_none()) {
+            return Option<FrameRef<Target, Family, Fresh>>{};
+        }
+        return Option<FrameRef<Target, Family, Fresh>>::some(FrameRef<Target, Family, Fresh>{
+            static_cast<Option<Ref<Target, Family>>&&>(target).expect("the test above found the object")});
     }
 
     // Fills one slot of counts of a set of runs of the holder: the count of

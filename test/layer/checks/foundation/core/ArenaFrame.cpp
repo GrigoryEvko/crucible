@@ -47,6 +47,35 @@ struct WithFamilyForms {
     ArenaRun<std::uint32_t const, Family> items{};
 };
 
+// A slot takes the bytes of the family form that it holds, so an object keeps
+// its size when a slot takes the place of a Link or an ArenaRun.
+static_assert(sizeof(WithSlots) == sizeof(WithFamilyForms));
+static_assert(sizeof(FrameLink<WithSlots, Family>) == sizeof(Link<WithSlots, Family>));
+static_assert(sizeof(FrameRunSlot<std::uint32_t const, Family>) == sizeof(ArenaRun<std::uint32_t const, Family>));
+
+// A set of runs with two slots of counts: two counts of 16 bits and two
+// addresses, with bytes of pad at its end.
+using CountedRuns = ArenaRunSet<std::uint16_t, Family, RunOf<std::uint32_t const, 0>, RunOf<std::uint64_t const, 1>>;
+using CountedSlot =
+    FrameRunSetSlot<std::uint16_t, Family, RunOf<std::uint32_t const, 0>, RunOf<std::uint64_t const, 1>>;
+
+// An object that holds the set and then two small members, as TraceEntry of
+// crucible/MerkleDag.h holds its arrays and then its flags.  The members take
+// the bytes of pad at the end of the set, also when a slot holds the set.
+struct WithCountedRuns {
+    [[no_unique_address]] CountedRuns runs{};
+    std::uint8_t first = 0;
+    std::uint8_t second = 0;
+};
+struct WithCountedSlot {
+    [[no_unique_address]] CountedSlot runs{};
+    std::uint8_t first = 0;
+    std::uint8_t second = 0;
+};
+static_assert(sizeof(CountedSlot) == sizeof(CountedRuns));
+static_assert(sizeof(WithCountedRuns) == sizeof(CountedRuns));
+static_assert(sizeof(WithCountedSlot) == sizeof(WithCountedRuns));
+
 // A slot moves between threads and is shared as the family form that it holds
 // is (foundation/Transfer.h).
 static_assert(::foundation::transfer::Sendable<WithSlots> == ::foundation::transfer::Sendable<WithFamilyForms>);

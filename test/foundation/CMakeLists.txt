@@ -3585,20 +3585,42 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
 endif()
 
 # The frame of an arena of a family: the stores into the slots of objects of
-# its arena, the setter of many slots, a link to a base, and a parcel.
+# its arena, the setter of many slots, a window of a run, a follow of a slot, a
+# link to a base, and a parcel.
 foundation_test(test_core_arena_frame)
 target_link_libraries(test_core_arena_frame PRIVATE fixy)
-# A store takes no family Ref from to() and no value of another frame, a slot
-# takes no store outside a frame, also from a member of its holder, and a
-# parcel holds only the runs that the frame of its mint sealed.
+# A store takes no family Ref from to() and no value of another frame, also a
+# window of a run of another frame, a slot takes no store outside a frame,
+# also from a member of its holder, and a parcel holds only the runs that the
+# frame of its mint sealed.
 foundation_neg_compile_test(neg_core_arena_frame_store_family_ref
   "no matching function for call to .foundation::core::ArenaFrame<.*>::store"
   ".foundation::core::Ref<.anonymous.::Base, .anonymous.::TestFamily>. is not derived from .const foundation::core::FrameRef<Made, .anonymous.::TestFamily, foundation::core::<lambda\\(\\)> >.")
-foreach(_arena_frame_fixture neg_core_arena_frame_store_across_frames neg_core_arena_frame_run_into_other_frame)
+foreach(_arena_frame_fixture neg_core_arena_frame_store_across_frames neg_core_arena_frame_run_into_other_frame
+        neg_core_arena_frame_window_into_other_frame)
   foundation_neg_compile_test(${_arena_frame_fixture}
     "no matching function for call to .foundation::core::ArenaFrame<.*>::store"
     "mismatched types .foundation::core::<lambda\\(\\)>. and .foundation::core::<lambda\\(\\)>.")
 endforeach()
+# A follow takes only a holder of its own frame: no FrameRef of another frame
+# and no family Ref, each of which can name an object of another arena.
+foundation_neg_compile_test(neg_core_arena_frame_follow_other_frame
+  "no matching function for call to .foundation::core::ArenaFrame<.*>::follow"
+  "is_frame_holder_<.*Holder = foundation::core::FrameRef<.*evaluated to .false.")
+foundation_neg_compile_test(neg_core_arena_frame_follow_family_ref
+  "no matching function for call to .foundation::core::ArenaFrame<.*>::follow"
+  "is_frame_holder_<.*Holder = foundation::core::Ref<.*evaluated to .false.")
+# A FrameRef converts only to a FrameRef of a base of its family, of the same
+# frame: no downcast, no base of another family, and no other frame.
+foundation_neg_compile_test(neg_core_arena_frame_ref_downcast
+  "conversion from .FrameRef<.anonymous.::Base,.* to non-scalar type .FrameRef<.anonymous.::Derived,"
+  "neg_core_arena_frame_ref_downcast\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_arena_frame_ref_upcast_other_family
+  "conversion from .FrameRef<.anonymous.::Mixed,.* to non-scalar type .FrameRef<.anonymous.::ForeignBase,"
+  "neg_core_arena_frame_ref_upcast_other_family\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_arena_frame_ref_upcast_across_frames
+  "conversion from .FrameRef<.anonymous.::Derived,.*<lambda\\(\\)>>. to non-scalar type .FrameRef<.anonymous.::Base,.*<lambda\\(\\)>>."
+  "neg_core_arena_frame_ref_upcast_across_frames\\.cpp:[0-9]+:[0-9]+: error")
 foundation_neg_compile_test(neg_core_arena_frame_run_set_of_other_frame
   "no matching function for call to .foundation::core::ArenaFrame<.*>::store_runs"
   "mismatched types .foundation::core::<lambda\\(\\)>. and .foundation::core::<lambda\\(\\)>.")
