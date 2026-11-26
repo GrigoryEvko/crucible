@@ -116,8 +116,6 @@ def register_name(ctx: CrucibleNative, hash_of: str, name: str) -> int:
         CrucibleHandleError: If the library refuses the handle of the session
     """
     entry = ctx._vessel._lib.crucible_register_schema_name
-    entry.restype = ctypes.c_uint32
-    entry.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32)]
     code = ctypes.c_uint32(0)
     check_handle_status(entry(ctx._handle, schema_hash(hash_of), name.encode("ascii"), ctypes.byref(code)),
                         "crucible_register_schema_name")

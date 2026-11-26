@@ -33,13 +33,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402, F401
 
-from crucible_native import CrucibleAbiMismatchError, TlsMode, _DispatchLib, check_tls_modes, read_tls_modes  # noqa: E402
+from crucible_native import (  # noqa: E402
+    CrucibleAbiMismatchError,
+    DeclaredEntries,
+    TlsMode,
+    _DispatchLib,
+    check_tls_modes,
+    read_tls_modes,
+)
 
 # The values of the uint8_t base of c10::CrucibleMode.
 VALUE_COUNT = 256
 
 
-def check_stamp(library: ctypes.CDLL) -> list[str]:
+def check_stamp(library: DeclaredEntries) -> list[str]:
     """Give one line for each problem of the stamp of the modes of the library."""
     problems: list[str] = []
     observed = read_tls_modes(library)

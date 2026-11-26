@@ -57,8 +57,6 @@ MISSING_ENTRY = "crucible_dispatch_entry_that_no_library_exports"
 def read_without_gil(lib: _DispatchLib, tensor: torch.Tensor) -> int:
     """Call the generation entry through the CDLL object of the wrapper, which releases the GIL."""
     entry = lib._lib.crucible_dispatch_storage_generation
-    entry.restype = ctypes.c_uint32
-    entry.argtypes = [ctypes.c_void_p]
     return entry(ctypes.c_void_p(tensor.untyped_storage()._cdata))
 
 

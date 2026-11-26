@@ -37,7 +37,6 @@ import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 
 from crucible_native import (
-    CrucibleDispatchResult,
     CrucibleMeta,
     DispatchAction,
     DispatchLimit,
@@ -53,48 +52,14 @@ from crucible_native import (
 # ─── ctypes bindings ────────────────────────────────────────────────
 
 class _VesselLib(_NativeVesselLib):
-    """The vessel wrapper of crucible_native with the entries of this mode: the dispatch and the names of the ops.
+    """The vessel wrapper of crucible_native with the names of the ops of this mode.
 
     The wrapper of crucible_native loads the library once its layout is the
-    layout of its build, and it checks the handle status of each entry that
-    takes the handle of the Vigil.
+    layout of its build, it declares each entry from its line of the layout
+    table, and it checks the handle status of each entry that takes the handle
+    of the Vigil.  The mode calls the other entries through _lib, which holds
+    only the entries of the table.
     """
-
-    def _setup(self) -> None:
-        """Declare the restype and argtypes of the entries of crucible_native and of this mode."""
-        super()._setup()
-        lib = self._lib
-
-        lib.crucible_hash_string.restype = ctypes.c_uint64
-        lib.crucible_hash_string.argtypes = [ctypes.c_char_p]
-
-        lib.crucible_register_schema_name.restype = ctypes.c_uint32
-        lib.crucible_register_schema_name.argtypes = [
-            ctypes.c_uint64, ctypes.c_uint64, ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32),
-        ]
-
-        lib.crucible_schema_name.restype = ctypes.c_char_p
-        lib.crucible_schema_name.argtypes = [ctypes.c_uint64]
-
-        # The thunk computes the guard word of the op from the records and the
-        # scalars, so the call gives no guard word.
-        lib.crucible_dispatch_op_ex.restype = CrucibleDispatchResult
-        lib.crucible_dispatch_op_ex.argtypes = [
-            ctypes.c_uint64,                  # handle
-            ctypes.c_uint64,                  # schema_hash
-            ctypes.c_uint16,                  # num_inputs
-            ctypes.c_uint16,                  # num_outputs
-            ctypes.POINTER(CrucibleMeta),     # metas
-            ctypes.c_uint32,                  # n_metas
-            ctypes.POINTER(ctypes.c_int64),   # scalar_values
-            ctypes.POINTER(ctypes.c_uint8),   # scalar_tags, one for each value
-            ctypes.POINTER(ctypes.c_uint8),   # scalar_roles, one for each value
-            ctypes.c_uint16,                  # num_scalars
-            ctypes.c_uint8,                   # op_flags
-        ]
-
-        lib.crucible_is_structural_scalar.restype = ctypes.c_int
-        lib.crucible_is_structural_scalar.argtypes = [ctypes.c_uint64, ctypes.c_uint32]
 
     def register_schema_name(self, h: int, schema_hash: int, name: bytes) -> SchemaNameResult:
         """Register the name of an op for its schema hash in the tables of the process, and give the result.
@@ -106,9 +71,6 @@ class _VesselLib(_NativeVesselLib):
         check_handle_status(self._lib.crucible_register_schema_name(h, schema_hash, name, ctypes.byref(code)),
                             "crucible_register_schema_name")
         return SchemaNameResult(code.value)
-
-    def __getattr__(self, name):
-        return getattr(self._lib, name)
 
 
 # ─── Dtype mapping ──────────────────────────────────────────────────
@@ -714,7 +676,7 @@ class CrucibleMode(TorchDispatchMode):
         flags = self._op_flags(plan, types)
 
         # Dispatch to Vigil
-        dr = self._vessel.crucible_dispatch_op_ex(
+        dr = self._vessel._lib.crucible_dispatch_op_ex(
             self._handle,
             plan.schema_hash,
             num_inputs, num_outputs,
@@ -755,7 +717,7 @@ class CrucibleMode(TorchDispatchMode):
     def _get_schema_hash(self, op_name):
         h = self._schema_cache.get(op_name)
         if h is None:
-            h = self._vessel.crucible_hash_string(op_name.encode("ascii"))
+            h = self._vessel._lib.crucible_hash_string(op_name.encode("ascii"))
             self._schema_cache[op_name] = h
             # Register name in the global SchemaTable for visualization/diagnostics.
             # A collision means that two op names give one schema hash.  The
@@ -874,7 +836,7 @@ class CrucibleMode(TorchDispatchMode):
             if kind == _KIND_OTHER and not is_optional:
                 continue
             is_data = (position < MAX_SCHEMA_ARGUMENTS and _is_data_type(argument.real_type)
-                       and not self._vessel.crucible_is_structural_scalar(schema_hash, position))
+                       and not self._vessel._lib.crucible_is_structural_scalar(schema_hash, position))
             default = argument.default_value if argument.has_default_value() else None
             steps.append((_KWARG_ONLY if argument.kwarg_only else position, argument.name, default, kind,
                           is_optional, ROLE_DATA if is_data else ROLE_STRUCTURAL))

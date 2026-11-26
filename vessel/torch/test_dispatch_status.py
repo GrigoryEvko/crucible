@@ -82,22 +82,6 @@ def records(count: int) -> ctypes.Array:
     return metas
 
 
-def bind(lib: ctypes.CDLL) -> tuple:
-    """Return crucible_dispatch_op and crucible_dispatch_op_ex of lib, with their C signatures."""
-    dispatch_op = lib.crucible_dispatch_op
-    dispatch_op.restype = DispatchResult
-    dispatch_op.argtypes = [
-        ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
-    ]
-    dispatch_op_ex = lib.crucible_dispatch_op_ex
-    dispatch_op_ex.restype = DispatchResult
-    dispatch_op_ex.argtypes = [
-        ctypes.c_uint64, ctypes.c_uint64, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(Meta), ctypes.c_uint32,
-        ctypes.POINTER(ctypes.c_int64), ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_uint8),
-        ctypes.c_uint16, ctypes.c_uint8,
-    ]
-    return dispatch_op, dispatch_op_ex
-
 
 def action_name(action: int) -> str:
     """Return the name of an action byte, or the byte itself when no action has it."""
@@ -216,7 +200,9 @@ def check_eager_words(vessel, handle: int) -> list[str]:
 def main() -> int:
     """Run each check through the two entries and report."""
     vessel = crucible_mode._VesselLib()
-    dispatch_op, dispatch_op_ex = bind(vessel._lib)
+    # The two entries, as the layout table declares them.
+    dispatch_op = vessel._lib.crucible_dispatch_op
+    dispatch_op_ex = vessel._lib.crucible_dispatch_op_ex
     # The word 0: the highest precision, no TF32 and no flush of denormal floats.
     handle = vessel.create(0)
     try:

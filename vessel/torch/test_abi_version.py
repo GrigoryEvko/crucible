@@ -22,6 +22,17 @@ at most once:
     mirror     a ctypes Structure with a field of another type is refused, and
                the message names the Structure.  An enum whose values differ
                from the C constants is refused, and the message names the enum
+    field type a ctypes Structure with a field of another sign, with the same
+               size and offset, is refused, and the message names the Structure
+    pair       after the load of the vessel library, a copy of the dispatch
+               library of another digest, whose layout table agrees with its
+               note, is refused before dlopen: the message names the vessel
+               library, the process maps no byte of the copy, and the
+               dispatcher of PyTorch holds no kernel of the key Crucible
+    undeclared the wrappers give no entry that the layout table does not
+               declare: a read of such a name raises AttributeError
+    declared   each entry line of the layout table has its declaration in a
+               wrapper, with the restype and the argtypes of its type words
 
 Usage:
     python test_abi_version.py
@@ -141,6 +152,68 @@ except CrucibleAbiMismatchError as refusal:
     print(f"refused, naming the enum: {'StaleAction' in str(refusal)}", flush=True)
 """
 
+FIELD_TYPE = PRELUDE + """
+class SignlessMeta(ctypes.Structure):
+    _fields_ = [(name, ctypes.c_uint8 if name == "device_idx" else kind)
+                for name, kind in crucible_native.CrucibleMeta._fields_]
+crucible_native.MIRRORS["CrucibleMeta"] = SignlessMeta
+try:
+    crucible_native._VesselLib()
+    print("the mirror of another field type loads", flush=True)
+except CrucibleAbiMismatchError as refusal:
+    print(f"refused, naming the Structure: {'SignlessMeta' in str(refusal)}", flush=True)
+"""
+
+PAIR = PRELUDE + """
+crucible_native._VesselLib()
+def other_build(image, note):
+    image[note.offset] ^= 0xFF
+with tempfile.TemporaryDirectory() as folder:
+    copy = planted_copy(crucible_native.DISPATCH_LIBRARY, folder, other_build)
+    table = Path(folder) / crucible_native.LAYOUT_TABLE
+    digest = crucible_native.layout_note(copy).digest
+    lines = [line for line in table.read_text().splitlines() if not line.startswith("digest ")]
+    table.write_text("\\n".join([f"digest {digest}", *lines]) + "\\n")
+    try:
+        crucible_native._DispatchLib(copy)
+        print("the library of another build loads", flush=True)
+    except CrucibleAbiMismatchError as refusal:
+        print(f"refused, naming the first library: {crucible_native.VESSEL_LIBRARY in str(refusal)}", flush=True)
+    print(f"mapped after the refusal: {copy in Path('/proc/self/maps').read_text()}", flush=True)
+    print(f"kernel after the refusal: {has_crucible_kernel()}", flush=True)
+"""
+
+UNDECLARED = PRELUDE + """
+import crucible_mode
+vessel = crucible_mode._VesselLib()
+for owner, name in ((vessel, "crucible_output_ptr"), (vessel._lib, "crucible_entry_of_no_table")):
+    try:
+        getattr(owner, name)
+        print(f"{name} is reachable", flush=True)
+    except AttributeError:
+        print(f"{name} raises AttributeError", flush=True)
+"""
+
+DECLARED = PRELUDE + """
+import crucible_mode
+vessel = crucible_mode._VesselLib()
+dispatch = crucible_native._DispatchLib()
+table = crucible_native.read_layout_table(Path(built_path(crucible_native.VESSEL_LIBRARY)).parent)
+problems = []
+for name, line in table.entries.items():
+    owner = vessel._lib if line.library == crucible_native.VESSEL_ENTRIES else dispatch._lib
+    function = getattr(owner, name, None)
+    if function is None:
+        problems.append(f"{name} has no declaration")
+        continue
+    expected = (crucible_native.ctypes_of_word(line.result),
+                [crucible_native.ctypes_of_word(word) for word in line.parameters])
+    if (function.restype, list(function.argtypes)) != expected:
+        problems.append(f"{name} is declared {function.restype} {function.argtypes}, and its line gives {expected}")
+print(f"entry lines: {len(table.entries)}", flush=True)
+print(f"each entry of the table has its declaration: {not problems} {problems}", flush=True)
+"""
+
 CHECKS = (
     ("built", BUILT, ("libcrucible_vessel.so note matches: True", "libcrucible_dispatch.so note matches: True",
                       "each wrapper loads")),
@@ -148,6 +221,12 @@ CHECKS = (
                           "kernel after the refusal: False", "kernel after the built load: True")),
     ("no note", NO_NOTE, ("no note read: True", "refused, naming the library: True")),
     ("mirror", MIRROR, ("refused, naming the Structure: True", "refused, naming the enum: True")),
+    ("field type", FIELD_TYPE, ("refused, naming the Structure: True",)),
+    ("pair", PAIR, ("refused, naming the first library: True", "mapped after the refusal: False",
+                    "kernel after the refusal: False")),
+    ("undeclared", UNDECLARED, ("crucible_output_ptr raises AttributeError",
+                                "crucible_entry_of_no_table raises AttributeError")),
+    ("declared", DECLARED, ("each entry of the table has its declaration: True",)),
 )
 
 

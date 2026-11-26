@@ -314,7 +314,7 @@ def check_structural_rows() -> list[str]:
         name = schema.name + (f".{schema.overload_name}" if schema.overload_name else "")
         schema_hash = crucible_mode._schema_hash(name.encode("ascii"))
         for position, argument in enumerate(schema.arguments):
-            if not vessel.crucible_is_structural_scalar(schema_hash, position):
+            if not vessel._lib.crucible_is_structural_scalar(schema_hash, position):
                 continue
             named += 1
             if not crucible_mode._is_data_type(argument.type):

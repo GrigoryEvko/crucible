@@ -57,7 +57,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import torch  # noqa: E402
-from crucible_native import CrucibleDispatchResult, CrucibleMeta, CrucibleNative, DispatchAction  # noqa: E402
+from crucible_native import CrucibleMeta, CrucibleNative, DispatchAction  # noqa: E402
 
 # The import sets one intra-op thread and one inter-op thread, so the
 # instruction count of the test is the same in each run.  PyTorch refuses a
@@ -159,18 +159,8 @@ def full_record_metas() -> ctypes.Array:
 
 
 def bind_dispatch_op(ctx: CrucibleNative):
-    """Return crucible_dispatch_op of the vessel library of ctx, with its C signature."""
-    function = ctx._vessel._lib.crucible_dispatch_op
-    function.restype = CrucibleDispatchResult
-    function.argtypes = [
-        ctypes.c_uint64,
-        ctypes.c_uint64,
-        ctypes.c_uint16,
-        ctypes.c_uint16,
-        ctypes.POINTER(CrucibleMeta),
-        ctypes.c_uint32,
-    ]
-    return function
+    """Return crucible_dispatch_op of the vessel library of ctx, which the layout table declares."""
+    return ctx._vessel._lib.crucible_dispatch_op
 
 
 def record(directory: Path) -> tuple[list[TraceOp], list[int]]:

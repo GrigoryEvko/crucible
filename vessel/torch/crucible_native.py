@@ -912,14 +912,131 @@ MIRRORED_CONSTANTS: dict[str, type[enum.IntEnum]] = {
     "CRUCIBLE_MAX_": DispatchLimit,
 }
 
+# The library of an entry line of the layout table: an entry of vessel_api.h,
+# or an entry of dispatch_api.h.
+VESSEL_ENTRIES = "vessel"
+DISPATCH_ENTRIES = "dispatch"
+ENTRY_LIBRARIES = (VESSEL_ENTRIES, DISPATCH_ENTRIES)
+
+# The ctypes type of each base word of the type words of the layout table.
+# void is the return of no value.
+_BASE_WORDS: dict[str, Any] = {
+    "void": None,
+    "b8": ctypes.c_bool,
+    "c8": ctypes.c_char,
+    "u8": ctypes.c_uint8,
+    "u16": ctypes.c_uint16,
+    "u32": ctypes.c_uint32,
+    "u64": ctypes.c_uint64,
+    "i8": ctypes.c_int8,
+    "i16": ctypes.c_int16,
+    "i32": ctypes.c_int32,
+    "i64": ctypes.c_int64,
+    "f32": ctypes.c_float,
+    "f64": ctypes.c_double,
+}
+# The base word of each ctypes type.  ctypes gives one class to each pair of
+# names of one C type, such as c_uint64 and c_ulong, so each class has one word.
+_WORD_OF_BASE: dict[Any, str] = {kind: word for word, kind in _BASE_WORDS.items() if kind is not None}
+_POINTER_MARK = "*"
+_CONST_MARK = "const:"
+
+
+def _base_type_of_word(word: str) -> Any:
+    """Return the ctypes type of a base word: a scalar word, the name of a mirrored struct, or ELEMENT[COUNT].
+
+    Raises:
+        CrucibleAbiMismatchError: If the word names no type that this package mirrors
+    """
+    element, bracket, count = word.partition("[")
+    if bracket:
+        return _base_type_of_word(element) * int(count.rstrip("]"))
+    if word in _BASE_WORDS:
+        return _BASE_WORDS[word]
+    if word in MIRRORS:
+        return MIRRORS[word]
+    raise CrucibleAbiMismatchError(f"the layout table gives the type word {word!r}, which no ctypes type of "
+                                   f"crucible_native.py mirrors.  Add the struct to MIRRORS.")
+
+
+def ctypes_of_word(word: str) -> Any:
+    """Return the ctypes type of a type word of the layout table (the type words of vessel/torch/layout_table.cpp).
+
+    A pointer to a const char is c_char_p, which takes a bytes object, and a
+    pointer to void is c_void_p.  Each other pointer is ctypes.POINTER of its
+    pointee.  Complexity: linear in the length of the word.
+
+    Raises:
+        CrucibleAbiMismatchError: If the word names no type that this package mirrors
+    """
+    pointers = 0
+    is_const_base = False
+    rest = word
+    while rest.startswith((_POINTER_MARK, _CONST_MARK)):
+        if rest.startswith(_POINTER_MARK):
+            pointers += 1
+            is_const_base = False
+            rest = rest[len(_POINTER_MARK):]
+        else:
+            is_const_base = True
+            rest = rest[len(_CONST_MARK):]
+    base = _base_type_of_word(rest)
+    if pointers == 0:
+        return base
+    if rest == "c8" and is_const_base:
+        pointee = ctypes.c_char_p
+    elif rest == "void":
+        pointee = ctypes.c_void_p
+    else:
+        pointee = ctypes.POINTER(base)
+    for _ in range(pointers - 1):
+        pointee = ctypes.POINTER(pointee)
+    return pointee
+
+
+def word_of_ctypes(kind: Any) -> str:
+    """Return the type word of a ctypes type of a field, as the layout table writes the type of a C member.
+
+    Complexity: linear in the levels of the type.
+    """
+    if kind is ctypes.c_void_p:
+        return "*void"
+    if kind is ctypes.c_char_p:
+        return "*const:c8"
+    if isinstance(kind, type) and issubclass(kind, ctypes.Array):
+        return f"{word_of_ctypes(kind._type_)}[{kind._length_}]"
+    if isinstance(kind, type) and issubclass(kind, ctypes._Pointer):
+        return _POINTER_MARK + word_of_ctypes(kind._type_)
+    if kind in _WORD_OF_BASE:
+        return _WORD_OF_BASE[kind]
+    for name, mirror in MIRRORS.items():
+        if kind is mirror:
+            return name
+    return repr(kind)
+
+
+class EntryLine(NamedTuple):
+    """The entry line of one C entry of the layout table: its library, and the type words of its return and parameters."""
+
+    library: str
+    result: str
+    parameters: tuple[str, ...]
+
 
 class LayoutTable(NamedTuple):
-    """The layout table of a build: the digest, the layout of each mirrored struct, and the C constants."""
+    """The layout table of a build: the digest, the layout of each mirrored struct, the C constants and the C entries.
+
+    field_types holds the type word of each member of a struct, and entries
+    the entry line of each C entry, by its name (the type words of
+    vessel/torch/layout_table.cpp).
+    """
 
     digest: int
     sizes: dict[str, int]
     offsets: dict[str, dict[str, int]]
+    field_types: dict[str, dict[str, str]]
     constants: dict[str, int]
+    entries: dict[str, EntryLine]
 
 
 class LayoutNote(NamedTuple):
@@ -944,7 +1061,9 @@ def read_layout_table(folder: Path) -> LayoutTable:
     digest: int | None = None
     sizes: dict[str, int] = {}
     offsets: dict[str, dict[str, int]] = {}
+    field_types: dict[str, dict[str, str]] = {}
     constants: dict[str, int] = {}
+    entries: dict[str, EntryLine] = {}
     for line in path.read_text(encoding="ascii").splitlines():
         words = line.split()
         if len(words) == 2 and words[0] == "digest":
@@ -952,16 +1071,20 @@ def read_layout_table(folder: Path) -> LayoutTable:
         elif len(words) == 3 and words[0] == "struct":
             sizes[words[1]] = int(words[2])
             offsets.setdefault(words[1], {})
-        elif len(words) == 4 and words[0] == "field":
+            field_types.setdefault(words[1], {})
+        elif len(words) == 5 and words[0] == "field":
             offsets.setdefault(words[1], {})[words[2]] = int(words[3])
+            field_types.setdefault(words[1], {})[words[2]] = words[4]
         elif len(words) == 3 and words[0] == "constant":
             constants[words[1]] = int(words[2])
+        elif len(words) >= 4 and words[0] == "entry" and words[1] in ENTRY_LIBRARIES:
+            entries[words[2]] = EntryLine(words[1], words[3], tuple(words[4:]))
         else:
-            raise CrucibleAbiMismatchError(f"{path} holds the line {line!r}, which is no line of THE TABLE of "
+            raise CrucibleAbiMismatchError(f"{path} holds the line {line!r}, which is no line of the table of "
                                            f"vessel/torch/layout_table.cpp")
     if digest is None:
         raise CrucibleAbiMismatchError(f"{path} holds no digest line")
-    return LayoutTable(digest, sizes, offsets, constants)
+    return LayoutTable(digest, sizes, offsets, field_types, constants, entries)
 
 
 def layout_note(path: str) -> LayoutNote | None:
@@ -1005,30 +1128,105 @@ def check_layout(path: str, rebuild: str) -> LayoutTable:
             f"  layout table  : {table.digest} ({Path(path).parent / LAYOUT_TABLE})\n"
             f"The two vessel libraries share the layout of the Vigil and of the C ABI.  Rebuild the libraries:\n"
             f"{rebuild}")
+    if _pair_layout.digest is not None and note.digest != _pair_layout.digest:
+        raise CrucibleAbiMismatchError(
+            f"{Path(path).name} has a layout other than the vessel library that this process loaded first:\n"
+            f"  library        : {path}\n"
+            f"  layout note    : {note.digest}\n"
+            f"  first library  : {_pair_layout.path} ({_pair_layout.digest})\n"
+            f"The two vessel libraries read one Vigil, so they come from one build.  Give CRUCIBLE_BUILD_DIR the "
+            f"build of the two libraries, or rebuild them:\n{rebuild}")
     check_mirrors(table)
     return table
 
 
-def check_mirrors(table: LayoutTable) -> None:
-    """Refuse each ctypes Structure of MIRRORS whose size or field offsets differ from the layout table.
+class PairLayout:
+    """The layout of the pair of vessel libraries of this process: the digest and the path of the first library.
 
-    Complexity: O(fields of the mirrors).
+    The two libraries read one Vigil, so each library that loads after the
+    first must have its digest (check_layout).  The first load of the process
+    fixes the digest (fix_pair_layout), and a library that a check refuses
+    fixes nothing.  The loads run on the thread that starts a session.
+    """
+
+    def __init__(self) -> None:
+        """Start with no library."""
+        self.digest: int | None = None
+        self.path = ""
+
+
+_pair_layout = PairLayout()
+
+
+def fix_pair_layout(path: str, table: LayoutTable) -> None:
+    """Fix the digest of the pair at the digest of the library at path, when no library loaded before it."""
+    if _pair_layout.digest is None:
+        _pair_layout.digest = table.digest
+        _pair_layout.path = path
+
+
+class DeclaredEntries:
+    """The C entries of one loaded library, each declared from its entry line of the layout table.
+
+    Each entry of the library that the table names is an attribute, with the
+    restype and the argtypes of the type words of its line (ctypes_of_word).
+    A name that the table does not give is no attribute, so its read raises
+    AttributeError, and no call reaches an entry with the default int return
+    of ctypes.  path is the file of the library, and table the layout table
+    of its build.  Complexity: linear in the entry lines of the table.
+    """
+
+    def __init__(self, library: Any, kind: str, path: str, table: LayoutTable,
+                 names: Iterable[str] | None = None) -> None:
+        """Declare each entry of the library kind of table, or only the entries of names.
+
+        Raises:
+            CrucibleAbiMismatchError: If the library exports no entry of a line
+                of kind, or if the table has no line of kind for a name of names
+        """
+        self.path = path
+        self.table = table
+        wanted = None if names is None else tuple(names)
+        lines = {name: line for name, line in table.entries.items()
+                 if line.library == kind and (wanted is None or name in wanted)}
+        missing = [name for name in wanted or () if name not in lines]
+        for name, line in lines.items():
+            try:
+                function = getattr(library, name)
+            except AttributeError:
+                missing.append(name)
+                continue
+            function.restype = ctypes_of_word(line.result)
+            function.argtypes = [ctypes_of_word(word) for word in line.parameters]
+            setattr(self, name, function)
+        if missing:
+            raise CrucibleAbiMismatchError(
+                f"{path} exports no entry {', '.join(missing)} of the {kind} entries of its layout table.  "
+                f"Build the library again:\n{VESSEL_BUILD}")
+
+
+def check_mirrors(table: LayoutTable) -> None:
+    """Refuse each ctypes Structure of MIRRORS whose size, field offsets or field types differ from the layout table.
+
+    A field type is the type word of its ctypes type (word_of_ctypes), so a
+    field of int8 against a member of uint8 is refused, although its size and
+    its offset are the same.  Complexity: O(fields of the mirrors).
 
     Raises:
         CrucibleAbiMismatchError: If the table names no such struct, or if
-            the size, the names or the offsets of the fields differ
+            the size, the names, the offsets or the types of the fields differ
     """
     for name, mirror in MIRRORS.items():
         if name not in table.sizes:
             raise CrucibleAbiMismatchError(f"the layout table names no struct {name}, which {mirror.__name__} of "
                                            f"crucible_native.py mirrors.  Rebuild the libraries:\n{VESSEL_BUILD}")
-        expected = table.offsets[name]
-        observed = {field: getattr(mirror, field).offset for field, *_ in mirror._fields_}
+        expected = {field: (offset, table.field_types[name][field]) for field, offset in table.offsets[name].items()}
+        observed = {field: (getattr(mirror, field).offset, word_of_ctypes(kind)) for field, kind, *_ in mirror._fields_}
         if ctypes.sizeof(mirror) != table.sizes[name] or observed != expected:
             raise CrucibleAbiMismatchError(
                 f"{mirror.__name__} of crucible_native.py does not mirror {name} of vessel_api.h:\n"
-                f"  ctypes size and offsets : {ctypes.sizeof(mirror)} {observed}\n"
-                f"  C size and offsets      : {table.sizes[name]} {expected}\n"
+                f"  ctypes size, offsets and types : {ctypes.sizeof(mirror)} {observed}\n"
+                f"  C size, offsets and types      : {table.sizes[name]} {expected}\n"
                 f"Make the fields of the Structure the fields of the struct, in their order and types.")
     for prefix, mirror_enum in MIRRORED_CONSTANTS.items():
         expected_values = {name[len(prefix):]: value for name, value in table.constants.items()
@@ -1043,46 +1241,42 @@ def check_mirrors(table: LayoutTable) -> None:
                 f"Give the enum the names and the values of the C constants.")
 
 
-def check_loaded_layout(library: Any, symbol: str, path: str, table: LayoutTable) -> None:
+def check_loaded_layout(digest_entry: Any, path: str, table: LayoutTable) -> None:
     """Refuse a loaded library whose layout entry gives a digest other than the digest of the table.
 
     The second guard of the layout of a library, after the check of the note.
+    digest_entry is the declared entry that gives the digest of the library.
 
     Raises:
-        CrucibleAbiMismatchError: If the library has no SYMBOL, or it gives a
-            different digest
+        CrucibleAbiMismatchError: If the entry gives a different digest
     """
-    try:
-        reader = getattr(library, symbol)
-    except AttributeError:
-        raise CrucibleAbiMismatchError(f"{path} has no {symbol}, which gives the layout digest of the library.  "
-                                       f"Rebuild the libraries:\n{VESSEL_BUILD}") from None
-    reader.restype = ctypes.c_uint64
-    reader.argtypes = []
-    observed = int(reader())
+    observed = int(digest_entry())
     if observed != table.digest:
         raise CrucibleAbiMismatchError(f"{path} gives the layout digest {observed} after the load, and its layout "
                                        f"table holds {table.digest}.  Rebuild the libraries:\n{VESSEL_BUILD}")
 
 
-def load_vessel_library(lib_path: str | None = None) -> ctypes.CDLL:
-    """Load libcrucible_vessel.so, and return it once its layout is the layout of its build.
+def load_vessel_library(lib_path: str | None = None) -> DeclaredEntries:
+    """Load libcrucible_vessel.so, and return its declared entries once its layout is the layout of its build.
 
     lib_path names the library, or None to search the build directories
     (_find_lib).  Each wrapper of the vessel library loads it through this
-    function, so no wrapper reads a library of a different layout.
+    function, so no wrapper reads a library of a different layout, and each
+    entry has the declaration of its line of the layout table.
 
     Raises:
         RuntimeError: If no library is found, or if it needs a sanitizer
             runtime that the process does not hold (checked_lib_path).
         CrucibleAbiMismatchError: If the layout of the library or of a
-            mirror is not the layout of the build (check_layout)
+            mirror is not the layout of the build, or if it is not the layout
+            of the library that the process loaded first (check_layout)
     """
     path = checked_lib_path(VESSEL_LIBRARY, lib_path, RELEASE_BUILD)
     table = check_layout(path, RELEASE_BUILD)
-    library = ctypes.CDLL(path)
-    check_loaded_layout(library, "crucible_layout_digest", path, table)
-    return library
+    entries = DeclaredEntries(ctypes.CDLL(path), VESSEL_ENTRIES, path, table)
+    check_loaded_layout(entries.crucible_layout_digest, path, table)
+    fix_pair_layout(path, table)
+    return entries
 
 
 # The most enumerators that read_tls_modes reads: one for each value of the
@@ -1090,23 +1284,14 @@ def load_vessel_library(lib_path: str | None = None) -> ctypes.CDLL:
 _MAX_TLS_MODES = 256
 
 
-def read_tls_modes(library: Any) -> dict[str, int]:
+def read_tls_modes(entries: DeclaredEntries) -> dict[str, int]:
     """Read the name and the value of each enumerator of c10::CrucibleMode from the loaded dispatch library.
 
     The library reads them from the patched enum by reflection, and gives
     them through crucible_dispatch_mode_entry.  Complexity: one call for each
     enumerator.
-
-    Raises:
-        CrucibleAbiMismatchError: If the library has no crucible_dispatch_mode_entry
     """
-    try:
-        entry = library.crucible_dispatch_mode_entry
-    except AttributeError:
-        raise CrucibleAbiMismatchError("the dispatch library has no crucible_dispatch_mode_entry, which gives the "
-                                       f"modes of c10::CrucibleMode.  Rebuild the libraries:\n{VESSEL_BUILD}") from None
-    entry.restype = ctypes.c_uint32
-    entry.argtypes = [ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_char_p)]
+    entry = entries.crucible_dispatch_mode_entry
     modes: dict[str, int] = {}
     for index in range(_MAX_TLS_MODES):
         value = ctypes.c_uint8(0)
@@ -1134,8 +1319,8 @@ def check_tls_modes(observed: dict[str, int], path: str) -> None:
             f"patches/pytorch-crucible-integration.patch.")
 
 
-def load_dispatch_library(lib_path: str | None = None) -> ctypes.CDLL:
-    """Load libcrucible_dispatch.so, and return it once its layout is the layout of its build.
+def load_dispatch_library(lib_path: str | None = None) -> DeclaredEntries:
+    """Load libcrucible_dispatch.so, and return its declared entries once its layout is the layout of its build.
 
     lib_path names the library, or None to search the build directories
     (_find_lib).  The wrapper of the dispatch library loads it through this
@@ -1151,15 +1336,17 @@ def load_dispatch_library(lib_path: str | None = None) -> ctypes.CDLL:
         RuntimeError: If no library is found, or if it needs a sanitizer
             runtime that the process does not hold (checked_lib_path).
         CrucibleAbiMismatchError: If the layout of the library or of a
-            mirror is not the layout of the build (check_layout), or if
-            its modes differ from TlsMode (check_tls_modes)
+            mirror is not the layout of the build, or if it is not the layout
+            of the library that the process loaded first (check_layout), or
+            if its modes differ from TlsMode (check_tls_modes)
     """
     path = checked_lib_path(DISPATCH_LIBRARY, lib_path, VESSEL_BUILD)
     table = check_layout(path, VESSEL_BUILD)
-    library = ctypes.CDLL(path)
-    check_loaded_layout(library, "crucible_dispatch_layout_digest", path, table)
-    check_tls_modes(read_tls_modes(library), path)
-    return library
+    entries = DeclaredEntries(ctypes.CDLL(path), DISPATCH_ENTRIES, path, table)
+    check_loaded_layout(entries.crucible_dispatch_layout_digest, path, table)
+    fix_pair_layout(path, table)
+    check_tls_modes(read_tls_modes(entries), path)
+    return entries
 
 
 # The entries of the dispatch library that read a PyTorch object by its
@@ -1177,26 +1364,20 @@ def is_gil_enabled() -> bool:
     return getattr(sys, "_is_gil_enabled", lambda: True)()
 
 
-def load_gil_entries(library: ctypes.CDLL) -> ctypes.PyDLL:
-    """Load the dispatch library a second time through ctypes.PyDLL, for the entries of GIL_ENTRIES.
+def load_gil_entries(entries: DeclaredEntries) -> DeclaredEntries:
+    """Load the dispatch library of entries a second time through ctypes.PyDLL, for the entries of GIL_ENTRIES.
 
     The dynamic loader gives the same library, so the two objects call the
     same code and the same globals.  A call through the PyDLL object keeps the
-    GIL, and a call through the CDLL object releases it.  So the wrapper binds
-    each entry of GIL_ENTRIES only through the object that this function
+    GIL, and a call through the CDLL object releases it.  So the wrapper calls
+    each entry of GIL_ENTRIES only through the entries that this function
     returns.
 
     Raises:
-        CrucibleAbiMismatchError: If the library exports no entry of a name of
-            GIL_ENTRIES
+        CrucibleAbiMismatchError: If the library or its layout table has no
+            entry of a name of GIL_ENTRIES
     """
-    held = ctypes.PyDLL(library._name)
-    missing = [name for name in GIL_ENTRIES if not hasattr(held, name)]
-    if missing:
-        raise CrucibleAbiMismatchError(
-            f"{library._name} exports no entry {', '.join(missing)} of GIL_ENTRIES.  "
-            f"Build the library again:\n{VESSEL_BUILD}")
-    return held
+    return DeclaredEntries(ctypes.PyDLL(entries.path), DISPATCH_ENTRIES, entries.path, entries.table, GIL_ENTRIES)
 
 
 # =====================================================================
@@ -1207,57 +1388,13 @@ class _VesselLib:
     """Ctypes wrapper for libcrucible_vessel.so — Vigil lifecycle + queries."""
 
     def __init__(self, lib_path: str | None = None) -> None:
-        """Load the vessel library once its layout is the layout of its build (load_vessel_library)."""
-        self._lib = load_vessel_library(lib_path)
-        self._setup()
+        """Load the vessel library once its layout is the layout of its build (load_vessel_library).
 
-    def _setup(self) -> None:
-        """Declare the restype and argtypes of every symbol this class calls.
-
-        Each entry that takes a handle gives a HandleStatus, and it writes its
-        value through its last argument, a pointer, only with the status LIVE.
+        Each entry has the declaration of its line of the layout table.  Each
+        entry that takes a handle gives a HandleStatus, and it writes its value
+        through its last argument, a pointer, only with the status LIVE.
         """
-        L = self._lib
-        handle = ctypes.c_uint64
-        status = ctypes.c_uint32
-        u32 = ctypes.POINTER(ctypes.c_uint32)
-        u64 = ctypes.POINTER(ctypes.c_uint64)
-
-        # Lifecycle.  crucible_create takes the eager word of the attach.
-        L.crucible_create.restype = status
-        L.crucible_create.argtypes = [ctypes.c_uint32, u64]
-        L.crucible_destroy.restype = status
-        L.crucible_destroy.argtypes = [handle]
-        L.crucible_release_claim.restype = status
-        L.crucible_release_claim.argtypes = [handle]
-        L.crucible_flush.restype = status
-        L.crucible_flush.argtypes = [handle, u32]
-
-        # Queries
-        for name, out in (("crucible_is_compiled", u32), ("crucible_compiled_iterations", u64),
-                          ("crucible_diverged_count", u64), ("crucible_bg_iterations", u32),
-                          ("crucible_ring_size", u32), ("crucible_metalog_size", u32),
-                          ("crucible_active_num_ops", u32), ("crucible_active_content_hash", u64),
-                          ("crucible_active_pool_bytes", u64)):
-            getattr(L, name).restype = status
-            getattr(L, name).argtypes = [handle, out]
-
-        # The addresses of the slots of the current op of a replay
-        for name in ("crucible_output_ptr", "crucible_input_ptr"):
-            getattr(L, name).restype = status
-            getattr(L, name).argtypes = [handle, ctypes.c_uint16, ctypes.POINTER(ctypes.c_void_p)]
-
-        # Trace export
-        L.crucible_export_crtrace.restype = status
-        L.crucible_export_crtrace.argtypes = [handle, ctypes.c_char_p, u32]
-        L.crucible_active_region_slots.restype = status
-        L.crucible_active_region_slots.argtypes = [handle, ctypes.POINTER(CrucibleSlot), ctypes.c_uint32, u32]
-        L.crucible_bound_scalars.restype = status
-        L.crucible_bound_scalars.argtypes = [handle, ctypes.POINTER(CrucibleBoundScalar), ctypes.c_uint32, u32]
-
-        # The eager word of a region entry
-        L.crucible_observe_eager_numerics.restype = status
-        L.crucible_observe_eager_numerics.argtypes = [handle, ctypes.c_uint32]
+        self._lib = load_vessel_library(lib_path)
 
     def _read(self, name: str, h: int, value_type: type[Any]) -> Any:
         """The value that the query NAME of the vessel library writes for the handle H.
@@ -1449,73 +1586,12 @@ class _DispatchLib:
         """Load the dispatch library once its layout is the layout of its build (load_dispatch_library)."""
         # Ensure torch._C is loaded first (provides libc10 symbols).
         import torch._C  # noqa: F401
-        # The load registers the C++ fallback (load_dispatch_library).
+        # The load registers the C++ fallback (load_dispatch_library).  Each
+        # entry has the declaration of its line of the layout table.
         self._lib = load_dispatch_library(lib_path)
-        # The entries that read a PyTorch object, which keep the GIL.
+        # The entries that read a PyTorch object, which keep the GIL.  The
+        # wrapper calls them only through these entries.
         self._gil_lib = load_gil_entries(self._lib)
-        self._setup()
-
-    def _setup(self) -> None:
-        """Declare the restype and argtypes of every symbol this class calls."""
-        L = self._lib
-
-        # TLS mode/context
-        L.crucible_dispatch_set_tls_mode.restype = ctypes.c_uint32
-        L.crucible_dispatch_set_tls_mode.argtypes = [ctypes.c_uint8]
-        L.crucible_dispatch_get_tls_mode.restype = ctypes.c_uint8
-        L.crucible_dispatch_get_tls_mode.argtypes = []
-        L.crucible_dispatch_set_tls_context.restype = ctypes.c_uint32
-        L.crucible_dispatch_set_tls_context.argtypes = [ctypes.c_uint64]
-        L.crucible_dispatch_get_tls_context.restype = ctypes.c_uint64
-        L.crucible_dispatch_get_tls_context.argtypes = []
-
-        # TLS scope hash
-        L.crucible_dispatch_set_tls_scope.restype = None
-        L.crucible_dispatch_set_tls_scope.argtypes = [ctypes.c_uint64]
-        L.crucible_dispatch_get_tls_scope.restype = ctypes.c_uint64
-        L.crucible_dispatch_get_tls_scope.argtypes = []
-
-        # The backward window, from which the C++ side derives the BACKWARD
-        # phase into op_flags bits 2-3.
-        L.crucible_dispatch_backward_enter.restype = None
-        L.crucible_dispatch_backward_enter.argtypes = []
-        L.crucible_dispatch_backward_exit.restype = None
-        L.crucible_dispatch_backward_exit.argtypes = []
-        L.crucible_dispatch_backward_depth.restype = ctypes.c_uint32
-        L.crucible_dispatch_backward_depth.argtypes = []
-
-        # Schema table accessors, which list the recorded operator names
-        L.crucible_dispatch_schema_count.restype = ctypes.c_uint32
-        L.crucible_dispatch_schema_count.argtypes = []
-        L.crucible_dispatch_schema_entry.restype = ctypes.c_int
-        L.crucible_dispatch_schema_entry.argtypes = [
-            ctypes.c_uint32,
-            ctypes.POINTER(ctypes.c_uint64),
-            ctypes.POINTER(ctypes.c_char_p),
-        ]
-
-        # The eager word of this thread: the float32 matmul precision, the two
-        # TF32 bits and the flush of denormal floats.
-        L.crucible_dispatch_eager_numerics.restype = ctypes.c_uint32
-        L.crucible_dispatch_eager_numerics.argtypes = [ctypes.POINTER(ctypes.c_uint32)]
-        # The text of the last error of PyTorch on this thread (FOREIGN_ERROR).
-        L.crucible_dispatch_last_error.restype = ctypes.c_uint32
-        L.crucible_dispatch_last_error.argtypes = [ctypes.c_char_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)]
-
-        # The generation allocator (storage_generation.h): the attach, the
-        # detach, and the reads of the chain and of a storage.
-        L.crucible_dispatch_attach_allocator.restype = ctypes.c_uint32
-        L.crucible_dispatch_attach_allocator.argtypes = [ctypes.POINTER(ctypes.c_uint32)]
-        L.crucible_dispatch_detach_allocator.restype = ctypes.c_uint32
-        L.crucible_dispatch_detach_allocator.argtypes = []
-        for name in ("crucible_dispatch_cpu_allocator", "crucible_dispatch_generation_allocator",
-                     "crucible_dispatch_inner_allocator"):
-            getattr(L, name).restype = ctypes.c_uint64
-            getattr(L, name).argtypes = []
-        # The read of a storage holds the GIL, so only the PyDLL object binds it.
-        held = self._gil_lib
-        held.crucible_dispatch_storage_generation.restype = ctypes.c_uint32
-        held.crucible_dispatch_storage_generation.argtypes = [ctypes.c_void_p]
 
     def eager_numerics(self) -> int:
         """The eager word of this thread, which the Vigil folds into the hash of each region.

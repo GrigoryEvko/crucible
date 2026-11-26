@@ -16,14 +16,13 @@ Exit 0 when each flush of a stopped background raises and each flush of a
 running background does not, 1 otherwise.
 """
 
-import ctypes
 import sys
 from collections.abc import Callable
 from typing import Any, cast
 
 import torch
 
-from crucible_native import CrucibleNative, HandleStatus, _VesselLib
+from crucible_native import CrucibleNative, DeclaredEntries, HandleStatus, _VesselLib
 
 # One intra-op thread and one inter-op thread, as in each vessel test.
 torch.set_num_threads(1)
@@ -56,7 +55,7 @@ class StandInVessel(_VesselLib):
 
     def __init__(self, library: FlushLibrary) -> None:
         """Take LIBRARY in place of the loaded library."""
-        self._lib = cast(ctypes.CDLL, library)
+        self._lib = cast(DeclaredEntries, library)
 
 
 def native_over(library: FlushLibrary) -> CrucibleNative:
