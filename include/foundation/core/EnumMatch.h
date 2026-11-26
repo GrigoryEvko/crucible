@@ -31,10 +31,13 @@
 // (HoldsNoLinearValue of foundation/Linear.h): the match calls it, and a
 // call is no consume.
 //
-// A value of a closed enumeration that names no enumerator ends the process
-// through unreachable().  Such a value comes only from a forged cast: the
-// quarantine plugin refuses a cast of a number into a closed enumeration
-// outside the base, and decode and enum_from give no such value.
+// A value of a closed enumeration names an enumerator, so the match tests no
+// other value at run time.  A value that names no enumerator comes only from
+// a forged cast: the quarantine plugin counts each cast of a number into a
+// closed enumeration outside the base, and decode and enum_from give no such
+// value.  So the chain of compares skips the last arm, and each value that
+// no earlier arm names takes it.  In a constant evaluation, a value that no
+// arm names does not compile.
 //
 // The code.  A case label cannot stand in an expansion statement, so the
 // match has two steps in one function body.  The first step is one chain of
@@ -410,38 +413,56 @@ inline constexpr bool is_nothrow_arm_<E, OtherArm<Body>> = noexcept(std::declval
 // The two steps of the match (the code, above): the chain of compares, one
 // for each named value, finds the position of the arm, and the second step
 // calls the body at that position.  A value that no arm names goes to the
-// arm otherwise, or ends the process.  Linear in the named values.
+// arm otherwise of an open enumeration.  The chain of a closed enumeration
+// compares no value of its last arm: the arms name each enumerator, and
+// enum_from and decode give no other value, so a value that no earlier arm
+// names is a value of the last arm.  A constant evaluation also compares
+// the values of the last arm, and a value that no arm names reaches
+// unreachable(), so a forged constant does not compile.  Linear in the
+// named values.
 template <class Result, class E, class... Arms>
 [[nodiscard]] constexpr Result run_arms_(E value, Arms&... arms) noexcept((is_nothrow_arm_<E, Arms> && ...)) {
+    constexpr std::size_t count = sizeof...(Arms);
+    constexpr std::size_t other = other_position_<Arms...>();
+    constexpr bool is_closed = other == count;
+    // The arm of each value that the chain does not compare: the arm
+    // otherwise of an open enumeration, or the last arm of a closed one.
+    constexpr std::size_t rest = is_closed ? count - 1 : other;
 // An expansion statement unrolls into successive scopes that each declare
 // the same induction variable, so -Wshadow fires once for each iteration.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wshadow"
-    constexpr std::size_t none = sizeof...(Arms);
-    std::size_t hit = none;
-    template for (constexpr std::size_t at : arm_positions_<sizeof...(Arms)>.items) {
-        using Arm = Arms...[at];
-        if constexpr (!arm_traits_<Arm>::is_other) {
-            template for (constexpr E named : arm_named_<Arm>::values.items) {
+    std::size_t hit = rest;
+    template for (constexpr std::size_t at : arm_positions_<count>.items) {
+        if constexpr (at != rest) {
+            template for (constexpr E named : arm_named_<Arms...[at]>::values.items) {
                 if (value == named) {
                     hit = at;
                     break;
                 }
             }
-            if (hit != none) break;
+            if (hit != rest) break;
         }
     }
-    template for (constexpr std::size_t at : arm_positions_<sizeof...(Arms)>.items) {
-        if constexpr (!arm_traits_<Arms...[at]>::is_other) {
+    if consteval {
+        if constexpr (is_closed) {
+            bool is_named = hit != rest;
+            template for (constexpr E named : arm_named_<Arms...[rest]>::values.items) {
+                is_named = is_named || value == named;
+            }
+            if (!is_named) unreachable();
+        }
+    }
+    template for (constexpr std::size_t at : arm_positions_<count>.items) {
+        if constexpr (at != rest) {
             if (hit == at) return arms...[at].body();
         }
     }
 #pragma GCC diagnostic pop
-    constexpr std::size_t other = other_position_<Arms...>();
-    if constexpr (other < sizeof...(Arms)) {
-        return arms...[other].body(value);
+    if constexpr (is_closed) {
+        return arms...[rest].body();
     } else {
-        unreachable();
+        return arms...[rest].body(value);
     }
 }
 

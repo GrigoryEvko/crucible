@@ -1,9 +1,9 @@
 // Tests of foundation/core/EnumMatch.h at run time: match_enum runs the arm
 // of each enumerator, a stated set gives each of its enumerators to its arm,
 // the arm otherwise of an open enumeration takes each value that no other
-// arm names, and a forged value of a closed enumeration ends the process.
-// The values come through a call that the optimizer cannot read, so each
-// match runs at run time.
+// arm names, and a match of a forged constant of a closed enumeration is no
+// constant expression.  The values come through a call that the optimizer
+// cannot read, so each match runs at run time.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -103,16 +103,24 @@ void test_otherwise_takes_each_value_that_no_arm_names() {
 }
 
 // A value of a closed enumeration that names no enumerator comes only from a
-// forged cast, and the match ends the process at it.
-void test_a_forged_value_ends_the_process() {
-    ::fixy::check::expect_dies(
-        kTest,
-        [] noexcept {
-            Kind const forged = static_cast<Kind>(opaque(std::uint8_t{9}));
-            static_cast<void>(apply(forged, 1, 1));
-        },
-        ::foundation::core::TextView{"control reached a point that the code marks as unreachable"});
+// forged cast.  The boundary doors give no such value (test_core_scalar,
+// test_core_protocol), so the match tests no such value at run time.  In a
+// constant evaluation, a match of such a value is no constant expression.
+template <Kind K>
+[[nodiscard]] constexpr int apply_constant() noexcept {
+    return match_enum(K, arm<Kind::add>([] noexcept { return 1; }), arm<Kind::multiply>([] noexcept { return 2; }),
+                      arm<Kind::divide>([] noexcept { return 3; }), arm<Kind::negate>([] noexcept { return 4; }));
 }
+
+template <int Value>
+struct ConstantResult final {};
+
+template <Kind K>
+concept matches_as_constant = requires { typename ConstantResult<apply_constant<K>()>; };
+
+static_assert(matches_as_constant<Kind::add> && matches_as_constant<Kind::negate>);
+static_assert(!matches_as_constant<static_cast<Kind>(9)>);
+static_assert(apply_constant<Kind::divide>() == 3 && apply_constant<Kind::negate>() == 4);
 
 }  // namespace
 
@@ -121,6 +129,5 @@ int main() {
     test_a_set_gives_each_enumerator_to_its_arm();
     test_a_match_with_no_result_runs_one_body();
     test_otherwise_takes_each_value_that_no_arm_names();
-    test_a_forged_value_ends_the_process();
     return 0;
 }

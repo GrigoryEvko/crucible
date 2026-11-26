@@ -1183,10 +1183,9 @@ PROBES: tuple[Probe, ...] = (
     # The EnumMatch family.
     Probe(
         "enum_match_kind",
-        "match_enum over the four kinds finds the arm with one compare for each kind, and a value with no kind goes "
-        "to the fatal exit.  The hand switch reads a table of values, so the family side has a decision tree in "
-        "place of the table",
-        checks=("fatal",),
+        "match_enum over the four kinds finds the arm with one compare for each kind but the last, and the last "
+        "kind takes each other value, with no fatal exit.  The hand switch reads a table of values, so the family "
+        "side has a decision tree in place of the table",
         branches=True,
     ),
     # The Record family.

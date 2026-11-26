@@ -1503,8 +1503,8 @@ result_or_else_raw(fixy::Result<std::uint32_t, Code32> result) noexcept {
 }
 
 // match_enum over the four kinds, one arm each: one compare for each kind
-// and one branch to the fatal exit, where the hand switch reads a table of
-// values.
+// but the last, and the last kind takes each other value, where the hand
+// switch reads a table of values.
 [[gnu::used]] std::uint32_t enum_match_kind(Kind kind) noexcept {
     return fixy::match_enum(kind, fixy::arm<Kind::first>([] noexcept { return std::uint32_t{11}; }),
                             fixy::arm<Kind::second>([] noexcept { return std::uint32_t{23}; }),
