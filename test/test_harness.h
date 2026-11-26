@@ -45,12 +45,19 @@ inline void flush_and_wait_region_published(::fixy::TestRunnerCtx const& test, V
 //
 // A test that wants the adapter's checks exercised should call the
 // adapter. This is for the tests that drive the Vigil directly.
-[[nodiscard]] inline TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry& entry
-                                                                          CRUCIBLE_LIFETIMEBOUND) noexcept {
+[[nodiscard]] inline TraceRing::ValidatedEntry certify_synthetic_entry(TraceRing::SealedEntry const& entry
+                                                                       CRUCIBLE_LIFETIMEBOUND) noexcept {
     return mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>();
 }
-TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry&&) =
-    delete("the result points into the entry, and a temporary entry ends before the result");
+TraceRing::ValidatedEntry certify_synthetic_entry(TraceRing::SealedEntry const&&) =
+    delete("the tag names the sealed entry, and a temporary sealed entry ends before the tag");
+
+// A sealed copy of an entry that a test built field by field
+// (TraceRing::SealedEntry).  The result is built in the object that the
+// call initializes, so a test names it: auto const sealed = seal_entry(entry).
+[[nodiscard]] inline TraceRing::SealedEntry seal_entry(TraceRing::Entry const& entry) noexcept {
+    return TraceRing::SealedEntry{::fixy::build_sealed, [&entry]() noexcept { return entry; }};
+}
 
 // The first count records of an array of a test: the records of one op.
 template <auto N>
@@ -79,41 +86,43 @@ template <auto N>
 // Certifies an Entry that a test built, and pairs it with its sealed
 // records, so it can reach record_op and dispatch_op.  The process ends when
 // the count of the records disagrees with the entry, as for each other
-// broken fixture.  The op points into the entry and holds a View of the
-// list, so it must not outlive the entry or the list.
+// broken fixture.  The op holds a Ref of the sealed entry and a View of the
+// list, so it must not outlive either of them.
 template <std::size_t N>
-[[nodiscard]] ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry CRUCIBLE_LIFETIMEBOUND,
+[[nodiscard]] ValidatedOp certify_synthetic_op(TraceRing::SealedEntry const& entry CRUCIBLE_LIFETIMEBOUND,
                                                SealedRecords<N> const& records CRUCIBLE_LIFETIMEBOUND) noexcept {
     return mint_validated_op(certify_synthetic_entry(entry), records)
         .expect("the count of the records of a test agrees with its entry");
 }
 template <std::size_t N>
-ValidatedOp certify_synthetic_op(const TraceRing::Entry&&, SealedRecords<N> const&) =
-    delete("the op points into the entry, and a temporary entry ends before the op");
+ValidatedOp certify_synthetic_op(TraceRing::SealedEntry const&&, SealedRecords<N> const&) =
+    delete("the op keeps a Ref of the sealed entry, and a temporary sealed entry ends before the op");
 template <std::size_t N>
-ValidatedOp certify_synthetic_op(const TraceRing::Entry&, SealedRecords<N> const&&) =
+ValidatedOp certify_synthetic_op(TraceRing::SealedEntry const&, SealedRecords<N> const&&) =
     delete("the op keeps a View of the sealed list, and a temporary list ends before the op");
 
 // The same for an entry with no records.
-[[nodiscard]] inline ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry CRUCIBLE_LIFETIMEBOUND) noexcept {
+[[nodiscard]] inline ValidatedOp certify_synthetic_op(TraceRing::SealedEntry const& entry
+                                                      CRUCIBLE_LIFETIMEBOUND) noexcept {
     return mint_validated_op(certify_synthetic_entry(entry))
         .expect("the entry of a test with no records counts no tensor");
 }
-ValidatedOp certify_synthetic_op(const TraceRing::Entry&&) =
-    delete("the op points into the entry, and a temporary entry ends before the op");
+ValidatedOp certify_synthetic_op(TraceRing::SealedEntry const&&) =
+    delete("the op keeps a Ref of the sealed entry, and a temporary sealed entry ends before the op");
 
 // Runs body with the op of an entry that a test built and of the first count
-// records of an array of the test, and gives the result of body.  The
-// records are a sealed copy that lives in the call, so a later write to the
-// array changes no op, and the result of body holds no borrow of the op.
-// O(count), and the cost of body.
+// records of an array of the test, and gives the result of body.  The entry
+// and the records are sealed copies that live in the call, so a later write
+// to the entry or to the array changes no op, and the result of body holds no
+// borrow of the op.  O(count), and the cost of body.
 template <auto N, class Body>
     requires std::is_invocable_v<Body&&, ValidatedOp const&>
           && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, ValidatedOp const&>>
 decltype(auto) with_synthetic_op(const TraceRing::Entry& entry, ::fixy::FixedArray<TensorMeta, N> const& metas,
                                  uint32_t count, Body&& body) {
+    auto const sealed = seal_entry(entry);
     SealedRecords<N> const records{record_list_of(metas, count)};
-    return static_cast<Body&&>(body)(certify_synthetic_op(entry, records));
+    return static_cast<Body&&>(body)(certify_synthetic_op(sealed, records));
 }
 
 // Gives an op of a test to dispatch_op and to dispatch_op_pure.

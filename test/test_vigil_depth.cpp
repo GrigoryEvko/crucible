@@ -91,8 +91,9 @@ void test_region_keeps_the_depth_past_a_growth_of_the_held_ops() {
         crucible::TraceRing::Entry entry{};
         entry.schema_hash = crucible::SchemaHash{0x10000 + op};
         entry.shape_hash = crucible::ShapeHash{0x20000 + op};
+        auto const sealed = crucible::test::seal_entry(entry);
         const crucible::DispatchResult result =
-            vigil.dispatch_op(crucible::test::certify_synthetic_op(entry), crucible::ScopeHash{},
+            vigil.dispatch_op(crucible::test::certify_synthetic_op(sealed), crucible::ScopeHash{},
                               crucible::CallsiteHash{}, crucible::OpDepth{static_cast<uint16_t>(op % kDepths)});
         CRUCIBLE_TEST_ASSERT(kTest, result.action == crucible::DispatchResult::Action::RECORD);
     };
@@ -154,7 +155,8 @@ void give_op_at(crucible::Vigil& vigil, uint64_t schema, crucible::OpDepth depth
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{schema};
     entry.shape_hash = crucible::ShapeHash{schema + 0x1000};
-    (void)vigil.dispatch_op(crucible::test::certify_synthetic_op(entry), crucible::ScopeHash{},
+    auto const sealed = crucible::test::seal_entry(entry);
+    (void)vigil.dispatch_op(crucible::test::certify_synthetic_op(sealed), crucible::ScopeHash{},
                             crucible::CallsiteHash{}, depth);
 }
 

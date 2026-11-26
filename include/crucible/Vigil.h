@@ -745,11 +745,15 @@ public:
     // tells the adapter nothing, so the call drops it.  VigilOpNest calls it
     // at its close, also in an unwind.  Cold: an op that raises is rare.
     [[gnu::cold]] CRUCIBLE_NOINLINE void give_unrecorded_nest(OpDepth depth) {
-        TraceRing::Entry entry{};
-        entry.schema_hash = kUnrecordedNestSchema;
-        entry.shape_hash = ShapeHash{::foundation::reflect::combine_ids(kUnrecordedNestSchema.raw(), depth.raw())};
+        const TraceRing::SealedEntry entry{::fixy::build_sealed, [depth]() noexcept {
+                                               TraceRing::Entry built{};
+                                               built.schema_hash = kUnrecordedNestSchema;
+                                               built.shape_hash = ShapeHash{::foundation::reflect::combine_ids(
+                                                   kUnrecordedNestSchema.raw(), depth.raw())};
+                                               return built;
+                                           }};
         // This code builds each field of the entry, so the entry is valid by
-        // construction, as the comment of TraceRing::ValidatedEntryPtr states.
+        // construction, as the comment of TraceRing::ValidatedEntry states.
         const ValidatedOp op = mint_validated_op(mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>())
                                    .expect("an entry with no tensor takes no record");
         (void)dispatch_op(op, ScopeHash{}, CallsiteHash{}, depth);

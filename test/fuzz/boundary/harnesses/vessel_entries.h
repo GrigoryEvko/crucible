@@ -287,20 +287,22 @@ inline void check_validate(InputCursor& cursor) noexcept {
                             && entry.num_outputs <= kMaxOpOutputs && entry.num_scalar_args <= 5
                             && (slot_bits >> entry.num_scalar_args) == 0;
     const bool is_count_held = std::size_t{entry.num_inputs} + std::size_t{entry.num_outputs} == count;
-    // The list moves into a frame, and the ladder takes the one writer of its
-    // records by move, as a thunk takes the one writer of its frame.
-    (void)::fixy::with_mut(std::move(records), [&entry, count, is_entry_held, is_count_held](auto run) noexcept {
-        const bool is_certified =
-            vessel::validate_ffi_op(mint_ffi_entry(entry), std::move(run))
-                .match(
-                    [&entry, count](ValidatedOp certified) noexcept {
-                        CRUCIBLE_FUZZ_CLAIM(kName, certified.metas().size() == count);
-                        CRUCIBLE_FUZZ_CLAIM(kName, certified.entry().schema_hash == entry.schema_hash);
-                        return true;
-                    },
-                    [] noexcept { return false; });
-        CRUCIBLE_FUZZ_CLAIM(kName, is_certified == (is_entry_held && is_count_held));
-    });
+    // The entry is sealed, the list moves into a frame, and the ladder takes
+    // the one writer of its records by move, as a thunk does.
+    const TraceRing::SealedEntry sealed{::fixy::build_sealed, [&entry]() noexcept { return entry; }};
+    (void)::fixy::with_mut(
+        std::move(records), [&sealed, &entry, count, is_entry_held, is_count_held](auto run) noexcept {
+            const bool is_certified =
+                vessel::validate_ffi_op(mint_ffi_entry(sealed), std::move(run))
+                    .match(
+                        [&entry, count](ValidatedOp certified) noexcept {
+                            CRUCIBLE_FUZZ_CLAIM(kName, certified.metas().size() == count);
+                            CRUCIBLE_FUZZ_CLAIM(kName, certified.entry().schema_hash == entry.schema_hash);
+                            return true;
+                        },
+                        [] noexcept { return false; });
+            CRUCIBLE_FUZZ_CLAIM(kName, is_certified == (is_entry_held && is_count_held));
+        });
 }
 
 // The count of the names of the two schema tables.

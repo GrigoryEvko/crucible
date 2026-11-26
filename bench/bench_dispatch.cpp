@@ -43,39 +43,40 @@ constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foregrou
 // The three helpers of an op are inline in each timed body.  A body with a
 // call to a helper times the call too, and the choice of the inliner changes
 // from one build of this file to the next.
-[[nodiscard]] CRUCIBLE_INLINE TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry& entry
-                                                                                   CRUCIBLE_LIFETIMEBOUND) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE TraceRing::ValidatedEntry certify_synthetic_entry(TraceRing::SealedEntry const& entry
+                                                                                CRUCIBLE_LIFETIMEBOUND) noexcept {
     return mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>();
 }
-TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry&&) =
-    delete("the result points into the entry, and a temporary entry ends before the result");
+TraceRing::ValidatedEntry certify_synthetic_entry(TraceRing::SealedEntry const&&) =
+    delete("the tag names the sealed entry, and a temporary sealed entry ends before the tag");
 
-// Certifies an Entry this file built, and pairs it with its sealed records,
+// Certifies an entry this file sealed, and pairs it with its sealed records,
 // so it can reach record_op and dispatch_op.  The process ends when the count
-// of the records disagrees with the entry.  The op points into the entry and
-// holds a View of the sealed list.
+// of the records disagrees with the entry.  The op holds a Ref of the sealed
+// entry and a View of the sealed list.
 template <std::size_t N>
-[[nodiscard]] CRUCIBLE_INLINE ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry CRUCIBLE_LIFETIMEBOUND,
+[[nodiscard]] CRUCIBLE_INLINE ValidatedOp certify_synthetic_op(TraceRing::SealedEntry const& entry
+                                                               CRUCIBLE_LIFETIMEBOUND,
                                                                SealedRecords<N> const& records
                                                                CRUCIBLE_LIFETIMEBOUND) noexcept {
     return crucible::mint_validated_op(certify_synthetic_entry(entry), records)
         .expect("the count of the records agrees with the entry");
 }
 template <std::size_t N>
-ValidatedOp certify_synthetic_op(const TraceRing::Entry&&, SealedRecords<N> const&) =
-    delete("the op points into the entry, and a temporary entry ends before the op");
+ValidatedOp certify_synthetic_op(TraceRing::SealedEntry const&&, SealedRecords<N> const&) =
+    delete("the op keeps a Ref of the sealed entry, and a temporary sealed entry ends before the op");
 template <std::size_t N>
-ValidatedOp certify_synthetic_op(const TraceRing::Entry&, SealedRecords<N> const&&) =
+ValidatedOp certify_synthetic_op(TraceRing::SealedEntry const&, SealedRecords<N> const&&) =
     delete("the op keeps a View of the sealed list, and a temporary list ends before the op");
 
 // The same for an entry with no records.
-[[nodiscard]] CRUCIBLE_INLINE ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry
+[[nodiscard]] CRUCIBLE_INLINE ValidatedOp certify_synthetic_op(TraceRing::SealedEntry const& entry
                                                                CRUCIBLE_LIFETIMEBOUND) noexcept {
     return crucible::mint_validated_op(certify_synthetic_entry(entry))
         .expect("the entry of an op with no records counts no tensor");
 }
-ValidatedOp certify_synthetic_op(const TraceRing::Entry&&) =
-    delete("the op points into the entry, and a temporary entry ends before the op");
+ValidatedOp certify_synthetic_op(TraceRing::SealedEntry const&&) =
+    delete("the op keeps a Ref of the sealed entry, and a temporary sealed entry ends before the op");
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -104,6 +105,33 @@ constexpr ::fixy::FixedArray<ShapeHash, NUM_OPS> SHAPE{
 
 // The position of an op in the cycle of the NUM_OPS ops.
 using OpSlot = ::fixy::Index<NUM_OPS>;
+
+// The sealed entries of the bodies of the record rows.  A timed body of such a
+// row seals an entry with a new schema hash for each op, so the stream has no
+// period.  The build writes each field in the storage of the seal, as the
+// product path does, and copies no entry.
+
+// The entry of op 1 of the cycle: one input and one output.
+[[nodiscard]] CRUCIBLE_INLINE TraceRing::SealedEntry seal_body_entry(SchemaHash schema_hash) noexcept {
+    return TraceRing::SealedEntry{::fixy::build_sealed, [schema_hash]() noexcept {
+                                      TraceRing::Entry built{};
+                                      built.schema_hash = schema_hash;
+                                      built.shape_hash = SHAPE.at(::fixy::index<1>());
+                                      built.num_inputs = 1;
+                                      built.num_outputs = 1;
+                                      return built;
+                                  }};
+}
+
+// The entry of an op with no tensor, as a profiler hook records it.
+[[nodiscard]] CRUCIBLE_INLINE TraceRing::SealedEntry seal_hook_entry(SchemaHash schema_hash) noexcept {
+    return TraceRing::SealedEntry{::fixy::build_sealed, [schema_hash]() noexcept {
+                                      TraceRing::Entry built{};
+                                      built.schema_hash = schema_hash;
+                                      built.shape_hash = ShapeHash{0xAAA};
+                                      return built;
+                                  }};
+}
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -142,15 +170,17 @@ TensorMeta make_meta(SyntheticAddress address) noexcept {
     return m;
 }
 
-// The entry of an op and its records, sealed when the op is made
-// (SealedRecords of crucible/ValidatedOp.h).  A timed body mints the op from
-// the sealed records, so it copies no record.  The product path of the
-// vessel mints the op from the one writer of the run of a frame instead, so
-// the bodies here are not the product path.  An op does not move, so the ops
-// of a cycle live in a heap array (Ops), and a body of a cycle reads one more
-// pointer than a body of an op in a local.
+// The entry of an op and its records, each sealed when the op is made
+// (TraceRing::SealedEntry, and SealedRecords of crucible/ValidatedOp.h).  A
+// COMPILED body mints the op from the sealed entry and records, so it copies
+// no byte.  A RECORDING body seals a new entry for each op
+// (seal_body_entry), as the product path does.  The product path of the
+// vessel mints the op from the one writer of the run of a frame, and these
+// bodies mint it from a sealed list, so they are not the product path.  An
+// op does not move, so the ops of a cycle live in a heap array (Ops), and a
+// body of a cycle reads the ops through a View of a fixed extent (Cycle).
 struct OpData {
-    TraceRing::Entry entry{};
+    TraceRing::SealedEntry entry;
     SealedRecords<2> records;
 };
 
@@ -166,12 +196,6 @@ constexpr IterationNumber kParameterIteration{200};
 
 OpData make_op(uint32_t iter, uint32_t op_idx, InputSource source = InputSource::PreviousOutput) noexcept {
     const OpSlot slot = OpSlot::check(op_idx).expect("the position of an op is below NUM_OPS");
-    TraceRing::Entry entry{};
-    entry.schema_hash = SCHEMA.at(slot);
-    entry.shape_hash = SHAPE.at(slot);
-    entry.num_inputs = (op_idx == 0) ? 0 : 1;
-    entry.num_outputs = 1;
-
     ::fixy::FixedList<TensorMeta, 2> records{};
     if (op_idx > 0)
         (void)records
@@ -181,7 +205,16 @@ OpData make_op(uint32_t iter, uint32_t op_idx, InputSource source = InputSource:
             .expect("the list holds the two records of an op");
     (void)records.append(make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx})))
         .expect("the list holds the two records of an op");
-    return OpData{.entry = entry, .records = SealedRecords<2>{std::move(records)}};
+    return OpData{.entry = TraceRing::SealedEntry{::fixy::build_sealed,
+                                                  [&slot, op_idx]() noexcept {
+                                                      TraceRing::Entry built{};
+                                                      built.schema_hash = SCHEMA.at(slot);
+                                                      built.shape_hash = SHAPE.at(slot);
+                                                      built.num_inputs = (op_idx == 0) ? 0 : 1;
+                                                      built.num_outputs = 1;
+                                                      return built;
+                                                  }},
+                  .records = SealedRecords<2>{std::move(records)}};
 }
 
 // The ops of one iteration, in the order of the cycle.
@@ -195,13 +228,14 @@ using Ops = ::fixy::HeapArray<OpData>;
         [source](std::size_t position) noexcept { return make_op(10, static_cast<uint32_t>(position), source); });
 }
 
-// The op at a position of the cycle, below NUM_OPS.
-[[nodiscard]] CRUCIBLE_INLINE const OpData& op_at(Ops const& ops CRUCIBLE_LIFETIMEBOUND,
-                                                  std::size_t position) noexcept {
-    return *ops.get(position).expect("the position of an op is below NUM_OPS");
+// The ops of a cycle as a View of the fixed extent NUM_OPS.  A body holds the
+// View by value, so it reads an op at an OpSlot with one load and no check.
+using Cycle = ::fixy::View<OpData const, NUM_OPS>;
+
+[[nodiscard]] Cycle cycle_of(Ops const& ops CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return ops.view().window<NUM_OPS>(0).expect("the array holds NUM_OPS ops");
 }
-const OpData&
-op_at(Ops const&&, std::size_t) = delete("the op is an element of the array, and a temporary array ends before the op");
+Cycle cycle_of(Ops const&&) = delete("the View points into the array, and a temporary array ends before the View");
 
 void feed_record(Vigil& vigil, uint32_t iter, InputSource source) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
@@ -557,13 +591,10 @@ int main() {
     // the case then timed a full ring and not the append that its name says.
     // Each body gives the op a schema hash that no other body gives, so the
     // detector finds no iteration and the Vigil stays in the RECORD mode.
-    // The store of the hash is the one cost that this adds.
+    // The seal of a copy of the entry with the hash is the one cost that this
+    // adds.
     bench::add_report(reports, [&] {
         Vigil vigil;
-        TraceRing::Entry e{};
-        e.shape_hash = ShapeHash{0xAAA};
-        e.num_inputs = 0;
-        e.num_outputs = 0;
         uint64_t refused = 0;
         uint64_t tick = 0;
         auto report = bench::Run("Vigil::record_op (0 metas, profiler hook)")
@@ -572,8 +603,8 @@ int main() {
                           .batch(RECORD_BATCH)
                           .core(bench::env_core())
                           .measure([&] {
-                              e.schema_hash = SchemaHash{0x1000000u + tick++};
-                              const bool took = vigil.record_op(certify_synthetic_op(e));
+                              const TraceRing::SealedEntry entry = seal_hook_entry(SchemaHash{0x1000000u + tick++});
+                              const bool took = vigil.record_op(certify_synthetic_op(entry));
                               refused += static_cast<uint64_t>(!took);
                               bench::do_not_optimize(took);
                           });
@@ -592,8 +623,8 @@ int main() {
                           .batch(RECORD_BATCH)
                           .core(bench::env_core())
                           .measure([&] {
-                              d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
-                              const bool took = vigil.record_op(certify_synthetic_op(d.entry, d.records));
+                              const TraceRing::SealedEntry entry = seal_body_entry(SchemaHash{0x1000000u + tick++});
+                              const bool took = vigil.record_op(certify_synthetic_op(entry, d.records));
                               refused += static_cast<uint64_t>(!took);
                               bench::do_not_optimize(took);
                           });
@@ -618,8 +649,8 @@ int main() {
                           .batch(RECORD_BATCH)
                           .core(bench::env_core())
                           .measure([&] {
-                              d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
-                              const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
+                              const TraceRing::SealedEntry entry = seal_body_entry(SchemaHash{0x1000000u + tick++});
+                              const auto r = vigil.dispatch_op(certify_synthetic_op(entry, d.records));
                               recorded += static_cast<uint64_t>(r.is_record());
                               bench::do_not_optimize(r);
                           });
@@ -634,10 +665,11 @@ int main() {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         Ops ops = make_compiled_ops();
+        const Cycle cycle = cycle_of(ops);
 
         OpSlot slot = ::fixy::index<0>();
-        return bench::run("dispatch_op [COMPILED, cyclic]", [&] {
-            const OpData& d = op_at(ops, slot.raw());
+        return bench::run("dispatch_op [COMPILED, cyclic]", [&, cycle] {
+            const OpData& d = cycle.at(slot);
             auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
             bench::do_not_optimize(r);
             slot = next_in_cycle(slot);
@@ -648,13 +680,14 @@ int main() {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         Ops ops = make_compiled_ops();
+        const Cycle cycle = cycle_of(ops);
 
         // The claim is checked once here, as the adapter holds it for a whole
         // window, so the loop measures the pointer read and not the claim.
         const VigilFgCtx fg = vigil.mint_producer_context();
         OpSlot slot = ::fixy::index<0>();
-        return bench::run("dispatch_op [COMPILED + output_ptr]", [&] {
-            const OpData& d = op_at(ops, slot.raw());
+        return bench::run("dispatch_op [COMPILED + output_ptr]", [&, cycle] {
+            const OpData& d = cycle.at(slot);
             auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
             if (r.action == DispatchResult::Action::COMPILED)
                 bench::do_not_optimize(vigil.output_ptr(fg, crucible::OutputPosition{0}));
@@ -667,18 +700,19 @@ int main() {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         Ops ops = make_compiled_ops();
+        const Cycle cycle = cycle_of(ops);
 
         // The position of the body runs over the ops before the last op.  At
         // the end of that run the body dispatches the last op too.
         using LeadSlot = ::fixy::Index<NUM_OPS - 1>;
         LeadSlot slot = ::fixy::index<0>();
-        return bench::run("dispatch_op [COMPILED, MATCH only]", [&] {
-            const OpData& d = op_at(ops, slot.raw());
+        return bench::run("dispatch_op [COMPILED, MATCH only]", [&, cycle] {
+            const OpData& d = cycle.at(slot);
             auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
             bench::do_not_optimize(r);
             ::fixy::Option<LeadSlot> next = LeadSlot::check(slot.raw() + 1);
             if (next.is_none()) {
-                const OpData& last = op_at(ops, NUM_OPS - 1);
+                const OpData& last = cycle.at(::fixy::index<NUM_OPS - 1>());
                 auto rl = vigil.dispatch_op(certify_synthetic_op(last.entry, last.records));
                 bench::do_not_optimize(rl);
             }
@@ -690,9 +724,10 @@ int main() {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         Ops ops = make_compiled_ops();
+        const Cycle cycle = cycle_of(ops);
 
-        return bench::run("dispatch_op [full 8-op iteration]", [&] {
-            for (const OpData& d : ops) {
+        return bench::run("dispatch_op [full 8-op iteration]", [&, cycle] {
+            for (const OpData& d : cycle) {
                 auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
                 bench::do_not_optimize(r);
             }
@@ -706,10 +741,11 @@ int main() {
         Vigil vigil;
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
         Ops ops = make_compiled_ops();
+        const Cycle cycle = cycle_of(ops);
 
         OpSlot next = ::fixy::index<0>();
-        return bench::run("dispatch_op [COMPILED, chained position]", [&] {
-            const OpData& d = op_at(ops, next.raw());
+        return bench::run("dispatch_op [COMPILED, chained position]", [&, cycle] {
+            const OpData& d = cycle.at(next);
             const DispatchResult r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
             next = OpSlot::check((r.op_index.raw() + 1) % NUM_OPS).expect("the remainder is below NUM_OPS");
         });
@@ -724,10 +760,11 @@ int main() {
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil, InputSource::Parameter) == 0);
         CRUCIBLE_BENCH_CHECK(count_external_slots(vigil) == NUM_OPS - 1);
         Ops ops = make_compiled_ops(InputSource::Parameter);
+        const Cycle cycle = cycle_of(ops);
 
         OpSlot slot = ::fixy::index<0>();
-        return bench::run("dispatch_op [COMPILED, external reads]", [&] {
-            const OpData& d = op_at(ops, slot.raw());
+        return bench::run("dispatch_op [COMPILED, external reads]", [&, cycle] {
+            const OpData& d = cycle.at(slot);
             auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
             bench::do_not_optimize(r);
             slot = next_in_cycle(slot);
@@ -739,9 +776,10 @@ int main() {
         CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil, InputSource::Parameter) == 0);
         CRUCIBLE_BENCH_CHECK(count_external_slots(vigil) == NUM_OPS - 1);
         Ops ops = make_compiled_ops(InputSource::Parameter);
+        const Cycle cycle = cycle_of(ops);
 
-        return bench::run("dispatch_op [8-op iteration, external reads]", [&] {
-            for (const OpData& d : ops) {
+        return bench::run("dispatch_op [8-op iteration, external reads]", [&, cycle] {
+            for (const OpData& d : cycle) {
                 auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
                 bench::do_not_optimize(r);
             }
@@ -772,11 +810,14 @@ int main() {
                 const auto rr = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
                 unexpected_results += static_cast<uint32_t>(rr.action != DispatchResult::Action::COMPILED);
             }
-            TraceRing::Entry bad{};
-            bad.schema_hash = SchemaHash{0xBAD};
-            bad.shape_hash = SHAPE.at(::fixy::index<3>());
-            bad.num_inputs = 1;
-            bad.num_outputs = 1;
+            const TraceRing::SealedEntry bad{::fixy::build_sealed, []() noexcept {
+                                                 TraceRing::Entry built{};
+                                                 built.schema_hash = SchemaHash{0xBAD};
+                                                 built.shape_hash = SHAPE.at(::fixy::index<3>());
+                                                 built.num_inputs = 1;
+                                                 built.num_outputs = 1;
+                                                 return built;
+                                             }};
             ::fixy::FixedList<TensorMeta, 2> bad_list{};
             (void)bad_list.append(make_meta(fake_address(IterationNumber{10}, OpPosition{2})))
                 .expect("the list holds the two records of an op");

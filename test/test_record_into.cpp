@@ -108,7 +108,8 @@ void test_op_with_no_records_takes_no_index() {
     TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{0x300};
     entry.shape_hash = crucible::ShapeHash{0x301};
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::test::record_local(ring, log, crucible::test::certify_synthetic_op(entry)));
+    auto const sealed = crucible::test::seal_entry(entry);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::test::record_local(ring, log, crucible::test::certify_synthetic_op(sealed)));
     CRUCIBLE_TEST_ASSERT(kTest, ring_produced(ring) == 1 && log_produced(log) == 0);
     TraceRing::Entry drained{};
     CRUCIBLE_TEST_ASSERT(kTest, !drain_meta_start(ring, drained).is_valid() && "an op with no records named records");

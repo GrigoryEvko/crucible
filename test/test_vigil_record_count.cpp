@@ -31,10 +31,12 @@ namespace {
 
 template <std::size_t N>
 [[nodiscard]] bool is_refused(const TraceRing::Entry& entry, crucible::SealedRecords<N> const& records) {
-    return crucible::mint_validated_op(crucible::test::certify_synthetic_entry(entry), records).is_none();
+    auto const sealed = crucible::test::seal_entry(entry);
+    return crucible::mint_validated_op(crucible::test::certify_synthetic_entry(sealed), records).is_none();
 }
 [[nodiscard]] bool is_refused(const TraceRing::Entry& entry) {
-    return crucible::mint_validated_op(crucible::test::certify_synthetic_entry(entry)).is_none();
+    auto const sealed = crucible::test::seal_entry(entry);
+    return crucible::mint_validated_op(crucible::test::certify_synthetic_entry(sealed)).is_none();
 }
 
 void test_count_that_disagrees_with_the_entry_is_refused() {
@@ -79,10 +81,34 @@ void test_op_with_no_tensors_takes_no_records() {
     CRUCIBLE_TEST_ASSERT(kTest, is_refused(entry, one_record) && "an op with no tensors took a record");
 }
 
+// The op reads the sealed entry that the ladder checked.  A write to the
+// entry that the caller sealed, such as a count of scalars past the inline
+// slots or the invalid schema hash, does not reach the op, and the sealed
+// entry takes no write.
+void test_write_to_the_entry_after_the_mint_changes_no_op() {
+    TraceRing::Entry entry{};
+    entry.schema_hash = crucible::SchemaHash{0x54};
+    entry.shape_hash = crucible::ShapeHash{0x55};
+    entry.num_scalar_args = 2;
+    auto const sealed = crucible::test::seal_entry(entry);
+    const crucible::ValidatedOp op = crucible::test::certify_synthetic_op(sealed);
+
+    entry.schema_hash = crucible::SchemaHash{0};
+    entry.shape_hash = crucible::ShapeHash{0x56};
+    entry.num_scalar_args = 200;
+    entry.num_inputs = 7;
+
+    CRUCIBLE_TEST_ASSERT(kTest, op.entry().schema_hash == crucible::SchemaHash{0x54});
+    CRUCIBLE_TEST_ASSERT(kTest, op.entry().shape_hash == crucible::ShapeHash{0x55});
+    CRUCIBLE_TEST_ASSERT(kTest, op.entry().num_scalar_args == 2 && "a write after the mint changed the op");
+    CRUCIBLE_TEST_ASSERT(kTest, op.entry().num_inputs == 0);
+}
+
 }  // namespace
 
 int main() {
     test_count_that_disagrees_with_the_entry_is_refused();
     test_op_with_no_tensors_takes_no_records();
+    test_write_to_the_entry_after_the_mint_changes_no_op();
     return 0;
 }

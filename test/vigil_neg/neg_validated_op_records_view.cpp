@@ -11,9 +11,12 @@
 #include <crucible/ValidatedOp.h>
 
 int main() {
-    crucible::TraceRing::Entry entry{};
-    entry.schema_hash = crucible::SchemaHash{0x1234};
-    entry.num_inputs = 1;
+    const crucible::TraceRing::SealedEntry entry{::fixy::build_sealed, []() noexcept {
+                                                     crucible::TraceRing::Entry built{};
+                                                     built.schema_hash = crucible::SchemaHash{0x1234};
+                                                     built.num_inputs = 1;
+                                                     return built;
+                                                 }};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> records{};
     const auto op =
         crucible::mint_validated_op(crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(),

@@ -127,6 +127,37 @@ CRUCIBLE_CLOSED_SURFACE(sealed_names, SealedList, DereferenceProtocol);
 }
 static_assert(read_of_a_sealed_number() == 14);
 
+// The build constructor takes a body that gives the object by value and does
+// not throw, and the type of the result names the Sealed.  A body that gives
+// another type, can throw or holds a linear value builds none.
+using BuildsSeven = decltype([] noexcept { return 7; });
+using BuildsWide = decltype([] noexcept { return 7L; });
+using MayThrow = decltype([] { return 7; });
+using HoldsToken = decltype([token = LinearToken{7}] noexcept { return token.id; });
+static_assert(std::is_nothrow_constructible_v<Sealed<int>, BuildSealed, BuildsSeven>);
+static_assert(!std::is_constructible_v<Sealed<int>, BuildSealed, BuildsWide>);
+static_assert(!std::is_constructible_v<Sealed<int>, BuildSealed, MayThrow>);
+static_assert(!::foundation::linear::HoldsNoLinearValue<HoldsToken>);
+static_assert(!std::is_constructible_v<Sealed<int>, BuildSealed, HoldsToken>);
+static_assert(std::same_as<decltype(Sealed{build_sealed, BuildsSeven{}}), Sealed<int>>);
+
+// A built Sealed in a constant evaluation: the body writes each field of the
+// object over some steps, and the object is const after the build.
+struct BuiltPair final {
+    int first = 0;
+    int second = 0;
+};
+[[nodiscard]] consteval int sum_of_a_built_pair() {
+    Sealed const sealed{build_sealed, [] noexcept {
+                            BuiltPair pair{};
+                            pair.first = 3;
+                            pair.second = pair.first + 1;
+                            return pair;
+                        }};
+    return sealed->first + sealed->second;
+}
+static_assert(sum_of_a_built_pair() == 7);
+
 }  // namespace detail::sealed_checks
 
 }  // namespace foundation::core

@@ -359,15 +359,8 @@ template <class Body>
             [](crucible::vessel::HandleRefusal refused) noexcept { return refused_dispatch_result(refused); });
 }
 
-// The tags of the two entries of a dispatch, for the instances of
-// dispatch_records.
-namespace {
-struct DispatchOpEntry {};
-struct DispatchOpExEntry {};
-}  // namespace
-
 // The trust ladder of the two entries of a dispatch.  Every field of the
-// entry came from a caller this process does not control, so the Entry
+// entry comes from a caller this process does not control, so the Entry
 // starts at the first tag and reaches the second only by passing the checks.
 // An op that a check refuses gives the action REFUSED, so the caller knows
 // that the Vigil holds no record of it.
@@ -382,16 +375,21 @@ struct DispatchOpExEntry {};
 // no code writes the records after the mint.  A count that does not fit the
 // free slots, or a record that the decode refuses, records nothing.
 //
+// The arm builds the entry in the storage of its seal: fill writes the fields
+// of the caller, and the arm writes the guard word from the decoded records.
+// The entry is the one named return of the build, so the seal copies no
+// entry, and no code writes the entry after the checks.
+//
 // The op runs no other op through this entry, so it opens no nest.  Its depth
 // is the count of the nests that are open when it arrives.
 //
-// The two entries share the ladder, and each entry gives its own tag.  So the
+// The two entries share the ladder, and each entry gives its own fill.  So the
 // frame body of each instance has one caller, and the compiler inlines the
 // ladder, the frame door and the body into each entry.  The record of one op
 // then makes no call that the inline code of one entry did not make.
-template <class EntryTag>
+template <class Fill>
 [[nodiscard]] CRUCIBLE_INLINE static CrucibleDispatchResult
-dispatch_records(crucible::Vigil& vigil, crucible::TraceRing::Entry& entry, crucible::vessel::TypedMeta metas_typed,
+dispatch_records(crucible::Vigil& vigil, Fill const& fill, crucible::vessel::TypedMeta metas_typed,
                  ::foundation::core::WindowCount count) noexcept {
     const crucible::VigilFgCtx fg = vigil.mint_producer_context();
     crucible::OpRecordStack& record_stack = vigil.op_record_stack(fg);
@@ -405,8 +403,14 @@ dispatch_records(crucible::Vigil& vigil, crucible::TraceRing::Entry& entry, cruc
             return crucible::vessel::decode_ffi_records(metas_typed, std::move(slots))
                 .match(
                     [&] [[gnu::always_inline]] (auto records) noexcept {
-                        entry.shape_hash = guard_word_of(entry, records.view(), depth);
-                        return crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), std::move(records))
+                        const crucible::TraceRing::SealedEntry sealed{::fixy::build_sealed, [&]() noexcept {
+                                                                          crucible::TraceRing::Entry built{};
+                                                                          fill(built);
+                                                                          built.shape_hash = guard_word_of(
+                                                                              built, records.view(), depth);
+                                                                          return built;
+                                                                      }};
+                        return crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(sealed), std::move(records))
                             .match(
                                 [&] [[gnu::always_inline]] (crucible::ValidatedOp op) noexcept {
                                     return encode_dispatch_result(vigil.dispatch_op_pure(
@@ -428,22 +432,23 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
                                             uint32_t n_metas) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return on_dispatch_vigil(handle, [&](crucible::Vigil& vigil) noexcept {
-        // C→C++ boundary: wrap raw uint64_t into strong hash types.  The
-        // guard word comes from the decoded records.
-        crucible::TraceRing::Entry entry{};
-        entry.schema_hash = crucible::SchemaHash{schema_hash};
-        entry.num_inputs = num_inputs;
-        entry.num_outputs = num_outputs;
-
         // The pointer and the count of the records come from the caller.  A
         // count above 0 with a null pointer, or with a pointer that does not
         // have the alignment of a CrucibleMeta, gives the action REFUSED in
         // each build (as_meta_typed).  A count of 0 reads no record.
         ::fixy::Option<crucible::vessel::TypedMeta> checked_metas = crucible::vessel::as_meta_typed(metas, n_metas);
         if (checked_metas.is_none()) return refused_dispatch_result();
-        return dispatch_records<DispatchOpEntry>(vigil, entry,
-                                                 std::move(checked_metas).expect("the test above found the records"),
-                                                 ::foundation::core::WindowCount{n_metas});
+        // C→C++ boundary: the raw uint64_t becomes a strong hash type.  The
+        // ladder writes the guard word from the decoded records.
+        return dispatch_records(
+            vigil,
+            [&](crucible::TraceRing::Entry& entry) noexcept {
+                entry.schema_hash = crucible::SchemaHash{schema_hash};
+                entry.num_inputs = num_inputs;
+                entry.num_outputs = num_outputs;
+            },
+            std::move(checked_metas).expect("the test above found the records"),
+            ::foundation::core::WindowCount{n_metas});
     });
 }
 
@@ -470,47 +475,59 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
         const crucible::vessel::TypedMeta metas_typed =
             std::move(checked_metas).expect("the test above found the records");
 
-        // C→C++ boundary: wrap raw uint64_t into strong hash types.  The guard
-        // word comes from the decoded records and the scalar slots below.
-        crucible::TraceRing::Entry entry{};
-        entry.schema_hash = crucible::SchemaHash{schema_hash};
-        entry.num_inputs = num_inputs;
-        entry.num_outputs = num_outputs;
-        // A claim past the width of the field saturates, so the ladder below
-        // refuses each claim past the inline slots.  The ladder refuses a data
-        // slot past the claim too, and a bit past the inline slots.
-        entry.num_scalar_args = static_cast<uint8_t>(::fixy::min(num_scalars, uint16_t{UINT8_MAX}));
+        // The word of the data slots comes from the caller.  A word with a bit
+        // past the inline slots gives the action REFUSED.
+        crucible::DataSlots data{};
         bool is_slot_word = false;
-        for (const crucible::DataSlots data : crucible::DataSlots::from_bits(data_slots)) {
-            entry.set_data_slots(data);
+        for (const crucible::DataSlots found : crucible::DataSlots::from_bits(data_slots)) {
+            data = found;
             is_slot_word = true;
         }
         if (!is_slot_word) return refused_dispatch_result();
         uint8_t flags = 0;
         if (inference_mode != 0) flags |= crucible::op_flag::INFERENCE_MODE;
         if (grad_enabled != 0) flags |= crucible::op_flag::GRAD_ENABLED;
-        entry.op_flags = flags;
 
         // The count above is what the caller claims; the inline array is the
         // room there is for it. Writing past the array would be the first
         // corruption, so the copy takes the smaller of the two and the
         // ladder below rejects the operation outright when the claim does
         // not fit.
-        constexpr uint16_t inline_scalars = decltype(entry.scalar_values)::size();
-        // The door gave a pointer that is not null for each count above 0.
+        constexpr uint16_t inline_scalars = decltype(crucible::TraceRing::Entry::scalar_values)::size();
         const uint16_t stored_scalars = num_scalars < inline_scalars ? num_scalars : inline_scalars;
-        for (uint16_t i = 0; i < stored_scalars; i++) {
-            entry.scalar_values.set(::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room"),
-                                    scalars_typed.value()[i]);
-        }
-        // The tags of the stored values, after the flags, because the tag of
-        // slot 4 is in the two high bits of op_flags.  The bits of a slot past
-        // the stored values are zero, as on the recording paths.
-        entry.set_packed_scalar_types(
-            static_cast<uint16_t>(scalar_types & ((uint32_t{1} << (crucible::kScalarTypeBits * stored_scalars)) - 1)));
 
-        // The trust ladder of crucible_dispatch_op (dispatch_records).
-        return dispatch_records<DispatchOpExEntry>(vigil, entry, metas_typed, ::foundation::core::WindowCount{n_metas});
+        // The trust ladder of crucible_dispatch_op (dispatch_records).  The
+        // fill holds the small values by value.  With a capture by reference,
+        // the Release build of this entry had 16 more instructions.
+        return dispatch_records(
+            vigil,
+            [&, data, flags, stored_scalars](crucible::TraceRing::Entry& entry) noexcept {
+                // C→C++ boundary: the raw uint64_t becomes a strong hash type.
+                // The ladder writes the guard word from the decoded records
+                // and the scalar slots.
+                entry.schema_hash = crucible::SchemaHash{schema_hash};
+                entry.num_inputs = num_inputs;
+                entry.num_outputs = num_outputs;
+                // A claim past the width of the field saturates, so the ladder
+                // refuses each claim past the inline slots.  The ladder refuses
+                // a data slot past the claim too.
+                entry.num_scalar_args = static_cast<uint8_t>(::fixy::min(num_scalars, uint16_t{UINT8_MAX}));
+                entry.set_data_slots(data);
+                entry.op_flags = flags;
+                // The door gave a pointer that is not null for each count above 0.
+                for (uint16_t i = 0; i < stored_scalars; i++) {
+                    entry.scalar_values.set(
+                        ::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room"),
+                        scalars_typed.value()[i]);
+                }
+                // The tags of the stored values, after the flags, because the
+                // tag of slot 4 is in the two high bits of op_flags.  The bits
+                // of a slot past the stored values are zero, as on the
+                // recording paths.
+                entry.set_packed_scalar_types(static_cast<uint16_t>(
+                    scalar_types & ((uint32_t{1} << (crucible::kScalarTypeBits * stored_scalars)) - 1)));
+            },
+            metas_typed, ::foundation::core::WindowCount{n_metas});
     });
 }
 

@@ -506,8 +506,9 @@ static void test_external_reads_follow_the_region() {
     const crucible::SealedRecords<1> second_records{crucible::test::record_list_of(second_metas, 1)};
     crucible::TraceRing::Entry entry{};
     entry.num_inputs = 1;
-    const crucible::ValidatedOp first_op = crucible::test::certify_synthetic_op(entry, first_records);
-    const crucible::ValidatedOp second_op = crucible::test::certify_synthetic_op(entry, second_records);
+    auto const sealed_entry = crucible::test::seal_entry(entry);
+    const crucible::ValidatedOp first_op = crucible::test::certify_synthetic_op(sealed_entry, first_records);
+    const crucible::ValidatedOp second_op = crucible::test::certify_synthetic_op(sealed_entry, second_records);
 
     CrucibleContext ctx{g_test.alloc};
     auto context_key = crucible::mint_context_key(g_test);

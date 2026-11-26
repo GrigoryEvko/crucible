@@ -252,13 +252,19 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
                   "Entry is bit-copied into the trace file, so each field offset is part of a persisted format");
     CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Entry);
 
-    // An Entry built straight from foreign-runtime input carries the first
-    // tag and no recording entry point accepts it. Validating it, or building
-    // it internally where every field is certified by construction, produces
-    // the second tag. Tagging the pointer rather than the Entry keeps the
-    // 64-byte payload where the caller put it.
-    using FromPytorchEntryPtr = ::fixy::Tagged<const Entry*, ::fixy::tags::vessel_trust::FromPytorch>;
-    using ValidatedEntryPtr = ::fixy::Tagged<const Entry*, ::fixy::tags::vessel_trust::Validated>;
+    // An entry that no code changes from its construction to its end
+    // (foundation/core/Sealed.h).  A caller builds it in its place with
+    // build_sealed, so the seal copies no byte.
+    using SealedEntry = ::fixy::Sealed<Entry>;
+
+    // An Entry built from the input of a foreign runtime carries the first
+    // tag, and no recording entry point takes it.  The checks of the trust
+    // ladder, or code that builds each field itself, give the second tag.
+    // Each tag holds a Ref of a sealed entry, not a copy: no code writes the
+    // entry that the ladder checks, so a validated op reads the fields that
+    // the checks read, and the 64-byte entry stays where the caller built it.
+    using FromPytorchEntry = ::fixy::Tagged<::fixy::Ref<SealedEntry const>, ::fixy::tags::vessel_trust::FromPytorch>;
+    using ValidatedEntry = ::fixy::Tagged<::fixy::Ref<SealedEntry const>, ::fixy::tags::vessel_trust::Validated>;
 
     static constexpr uint32_t CAPACITY = 1u << 16;
     static constexpr uint32_t MASK = CAPACITY - 1;
@@ -711,14 +717,19 @@ private:
 // There is deliberately no counterpart that mints the second tag directly.
 // One existed, and an adapter calling it was a way of skipping the checks
 // while reading like a certification.
-[[nodiscard]] CRUCIBLE_INLINE constexpr TraceRing::FromPytorchEntryPtr mint_ffi_entry(const TraceRing::Entry& e
-                                                                                      CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return ::fixy::mint_tagged<::fixy::tags::vessel_trust::FromPytorch>(&e);
+//
+// The tag holds a Ref of the sealed entry, so no code writes the entry while
+// the tag or an op of it lives.  An entry that the caller can still write
+// gets no tag.  O(1).
+[[nodiscard]] CRUCIBLE_INLINE constexpr TraceRing::FromPytorchEntry mint_ffi_entry(TraceRing::SealedEntry const& entry
+                                                                                   CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::vessel_trust::FromPytorch>(::fixy::erase_brand(::fixy::to(entry)));
 }
 
-// The tagged pointer points at the entry.  The lifetime of a temporary entry
-// stops at the end of the statement, and this twin refuses it.
-TraceRing::FromPytorchEntryPtr mint_ffi_entry(const TraceRing::Entry&&) =
-    delete("the lifetime of a temporary entry stops at the end of the statement. Tag an entry that has a name");
+// The tagged Ref names the sealed entry.  A temporary sealed entry ends at the
+// end of the statement, and this twin refuses it.
+TraceRing::FromPytorchEntry mint_ffi_entry(TraceRing::SealedEntry const&&) = delete(
+    "the tag names the sealed entry, and a temporary sealed entry ends at the end of the statement: seal the "
+    "entry under a name");
 
 }  // namespace crucible

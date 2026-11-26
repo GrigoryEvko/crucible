@@ -11,6 +11,14 @@
 //                       takes the object by move.  T comes from the argument.
 //                       mint_box<Sealed<T>>(alloc, std::move(object)) seals
 //                       an object on the heap, behind a Box that moves
+//   Sealed sealed{build_sealed, build}
+//                       builds the object in its place: the result of build
+//                       is the object, with no copy and no move (a prvalue
+//                       initializes the object).  T is the type of the
+//                       result.  A body that builds a local over some steps
+//                       and gives it back writes the storage of the Sealed
+//                       when the compiler elides the copy of that local, as
+//                       GCC does for one named return
 //   *sealed, sealed->   the const object.  A temporary gives none
 //
 //   ::fixy::SegmentList<Event> log;
@@ -35,6 +43,7 @@
 // A Sealed ends its object at its own end, with no consume, so a linear object
 // does not seal.
 
+#include <foundation/Linear.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 
@@ -52,6 +61,22 @@ concept SealableObject = std::is_object_v<T> && !std::is_array_v<T> && !std::is_
                       && std::is_nothrow_move_constructible_v<T> && std::is_nothrow_destructible_v<T>
                       && DroppablePayload<T> && ::foundation::transfer::Shareable<T>;
 
+// The tag of the build constructor of a Sealed.  Its constructor is
+// explicit, so only the name build_sealed spells it.
+struct BuildSealed final {
+    explicit BuildSealed() = default;
+};
+inline constexpr BuildSealed build_sealed{};
+
+// A body of the build constructor of a Sealed<T>: it gives a T by value, does
+// not throw, and holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h), because the constructor calls it with no consume.
+// The value is a prvalue, so it initializes the object of the Sealed in its
+// place.
+template <class Build, class T>
+concept SealedBuild = std::is_nothrow_invocable_v<Build&&> && std::same_as<std::invoke_result_t<Build&&>, T>
+                   && ::foundation::linear::HoldsNoLinearValue<Build>;
+
 template <SealableObject T>
 class [[nodiscard]] Sealed final {
     // The const member makes the class Synchronized: no write reaches it.
@@ -63,6 +88,23 @@ public:
     // Takes the object.  The parameter is no template parameter of its own, so
     // only an rvalue of T seals, and the caller names the move.
     constexpr explicit Sealed(T&& object) noexcept : object_{static_cast<T&&>(object)} {}
+
+    // Builds the object in its place: the result of build initializes the
+    // object, with no copy and no move.  The object is const once the
+    // constructor returns.  O(1), and the cost of build.
+    template <class Build>
+        requires SealedBuild<Build, T>
+    constexpr Sealed(BuildSealed /*tag*/, Build&& build) noexcept : object_{static_cast<Build&&>(build)()} {}
+
+    // A body that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason.  The reason is a literal, because the
+    // parse kit does not read a macro as the reason of a deleted constructor.
+    template <class Build>
+        requires std::is_nothrow_invocable_v<Build&&> && std::same_as<std::invoke_result_t<Build&&>, T>
+                  && (!::foundation::linear::HoldsNoLinearValue<Build>)
+    Sealed(BuildSealed /*tag*/, Build&& build) =
+        delete("the body holds a linear value by value, and the seal calls it with no consume: keep the linear value a "
+               "local of the caller, and let the body capture it by reference");
 
     Sealed(Sealed const&) = delete("a Sealed does not copy and does not move: a move would write the object that a "
                                    "reader on another thread reads.  Move a Box of the Sealed instead");
@@ -78,5 +120,9 @@ public:
     void operator->() && = delete("the object of a temporary Sealed dangles at the end of the full expression");
     void operator->() const&& = delete("the object of a temporary Sealed dangles at the end of the full expression");
 };
+
+// The object type of a build is the type of its result.
+template <class Build>
+Sealed(BuildSealed, Build&&) -> Sealed<std::invoke_result_t<Build&&>>;
 
 }  // namespace foundation::core

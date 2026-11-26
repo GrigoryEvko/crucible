@@ -289,8 +289,8 @@ void feed_planless_region(crucible::Vigil& vigil) {
     for (uint32_t iter = 0; iter < 3; iter++) {
         const uint32_t count = (iter < 2) ? divrig::NUM_OPS : divrig::K;
         for (uint32_t i = 0; i < count; i++) {
-            const crucible::TraceRing::Entry entry = planless_entry(i);
-            (void)vigil.record_op(crucible::test::certify_synthetic_op(entry));
+            auto const sealed = crucible::test::seal_entry(planless_entry(i));
+            (void)vigil.record_op(crucible::test::certify_synthetic_op(sealed));
         }
     }
 }

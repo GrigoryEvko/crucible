@@ -1201,17 +1201,17 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // the type rather than per operator, because every kernel binds one payload.
 // =====================================================================
 
-using RecordingBinding = ::fixy::role::PureLinear<crucible::TraceRing::ValidatedEntryPtr>;
+using RecordingBinding = ::fixy::role::PureLinear<crucible::TraceRing::ValidatedEntry>;
 
 static_assert(::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, RecordingBinding>,
               "the recording binding declares an effect the foreground context does not admit");
 
 static_assert(
-    !::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, ::fixy::role::IoFunction<crucible::TraceRing::ValidatedEntryPtr>>,
+    !::fixy::CtxAdmitsBinding<::fixy::HotFgCtx, ::fixy::role::IoFunction<crucible::TraceRing::ValidatedEntry>>,
     "the gate must reject an IO row under the foreground context, or it gates nothing");
 
-static_assert(sizeof(RecordingBinding) == sizeof(crucible::TraceRing::ValidatedEntryPtr),
-              "the binding must add no storage to the entry pointer it carries");
+static_assert(sizeof(RecordingBinding) == sizeof(crucible::TraceRing::ValidatedEntry),
+              "the binding must add no storage to the tagged entry it carries");
 
 // =====================================================================
 // The recording gate
@@ -1362,22 +1362,32 @@ template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, c
     if (recording.each_tensor_description == TensorDescription::refused) [[unlikely]]
         return;
 
-    crucible::TraceRing::Entry entry{};
-    entry.schema_hash = schema_hash;
-    entry.op_flags = entry_op_flags<IsMutable, IsForeach>(dispatch_keys);
-    write_recorded_scalars(entry, recording);
+    // The entry is built in the storage of its seal, so the seal copies no
+    // byte, and no code writes the entry after the mint.
+    const uint8_t op_flags = entry_op_flags<IsMutable, IsForeach>(dispatch_keys);
+    const crucible::TraceRing::SealedEntry entry{::fixy::build_sealed, [&]() noexcept {
+                                                     crucible::TraceRing::Entry built{};
+                                                     built.schema_hash = schema_hash;
+                                                     built.op_flags = op_flags;
+                                                     write_recorded_scalars(built, recording);
 
-    // The run of the records and the two counts of the entry come from the
-    // counts of the Recording, after each call that takes the entry or reads
-    // the Recording.  So the count check of mint_validated_op always passes.
-    // GCC keeps the compare, because it reads the counts back from the entry.
-    entry.num_inputs = recording.counts.inputs;
-    entry.num_outputs = recording.counts.outputs;
+                                                     // The run of the records and the two counts of the
+                                                     // entry come from the counts of the Recording, after
+                                                     // each call that takes the entry or reads the
+                                                     // Recording.  So the count check of mint_validated_op
+                                                     // always passes.  GCC keeps the compare, because it
+                                                     // reads the counts back from the entry.
+                                                     built.num_inputs = recording.counts.inputs;
+                                                     built.num_outputs = recording.counts.outputs;
 
-    // The guard word reads the scalar slots and the counts above, and the
-    // records of the inputs.  The records hold the inputs as they were before
-    // the operation ran, and no operation of the redispatch wrote them.
-    entry.shape_hash = compute_shape_hash(recording.input_records(), entry, depth);
+                                                     // The guard word reads the scalar slots and the counts
+                                                     // above, and the records of the inputs.  The records
+                                                     // hold the inputs as they were before the operation
+                                                     // ran, and no operation of the redispatch wrote them.
+                                                     built.shape_hash =
+                                                         compute_shape_hash(recording.input_records(), built, depth);
+                                                     return built;
+                                                 }};
 
     // The trust ladder, discharged at compile time. Every bound it checks has
     // a compile-time ceiling on this path, and RecordKernel asserts that

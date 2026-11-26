@@ -112,7 +112,8 @@ void write_over_each_slot(crucible::Vigil& vigil) {
         entry.schema_hash = crucible::SchemaHash{0xF000000 + op};
         entry.shape_hash = crucible::ShapeHash{0xF800000 + op};
         entry.num_outputs = kRecords;
-        const bool was_recorded = vigil.record_op(crucible::test::certify_synthetic_op(entry, chunk));
+        auto const sealed = crucible::test::seal_entry(entry);
+        const bool was_recorded = vigil.record_op(crucible::test::certify_synthetic_op(sealed, chunk));
         if (was_recorded) ++op;
         if (!was_recorded || op % kBatch == 0) CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     }

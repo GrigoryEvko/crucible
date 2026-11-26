@@ -11,7 +11,8 @@
 
 int main() {
     crucible::Vigil vigil;
-    crucible::TraceRing::Entry entry{};
+    const crucible::TraceRing::SealedEntry entry{::fixy::build_sealed,
+                                                 []() noexcept { return crucible::TraceRing::Entry{}; }};
     const crucible::ValidatedOp op =
         crucible::mint_validated_op(crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>())
             .expect("an entry with no tensors takes no records");

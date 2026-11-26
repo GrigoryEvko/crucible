@@ -887,11 +887,7 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
         return;
 
     // -- Build TraceRing::Entry ---------------------------------------
-    crucible::TraceRing::Entry entry{};
-    entry.schema_hash = schema_hash;
-    entry.num_inputs = counts.inputs;
-    entry.num_outputs = counts.outputs;
-
+    //
     // Pack op_flags: 5 bits of per-op context.  The flags go in before the
     // scalar slots, because the slots write the tag of slot 4 into the two
     // high bits of op_flags.
@@ -901,11 +897,22 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
     if (is_mutable) flags |= crucible::op_flag::IS_MUTABLE;
     flags |= phase_flag_bits(is_foreach);
     if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
-    entry.op_flags = flags;
-    crucible::vessel::write_scalar_slots(entry, extracted.scalars, extracted.overflow);
-    // The records of the inputs hold the inputs as they were before the
-    // redispatch, and no operation of the redispatch wrote them.
-    entry.shape_hash = compute_shape_hash(first_records(metas, counts.inputs), entry, depth);
+
+    // The entry is built in the storage of its seal, so no code writes it
+    // after the checks of the ladder.  The records of the inputs hold the
+    // inputs as they were before the redispatch, and no operation of the
+    // redispatch wrote them.
+    const crucible::TraceRing::SealedEntry entry{
+        ::fixy::build_sealed, [&]() noexcept {
+            crucible::TraceRing::Entry built{};
+            built.schema_hash = schema_hash;
+            built.num_inputs = counts.inputs;
+            built.num_outputs = counts.outputs;
+            built.op_flags = flags;
+            crucible::vessel::write_scalar_slots(built, extracted.scalars, extracted.overflow);
+            built.shape_hash = compute_shape_hash(first_records(metas, counts.inputs), built, depth);
+            return built;
+        }};
 
     // -- Scope hash from TLS (set by Python module hooks) -------------
     const auto scope_hash = crucible::ScopeHash{state.scope_hash()};

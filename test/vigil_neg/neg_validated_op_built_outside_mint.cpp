@@ -10,9 +10,11 @@
 #include <crucible/ValidatedOp.h>
 
 int main() {
-    crucible::TraceRing::Entry entry{};
-    entry.num_inputs = 1;
-    const crucible::ValidatedOp op{crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(),
-                                   ::fixy::View<const crucible::TensorMeta>{}};
+    const crucible::TraceRing::SealedEntry entry{::fixy::build_sealed, []() noexcept {
+                                                     crucible::TraceRing::Entry built{};
+                                                     built.num_inputs = 1;
+                                                     return built;
+                                                 }};
+    const crucible::ValidatedOp op{::fixy::erase_brand(::fixy::to(entry)), ::fixy::View<const crucible::TensorMeta>{}};
     return static_cast<int>(op.entry().num_inputs);
 }

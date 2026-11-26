@@ -9,13 +9,16 @@
 #include <crucible/ValidatedOp.h>
 
 int main() {
+    const crucible::TraceRing::SealedEntry entry{::fixy::build_sealed, []() noexcept {
+                                                     crucible::TraceRing::Entry built{};
+                                                     built.schema_hash = crucible::SchemaHash{0x1234};
+                                                     built.num_inputs = 1;
+                                                     return built;
+                                                 }};
     crucible::OpRecordStack stack{};
     return stack.with_frame(
         ::foundation::core::WindowCount{1},
-        [](auto slots) noexcept -> int {
-            crucible::TraceRing::Entry entry{};
-            entry.schema_hash = crucible::SchemaHash{0x1234};
-            entry.num_inputs = 1;
+        [&entry](auto slots) noexcept -> int {
             const auto op = crucible::mint_validated_op(
                 crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(), slots);
             return op.is_some() ? 0 : 1;

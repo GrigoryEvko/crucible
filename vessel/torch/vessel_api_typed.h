@@ -454,10 +454,10 @@ register_schema_name_typed(VigilType& vigil, std::uint64_t schema_hash,
 // runtime supplied: the C ABI hands over raw integers, the boxed
 // fallback reads an ATen stack, and the unboxed kernels read their own
 // typed arguments.  All three start at
-// `crucible::TraceRing::FromPytorchEntryPtr`.  `Vigil::record_op` and
+// `crucible::TraceRing::FromPytorchEntry`.  `Vigil::record_op` and
 // `Vigil::dispatch_op` take a `crucible::ValidatedOp`, whose one door
 // `crucible::mint_validated_op` takes a
-// `crucible::TraceRing::ValidatedEntryPtr` and checks the count of the
+// `crucible::TraceRing::ValidatedEntry` and checks the count of the
 // records.  The retag catalog admits exactly one transition between the
 // two tags of the entry, so the checks below are the whole route from an
 // adapter to the ring.  The boxed fallback and the C ABI build entries
@@ -581,10 +581,10 @@ decode_c10_device_type(int8_t ordinal) noexcept {
         [](C10Layout layout) noexcept { return layout_of_c10(layout); });
 }
 
-// The tag a recording entry point accepts.  TraceRing owns the pointer
+// The tag a recording entry point accepts.  TraceRing owns the tagged entry
 // type, so the vessel reads the tag from it and names no substrate
 // namespace of its own.  The two retags in the vessel use this alias.
-using ValidatedEntryTag = crucible::TraceRing::ValidatedEntryPtr::tag_type;
+using ValidatedEntryTag = crucible::TraceRing::ValidatedEntry::tag_type;
 
 // The runtime door from the first tag to an op that a recording entry point
 // takes.  An empty return says no certification exists for this operation,
@@ -596,14 +596,14 @@ using ValidatedEntryTag = crucible::TraceRing::ValidatedEntryPtr::tag_type;
 // of a frame, whose one writer the door takes by move and gives to the mint.
 // crucible::mint_validated_op gives no op for a count of records that is
 // not their sum, so the foreign caller of such a count records nothing.
+// The checks read the sealed entry that the tag names, and no code writes
+// it.  So the op reads the fields that the checks read.
 template <class Brand, std::size_t Extent>
 [[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::ValidatedOp>
-validate_ffi_op(crucible::TraceRing::FromPytorchEntryPtr raw,
+validate_ffi_op(crucible::TraceRing::FromPytorchEntry raw,
                 ::fixy::ViewMut<crucible::TensorMeta, Brand, Extent>&& metas) noexcept {
     ::fixy::ViewMut<crucible::TensorMeta, Brand, Extent> held{std::move(metas)};
-    if (raw.value() == nullptr) return ::fixy::none;
-    const crucible::TraceRing::Entry& entry = *raw.value();
-    if (!crucible::entry_is_well_formed(entry)
+    if (!crucible::entry_is_well_formed(**raw.value())
         || !metas_are_well_formed(::fixy::View<const crucible::TensorMeta>{held.view()}))
         return ::fixy::none;
     return crucible::mint_validated_op(std::move(raw).retag<ValidatedEntryTag>(), std::move(held));

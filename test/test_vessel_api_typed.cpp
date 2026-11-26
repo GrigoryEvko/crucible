@@ -877,14 +877,15 @@ enum class RecordCount : uint8_t {
 // records of rank 1.  The records are the run of a frame, whose one writer
 // the ladder takes by move, as in a thunk.
 [[nodiscard]] bool is_certified(const crucible::TraceRing::Entry& entry, RecordCount count) noexcept {
+    const crucible::TraceRing::SealedEntry sealed{::fixy::build_sealed, [&entry]() noexcept { return entry; }};
     auto const [is_some, records] =
-        ::fixy::build_fixed_array<crucible::TensorMeta, 3>([&entry, count](auto run) noexcept {
+        ::fixy::build_fixed_array<crucible::TensorMeta, 3>([&sealed, count](auto run) noexcept {
             for (crucible::TensorMeta& meta : run) {
                 meta.ndim = 1;
                 meta.dtype = crucible::ScalarType::Float;
             }
             return crucible::vessel::validate_ffi_op(
-                       crucible::mint_ffi_entry(entry),
+                       crucible::mint_ffi_entry(sealed),
                        ::foundation::core::take_prefix_up_to(std::move(run), std::to_underlying(count)))
                 .is_some();
         });

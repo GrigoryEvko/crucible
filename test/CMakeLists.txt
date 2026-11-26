@@ -4300,21 +4300,24 @@ crucible_neg_compile_test(neg_vigil_dispatch_op_pure_no_ctx
 # checks of the trust ladder change.
 crucible_neg_compile_test(neg_validated_op_built_outside_mint
   "is private within this context"
-  "crucible::ValidatedOp::ValidatedOp\\(crucible::TraceRing::ValidatedEntryPtr, foundation::core::View<const crucible::TensorMeta(, 18446744073709551615)?>\\)")
+  "crucible::ValidatedOp::ValidatedOp\\(foundation::core::Ref<const foundation::core::Sealed<crucible::TraceRing::Entry> >, foundation::core::View<const crucible::TensorMeta(, 18446744073709551615)?>\\)")
 crucible_neg_compile_test(neg_validated_op_unchecked_entry
-  "no matching function for call to .mint_validated_op\\(crucible::TraceRing::FromPytorchEntryPtr\\)."
+  "no matching function for call to .mint_validated_op\\(crucible::TraceRing::FromPytorchEntry\\)."
   "no known conversion for argument 1 from .Tagged<.....,fixy::tags::vessel_trust::FromPytorch>. to .Tagged<.....,fixy::tags::vessel_trust::Validated>")
+crucible_neg_compile_test(neg_validated_op_entry_not_sealed
+  "no matching function for call to .mint_ffi_entry\\(crucible::TraceRing::Entry&\\)."
+  "crucible::mint_ffi_entry\\(const TraceRing::SealedEntry&\\)")
 # The records of an op have no writer while the op lives.  The three
 # fixtures give the mint a View, a named ViewMut and a temporary Sealed list,
 # and each deleted twin gives its reason.
 crucible_neg_compile_test(neg_validated_op_records_view
-  "use of deleted function .void crucible::mint_validated_op\\(TraceRing::ValidatedEntryPtr, foundation::core::View<const TensorMeta"
+  "use of deleted function .void crucible::mint_validated_op\\(TraceRing::ValidatedEntry, foundation::core::View<const TensorMeta"
   "a View has no proof that no code writes its records after the mint")
 crucible_neg_compile_test(neg_validated_op_records_named_writer
-  "use of deleted function .void crucible::mint_validated_op\\(TraceRing::ValidatedEntryPtr, foundation::core::ViewMut<TensorMeta, Brand, Extent>&\\)"
+  "use of deleted function .void crucible::mint_validated_op\\(TraceRing::ValidatedEntry, foundation::core::ViewMut<TensorMeta, Brand, Extent>&\\)"
   "the mint takes the one writer of the records, so no name of the caller writes them after the mint")
 crucible_neg_compile_test(neg_validated_op_sealed_temporary
-  "use of deleted function .void crucible::mint_validated_op\\(TraceRing::ValidatedEntryPtr, SealedRecords<N>&&\\)"
+  "use of deleted function .void crucible::mint_validated_op\\(TraceRing::ValidatedEntry, SealedRecords<N>&&\\)"
   "the op keeps a View of the sealed list, and a temporary list ends at the end of the full expression")
 
 # The door run_in_row(ctx) of a Stopped handle of a BackgroundThread requires

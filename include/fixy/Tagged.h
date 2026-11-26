@@ -158,8 +158,8 @@ inline constexpr ::foundation::fail_closed::edge<source::PortablePinned, source:
     portable_pinned_to_arm_pinned{};
 
 // Discharge: the adapter's well-formedness checks ran on the input.
-// This is the edge that carries TraceRing's FromPytorchEntryPtr into
-// its ValidatedEntryPtr.  No helper builds the second tag straight from
+// This is the edge that carries TraceRing's FromPytorchEntry into
+// its ValidatedEntry.  No helper builds the second tag straight from
 // an Entry, because such a helper reads as a certification and runs no
 // check.  Running the checks is what crossing this edge means.
 inline constexpr ::foundation::fail_closed::edge<vessel_trust::FromPytorch, vessel_trust::Validated>

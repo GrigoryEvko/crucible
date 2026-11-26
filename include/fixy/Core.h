@@ -232,6 +232,7 @@ using ::foundation::core::BrandedView;
 using ::foundation::core::ByteImageable;
 using ::foundation::core::bytes;
 using ::foundation::core::build_fixed_array;
+using ::foundation::core::build_sealed;
 using ::foundation::core::classify_overlap;
 using ::foundation::core::copy;
 using ::foundation::core::dynamic_extent;
