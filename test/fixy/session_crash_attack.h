@@ -20,7 +20,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -62,12 +61,26 @@ inline constexpr int kSilentExit = 3;
 inline constexpr int kDeadlockExit = 4;
 inline constexpr unsigned kWatchdogSeconds = 5;
 
+// The room of the queue into one endpoint.  An attack queues a few words.
+inline constexpr std::size_t mailbox_room = 64;
+
 // The queue into one endpoint.  A crash of that endpoint closes it, and a
 // write into a closed queue is refused, which is the check a transport
-// makes at the write.
+// makes at the write.  The queue holds its words in place, so a transport
+// that captures a mailbox by reference reaches no pointer, and the store
+// check of the transports admits it.
 struct Mailbox {
-    std::deque<std::uint64_t> slots;
+    ::fixy::FixedList<std::uint64_t, mailbox_room> slots{};
     bool is_closed = false;
+
+    // Puts the word at the end of the queue.
+    void push(std::uint64_t word) noexcept {
+        static_cast<void>(slots.append(word).expect("a mailbox of an attack holds at most mailbox_room words"));
+    }
+
+    // Takes the first word out of the queue, or gives no value for an empty
+    // queue.  Complexity: linear in the words of the queue.
+    [[nodiscard]] ::fixy::Option<std::uint64_t> take_first() noexcept { return slots.remove(::fixy::index<0>()); }
 };
 
 struct Port {
@@ -126,51 +139,53 @@ void p_sends(CellOfP& cell_p, const CellOfQ& cell_q, Mailbox& in, Mailbox& out, 
 // Ends the child process of an attack with the exit of its outcome.
 [[noreturn]] void finish(Outcome outcome);
 
-// A crash-watched send tries its write.  The queue has no bound, so a try
-// fails only when the queue of the peer is closed, and then the value
-// stays with the caller.
-inline constexpr auto push_label = [](Port& port, std::size_t label) noexcept {
-    if (port.out->is_closed) return false;
-    port.out->slots.push_back(label);
+// A crash-watched send tries its write.  The queue has room for each word
+// of an attack, so a try fails only when the queue of the peer is closed,
+// and then the value stays with the caller.
+[[nodiscard]] inline bool push_word(Mailbox& box, std::uint64_t word) noexcept {
+    if (box.is_closed) return false;
+    box.push(word);
     return true;
-};
+}
+inline constexpr auto push_label = [](Port& port, std::size_t label) noexcept { return push_word(*port.out, label); };
 inline constexpr auto push_int = [](Port& port, int& value) noexcept {
-    if (port.out->is_closed) return false;
-    port.out->slots.push_back(static_cast<std::uint64_t>(value));
-    return true;
+    return push_word(*port.out, static_cast<std::uint64_t>(value));
 };
 // A token is linear, so its write takes it by move and gives it back while
 // the queue of the peer is closed.  The queue keeps the value of the token,
 // and the write ends the token through the drop door.
 inline constexpr auto push_token = [](Port& port, Token&& token) noexcept -> ::fixy::Option<Token> {
     if (port.out->is_closed) return ::fixy::Option<Token>::some(std::move(token));
-    port.out->slots.push_back(static_cast<std::uint64_t>(token.peek()));
+    port.out->push(static_cast<std::uint64_t>(token.peek()));
     ::foundation::linear::drop(std::move(token));
     return ::fixy::none;
 };
 // A crash-watched reception reads with no wait: the payload when one is
 // queued, and no value otherwise.
 inline constexpr auto read_int = [](Port& port) noexcept -> ::fixy::Option<int> {
-    if (port.in->slots.empty()) return ::fixy::none;
-    const std::uint64_t slot = port.in->slots.front();
-    port.in->slots.pop_front();
-    return ::fixy::some(static_cast<int>(slot));
+    return port.in->take_first().match(
+        [](std::uint64_t const slot) noexcept { return ::fixy::Option<int>::some(static_cast<int>(slot)); },
+        []() noexcept { return ::fixy::Option<int>{::fixy::none}; });
 };
+// The read returns the token in one place, so the token has one route out of
+// the read.
 inline constexpr auto read_token = [](Port& port) noexcept -> ::fixy::Option<Token> {
-    if (port.in->slots.empty()) return ::fixy::none;
-    const std::uint64_t slot = port.in->slots.front();
-    port.in->slots.pop_front();
+    ::fixy::Option<std::uint64_t> slot = port.in->take_first();
+    if (slot.is_none()) return ::fixy::none;
     // Only the door of a hold builds a marker: the wire carries the value,
     // and the read packs it with a token of its own.
-    auto [message, rest] = s::mint_permission_hold(mint_x_root()).template pack<X>(static_cast<int>(slot));
+    auto [message, rest] =
+        s::mint_permission_hold(mint_x_root())
+            .template pack<X>(static_cast<int>(std::move(slot).expect("the test above found a word")));
     static_cast<void>(std::move(rest).into_permissions());
     return ::fixy::some(std::move(message));
 };
 inline constexpr auto poll_label = [](Port& port) noexcept -> ::fixy::Option<std::size_t> {
-    if (port.in->slots.empty()) return ::fixy::none;
-    const std::uint64_t slot = port.in->slots.front();
-    port.in->slots.pop_front();
-    return ::fixy::some(static_cast<std::size_t>(slot));
+    return port.in->take_first().match(
+        [](std::uint64_t const slot) noexcept {
+            return ::fixy::Option<std::size_t>::some(static_cast<std::size_t>(slot));
+        },
+        []() noexcept { return ::fixy::Option<std::size_t>{::fixy::none}; });
 };
 
 // Runs the endpoint of a loop of one message and one crash branch to its

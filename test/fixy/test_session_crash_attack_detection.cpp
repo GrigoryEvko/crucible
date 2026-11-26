@@ -48,7 +48,7 @@ void send_to_crashed_peer_returns_payload() {
         q = std::move(next);
     }
     std::move(q).detach(s::detach_reason::InfiniteLoopProtocol{});
-    finish(returned == 3 && to_p.slots.empty() ? Outcome::Correct : Outcome::Silent);
+    finish(returned == 3 && to_p.slots.size() == 0 ? Outcome::Correct : Outcome::Silent);
 }
 
 // The payload that a send gives back is in the base Option, which holds a
@@ -66,8 +66,8 @@ void token_relayed_to_crashed_peer() {
     using Relay = s::Offer<s::Recv<Token, s::Select<s::Send<Token, s::End>>>, s::Recv<s::Crash<P>, s::End>>;
     Mailbox to_p;
     Mailbox to_q;
-    to_q.slots.push_back(0);  // the label of the message branch
-    to_q.slots.push_back(7);  // the value of the token's payload
+    to_q.push(0);  // the label of the message branch
+    to_q.push(7);  // the value of the token's payload
     CellOfP cell_p;
     CellOfQ cell_q;
     auto q = s::mint_crash_session<Relay, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
@@ -92,7 +92,7 @@ void token_relayed_to_crashed_peer() {
             (void)std::move(end).close();
         }
     });
-    finish(came_back_once && to_p.slots.empty() ? Outcome::Correct : Outcome::Silent);
+    finish(came_back_once && to_p.slots.size() == 0 ? Outcome::Correct : Outcome::Silent);
 }
 
 // q detects the crash of p, and its crash branch receives from p again.
@@ -165,7 +165,7 @@ void peer_sends_the_crash_label() {
     using ProtoQ = s::Offer<s::Recv<int, s::End>, s::Recv<s::Crash<P>, s::End>>;
     Mailbox to_p;
     Mailbox to_q;
-    to_q.slots.push_back(1);
+    to_q.push(1);
     CellOfP cell_p;
     CellOfQ cell_q;
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));

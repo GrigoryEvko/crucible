@@ -92,8 +92,8 @@ void crash_branch_waits_for_an_owed_message() {
         if (empty_polls < 3) {
             ++empty_polls;
             if (empty_polls == 3) {
-                for (const std::uint64_t slot : in_flight.slots)
-                    to_q.slots.push_back(slot);
+                for (std::uint64_t const slot : in_flight.slots)
+                    to_q.push(slot);
                 in_flight.slots.clear();
             }
             return ::fixy::none;

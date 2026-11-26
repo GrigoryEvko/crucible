@@ -81,8 +81,8 @@ void crash_between_check_and_write_loses_token() {
     using Relay = s::Offer<s::Recv<Token, s::Select<s::Send<Token, s::End>>>, s::Recv<s::Crash<P>, s::End>>;
     Mailbox to_p;
     Mailbox to_q;
-    to_q.slots.push_back(0);
-    to_q.slots.push_back(7);
+    to_q.push(0);
+    to_q.push(7);
     CellOfP cell_p;
     CellOfQ cell_q;
     auto q = s::mint_crash_session<Relay, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
@@ -298,9 +298,12 @@ void keyed_messages_to_a_third_role_count_in_its_pair() {
     CellOfQ cell_q;
     CellOfPForThird cell_p_for_third;
     // The port of the third role: its queue takes each message of p to it.
+    // A write to the third role captures the queue, which holds no pointer.
     Port third_port{&to_third, &to_third};
-    const auto push_to_third = [&third_port](Port&, std::size_t word) noexcept { return push_label(third_port, word); };
-    const auto push_int_to_third = [&third_port](Port&, int& value) noexcept { return push_int(third_port, value); };
+    const auto push_to_third = [&to_third](Port&, std::size_t word) noexcept { return push_word(to_third, word); };
+    const auto push_int_to_third = [&to_third](Port&, int& value) noexcept {
+        return push_word(to_third, static_cast<std::uint64_t>(value));
+    };
     auto p = s::mint_crash_session<SendsToThird, P, Q, s::ReliableSet<Third>>(
         bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p), s::mint_crash_writer(cell_p_for_third));
     auto ready = std::move(p).send(push_to_third);
@@ -346,9 +349,12 @@ void keyed_messages_to_a_third_role_survive_the_peer_crash() {
     CellOfQ cell_q;
     CellOfPForThird cell_p_for_third;
     report_crash(cell_q, s::CrashCause::Abort);
+    // A write to the third role captures the queue, which holds no pointer.
     Port third_port{&to_third, &to_third};
-    const auto push_to_third = [&third_port](Port&, std::size_t word) noexcept { return push_label(third_port, word); };
-    const auto push_int_to_third = [&third_port](Port&, int& value) noexcept { return push_int(third_port, value); };
+    const auto push_to_third = [&to_third](Port&, std::size_t word) noexcept { return push_word(to_third, word); };
+    const auto push_int_to_third = [&to_third](Port&, int& value) noexcept {
+        return push_word(to_third, static_cast<std::uint64_t>(value));
+    };
     auto p = s::mint_crash_session<SendsToThird, P, Q, s::ReliableSet<Third>>(
         bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p), s::mint_crash_writer(cell_p_for_third));
     auto ready = std::move(p).send(push_to_third);
@@ -379,8 +385,8 @@ void reported_sender_stops_at_a_message_to_the_third_role() {
     CellOfP cell_p;
     CellOfQ cell_q;
     CellOfPForThird cell_p_for_third;
-    Port third_port{&to_third, &to_third};
-    const auto push_to_third = [&third_port](Port&, std::size_t word) noexcept { return push_label(third_port, word); };
+    // A write to the third role captures the queue, which holds no pointer.
+    const auto push_to_third = [&to_third](Port&, std::size_t word) noexcept { return push_word(to_third, word); };
     auto p = s::mint_crash_session<SendsToThird, P, Q, s::ReliableSet<Third>>(
         bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p), s::mint_crash_writer(cell_p_for_third));
     report_crash(cell_p, s::CrashCause::Unknown);

@@ -147,16 +147,26 @@ private:
     int in_flight_ = 0;
 };
 
+// The line of the run.  Each run is one child process, and the two
+// endpoints of the run share its one line.  The parent process never makes
+// it, so each child makes a new line.
+[[nodiscard]] inline Line& line_of_the_run() {
+    static Line line;
+    return line;
+}
+
+// One endpoint of the run.  It holds no pointer, so a transport that holds
+// the address of an endpoint reaches no pointer, and the store check of the
+// transports admits it.
 struct Endpoint {
-    Line* line = nullptr;
     Side side = Side::left;
     unsigned seed = 0;
     unsigned picks = 0;
     int fuel = fuel_per_endpoint;
 
-    void send(std::uint64_t word) const { line->push(peer_of(side), word); }
-    void close_out() const { line->close(peer_of(side)); }
-    [[nodiscard]] bool receive(std::uint64_t& word) const { return line->pop(side, word); }
+    void send(std::uint64_t word) const { line_of_the_run().push(peer_of(side), word); }
+    void close_out() const { line_of_the_run().close(peer_of(side)); }
+    [[nodiscard]] bool receive(std::uint64_t& word) const { return line_of_the_run().pop(side, word); }
 };
 
 template <typename P>
@@ -312,9 +322,8 @@ void walk_from_start(Endpoint& self) {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     // A body that returns ends the child with the exit code of ok.
     ::fixy::process::Child child = ::fixy::process::spawn_child(test, [left_start, right_start, seed] noexcept {
-                                       Line line;
-                                       Endpoint a{&line, Side::left, seed};
-                                       Endpoint b{&line, Side::right, seed};
+                                       Endpoint a{Side::left, seed};
+                                       Endpoint b{Side::right, seed};
                                        std::thread left{[&] { left_start(a); }};
                                        std::thread right{[&] { right_start(b); }};
                                        left.join();
