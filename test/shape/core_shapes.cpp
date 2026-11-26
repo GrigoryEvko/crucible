@@ -455,6 +455,25 @@ struct ShapeTwice final {
     });
 }
 
+// An op that adds its input to the element of the output, for update_each.
+struct ShapeAdd final {
+    int operator()(int const& old, int const& value) const noexcept { return old + value; }
+};
+
+// update_each from the frame of one keyed array into the frame of another: the
+// door reads the output as its first input, so it takes the loop of plain
+// pointers, as write_each with a View of its own output does.
+[[gnu::used]] void keyed_frame_update_each(::foundation::core::FixedArray<int, 64, ShapeSourceBrand>& source,
+                                           ::foundation::core::LoanKey<ShapeSourceBrand>& source_key,
+                                           ::foundation::core::FixedArray<int, 64, ShapeTargetBrand>& target,
+                                           ::foundation::core::LoanKey<ShapeTargetBrand>& target_key) noexcept {
+    source.with_mut(source_key, [&target, &target_key](auto source_run) noexcept {
+        target.with_mut(target_key, [&source_run](auto target_run) noexcept {
+            static_cast<void>(::foundation::core::update_each(std::move(target_run), ShapeAdd{}, source_run).is_ok());
+        });
+    });
+}
+
 // The brand of the keyed heap array of the probe.
 struct ShapeHeapBrand final {};
 
@@ -2060,6 +2079,14 @@ struct RawShapeBatch final {
 [[gnu::used]] void keyed_frame_write_each_raw(int* __restrict target, int const* __restrict source) noexcept {
     for (std::size_t position = 0; position != 64; ++position) {
         target[position] = source[position] * 2;
+    }
+}
+
+// The loop of update_each: it reads the output at a position before it writes
+// there, through plain pointers.
+[[gnu::used]] void keyed_frame_update_each_raw(int* target, int const* source) noexcept {
+    for (std::size_t position = 0; position != 64; ++position) {
+        target[position] = target[position] + source[position];
     }
 }
 

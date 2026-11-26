@@ -476,6 +476,16 @@ static_assert(std::is_same_v<decltype(write_each(std::declval<ViewMut<int, Uniqu
                                                  std::declval<ViewMut<int, OtherBrand> const&>())),
                              Result<Unit, LengthMismatch>>);
 
+// update_each gives op the element of its output as the first input.
+struct PlusOld final {
+    int operator()(int const& old, int const& value) const noexcept { return old + value; }
+};
+static_assert(std::is_same_v<decltype(update_each(std::declval<ViewMut<int, UniqueBrand>>(), PlusOld{},
+                                                  std::declval<View<int const> const&>())),
+                             Result<Unit, LengthMismatch>>);
+static_assert(std::is_same_v<decltype(update_each(std::declval<ViewMut<int, UniqueBrand>>(), PlusOne{})),
+                             Result<Unit, LengthMismatch>>);
+
 // ── The closed surface ────────────────────────────────────────────────
 
 // The family list of plan section 11.4, with the names of the headers of

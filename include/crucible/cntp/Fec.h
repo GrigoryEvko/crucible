@@ -320,11 +320,9 @@ CRUCIBLE_HOT void xor_bytes_simd(::fixy::ViewMut<std::byte, Brand, Extent> dst,
             KernelBytes const sum = simd::load<KernelBytes>(target.view()) ^ simd::load<KernelBytes>(source);
             simd::store(sum, std::move(target));
         });
-    // The counted loop of write_each has no check in it, so GCC vectorizes the
+    // The counted loop of update_each has no check in it, so GCC vectorizes the
     // rest as it does the loop of two Views.
-    ::fixy::View<std::byte const> const target_old = target_rest.view();
-    ::fixy::write_each(std::move(target_rest), XorBytes{}, target_old, source_rest)
-        .expect("the two rests have one count");
+    ::fixy::update_each(std::move(target_rest), XorBytes{}, source_rest).expect("the two rests have one count");
 }
 
 // The product of each byte and coeff is the exclusive or of the products
@@ -366,13 +364,12 @@ CRUCIBLE_HOT void mul_xor_simd(::fixy::ViewMut<std::byte, Brand, Extent> dst, ::
 #endif
 
 // The exclusive or of each byte of dst and the byte of src at the same
-// position, into dst.  write_each reads each byte of old before it writes the
-// byte of dst at that position.
+// position, into dst.  update_each reads each byte of dst before it writes
+// that byte.
 template <class Brand, std::size_t Extent>
 CRUCIBLE_HOT void xor_bytes_scalar(::fixy::ViewMut<std::byte, Brand, Extent> dst,
                                    ::fixy::View<std::byte const> src) noexcept {
-    ::fixy::View<std::byte const> const old = dst.view();
-    ::fixy::write_each(std::move(dst), XorBytes{}, old, src).expect("the two shards have one count");
+    ::fixy::update_each(std::move(dst), XorBytes{}, src).expect("the two shards have one count");
 }
 
 inline namespace CRUCIBLE_SIMD_TARGET {

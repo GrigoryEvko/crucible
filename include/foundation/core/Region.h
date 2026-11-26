@@ -2972,6 +2972,28 @@ template <class T, class Brand, std::size_t Extent, class Op, class... Inputs>
              && std::is_invocable_r_v<T, Op const&, typename Inputs::element_type const&...>
 void write_each(ViewMut<T, Brand, Extent> out, Op op, Inputs const&... inputs) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
+// Writes op(dst[i], input[i]...) into each element dst[i], in the order of i.
+// The door reads the element of dst at a position as the first input before it
+// writes there, so the caller names dst one time.  Each input has the count of
+// dst, or the door gives LengthMismatch and writes nothing.  The door gives
+// write_each the ViewMut and the View of its own run, so write_each takes its
+// loop of plain pointers, and the door states two_names_door of
+// foundation/Linear.h.  Complexity: O(dst.size()).
+template <class T, class Brand, std::size_t Extent, class Op, class... Inputs>
+    requires KernelOp<Op, T, View<T const>, Inputs...>
+[[= ::foundation::linear::two_names_door{}]] [[nodiscard]] Result<Unit, LengthMismatch>
+    update_each(ViewMut<T, Brand, Extent> dst, Op op, Inputs const&... inputs) noexcept {
+    View<T const> const old{dst.view()};
+    return ::foundation::core::write_each(std::move(dst), op, old, inputs...);
+}
+
+// An op that holds a linear value by value binds to this overload, as for
+// write_each.
+template <class T, class Brand, std::size_t Extent, class Op, class... Inputs>
+    requires(!::foundation::linear::HoldsNoLinearValue<Op>)
+             && std::is_invocable_r_v<T, Op const&, T const&, typename Inputs::element_type const&...>
+void update_each(ViewMut<T, Brand, Extent> dst, Op op, Inputs const&... inputs) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
 namespace detail {
 
 // An element that fill() writes with one memset: an element of one byte

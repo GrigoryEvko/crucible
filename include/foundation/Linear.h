@@ -114,6 +114,13 @@ struct once_door final {};
 // of a borrow.  The rule trusts the annotation only in a base file.
 struct moves_own_storage final {};
 
+// The annotation of a door of the base whose body gives its object and a
+// borrow of the same object to one call, such as a frame door that holds an
+// owner and lends its run.  The door keeps the two names apart by its own
+// construction.  The kind two-names of the rule view-escape reads no call in
+// the body of such a door.  The rule trusts the annotation only in a base file.
+struct two_names_door final {};
+
 // The annotation of the hook get<I> of a structured binding.  A direct call
 // on an rvalue moves one part out and drops the other parts.
 struct binding_hook final {};

@@ -293,6 +293,7 @@ using ::foundation::core::starts_with;
 using ::foundation::core::StaticIndex;
 using ::foundation::core::take_prefix_up_to;
 using ::foundation::core::take_window;
+using ::foundation::core::update_each;
 using ::foundation::core::View;
 using ::foundation::core::ViewMut;
 using ::foundation::core::ViewMutChunks;

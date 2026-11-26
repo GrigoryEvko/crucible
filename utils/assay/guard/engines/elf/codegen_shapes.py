@@ -615,6 +615,11 @@ PROBES: tuple[Probe, ...] = (
         "names an array",
     ),
     Probe(
+        "keyed_frame_update_each",
+        "update_each between the frames of two keyed arrays is the loop of the plain pointers of the raw form: the door "
+        "gives write_each a View of its own output, so the loop reads the output at a position before it writes there",
+    ),
+    Probe(
         "keyed_heap_array_frame_copy",
         "a copy into a keyed FixedHeapArray through its keyed frame door with a borrow of the key is the load of the "
         "pointer and the copy of the raw form: a key is empty, and the door lends the run in place",

@@ -447,6 +447,42 @@ void test_write_each() {
     CRUCIBLE_TEST_ASSERT(kTest, holds_each(shorter, [](std::size_t) noexcept { return 7; }));
 }
 
+// The door update_each reads each element of its output as the first input of
+// op before it writes there.  An input that names the run of the output is
+// read at the position of the write too, so an input that starts one element
+// after the output reads an element that the loop has not written yet.  An
+// input of a different count gives LengthMismatch and writes nothing.
+void test_update_each() {
+    HeapArray<int> right = ::foundation::core::mint_heap_array_with<int>(
+        allocation(), 10, [](std::size_t position) noexcept { return static_cast<int>(position); });
+    HeapArray<int> out = ::foundation::core::mint_heap_array_with<int>(
+        allocation(), 10, [](std::size_t position) noexcept { return 3 * static_cast<int>(position); });
+    out = with_mut(std::move(out), [&right](auto out_view) noexcept {
+        ::foundation::core::update_each(std::move(out_view), AddOp{}, right.view())
+            .expect("the two runs have one count");
+    });
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         holds_each(out, [](std::size_t position) noexcept { return 4 * static_cast<int>(position); }));
+
+    out = with_mut(std::move(out), [](auto out_view) noexcept {
+        View<int const> const later = View<int const>{out_view.view()}.window(1, 9).expect("nine elements fit");
+        auto front = ::foundation::core::take_window(std::move(out_view), 0, 9).expect("nine elements fit");
+        ::foundation::core::update_each(std::move(front), AddOp{}, later).expect("the two runs have one count");
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(out, [](std::size_t position) noexcept {
+                             return position < 9 ? 4 * static_cast<int>(2 * position + 1) : 36;
+                         }));
+
+    out = with_mut(std::move(out), [&right](auto out_view) noexcept {
+        auto front = ::foundation::core::take_window(std::move(out_view), 0, 9).expect("nine elements fit");
+        bool const is_refused = ::foundation::core::update_each(std::move(front), AddOp{}, right.view()).is_err();
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused);
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(out, [](std::size_t position) noexcept {
+                             return position < 9 ? 4 * static_cast<int>(2 * position + 1) : 36;
+                         }));
+}
+
 // The door copy between two frames is one memcpy, and from a View or from the
 // frame of the output one memmove.  A source of a different count gives
 // LengthMismatch and writes nothing.
@@ -989,6 +1025,7 @@ int main() {
     test_brands_and_shape();
     test_splits();
     test_write_each();
+    test_update_each();
     test_copy_between_frames();
     test_get_mut();
     test_reborrow();
