@@ -72,6 +72,10 @@
 //       and the walk reads no part of it.  Each door of it that stores an
 //       object runs ArenaKeeps, so the object holds borrows only of the brand
 //       of the handle
+//     * a class that states synchronized_by_proof{}
+//       (foundation/core/TypeParts.h), in the base or outside it, is no
+//       borrow slot after its check passes (the check of
+//       synchronized_by_proof below), and the walk reads no part of it
 //     * a pointer member of a class of the base that states refers_static{}
 //       (foundation/Transfer.h), such as the pointer of a StaticText, names
 //       static storage, so it is no borrow slot.  The walk reads each other
@@ -290,25 +294,57 @@ consteval void push_members_(StoreWalk& walk, TypeParts const& parts, StoreRegio
     }
 }
 
-// True when the walk from the start type in the start region reaches a
-// borrow slot in the writable region.  The start type is bare, and a class
-// type is complete or the walk refuses it.  The walk pushes the target of each
-// pointer, borrow and borrow of a frame into its own list, so a type that
-// reaches itself, such as a node with a pointer to its parent, ends with the
-// visited list and asks no memo in the middle of its own walk.
-[[nodiscard]] consteval bool reaches_slot_from_(std::meta::info start_type, StoreRegion start) {
+// How a walk reads the borrow slots that it reaches in the writable region:
+// the gate stops at the first one, and the check of a marked class lists the
+// target of each one (the check of synchronized_by_proof).
+enum class SlotRead : unsigned char {
+    first,
+    each,
+};
+
+// The plan of one walk.  exempt names a class that the walk counts as no
+// part, or nothing: the check of a marked class counts the class itself as no
+// part when a slot or a result reaches it again.  The gate trusts a class that
+// states synchronized_by_proof{} after the check of the mark.  The walks of
+// that check trust no such mark, so no check waits on a check.
+struct SlotPlan {
+    SlotRead read = SlotRead::first;
+    std::meta::info exempt{};
+    bool trusts_proof_mark = true;
+};
+
+// Runs the check of the mark synchronized_by_proof{} of the class one time
+// for each translation unit (the check of synchronized_by_proof).
+[[nodiscard]] consteval bool proves_synchronized_by_proof_(std::meta::info type);
+
+// True when the walk of the nodes on the list reaches a borrow slot in the
+// writable region.  A class type is complete or the walk refuses it.  The walk
+// pushes the target of each pointer, borrow and borrow of a frame into its own
+// list, so a type that reaches itself, such as a node with a pointer to its
+// parent, ends with the visited list and asks no memo in the middle of its own
+// walk.  A plan that reads each slot puts the target of each one on the list
+// of targets and goes on into the target: the type that a pointer names, the
+// first type argument of a borrow, and a null type, which is erased, for a
+// borrow with no type argument and for a class whose state the walk cannot
+// read.
+[[nodiscard]] consteval bool drain_slots_(StoreWalk& walk, SlotPlan const& plan,
+                                          ::foundation::reflect::TypeNodeList& targets) {
     constexpr StoreRegion read_only = StoreRegion::read_only;
     constexpr StoreRegion writable = StoreRegion::writable;
-    StoreWalk walk;
-    walk.push(indirect_node_(start_type, start));
+    bool has_slot = false;
     while (walk.has_next()) {
         StoreNode const node = walk.take();
         std::meta::info const type = node.type;
         StoreRegion const region = node.region;
+        if (plan.exempt != std::meta::info{} && type == plan.exempt) continue;
         if (std::meta::is_pointer_type(type)) {
             std::meta::info const pointee = std::meta::remove_pointer(type);
             if (std::meta::is_function_type(pointee)) continue;
-            if (region == writable) return true;
+            if (region == writable) {
+                if (plan.read == SlotRead::first) return true;
+                has_slot = true;
+                targets.push_back(::foundation::reflect::TypeNode{::foundation::reflect::bare_type(pointee)});
+            }
             walk.push(indirect_node_(pointee, std::meta::is_const_type(pointee) ? read_only : writable));
             continue;
         }
@@ -321,7 +357,18 @@ consteval void push_members_(StoreWalk& walk, TypeParts const& parts, StoreRegio
         if (node.kept == std::meta::info{} && is_plain_class_(type)) continue;
         TypeParts const& parts =
             std::meta::extract<TypeParts const&>(node.kept == std::meta::info{} ? kept_parts_of(type) : node.kept);
-        if (parts.is_unreadable) return true;
+        // A refused check stops the build, so the walk reads no part of the
+        // class either way, and the build gives one error.
+        if (plan.trusts_proof_mark && parts.states_synchronized_by_proof) {
+            static_cast<void>(proves_synchronized_by_proof_(type));
+            continue;
+        }
+        if (parts.is_unreadable) {
+            if (plan.read == SlotRead::first) return true;
+            has_slot = true;
+            targets.push_back(::foundation::reflect::TypeNode{});
+            continue;
+        }
         PartRun const run = parts.run();
         if (parts.is_frame_borrow) {
             for (std::size_t index = 0; index < parts.argument_count; ++index) {
@@ -332,7 +379,11 @@ consteval void push_members_(StoreWalk& walk, TypeParts const& parts, StoreRegio
             continue;
         }
         if (parts.is_borrow) {
-            if (region == writable) return true;
+            if (region == writable) {
+                if (plan.read == SlotRead::first) return true;
+                has_slot = true;
+                targets.push_back(::foundation::reflect::TypeNode{parts.first_argument});
+            }
             bool const gives_const = region == read_only && parts.gives_const_access;
             bool const is_read = gives_const || parts.is_first_argument_const;
             if (parts.first_argument != std::meta::info{}) {
@@ -348,10 +399,483 @@ consteval void push_members_(StoreWalk& walk, TypeParts const& parts, StoreRegio
             if (!holds_no_value_of_(argument)) walk.push(argument);
         }
     }
+    return has_slot;
+}
+
+// True when the walk from the start type in the start region reaches a
+// borrow slot in the writable region (the gate).  The start type is bare.
+[[nodiscard]] consteval bool reaches_slot_from_(std::meta::info start_type, StoreRegion start) {
+    StoreWalk walk;
+    walk.push(indirect_node_(start_type, start));
+    ::foundation::reflect::TypeNodeList unused;
+    return drain_slots_(walk, SlotPlan{}, unused);
+}
+
+// Check of synchronized_by_proof
+//   A class that states synchronized_by_proof{} of foundation/core/TypeParts.h
+//   keeps one invariant: no borrow slot of an object of the class holds a
+//   borrow of storage that a caller gave.  So a body that captures such an
+//   object by reference cannot keep a borrow of its frame in it, and the gate
+//   reads the class as no borrow slot, also outside the base.  Four facts keep
+//   the invariant, and the check reads each one time for each class:
+//     (a) the class states synchronized{} of foundation/Transfer.h, and the
+//         check of that statement runs: two threads write an object of the
+//         class only through a proof
+//     (b) the store surface: the walk lists the target of each borrow slot
+//         that the members reach in the writable region, and no parameter of
+//         a door gives a target that meets one of them.  So no door can put a
+//         borrow of the storage of its caller into a slot.  Two targets meet
+//         when they are one type, when one is a base of the other (a door can
+//         cast a base down), or when one is erased
+//     (c) each data member of the class and of each base is private, so only
+//         a door of the class writes an object of it.  Reflection gives no
+//         friend, and the plugin rule proof-routes refuses each friend
+//         function of a class that states synchronized{} and each friend
+//         class that can reach it
+//     (d) no result of a door reaches a borrow slot in the writable region,
+//         so no caller writes a slot through a result.  The class counts as
+//         no slot in a result, so a door can give the object itself back
+//   The doors are the member functions and the member function templates that
+//   are not private, also the const ones, because a const door writes a
+//   mutable member and each target behind a pointer: of the class, of each
+//   base, and of each nested class at each depth.  The constructors that are
+//   not private are doors too, and so are the implicit copy and move, which
+//   take a second object of the class.  A parameter that proves the owner
+//   (is_proof_parameter of foundation/Transfer.h) gives no target.
+//
+//   A parameter gives storage of its caller: the object that a reference or a
+//   pointer names, with each part of it and each object behind its borrows,
+//   and of a parameter by value each object behind its borrows.  An object of
+//   the class that a parameter gives is a second object, so the walk reads its
+//   parts too, and the copy of a class whose slots name its own parts refuses.
+//
+//   An erased target meets each target, so the check fails closed: void, a
+//   character type, std::byte, a class that is incomplete or whose state the
+//   walk cannot read, and a probe type of foundation/Transfer.h, which stands
+//   for each type that a door template can take.  So a class with a borrow
+//   slot and a door template that takes a body cannot take the mark.
+//
+//   A fact that fails stops the build with a static assertion that names the
+//   class and the door or the part.  Complexity: linear in the members and the
+//   doors of the class, times the parameters of each door and the parts that
+//   each parameter reaches, at compile time only.
+
+// The room of the walk of the storage that one parameter gives.  A walk that
+// needs more adds an erased target, so the check fails closed.
+inline constexpr std::size_t given_walk_room = 512;
+
+// True for a probe type of the door check of foundation/Transfer.h, which
+// stands for each type that a door template can take.
+[[nodiscard]] consteval bool is_probe_type_(std::meta::info bare) {
+    namespace tr = ::foundation::transfer;
+    return bare == ^^tr::detail::door_probe_body || bare == ^^tr::detail::door_probe_brand;
+}
+
+// True for a class whose parts the check cannot read: an incomplete class,
+// and a class whose state reflection does not show.
+[[nodiscard]] consteval bool hides_its_parts_(std::meta::info bare) {
+    if (!is_class_or_union_(bare)) return false;
+    if (!std::meta::is_complete_type(bare)) return true;
+    return ::foundation::reflect::holds_unreadable_state(::foundation::reflect::TypeNode{bare, true});
+}
+
+// True for a target that meets each target: a null type, void, a character
+// type, std::byte, a probe type, and a class whose parts the check cannot
+// read.
+[[nodiscard]] consteval bool is_erased_target_(std::meta::info type) {
+    if (type == std::meta::info{}) return true;
+    std::meta::info const bare = ::foundation::reflect::bare_type(type);
+    if (std::meta::is_void_type(bare) || bare == ^^char || bare == ^^signed char || bare == ^^unsigned char
+        || bare == ^^std::byte) {
+        return true;
+    }
+    return is_probe_type_(bare) || hides_its_parts_(bare);
+}
+
+// True when the two targets meet: one is erased, they are one type, or one
+// class is a base of the other.
+[[nodiscard]] consteval bool targets_meet_(std::meta::info given, std::meta::info kept) {
+    if (is_erased_target_(given) || is_erased_target_(kept)) return true;
+    std::meta::info const left = ::foundation::reflect::bare_type(given);
+    std::meta::info const right = ::foundation::reflect::bare_type(kept);
+    if (left == right) return true;
+    if (!is_class_or_union_(left) || !is_class_or_union_(right)) return false;
+    return std::meta::is_base_of_type(left, right) || std::meta::is_base_of_type(right, left);
+}
+
+// True when a target of the first list meets a target of the second.
+// Complexity: the product of the two sizes.
+[[nodiscard]] consteval bool lists_meet_(::foundation::reflect::TypeNodeList const& given,
+                                         ::foundation::reflect::TypeNodeList const& kept) {
+    for (::foundation::reflect::TypeNode const& left : given) {
+        for (::foundation::reflect::TypeNode const& right : kept) {
+            if (targets_meet_(left.type, right.type)) return true;
+        }
+    }
     return false;
 }
 
-// Memo
+// True for a class of the base that states refers_static{} of
+// foundation/Transfer.h, whose pointers name static storage and no storage of
+// a caller.  TypeParts read the mark, and they ran its check.
+[[nodiscard]] consteval bool names_static_storage_(std::meta::info bare) {
+    return std::meta::extract<TypeParts const&>(kept_held_parts_of(bare)).refers_static;
+}
+
+// Pushes the node of the type into the walk of the storage that a parameter
+// gives.  The writable region holds storage of the caller, and the owned
+// region holds the copy that the door takes by value.  A type in the writable
+// region is a target, so it goes on the list too, unless the list holds it:
+// also a scalar, which the walk itself does not keep.  Complexity: linear in
+// the list.
+consteval void push_given_(StoreWalk& walk, ::foundation::reflect::TypeNodeList& given, std::meta::info type,
+                           StoreRegion region) {
+    std::meta::info const bare = ::foundation::reflect::bare_type(type);
+    if (region == StoreRegion::writable) {
+        bool is_listed = false;
+        for (::foundation::reflect::TypeNode const& listed : given) {
+            is_listed = is_listed || listed.type == bare;
+        }
+        if (!is_listed) given.push_back(::foundation::reflect::TypeNode{bare});
+    }
+    walk.push(
+        StoreNode{bare, std::meta::info{}, region, is_class_or_union_(bare) && std::meta::is_complete_type(bare)});
+}
+
+// The targets of the storage of its caller that a parameter of the declared
+// type gives (the check of synchronized_by_proof).  A reference gives its
+// object, a pointer gives the object that it names, and each part of such an
+// object and each object behind a borrow of it are storage of the caller too.
+// A value gives each object behind a borrow in it.  A borrow of the base names
+// its target with its first type argument, and its pointers too.  A class of
+// the base that states refers_static{} names static storage with its pointers.
+// A probe type and a class whose parts the walk cannot read give an erased
+// target in each region.  Complexity: linear in the parts that the parameter
+// reaches, to given_walk_room parts.
+[[nodiscard]] consteval ::foundation::reflect::TypeNodeList given_targets_(std::meta::info declared) {
+    namespace refl = ::foundation::reflect;
+    namespace tr = ::foundation::transfer;
+    constexpr StoreRegion writable = StoreRegion::writable;
+    refl::TypeNodeList given;
+    StoreWalk walk;
+    std::meta::info const type = std::meta::dealias(declared);
+    if (std::meta::is_reference_type(type)) {
+        push_given_(walk, given, std::meta::remove_reference(type), writable);
+    } else {
+        push_given_(walk, given, type, StoreRegion::owned);
+    }
+    std::size_t read = 0;
+    while (walk.has_next()) {
+        StoreNode const node = walk.take();
+        std::meta::info const bare = node.type;
+        if (++read > given_walk_room || is_probe_type_(bare) || hides_its_parts_(bare)) {
+            given.push_back(refl::TypeNode{});
+            if (read > given_walk_room) break;
+            continue;
+        }
+        if (std::meta::is_pointer_type(bare)) {
+            std::meta::info const pointee = std::meta::remove_pointer(bare);
+            if (!std::meta::is_function_type(pointee)) push_given_(walk, given, pointee, writable);
+            continue;
+        }
+        if (std::meta::is_array_type(bare)) {
+            push_given_(walk, given, std::meta::remove_all_extents(bare), node.region);
+            continue;
+        }
+        if (!is_class_or_union_(bare)) continue;
+        bool const is_borrow = tr::detail::states(bare, ^^tr::refers) || tr::detail::states(bare, ^^tr::refers_unique)
+                            || tr::detail::states(bare, ^^tr::refers_deep);
+        bool const is_static = names_static_storage_(bare);
+        for (refl::TypeNode const& argument : refl::argument_components_of(refl::TypeNode{bare, true})) {
+            if (argument.is_value_argument) continue;
+            push_given_(walk, given, argument.type, is_borrow ? writable : node.region);
+        }
+        for (refl::TypeNode const& part : refl::member_components_of(refl::TypeNode{bare, true})) {
+            if (is_static && std::meta::is_pointer_type(part.type)) continue;
+            push_given_(walk, given, part.type, part.was_reference ? writable : node.region);
+        }
+    }
+    return given;
+}
+
+// The target of each borrow slot that the members of the owner reach in the
+// writable region.  The walk reads the held parts of the owner, because a
+// storage owner of the base hides its members from its kept parts, and it
+// counts the owner as no part when a slot reaches it again.
+[[nodiscard]] consteval ::foundation::reflect::TypeNodeList slot_targets_of_(std::meta::info owner) {
+    StoreWalk walk;
+    push_members_(walk, std::meta::extract<TypeParts const&>(kept_held_parts_of(owner)), StoreRegion::writable);
+    ::foundation::reflect::TypeNodeList targets;
+    static_cast<void>(drain_slots_(walk, SlotPlan{SlotRead::each, owner, false}, targets));
+    return targets;
+}
+
+// True when the result of a door reaches a borrow slot in the writable region:
+// a result by value from the owned region, and a result by reference from
+// the region of its target.  The owner counts as no slot.
+[[nodiscard]] consteval bool result_reaches_slot_(std::meta::info result, std::meta::info owner) {
+    std::meta::info const declared = std::meta::dealias(result);
+    std::meta::info const bare = ::foundation::reflect::bare_type(declared);
+    if (std::meta::is_void_type(bare)) return false;
+    StoreRegion region = StoreRegion::owned;
+    if (std::meta::is_reference_type(declared)) {
+        region = std::meta::is_const_type(std::meta::remove_reference(declared)) ? StoreRegion::read_only
+                                                                                 : StoreRegion::writable;
+    }
+    StoreWalk walk;
+    walk.push(indirect_node_(bare, region));
+    ::foundation::reflect::TypeNodeList unused;
+    return drain_slots_(walk, SlotPlan{SlotRead::first, owner, false}, unused);
+}
+
+// The refusals of the check of synchronized_by_proof.  The check reads a
+// specialization of one of the variables below, which stops the build.  The
+// first message gives the fact, and the next ones name the class and the door
+// or the part.
+template <std::meta::info Class>
+consteval bool refuse_unsynchronized_proof_mark_() {
+    static_assert(Class == std::meta::info{},
+                  "the store check: a class states synchronized_by_proof{} of foundation/core/TypeParts.h, and it "
+                  "states no synchronized{} of foundation/Transfer.h.  The mark asks the check of synchronized{}, so "
+                  "two threads write an object of the class only through a proof.  The next message names the class");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    return false;
+}
+
+template <std::meta::info Class>
+inline constexpr bool unsynchronized_proof_mark_refusal_ = refuse_unsynchronized_proof_mark_<Class>();
+
+template <std::meta::info Class, std::meta::info Member>
+consteval bool refuse_open_member_of_proof_mark_() {
+    static_assert(Class == std::meta::info{},
+                  "the store check: a class states synchronized_by_proof{} of foundation/core/TypeParts.h, and a "
+                  "data member of the class or of a base is not private.  The mark asks that only a door of the class "
+                  "writes an object of it.  The next two messages name the class and the member");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Member));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Member>
+inline constexpr bool open_member_of_proof_mark_refusal_ = refuse_open_member_of_proof_mark_<Class, Member>();
+
+template <std::meta::info Class, std::meta::info Door, std::meta::info Parameter>
+consteval bool refuse_given_borrow_of_proof_mark_() {
+    static_assert(Class == std::meta::info{},
+                  "the store check: a class states synchronized_by_proof{} of foundation/core/TypeParts.h, and a door "
+                  "of the class takes a parameter that gives storage of its caller whose type meets the target of a "
+                  "borrow slot of a member, so the door can keep a borrow of that storage in the object.  Two targets "
+                  "meet when they are one type, when one is a base of the other, or when one is erased: void, a "
+                  "character type, std::byte, an incomplete or unreadable class, or a probe type of a door template, "
+                  "such as a body.  The next three messages name the class, the door and the parameter");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Door));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Parameter));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Door, std::meta::info Parameter>
+inline constexpr bool given_borrow_of_proof_mark_refusal_ =
+    refuse_given_borrow_of_proof_mark_<Class, Door, Parameter>();
+
+template <std::meta::info Class, std::meta::info Door>
+consteval bool refuse_slot_in_result_of_proof_mark_() {
+    static_assert(Class == std::meta::info{},
+                  "the store check: a class states synchronized_by_proof{} of foundation/core/TypeParts.h, and a door "
+                  "of the class gives a result that reaches a borrow slot in the writable region, so a caller can "
+                  "write a borrow of its frame through the result.  The next two messages name the class and the "
+                  "door");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Door));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Door>
+inline constexpr bool slot_in_result_of_proof_mark_refusal_ = refuse_slot_in_result_of_proof_mark_<Class, Door>();
+
+template <std::meta::info Class, std::meta::info Door>
+consteval bool refuse_unread_door_of_proof_mark_() {
+    static_assert(Class == std::meta::info{},
+                  "the store check: a class states synchronized_by_proof{} of foundation/core/TypeParts.h, and the "
+                  "check cannot read one of its doors: a door template or a nested class template that no probe of "
+                  "foundation/Transfer.h fills, a nested class that is incomplete, or a nested class deeper than the "
+                  "walk reads.  The next two messages name the class and the door");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Door));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Door>
+inline constexpr bool unread_door_of_proof_mark_refusal_ = refuse_unread_door_of_proof_mark_<Class, Door>();
+
+template <std::meta::info Class>
+consteval bool refuse_copy_of_proof_mark_() {
+    static_assert(Class == std::meta::info{},
+                  "the store check: a class states synchronized_by_proof{} of foundation/core/TypeParts.h, and the "
+                  "class copies or moves.  A copy reads a second object of the class, whose parts meet the target of a "
+                  "borrow slot of a member, so the copy can keep a borrow of storage of its caller.  The next message "
+                  "names the class");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    return false;
+}
+
+template <std::meta::info Class>
+inline constexpr bool copy_of_proof_mark_refusal_ = refuse_copy_of_proof_mark_<Class>();
+
+// Each function below reads a refusal variable of the check for the class,
+// and for a door or a part of it, which stops the build.  Each gives false.
+[[nodiscard]] consteval bool refuse_class_of_proof_mark_(std::meta::info refusal, std::meta::info class_type) {
+    std::meta::info const arguments[] = {std::meta::reflect_constant(class_type)};
+    static_cast<void>(std::meta::extract<bool>(std::meta::substitute(refusal, arguments)));
+    return false;
+}
+
+[[nodiscard]] consteval bool refuse_part_of_proof_mark_(std::meta::info refusal, std::meta::info class_type,
+                                                        std::meta::info part) {
+    std::meta::info const arguments[] = {std::meta::reflect_constant(class_type), std::meta::reflect_constant(part)};
+    static_cast<void>(std::meta::extract<bool>(std::meta::substitute(refusal, arguments)));
+    return false;
+}
+
+[[nodiscard]] consteval bool refuse_parameter_of_proof_mark_(std::meta::info class_type, std::meta::info door,
+                                                             std::meta::info parameter) {
+    std::meta::info const arguments[] = {std::meta::reflect_constant(class_type), std::meta::reflect_constant(door),
+                                         std::meta::reflect_constant(parameter)};
+    static_cast<void>(
+        std::meta::extract<bool>(std::meta::substitute(^^given_borrow_of_proof_mark_refusal_, arguments)));
+    return false;
+}
+
+// True when each data member of the class and of each base is private (fact
+// c).  Else it refuses the first open member.  Complexity: linear in the
+// members of the class and of its bases.
+[[nodiscard]] consteval bool keeps_parts_private_(std::meta::info type, std::meta::info owner) {
+    namespace refl = ::foundation::reflect;
+    for (refl::TypeNode const& part : refl::member_components_of(refl::TypeNode{type, true})) {
+        if (part.member == std::meta::info{}) {
+            if (!keeps_parts_private_(part.type, owner)) return false;
+            continue;
+        }
+        if (!std::meta::is_private(part.member)) {
+            return refuse_part_of_proof_mark_(^^open_member_of_proof_mark_refusal_, owner, part.member);
+        }
+    }
+    return true;
+}
+
+// True when the member is a door of the check: a member function or a member
+// function template that is not private, also a constructor, that is no
+// destructor and not deleted.
+[[nodiscard]] consteval bool is_door_of_proof_mark_(std::meta::info member) {
+    bool const is_template = std::meta::is_function_template(member) || std::meta::is_constructor_template(member);
+    if (!std::meta::is_function(member) && !is_template) return false;
+    if (std::meta::is_private(member)) return false;
+    if (is_template) return true;
+    return !std::meta::is_destructor(member) && !std::meta::is_deleted(member);
+}
+
+// True when the door holds facts b and d (the check of synchronized_by_proof):
+// no parameter that proves no owner gives a target that meets a slot, and no
+// result reaches a slot.  A door template reads as its specialization for the
+// probes of foundation/Transfer.h, and a template that no probe fills
+// refuses.  Else it refuses the door.
+[[nodiscard]] consteval bool holds_door_of_proof_mark_(std::meta::info door, std::meta::info owner,
+                                                       ::foundation::reflect::TypeNodeList const& slots) {
+    namespace refl = ::foundation::reflect;
+    namespace tr = ::foundation::transfer;
+    std::meta::info function = door;
+    if (std::meta::is_function_template(door) || std::meta::is_constructor_template(door)) {
+        function = tr::detail::specialize_door(door, ^^tr::door_probe_contexts);
+        if (function == std::meta::info{}) {
+            return refuse_part_of_proof_mark_(^^unread_door_of_proof_mark_refusal_, owner, door);
+        }
+    }
+    if (std::meta::is_deleted(function) || std::meta::is_destructor(function)) return true;
+    std::meta::info const given = refl::find_parameter(function, [owner, &slots](std::meta::info parameter) {
+        if (tr::detail::is_proof_parameter(refl::node_reached_indirectly(std::meta::type_of(parameter)), owner)) {
+            return false;
+        }
+        return lists_meet_(given_targets_(std::meta::type_of(parameter)), slots);
+    });
+    if (given != std::meta::info{}) return refuse_parameter_of_proof_mark_(owner, door, given);
+    if (std::meta::is_constructor(function)) return true;
+    if (result_reaches_slot_(std::meta::return_type_of(function), owner)) {
+        return refuse_part_of_proof_mark_(^^slot_in_result_of_proof_mark_refusal_, owner, door);
+    }
+    return true;
+}
+
+// True when each door of the scope, of each of its bases and of each nested
+// class at each depth holds facts b and d.  A nested class template reads as
+// its instance for a probe of foundation/Transfer.h.  A nested class that the
+// check cannot read, or that is deeper than depth levels, refuses.
+// Complexity: linear in the members of each scope, times the parameters of
+// each door.
+[[nodiscard]] consteval bool holds_scope_of_proof_mark_(std::meta::info scope, std::meta::info owner,
+                                                        ::foundation::reflect::TypeNodeList const& slots, int depth) {
+    namespace refl = ::foundation::reflect;
+    namespace tr = ::foundation::transfer;
+    std::meta::access_context const unchecked = std::meta::access_context::unchecked();
+    bool holds = true;
+    static_cast<void>(refl::find_member(scope, unchecked, [owner, &slots, &holds](std::meta::info member) {
+        if (!is_door_of_proof_mark_(member)) return false;
+        holds = holds_door_of_proof_mark_(member, owner, slots);
+        return !holds;
+    }));
+    if (!holds) return false;
+    for (refl::TypeNode const& part : refl::member_components_of(refl::TypeNode{scope, true})) {
+        if (part.member != std::meta::info{}) continue;
+        if (!holds_scope_of_proof_mark_(part.type, owner, slots, depth)) return false;
+    }
+    static_cast<void>(
+        refl::find_member(scope, unchecked, [scope, owner, &slots, depth, &holds](std::meta::info member) {
+            bool const is_template = std::meta::is_class_template(member);
+            if ((!std::meta::is_type(member) && !is_template) || std::meta::is_type_alias(member)
+                || std::meta::parent_of(member) != scope) {
+                return false;
+            }
+            std::meta::info nested = member;
+            if (is_template) nested = tr::detail::specialize_nested_template(member, ^^tr::door_probe_contexts);
+            if (nested == owner || nested == scope || (nested != std::meta::info{} && !is_class_or_union_(nested))) {
+                return false;
+            }
+            if (nested == std::meta::info{} || !std::meta::is_complete_type(nested) || depth <= 0) {
+                holds = refuse_part_of_proof_mark_(^^unread_door_of_proof_mark_refusal_, owner, member);
+                return true;
+            }
+            holds = holds_scope_of_proof_mark_(nested, owner, slots, depth - 1);
+            return !holds;
+        }));
+    return holds;
+}
+
+// Gives true when the class holds each fact of the mark, and else stops the
+// build (the check of synchronized_by_proof).
+[[nodiscard]] consteval bool check_synchronized_by_proof_(std::meta::info owner) {
+    namespace tr = ::foundation::transfer;
+    if (!tr::detail::states(owner, ^^tr::synchronized)) {
+        return refuse_class_of_proof_mark_(^^unsynchronized_proof_mark_refusal_, owner);
+    }
+    tr::detail::check_synchronized_statement(owner);
+    if (!keeps_parts_private_(owner, owner)) return false;
+    ::foundation::reflect::TypeNodeList const slots = slot_targets_of_(owner);
+    if (!holds_scope_of_proof_mark_(owner, owner, slots, tr::detail::closed_walk_depth)) return false;
+    bool const copies = std::meta::is_copy_constructible_type(owner) || std::meta::is_move_constructible_type(owner)
+                     || std::meta::is_copy_assignable_type(owner) || std::meta::is_move_assignable_type(owner);
+    if (copies && lists_meet_(given_targets_(std::meta::add_lvalue_reference(owner)), slots)) {
+        return refuse_class_of_proof_mark_(^^copy_of_proof_mark_refusal_, owner);
+    }
+    return true;
+}
+
+// The check of the mark of each class, one time for each translation unit.
+template <class Class>
+inline constexpr bool synchronized_by_proof_check_v = check_synchronized_by_proof_(^^Class);
+
+[[nodiscard]] consteval bool proves_synchronized_by_proof_(std::meta::info type) {
+    std::meta::info const arguments[] = {type};
+    return std::meta::extract<bool>(std::meta::substitute(^^synchronized_by_proof_check_v, arguments));
+}
 //   The verdict of one type in one region does not depend on the body that
 //   reaches it, so each translation unit computes it one time, in an
 //   instance of this variable template.  The bodies of one class capture

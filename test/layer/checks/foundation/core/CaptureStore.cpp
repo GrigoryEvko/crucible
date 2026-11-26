@@ -370,4 +370,132 @@ static_assert(!::foundation::reflect::is_class_of_the_base_(^^OwnerStash));
 static_assert(::foundation::reflect::is_class_of_the_base_(^^core::detail::capture_store_checks::MarkedOwnerOfTheBase));
 static_assert(::foundation::reflect::is_class_of_the_base_(^^core::HeapArray<int>));
 
+// The mark synchronized_by_proof of foundation/core/TypeParts.h.  The walk
+// trusts it outside the base too, after its check: a class that states
+// synchronized{}, with private parts, whose doors give no target that meets
+// the target of a borrow slot, and whose results reach no slot.  The stash
+// below keeps an Option of a View of long, and its doors take only the key, an
+// int by value and an int by reference, so a capture of it by reference
+// passes.  The same class with no mark is read member by member, and refuses.
+// The fixtures neg_core_proof_mark_* refuse each fact that fails.
+class[[= transfer::synchronized{}]][[= core::synchronized_by_proof{}]] ProvenStash {
+public:
+    class[[= transfer::thread_bound{}]][[= transfer::not_shareable{}]] Key final {
+        Key() noexcept {}
+        friend class ProvenStash;
+
+    public:
+        Key(Key const&) = delete("a key names the one holder of the stash");
+        Key& operator=(Key const&) = delete("a key names the one holder of the stash");
+        ~Key() = default;
+    };
+
+    ProvenStash() = default;
+    ProvenStash(ProvenStash const&) = delete("a stash of two threads does not copy");
+    ProvenStash& operator=(ProvenStash const&) = delete("a stash of two threads does not copy");
+
+    void add(Key& /*key*/, int step) noexcept { count_ += step; }
+    void take(Key& /*key*/, int& out) noexcept { out = count_; }
+    [[nodiscard]] int read() const noexcept { return count_; }
+    [[nodiscard]] auto doubled() const noexcept { return 2 * count_; }
+    [[nodiscard]] Key claim() noexcept {
+        if (is_key_claimed_.exchange_acq_rel(true)) core::fatal("a second claim of the key of a stash");
+        return Key{};
+    }
+
+private:
+    core::Atomic<bool> is_key_claimed_{false};
+    int count_ = 0;
+    core::Option<core::View<long>> held_{};
+};
+class[[= transfer::synchronized{}]] UnprovenStash {
+public:
+    class[[= transfer::thread_bound{}]][[= transfer::not_shareable{}]] Key final {
+        Key() noexcept {}
+        friend class UnprovenStash;
+
+    public:
+        Key(Key const&) = delete("a key names the one holder of the stash");
+        Key& operator=(Key const&) = delete("a key names the one holder of the stash");
+        ~Key() = default;
+    };
+
+    UnprovenStash() = default;
+    UnprovenStash(UnprovenStash const&) = delete("a stash of two threads does not copy");
+    UnprovenStash& operator=(UnprovenStash const&) = delete("a stash of two threads does not copy");
+
+    void add(Key& /*key*/, int step) noexcept { count_ += step; }
+    [[nodiscard]] Key claim() noexcept {
+        if (is_key_claimed_.exchange_acq_rel(true)) core::fatal("a second claim of the key of a stash");
+        return Key{};
+    }
+
+private:
+    core::Atomic<bool> is_key_claimed_{false};
+    int count_ = 0;
+    core::Option<core::View<long>> held_{};
+};
+static_assert(core::detail::type_parts_v<ProvenStash>.states_synchronized_by_proof
+              && !core::detail::type_parts_v<UnprovenStash>.states_synchronized_by_proof);
+static_assert(!is_stash_refused<ProvenStash>() && is_stash_refused<UnprovenStash>());
+static_assert(core::detail::synchronized_by_proof_check_v<ProvenStash>);
+
+// The parts of the check.  The slots of the stash name long.  A reference
+// gives its object and each part of it, and a value gives each object behind
+// its borrows.  Two targets meet when they are one type, when one is a base of
+// the other, or when one is erased.
+struct SlotBase {};
+struct SlotDerived : SlotBase {
+    int count = 0;
+};
+struct HoldsAViewOfShort {
+    core::View<short> view{};
+};
+consteval bool are_proof_targets_read() {
+    using Targets = ::foundation::reflect::TypeNodeList;
+    Targets const slots = core::detail::slot_targets_of_(^^ProvenStash);
+    bool const has_one_slot = slots.size() == 1 && slots.begin()->type == ^^long;
+    Targets const by_value = core::detail::given_targets_(^^int);
+    Targets const by_reference = core::detail::given_targets_(^^SlotDerived const&);
+    Targets const through_a_view = core::detail::given_targets_(^^HoldsAViewOfShort);
+    return has_one_slot && by_value.empty() && by_reference.size() == 3 && through_a_view.size() == 1
+        && through_a_view.begin()->type == ^^short;
+}
+static_assert(are_proof_targets_read());
+static_assert(core::detail::targets_meet_(^^SlotBase, ^^SlotDerived)
+              && core::detail::targets_meet_(^^SlotDerived, ^^SlotBase));
+static_assert(!core::detail::targets_meet_(^^int, ^^long) && core::detail::targets_meet_(^^int, ^^int const));
+static_assert(core::detail::targets_meet_(^^char, ^^long) && core::detail::targets_meet_(^^long, ^^void));
+static_assert(core::detail::targets_meet_(^^transfer::detail::door_probe_body, ^^long));
+
+// The doors of the check: each member function and member function template
+// that is not private, a const one, a static one, a protected one and a
+// constructor template too.
+class DoorKinds {
+public:
+    template <class Value>
+    explicit DoorKinds(Value /*value*/) noexcept {}
+    void write(int /*value*/) noexcept {}
+    [[nodiscard]] int peek() const noexcept { return 0; }
+    static void reset() noexcept {}
+
+protected:
+    void guard() noexcept {}
+
+private:
+    void hidden() noexcept {}
+};
+consteval bool is_constructor_template_a_door() {
+    std::meta::info const member = ::foundation::reflect::find_member(
+        ^^DoorKinds, std::meta::access_context::unprivileged(),
+        [](std::meta::info candidate) { return std::meta::is_constructor_template(candidate); });
+    return member != std::meta::info{} && core::detail::is_door_of_proof_mark_(member);
+}
+static_assert(core::detail::is_door_of_proof_mark_(^^DoorKinds::write)
+              && core::detail::is_door_of_proof_mark_(^^DoorKinds::peek)
+              && core::detail::is_door_of_proof_mark_(^^DoorKinds::reset));
+static_assert(is_constructor_template_a_door());
+static_assert(core::detail::is_door_of_proof_mark_(^^DoorKinds::guard)
+              && !core::detail::is_door_of_proof_mark_(^^DoorKinds::hidden));
+
 }  // namespace capture_store_outside_checks

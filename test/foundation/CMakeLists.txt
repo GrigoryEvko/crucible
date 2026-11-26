@@ -5862,6 +5862,71 @@ foundation_neg_compile_test(neg_core_static_storage_member_keeps_a_pointer
   "static assertion failed: transfer: a class states refers_static\\{\\}, so each pointer that it holds names static storage"
   "static assertion failed: foundation::core::static_storage_probe::KeepingText"
   "static assertion failed: constexpr void foundation::core::static_storage_probe::KeepingText::keep\\(const char\\*\\)")
+# The store check trusts the mark synchronized_by_proof of
+# foundation/core/TypeParts.h after its check, which refuses a door, a const
+# door, a constructor, a door of a base, a door of a nested class, a copy or a
+# door template that can keep a borrow that its caller gives, a door that takes
+# an erased target, a result that reaches a borrow slot, a public member, a
+# class with no synchronized{}, also a plain one, and a nested class deeper
+# than the check reads.
+foundation_neg_compile_test(neg_core_proof_mark_door_keeps_a_given_borrow
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and a door of the class takes a parameter that gives storage of its caller"
+  "static assertion failed: neg_core_proof_mark_door_keeps_a_given_borrow_types::Stash"
+  "static assertion failed: void neg_core_proof_mark_door_keeps_a_given_borrow_types::Stash::keep\\(Key&, foundation::core::View<long int>\\)"
+  "static assertion failed: <parameter view of void neg_core_proof_mark_door_keeps_a_given_borrow_types::Stash::keep")
+foundation_neg_compile_test(neg_core_proof_mark_door_takes_an_erased_target
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and a door of the class takes a parameter that gives storage of its caller"
+  "static assertion failed: neg_core_proof_mark_door_takes_an_erased_target_types::Stash"
+  "static assertion failed: void neg_core_proof_mark_door_takes_an_erased_target_types::Stash::note\\(Key&, foundation::core::TextView\\)"
+  "static assertion failed: <parameter text of void neg_core_proof_mark_door_takes_an_erased_target_types::Stash::note")
+foundation_neg_compile_test(neg_core_proof_mark_constructor_keeps_a_borrow
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and a door of the class takes a parameter that gives storage of its caller"
+  "static assertion failed: neg_core_proof_mark_constructor_keeps_a_borrow_types::Stash"
+  "static assertion failed: neg_core_proof_mark_constructor_keeps_a_borrow_types::Stash::Stash\\(foundation::core::View<long int>\\)"
+  "static assertion failed: <parameter view of neg_core_proof_mark_constructor_keeps_a_borrow_types::Stash::Stash")
+foundation_neg_compile_test(neg_core_proof_mark_result_exposes_a_slot
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and a door of the class gives a result that reaches a borrow slot in the writable region"
+  "static assertion failed: neg_core_proof_mark_result_exposes_a_slot_types::Stash"
+  "static assertion failed: foundation::core::Option<foundation::core::View<long int> >& neg_core_proof_mark_result_exposes_a_slot_types::Stash::held\\(Key&\\)")
+foundation_neg_compile_test(neg_core_proof_mark_public_member
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and a data member of the class or of a base is not private"
+  "static assertion failed: neg_core_proof_mark_public_member_types::Stash"
+  "static assertion failed: neg_core_proof_mark_public_member_types::Stash::limit")
+foundation_neg_compile_test(neg_core_proof_mark_base_door
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and a door of the class takes a parameter that gives storage of its caller"
+  "static assertion failed: neg_core_proof_mark_base_door_types::Stash"
+  "static assertion failed: void neg_core_proof_mark_base_door_types::Hook::take\\(foundation::core::View<long int>\\)"
+  "static assertion failed: <parameter view of void neg_core_proof_mark_base_door_types::Hook::take")
+foundation_neg_compile_test(neg_core_proof_mark_body_door
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and a door of the class takes a parameter that gives storage of its caller"
+  "static assertion failed: neg_core_proof_mark_body_door_types::Stash"
+  "static assertion failed: template<class Body> void neg_core_proof_mark_body_door_types::Stash::visit\\(Key&, Body&&\\)"
+  "static assertion failed: <parameter body of void neg_core_proof_mark_body_door_types::Stash::visit\\(Key&, Body&&\\) \\[with Body = foundation::transfer::detail::door_probe_body\\]>")
+foundation_neg_compile_test(neg_core_proof_mark_without_synchronized
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and it states no synchronized\\{\\} of foundation/Transfer.h"
+  "static assertion failed: neg_core_proof_mark_without_synchronized_types::Stash")
+foundation_neg_compile_test(neg_core_proof_mark_copies
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and a door of the class takes a parameter that gives storage of its caller"
+  "static assertion failed: neg_core_proof_mark_copies_types::Stash"
+  "static assertion failed: constexpr neg_core_proof_mark_copies_types::Stash::Stash\\(const neg_core_proof_mark_copies_types::Stash&\\)"
+  "static assertion failed: <unnamed parameter 1 of constexpr neg_core_proof_mark_copies_types::Stash::Stash")
+foundation_neg_compile_test(neg_core_proof_mark_const_door
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and a door of the class takes a parameter that gives storage of its caller"
+  "static assertion failed: neg_core_proof_mark_const_door_types::Stash"
+  "static assertion failed: std::size_t neg_core_proof_mark_const_door_types::Stash::note\\(foundation::core::View<long int>\\) const"
+  "static assertion failed: <parameter view of std::size_t neg_core_proof_mark_const_door_types::Stash::note")
+foundation_neg_compile_test(neg_core_proof_mark_nested_door
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and a door of the class takes a parameter that gives storage of its caller"
+  "static assertion failed: neg_core_proof_mark_nested_door_types::Stash"
+  "static assertion failed: std::size_t neg_core_proof_mark_nested_door_types::Stash::Feeder::feed\\(foundation::core::View<long int>\\) const"
+  "static assertion failed: <parameter view of std::size_t neg_core_proof_mark_nested_door_types::Stash::Feeder::feed")
+foundation_neg_compile_test(neg_core_proof_mark_plain_without_synchronized
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and it states no synchronized\\{\\} of foundation/Transfer.h"
+  "static assertion failed: neg_core_proof_mark_plain_without_synchronized_types::Counter")
+foundation_neg_compile_test(neg_core_proof_mark_nested_too_deep
+  "static assertion failed: the store check: a class states synchronized_by_proof\\{\\} of foundation/core/TypeParts.h, and the check cannot read one of its doors"
+  "static assertion failed: neg_core_proof_mark_nested_too_deep_types::Stash"
+  "static assertion failed: neg_core_proof_mark_nested_too_deep_types::Stash::First::Second::Third::Fourth::Fifth")
 # The borrow walk reads an owner of the base by its type arguments, so a Box of
 # a View holds a borrow, and it trusts an owner mark only in the base, so a
 # marked class with a View outside the base holds one too.  An rvalue match
