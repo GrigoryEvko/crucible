@@ -661,6 +661,59 @@ static void test_batch_after_a_torn_index_line(::fixy::TextView root) {
     CRUCIBLE_TEST_ASSERT(kTest, step_at(loaded, 0) == 10 && step_at(loaded, 9) == 19);
 }
 
+// The whole text of the index of the events of session under the root of
+// cipher.
+[[nodiscard]] static ::fixy::HeapText index_text_of(crucible::Cipher const& cipher,
+                                                    ::fixy::session::SessionTagId session) {
+    ::foundation::os::PathText<64> index = session_events_path(session);
+    index.append(::fixy::TextView{"index"}).expect("the index path fits its text");
+    ::fixy::GrowText text = ::fixy::mint_grow_text(crucible::Cipher::MAX_OBJECT_BYTES);
+    const ::fixy::fs::DirectoryHandle root = root_directory_of(cipher);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ::fixy::fs::read_whole_at(store_ctx(), g_test.alloc, root.ref(), index.c_text(), text).is_ok());
+    return ::fixy::freeze(std::move(text));
+}
+
+// A persist whose index append fails after a part of its line cuts the index
+// back to its whole lines.  The index holds its bytes of before the persist,
+// and a reopen loads the events of the batch before it.  The write fault of
+// the test lets the batch file pass whole, and it cuts the index line after
+// five bytes, as a full disk does.
+static void test_failed_index_append_cuts_back(::fixy::TextView root) {
+    auto cipher = open_cipher_under(root, ::fixy::TextView{"index_fault"});
+    auto ov = cipher.mint_open_view(store_ctx());
+    const auto first_batch = session_batch(10, 5);
+    const auto second_batch = session_batch(15, 5);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         cipher.persist_session_events(store_ctx(), ov, g_test.alloc, first_batch.view()).is_ok());
+    const ::fixy::session::SessionTagId session =
+        first_batch.view().get(0).expect("the first batch holds five events")->session();
+    const ::fixy::HeapText before = index_text_of(cipher, session);
+    {
+        const ::foundation::core::ByteCount budget{crucible::cipher::federation::FEDERATION_HEADER_BYTES
+                                                   + second_batch.size() * sizeof(crucible::Cipher::SessionEvent) + 5};
+        const ::fixy::fs::WriteFaultScope fault =
+            ::fixy::fs::WriteFaultScope::arm(kTest, budget, ::fixy::fs::WriteFailure::no_space);
+        const crucible::Cipher::PersistResult persisted =
+            cipher.persist_session_events(store_ctx(), ov, g_test.alloc, second_batch.view());
+        CRUCIBLE_TEST_ASSERT(kTest, persisted.is_err_and([](crucible::Cipher::PersistError const& error) {
+            return error.match(
+                [](crucible::Cipher::PersistRefusal refusal) {
+                    return refusal == crucible::Cipher::PersistRefusal::index_append_failed;
+                },
+                [](crucible::LoadError) { return false; });
+        }));
+    }
+    const ::fixy::HeapText after = index_text_of(cipher, session);
+    CRUCIBLE_TEST_ASSERT(kTest, after.view() == before.view() && "the failed append leaves no part of its line");
+
+    const crucible::Cipher reopened = open_cipher_under(root, ::fixy::TextView{"index_fault"});
+    const auto reopened_ov = reopened.mint_open_view(store_ctx());
+    const auto loaded = reopened.load_session_events(store_ctx(), reopened_ov, g_test.alloc, session);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.events.size() == 5 && loaded.skipped_batches == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, step_at(loaded, 0) == 10 && step_at(loaded, 4) == 14);
+}
+
 int main() {
     // The end of the owner removes the root of the test with each store below
     // it.
@@ -1166,6 +1219,7 @@ int main() {
         test_store_leaves_the_file_of_another_writer(root_of(anchor));
         test_two_writers_of_one_object(root_of(anchor));
         test_batch_after_a_torn_index_line(root_of(anchor));
+        test_failed_index_append_cuts_back(root_of(anchor));
     }
 
     ::fixy::check::pass(kTest, "test_cipher: all tests passed\n");

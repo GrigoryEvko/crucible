@@ -834,6 +834,36 @@ static void test_failed_log_append_moves_no_head(::fixy::fs::TemporaryDirectory 
     ::fixy::check::pass(kTest, "  failed_log_append_moves_no_head:        PASSED\n");
 }
 
+// A commit whose log append fails after a part of its line cuts the log back
+// to its whole lines.  The log holds its bytes of before the commit, the head
+// does not move, and a reopen reads the last good commit.  The write fault of
+// the test cuts the line after five bytes, as a full disk does.
+
+static void test_failed_log_append_cuts_back(::fixy::fs::TemporaryDirectory const& scratch) {
+    {
+        auto cipher = open_store(scratch, "log_fault");
+        auto view = cipher.mint_open_view(store_ctx());
+        record(cipher, store_ctx(), view, ContentHash{0xA001u}, 1u);
+        const ::fixy::HeapText before = log_text_of(cipher);
+        {
+            const ::fixy::fs::WriteFaultScope fault = ::fixy::fs::WriteFaultScope::arm(
+                kTest, ::foundation::core::ByteCount{5}, ::fixy::fs::WriteFailure::no_space);
+            CRUCIBLE_TEST_ASSERT(kTest, failure_of(cipher.record_event(store_ctx(), view, ContentHash{0xA002u}, 2u))
+                                            == Cipher::CommitError::log_append);
+        }
+        const ::fixy::HeapText after = log_text_of(cipher);
+        CRUCIBLE_TEST_ASSERT(kTest, after.view() == before.view() && "the failed append leaves no part of its line");
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0xA001u});
+    }
+
+    auto reopened = open_store(scratch, "log_fault");
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == ContentHash{0xA001u});
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.last_committed_step().is_some_and(
+                                    [](::fixy::session::StepId step) { return step.raw() == 1u; }));
+
+    ::fixy::check::pass(kTest, "  failed_log_append_cuts_back:            PASSED\n");
+}
+
 // A failed HEAD write comes after a durable log append.  The commit
 // reports the failure, and the commit stands: the head moves in memory,
 // and a reopen takes the same head from the log, while HEAD names no
@@ -921,6 +951,7 @@ int main() {
     test_canonical_row_acceptance(scratch);
     test_pre_clause_orthogonal(scratch);
     test_failed_log_append_moves_no_head(scratch);
+    test_failed_log_append_cuts_back(scratch);
     test_failed_head_write_keeps_the_logged_commit(scratch);
     test_head_without_logged_commit(scratch);
 
