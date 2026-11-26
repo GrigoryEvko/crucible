@@ -76,6 +76,21 @@ Tools
     snmalloc     The source of snmalloc of Microsoft (the pin snmalloc): the
                  allocator that the reference rows of bench_alloc_scaling
                  measure.  --print-bin prints the directory src of the source.
+    core-math    The source of CORE-MATH (the pin core-math): the correctly
+                 rounded exp, log and erf of float and double, the oracle of
+                 the sweep of include/fixy/fp/ and a reference of its bench.
+                 --print-bin prints the top directory of the source.
+    gmp          The release source of GMP (the pin gmp), with its configure
+                 script, which the bench presets build for MPFR.  --print-bin
+                 prints the top directory of the source.
+    mpfr         The release source of MPFR (the pin mpfr), with its
+                 configure script: the oracle of arbitrary precision that
+                 measures the error of the double functions of
+                 include/fixy/fp/ in the sweep.  --print-bin prints the top
+                 directory of the source.
+    mpmath       The package mpmath (the pin mpmath), which
+                 utils/tools/fp_tables.py imports to compute the tables of
+                 include/fixy/fp/.  --print-bin prints the site directory.
     aflplusplus  The AFL++ tools of the nightly fuzz campaigns (the pin
                  aflplusplus), built from their source for the patched GCC
                  (the built tool).  --print-bin prints the bin directory,
@@ -814,6 +829,23 @@ def verify_mypy(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
     check_mypy_version(output.strip(), pin.version)
 
 
+def verify_mpmath(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
+    """Make sure that the site directory of a directory holds the pinned mpmath, which imports.
+
+    Raises:
+        InstallError: If mpmath is missing, does not import or gives a different version
+    """
+    site = directory / SITE
+    if not (site / "mpmath" / "__init__.py").is_file():
+        raise InstallError(f"{site} holds no package mpmath.", NOT_PINNED)
+    start = "import sys; sys.path.insert(0, sys.argv[1]); import mpmath; print(mpmath.__version__)"
+    status, output = run_program([sys.executable, "-I", "-S", "-c", start, str(site)], with_errors=True)
+    if status != 0:
+        raise InstallError(f"the mpmath of {site} does not import:\n{output}", NOT_PINNED)
+    if output.strip() != pin.version:
+        raise InstallError(f"the mpmath of {site} reports {output.strip()!r}, the pin says {pin.version}.", NOT_PINNED)
+
+
 def verify_ruff(directory: Path, pin: pin_table.Pin, table: Pins) -> None:
     """Make sure that the binary of the site directory of a directory gives the pinned version of ruff.
 
@@ -873,6 +905,10 @@ SOURCE_FILES = {
     "jemalloc": ("configure", "Makefile.in", "VERSION", "include/jemalloc/jemalloc_macros.h.in", "COPYING"),
     "mimalloc": ("src/static.c", "include/mimalloc.h", "LICENSE"),
     "snmalloc": ("src/snmalloc/override/malloc.cc", "src/snmalloc/snmalloc.h", "LICENSE"),
+    "core-math": ("src/binary32/exp/expf.c", "src/binary32/log/logf.c", "src/binary32/erf/erff.c",
+                  "src/binary64/exp/exp.c", "src/binary64/log/log.c", "src/binary64/erf/erf.c", "LICENSE"),
+    "gmp": ("configure", "gmp-h.in", "COPYING.LESSERv3"),
+    "mpfr": ("configure", "src/mpfr.h", "COPYING.LESSER"),
 }
 
 
@@ -1084,6 +1120,19 @@ TOOLS: dict[str, Tool] = {
     "snmalloc": Tool(
         "snmalloc", "snmalloc", "snmalloc-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["snmalloc"]),
         unpack_source, version_stamp, version_stamp_matches, lambda directory: directory / "src", False),
+    "core-math": Tool(
+        "core-math", "core-math", "core-math-", {"": "source"},
+        functools.partial(verify_source, SOURCE_FILES["core-math"]), unpack_source, version_stamp,
+        version_stamp_matches, lambda directory: directory, False),
+    "gmp": Tool(
+        "gmp", "gmp", "gmp-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["gmp"]), unpack_source,
+        version_stamp, version_stamp_matches, lambda directory: directory, False),
+    "mpfr": Tool(
+        "mpfr", "mpfr", "mpfr-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["mpfr"]),
+        unpack_source, version_stamp, version_stamp_matches, lambda directory: directory, False),
+    "mpmath": Tool(
+        "mpmath", "mpmath", "mpmath-", {"": "any"}, verify_mpmath, pip_unpack, functools.partial(pip_stamp, ()),
+        functools.partial(pip_stamp_matches, ()), lambda directory: directory / SITE, False),
     "aflplusplus": Tool(
         "aflplusplus", "aflplusplus", "aflplusplus-", {"": "build"}, verify_afl, afl_build, afl_stamp,
         afl_stamp_matches, lambda directory: directory / "bin", False, identity=compiler_identity),
