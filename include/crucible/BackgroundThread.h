@@ -38,6 +38,8 @@
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/KeyedArray.h>
+#include <foundation/core/KeyedMint.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -1866,7 +1868,7 @@ public:
 
     // The probe key of an entry of the map, or no entry.  The mask of the
     // map wraps the key, so at_masked reads the entry and with_masked writes
-    // it in place.
+    // it in place with the key of the map.
     using PtrSlotPosition = ::fixy::Option<uint64_t>;
 
     // old_op, old_port and old_slot carry the displaced entry and are
@@ -1910,10 +1912,32 @@ public:
         void ensure_scratch_buffers(::foundation::effects::Alloc a,
                                     ::fixy::Quantity<::fixy::unit::Element, uint32_t> total_outputs);
 
+        // The brand of the map (the held key of foundation/core/KeyedMint.h).
+        // Its proof has a private constructor, and this state is its one
+        // friend, so only this state mints the key of the map.
+        struct ScratchMapBrand final {
+            class key_proof final {
+                friend class TraceBuildState;
+
+                constexpr key_proof() noexcept {}
+
+            public:
+                key_proof(key_proof const&) = delete("a proof of the key of the map stays with the state of the build");
+                key_proof&
+                operator=(key_proof const&) = delete("a proof of the key of the map stays with the state of the build");
+            };
+        };
+
         // The map of the build stage, which is its one user.  The map has a
         // power-of-two capacity, so its mask wraps each probe.  The slots and
-        // the edges of one build are runs of the build scratch.
-        ::fixy::MaskedArray<PtrSlot> scratch_map_{};
+        // the edges of one build are runs of the build scratch.  The map
+        // lends a slot in place only with scratch_key_, and the gate of its
+        // door refuses a body that reaches the key, so no body of a slot
+        // replaces the map under it.
+        ::foundation::core::KeyedMaskedArray<PtrSlot, ScratchMapBrand> scratch_map_{};
+        // The one key of scratch_map_.  The key is empty, so it takes no byte.
+        [[no_unique_address]] ::foundation::core::LoanKey<ScratchMapBrand> scratch_key_{
+            ::foundation::core::mint_held_key<ScratchMapBrand>(ScratchMapBrand::key_proof{})};
         uint8_t map_gen_ = 0;
 
         // Zero means not yet allocated.  The cap of the slots bounds the
@@ -1927,6 +1951,11 @@ private:
     TraceBuildState build_state_{};
 
 public:
+    // The pointer map of the trace build and its key (the map of
+    // TraceBuildState).
+    using ScratchMap = ::foundation::core::KeyedMaskedArray<PtrSlot, TraceBuildState::ScratchMapBrand>;
+    using ScratchMapKey = ::foundation::core::LoanKey<TraceBuildState::ScratchMapBrand>;
+
     // The bytes of the storage of a slot that the tensor reaches: from the
     // first byte of the storage to the end of the extent of the tensor.  A
     // slot holds the largest span of the tensors in it, so the view of each
@@ -1945,8 +1974,7 @@ public:
 
     // The probe key of the entry of key in the map, or no entry when the map
     // does not hold the key.  The probes stop at the first empty slot.
-    [[nodiscard]] static PtrSlotPosition ptr_map_find(::fixy::MaskedArray<PtrSlot> const& map, uint8_t gen,
-                                                      PtrMapKey key) noexcept {
+    [[nodiscard]] static PtrSlotPosition ptr_map_find(ScratchMap const& map, uint8_t gen, PtrMapKey key) noexcept {
         const uint64_t bucket_idx = hash_ptr(key);
         for (uint64_t probe = 0; probe < map.size(); probe++) {
             const PtrSlot& slot = map.at_masked(bucket_idx + probe);
@@ -1958,9 +1986,9 @@ public:
 
     // The probes of the map start at the hash of the key, and the mask of
     // the map wraps each probe.  A full round of probes visits each slot.
-    // The element door of each probe claims an empty slot or updates the slot
-    // of the key in place.
-    [[nodiscard]] static InsertResult ptr_map_insert(::fixy::MaskedArray<PtrSlot>& map, uint8_t gen, PtrMapKey key,
+    // The keyed element door of each probe claims an empty slot or updates
+    // the slot of the key in place, with the key of the map.
+    [[nodiscard]] static InsertResult ptr_map_insert(ScratchMap& map, ScratchMapKey& loan, uint8_t gen, PtrMapKey key,
                                                      OpIndex op_index, uint8_t port, SlotId slot_id) {
         // The probe that places the key writes the result, and the walk
         // stops there.  A full table gives the result of no slot.
@@ -1968,7 +1996,7 @@ public:
         const uint64_t bucket_idx = hash_ptr(key);
         for (uint64_t probe = 0; probe < map.size(); probe++) {
             const uint64_t position = bucket_idx + probe;
-            const bool is_placed = map.with_masked(position, [&](PtrSlot& slot) noexcept {
+            const bool is_placed = map.with_masked(loan, position, [&](PtrSlot& slot) noexcept {
                 if (slot.gen != gen) {
                     // A stale generation means the slot is empty.  Claim it.
                     slot.key = key;
@@ -2003,7 +2031,7 @@ public:
         uint8_t port = 0;
     };
 
-    [[nodiscard]] static PtrLookup ptr_map_lookup(::fixy::MaskedArray<PtrSlot> const& map, uint8_t gen, PtrMapKey key) {
+    [[nodiscard]] static PtrLookup ptr_map_lookup(ScratchMap const& map, uint8_t gen, PtrMapKey key) {
         if (key.address == ::fixy::mint_address_key(static_cast<void const*>(nullptr)))
             return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
         const uint64_t bucket_idx = hash_ptr(key);

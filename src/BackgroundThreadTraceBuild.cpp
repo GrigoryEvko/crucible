@@ -39,7 +39,7 @@ void BackgroundThread::TraceBuildState::ensure_scratch_buffers(
 
     if (needed_map > map_cap_.get()) {
         map_cap_.advance(needed_map);
-        scratch_map_ = ::fixy::mint_masked_array<PtrSlot>(a, map_cap_.get());
+        scratch_map_.replace(scratch_key_, ::fixy::mint_masked_array<PtrSlot>(a, map_cap_.get()));
         // Each fresh slot holds generation zero, so generation zero is unused.
         map_gen_ = 0;
     }
@@ -252,11 +252,7 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
     state.map_gen_++;
     if (state.map_gen_ == 0) [[unlikely]] {
         // Generation wrapped, so stale slots would read as current.
-        state.scratch_map_ = ::fixy::with_mut(std::move(state.scratch_map_), [](auto map) noexcept {
-            for (PtrSlot& slot : map) {
-                slot = PtrSlot{};
-            }
-        });
+        state.scratch_map_.fill(state.scratch_key_, PtrSlot{});
         state.map_gen_ = 1;
     }
 
@@ -450,11 +446,12 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
                 // A storage that an op of the region wrote, or an external
                 // storage that an op read before.  The op is a reader of the
                 // storage, so an output of the op on it is the same storage.
-                // The build reads a copy of the entry, and the element door
-                // writes the reader in place.
+                // The build reads a copy of the entry, and the keyed element
+                // door writes the reader in place.
                 const uint64_t position = PtrSlotPosition{found}.expect("the test above found the entry");
                 const PtrSlot entry = state.scratch_map_.at_masked(position);
-                state.scratch_map_.with_masked(position, [i](PtrSlot& slot) noexcept { slot.reader = OpIndex{i}; });
+                state.scratch_map_.with_masked(state.scratch_key_, position,
+                                               [i](PtrSlot& slot) noexcept { slot.reader = OpIndex{i}; });
                 producer = entry.op_index;
                 input_slot = entry.slot_id;
                 if (entry.op_index.is_valid()) {
@@ -495,11 +492,11 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
                 slot_info.device_type = input_meta.device_type;
                 slot_info.device_idx = input_meta.device_idx;
                 slot_info.layout = input_meta.layout;
-                const InsertResult inserted =
-                    ptr_map_insert(state.scratch_map_, local_gen, input_key, OpIndex{}, 0, new_slot);
+                const InsertResult inserted = ptr_map_insert(state.scratch_map_, state.scratch_key_, local_gen,
+                                                             input_key, OpIndex{}, 0, new_slot);
                 inserted.slot.match(
                     [&state, i](uint64_t claimed) noexcept {
-                        state.scratch_map_.with_masked(claimed,
+                        state.scratch_map_.with_masked(state.scratch_key_, claimed,
                                                        [i](PtrSlot& slot) noexcept { slot.reader = OpIndex{i}; });
                     },
                     [] noexcept {});
@@ -583,7 +580,7 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
                              .pad = 0};
                     ++num_edges;
                 }
-                state.scratch_map_.with_masked(position, [i, j](PtrSlot& slot) noexcept {
+                state.scratch_map_.with_masked(state.scratch_key_, position, [i, j](PtrSlot& slot) noexcept {
                     slot.op_index = OpIndex{i};
                     slot.port = static_cast<uint8_t>(j);
                 });
@@ -604,7 +601,8 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
                 output_slot = new_slot;
             }
             if (found.is_some()) {
-                state.scratch_map_.with_masked(PtrSlotPosition{found}.expect("the test above found the entry"),
+                state.scratch_map_.with_masked(state.scratch_key_,
+                                               PtrSlotPosition{found}.expect("the test above found the entry"),
                                                [i, j, new_output = output_slot](PtrSlot& slot) noexcept {
                                                    slot.op_index = OpIndex{i};
                                                    slot.port = static_cast<uint8_t>(j);
@@ -612,8 +610,8 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
                                                    slot.reader = OpIndex{};
                                                });
             } else {
-                (void)ptr_map_insert(state.scratch_map_, local_gen, output_key, OpIndex{i}, static_cast<uint8_t>(j),
-                                     output_slot);
+                (void)ptr_map_insert(state.scratch_map_, state.scratch_key_, local_gen, output_key, OpIndex{i},
+                                     static_cast<uint8_t>(j), output_slot);
             }
         }
 

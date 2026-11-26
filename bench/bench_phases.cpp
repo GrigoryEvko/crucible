@@ -50,17 +50,14 @@ namespace crucible {
 struct BuildScratchOfBench {
     using State = BackgroundThread::TraceBuildState;
 
-    [[nodiscard]] static ::fixy::MaskedArray<BackgroundThread::PtrSlot>& map(State& state) noexcept {
-        return state.scratch_map_;
-    }
-    // Empties each slot of the map through the frame door of the map, as the
-    // build does when its generation wraps.
+    [[nodiscard]] static BackgroundThread::ScratchMap& map(State& state) noexcept { return state.scratch_map_; }
+    // The key of the map, which the state holds beside it.  The bench passes
+    // it to ptr_map_insert, as the build does.
+    [[nodiscard]] static BackgroundThread::ScratchMapKey& map_key(State& state) noexcept { return state.scratch_key_; }
+    // Empties each slot of the map with its key, as the build does when its
+    // generation wraps.
     static void clear_map(State& state) noexcept {
-        state.scratch_map_ = ::fixy::with_mut(std::move(state.scratch_map_), [](auto slots) noexcept {
-            for (BackgroundThread::PtrSlot& slot : slots) {
-                slot = BackgroundThread::PtrSlot{};
-            }
-        });
+        state.scratch_map_.fill(state.scratch_key_, BackgroundThread::PtrSlot{});
     }
     [[nodiscard]] static uint8_t& map_generation(State& state) noexcept { return state.map_gen_; }
     [[nodiscard]] static uint32_t slot_capacity(State const& state) noexcept { return state.slot_cap_max_.get(); }
@@ -738,7 +735,8 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
                 uint8_t port = 0;
                 for (const TensorMeta& m : te.output_metas()) {
                     if (m.data_ptr.value() != nullptr)
-                        (void)BackgroundThread::ptr_map_insert(BuildScratchOfBench::map(state), local_gen,
+                        (void)BackgroundThread::ptr_map_insert(BuildScratchOfBench::map(state),
+                                                               BuildScratchOfBench::map_key(state), local_gen,
                                                                crucible::storage_key(m), OpIndex{i}, port, SlotId{0});
                     ++port;
                 }
@@ -791,9 +789,9 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
                 for (const TensorMeta& m : te.output_metas()) {
                     const uint8_t this_port = port++;
                     if (m.data_ptr.value() == nullptr) continue;
-                    auto result =
-                        BackgroundThread::ptr_map_insert(BuildScratchOfBench::map(state), local_gen,
-                                                         crucible::storage_key(m), OpIndex{i}, this_port, SlotId{0});
+                    auto result = BackgroundThread::ptr_map_insert(
+                        BuildScratchOfBench::map(state), BuildScratchOfBench::map_key(state), local_gen,
+                        crucible::storage_key(m), OpIndex{i}, this_port, SlotId{0});
                     if (result.was_alias) aliases++;
                 }
                 ++i;
