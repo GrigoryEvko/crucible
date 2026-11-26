@@ -386,7 +386,10 @@ namespace detail {
             if (part.was_reference) {
                 if (!part.was_const && holds_array_by_value_(part, array)) return true;
             } else if (is_borrow) {
-                refl::TypeNode const target = refl::argument_components_of(part, read).begin()[0];
+                refl::TypeNode const target =
+                    std::meta::is_pointer_type(part.type)
+                        ? refl::argument_components_of(part, read).begin()[0]
+                        : ::foundation::transfer::detail::borrow_target_of(refl::bare_type(part.type)).node;
                 if (!target.was_const && holds_array_by_value_(target, array)) return true;
             } else {
                 held.push_back(part);
@@ -593,6 +596,7 @@ namespace detail {
                         && (std::meta::template_of(bare) == ^^View || std::meta::template_of(bare) == ^^ViewMut
                             || std::meta::template_of(bare) == ^^Ref);
     if (!std::meta::is_pointer_type(bare) && !is_borrow) return bare;
+    if (is_borrow) return ::foundation::transfer::detail::borrow_target_of(bare).node.type;
     return refl::argument_components_of(refl::TypeNode{bare, false}).begin()[0].type;
 }
 
