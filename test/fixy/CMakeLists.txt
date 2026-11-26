@@ -5104,6 +5104,9 @@ fixy_neg_compile_test(neg_channel_of_a_message_with_a_borrow
 fixy_neg_compile_test(neg_box_channel_of_unsendable_payload
   "template constraint failure for .template<fixy::concurrent::ChannelForm Form, class T, long unsigned int Capacity, class UserTag, class Brand>"
   "required for the satisfaction of .Sendable<T>. \\[with T = .*Parcel\\]")
+fixy_neg_compile_test(neg_box_channel_of_parcel_with_unsendable_second_element
+  "template constraint failure for .template<fixy::concurrent::ChannelForm Form, class T, long unsigned int Capacity, class UserTag, class Brand>"
+  "required for the satisfaction of .Sendable<T>. \\[with T = foundation::core::ArenaParcel<.*ParcelFamily, unsigned int, .*Shared>\\]")
 fixy_neg_compile_test(neg_box_channel_of_outside_owner_mark
   "template constraint failure for .template<fixy::concurrent::ChannelForm Form, class T, long unsigned int Capacity, class UserTag, class Brand>"
   "required for the satisfaction of .Sendable<T>. \\[with T = .*OutsideOwner<int>\\]")

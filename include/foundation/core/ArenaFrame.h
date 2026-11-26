@@ -506,8 +506,24 @@ private:
 // it sealed (the parcel).  Only mint_arena_parcel builds one.  The parcel moves
 // with its Box, and a move moves no run.  view<I>() gives the elements of run
 // I as const for a read outside a frame.
+//
+// The parcel owns its family tag and an object of each element type
+// (by_arguments{}, rule 6 of foundation/Transfer.h).  So it holds a transfer
+// property when each element type holds it, and the walk reads no member.
+// The walk refuses a BumpArena, because its pointers name its blocks.  Thus
+// the arena is the one part of the parcel that the walk does not ask.  The
+// parcel holds the one Box of the arena, and the brand of a frame keeps each
+// FrameRef in its frame.  So no object outside the parcel points into the
+// arena.
+//
+// The walk also reads a Link, a Ref or an ArenaRun of the family in an element
+// as a borrow, also when its target is in the same arena.  Thus a parcel of the
+// nodes of crucible/MerkleDag.h is not SendableOwned: TraceNode, RegionNode,
+// BranchNode, LoopNode, MemoryPlan and TraceEntry hold such borrows.  The four
+// node classes are also not Sendable.  A walk that reads a frame slot of the
+// family in a parcel as a part of the parcel gives these properties.
 template <class Family, class... Ts>
-class [[nodiscard]] ArenaParcel final {
+class [[nodiscard]][[= ::foundation::transfer::by_arguments{}]] ArenaParcel final {
 public:
     ArenaParcel(ArenaParcel&&) noexcept = default;
     ArenaParcel& operator=(ArenaParcel&&) noexcept = default;

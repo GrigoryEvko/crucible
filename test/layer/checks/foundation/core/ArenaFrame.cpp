@@ -63,6 +63,17 @@ consteval bool is_frame_ref_only_of_a_frame() {
 }
 static_assert(is_frame_ref_only_of_a_frame());
 
+// A parcel owns its family tag and each element type (rule 6 of
+// foundation/Transfer.h), so it holds a property when each element type holds
+// it.  An element type at the second position that is not Sendable refuses
+// the parcel, as one at the first position does.
+using ScalarParcel = ArenaParcel<Family, std::uint32_t, std::uint64_t>;
+static_assert(::foundation::transfer::Sendable<ScalarParcel> && ::foundation::transfer::SendableOwned<ScalarParcel>);
+static_assert(::foundation::transfer::SendableBeside<ScalarParcel> && ::foundation::transfer::Shareable<ScalarParcel>);
+static_assert(!::foundation::transfer::Sendable<ArenaParcel<Family, std::uint32_t, int*>>);
+static_assert(!::foundation::transfer::Sendable<ArenaParcel<Family, int*, std::uint32_t>>);
+static_assert(!::foundation::transfer::Shareable<ArenaParcel<Family, std::uint32_t, int*>>);
+
 }  // namespace detail::arena_frame_checks
 
 }  // namespace foundation::core
