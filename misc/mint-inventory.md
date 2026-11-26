@@ -203,7 +203,7 @@ that the axis does not apply to the row.
 | `mint_tagged(foundation::core::ForeignText)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 10 |
-| `mint_wide_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_wide_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_write_once` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_write_once_non_null` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 
