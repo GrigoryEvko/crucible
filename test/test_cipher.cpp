@@ -661,6 +661,55 @@ static void test_batch_after_a_torn_index_line(::fixy::TextView root) {
     CRUCIBLE_TEST_ASSERT(kTest, step_at(loaded, 0) == 10 && step_at(loaded, 9) == 19);
 }
 
+// True when the first temporary file of a write of the object of hash is in
+// the store of cipher.
+[[nodiscard]] static bool holds_object_temporary(crucible::Cipher const& cipher, crucible::ContentHash hash) {
+    const ::fixy::fs::DirectoryHandle root = root_directory_of(cipher);
+    const ::foundation::os::PathText<64> path = beside_object_path(hash, ::fixy::TextView{".tmp-00"});
+    return ::fixy::fs::has_entry_at(store_ctx(), root.ref(), path.c_text()).value_or(true);
+}
+
+// A store of a new object keeps an object at its name with the keep rename.
+// A file system with no RENAME_NOREPLACE gives einval, and the store then
+// replaces the entry: the object is written and loads from the disk, and no
+// temporary file stays.  The rename fault of the test gives the einval.  A
+// device error of the keep rename is no such case: the store reports it, no
+// temporary file stays, and the object of the store before it still loads.
+static void test_keep_rename_faults_of_a_new_object(::fixy::TextView root) {
+    auto cipher = open_cipher_under(root, ::fixy::TextView{"rename_fault"});
+    auto ov = cipher.mint_open_view(store_ctx());
+    ::fixy::BumpArena<DagArena> fault_dag = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
+    const crucible::RegionNode& written_region = *make_test_region(fault_dag, 0x71);
+    const crucible::RegionNode& failed_region = *make_test_region(fault_dag, 0x72);
+    {
+        const ::fixy::fs::RenameFaultScope fault =
+            ::fixy::fs::RenameFaultScope::arm(kTest, ::fixy::fs::RenameFailure::not_supported);
+        CRUCIBLE_TEST_ASSERT(
+            kTest, cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(written_region)))
+                           == written_region.content_hash
+                       && "a store replaces the entry after einval of the keep rename");
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, !holds_object_temporary(cipher, written_region.content_hash));
+    {
+        const ::fixy::fs::RenameFaultScope fault =
+            ::fixy::fs::RenameFaultScope::arm(kTest, ::fixy::fs::RenameFailure::device_error);
+        CRUCIBLE_TEST_ASSERT(
+            kTest, cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(failed_region)))
+                           == crucible::ContentHash{}
+                       && "a store reports a device error of the keep rename");
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, !holds_object_file(cipher, failed_region.content_hash));
+    CRUCIBLE_TEST_ASSERT(kTest, !holds_object_temporary(cipher, failed_region.content_hash));
+
+    const crucible::Cipher fresh = open_cipher_under(root, ::fixy::TextView{"rename_fault"});
+    const auto fresh_ov = fresh.mint_open_view(store_ctx());
+    ::fixy::BumpArena<DagArena> fresh_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
+    const auto loaded =
+        fresh.load_content_addressed(store_ctx(), fresh_ov, g_test.alloc, written_region.content_hash, fresh_arena);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         loaded.is_ok() && !is_cache_hit(loaded) && "the object after einval loads from the disk");
+}
+
 // The whole text of the index of the events of session under the root of
 // cipher.
 [[nodiscard]] static ::fixy::HeapText index_text_of(crucible::Cipher const& cipher,
@@ -1220,6 +1269,7 @@ int main() {
         test_two_writers_of_one_object(root_of(anchor));
         test_batch_after_a_torn_index_line(root_of(anchor));
         test_failed_index_append_cuts_back(root_of(anchor));
+        test_keep_rename_faults_of_a_new_object(root_of(anchor));
     }
 
     ::fixy::check::pass(kTest, "test_cipher: all tests passed\n");
