@@ -9,8 +9,6 @@
 #include <fixy/Ctx.h>
 #include <fixy/session/Handle.h>
 
-#include <source_location>
-
 namespace neg_sess_mint_door_states_the_gate_types {
 struct Wire {
     int words = 0;
@@ -23,7 +21,7 @@ int main() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto head =
         s::SessionMintDoor::open<s::Send<int, s::Continue>, s::DefaultAbandonmentPolicy, ::fixy::TestRunnerCtx, Wire>(
-            ctx, Wire{}, std::source_location{});
+            ctx, Wire{}, s::MintSite{});
     static_cast<void>(head);
     return 0;
 }

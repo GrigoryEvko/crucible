@@ -143,35 +143,34 @@
 #include <cstdlib>
 #include <meta>
 #include <new>
-#include <source_location>
 #include <type_traits>
 #include <utility>
 
 namespace fixy::session {
 
-// The site of a mint: the location that the handle keeps for its reports,
-// and the Site of foundation/core/Fatal.h that the record of the watch keeps
-// (fixy/session/Watch.h).  The constructor is consteval, so a location of
-// the run time cannot make a site, and the file of the Site is a text of
-// static storage.  Each public mint takes the site as its last parameter,
-// `MintSite site = {}`, so the default reads the place of the call of the
-// mint.  A caller can give a constant location in its place.
+// The site of a mint: the Site of foundation/core/Fatal.h that the record of
+// the watch keeps (fixy/session/Watch.h), and the HandleSite of
+// fixy/session/Stepping.h that the first handle keeps for its reports.  The
+// constructor is consteval, so a file or a line of the run time cannot make a
+// site, and the file is a text of static storage.  Each public mint takes the
+// site as its last parameter, `MintSite site = {}`, so the default arguments
+// read the place of the call of the mint.  A caller can give a constant file
+// and line in their place.  The default arguments are scalars, as those of a
+// Fmt of foundation/core/Fatal.h are, so no argument is a temporary of a class.
 //
-// The two parts name strings of static storage that no thread writes, so the
-// site moves to the thread of each side of a forked channel
-// (foundation/Transfer.h).  The fork asks only that fact.  The record of the
-// watch reads no function, so the Site names none, and the constructor
-// walks no long name of a function of a template.
+// The site names a string of static storage that no thread writes, so it
+// moves to the thread of each side of a forked channel
+// (foundation/Transfer.h).  The fork asks only that fact.  No report reads a
+// function, so the Site names none.
 class[[= ::foundation::transfer::sendable{}]] MintSite {
-    std::source_location loc_{};
     ::foundation::core::Site site_{};
 
 public:
-    consteval MintSite(std::source_location location = std::source_location::current()) noexcept
-        : loc_{location}, site_{location.file_name(), static_cast<int>(location.line()), ""} {}
+    consteval MintSite(char const* file = __builtin_FILE(), int line = __builtin_LINE()) noexcept
+        : site_{file, line, ""} {}
 
-    // The location of the call of the mint, for the reports of the handle.
-    [[nodiscard]] constexpr std::source_location location() const noexcept { return loc_; }
+    // The site of the call of the mint, for the reports of the handle.
+    [[nodiscard]] constexpr HandleSite handle_site() const noexcept { return HandleSite{site_}; }
 
     // The Site of the call of the mint, for the record of the watch.
     [[nodiscard]] constexpr ::foundation::core::Site watch_site() const noexcept { return site_; }
@@ -187,7 +186,7 @@ namespace detail {
 // (handle_core::keeps_step_count) does not read the count.
 struct step_origin {
     watch::session_ref session{};
-    std::source_location site{};
+    HandleSite site{};
     std::uint64_t steps = 0;
 };
 
@@ -293,12 +292,11 @@ consteval std::string_view next_method_hint() noexcept {
 // and cold, so the destructor of a handle holds one branch and one call.
 [[noreturn, gnu::cold, gnu::noinline]] inline void
 report_dropped_protocol(std::string_view wrapper, std::string_view full_type, std::string_view protocol,
-                        std::string_view hint, std::source_location loc, watch::endpoint_id endpoint,
+                        std::string_view hint, HandleSite site, watch::endpoint_id endpoint,
                         AbandonAction action) noexcept {
-    const char* loc_file = loc.file_name();
-    // file_name() returns "" for a default-constructed location, which
-    // is what a handle that a step built carries.
-    const bool have_loc = loc_file != nullptr && loc_file[0] != '\0';
+    // A handle that a step built names no site, so its file is empty.
+    const ::foundation::core::TextView file = site.file();
+    const bool is_known = file.size() != 0;
 
     std::fprintf(stderr,
                  "\n"
@@ -311,11 +309,9 @@ report_dropped_protocol(std::string_view wrapper, std::string_view full_type, st
         std::fprintf(stderr, "  Full handle type: %.*s\n", static_cast<int>(full_type.size()), full_type.data());
     }
     std::fprintf(stderr, "  Protocol head:    %.*s\n", static_cast<int>(protocol.size()), protocol.data());
-    if (have_loc) {
-        std::fprintf(stderr,
-                     "  Construction at:  %s:%u:%u\n"
-                     "  In function:      %s\n",
-                     loc_file, loc.line(), loc.column(), loc.function_name());
+    if (is_known) {
+        std::fprintf(stderr, "  Construction at:  %.*s:%u\n", static_cast<int>(file.size()),
+                     ::foundation::core::detail::text_first_(file), site.line());
     } else {
         report_site_of_the_mint(endpoint);
     }
@@ -354,25 +350,26 @@ report_dropped_protocol(std::string_view wrapper, std::string_view full_type, st
 // position, so an operation on it would step the protocol a second time
 // or read a Resource that moved away.
 [[noreturn, gnu::cold, gnu::noinline]] inline void
-report_use_after_consume(std::string_view wrapper, std::string_view protocol, std::source_location loc) noexcept {
-    const char* loc_file = loc.file_name();
-    const bool have_loc = loc_file != nullptr && loc_file[0] != '\0';
+report_use_after_consume(std::string_view wrapper, std::string_view protocol, HandleSite site) noexcept {
+    const ::foundation::core::TextView file = site.file();
+    const bool is_known = file.size() != 0;
     // A consumed handle holds no record, so the site of the mint of its
     // session is not known when the handle names no site, as a handle that
     // a step built does.  A precision of zero prints no digit of the line.
+    const ::foundation::core::TextView unknown{"no site is known: the handle names none, and a consumed handle holds "
+                                               "no record of its session"};
+    const ::foundation::core::TextView shown = is_known ? file : unknown;
     std::fprintf(stderr,
                  "\n"
                  "fixy::session: USE OF A CONSUMED HANDLE\n"
                  "  Wrapper class:    %.*s\n"
                  "  Protocol head:    %.*s\n"
-                 "  Construction at:  %s%s%.*u\n"
+                 "  Construction at:  %.*s%s%.*u\n"
                  "The handle was moved from, stepped, closed or detached.  It holds no protocol\n"
                  "position.  Use the handle that the move or the step returned.\n",
                  static_cast<int>(wrapper.size()), wrapper.data(), static_cast<int>(protocol.size()), protocol.data(),
-                 have_loc ? loc_file
-                          : "no site is known: the handle names none, and a consumed handle holds no record of its "
-                            "session",
-                 have_loc ? ":" : "", have_loc ? 1 : 0, have_loc ? loc.line() : std::uint_least32_t{0});
+                 static_cast<int>(shown.size()), ::foundation::core::detail::text_first_(shown), is_known ? ":" : "",
+                 is_known ? 1 : 0, is_known ? site.line() : std::uint32_t{0});
     std::abort();
 }
 
@@ -524,9 +521,7 @@ protected:
     [[nodiscard]] constexpr watch::session_ref session_() const noexcept { return tracker_.session(); }
 
     // The site of the handle, which the turn of a pin keeps.
-    [[nodiscard]] constexpr std::source_location construction_loc_() const noexcept {
-        return tracker_.construction_loc();
-    }
+    [[nodiscard]] constexpr HandleSite construction_site_() const noexcept { return tracker_.construction_site(); }
 
     // The one holder check of a pin (HandleFactory::pin), under a tracked
     // policy.
@@ -548,7 +543,7 @@ protected:
         if constexpr (Policy::checks_abandonment) {
             if (tracker_.was_marked()) [[unlikely]] {
                 detail::report_use_after_consume(wrapper_name(), type_display_name_v<Proto>,
-                                                 tracker_.construction_loc());
+                                                 tracker_.construction_site());
             }
         }
     }
@@ -573,7 +568,7 @@ protected:
         if constexpr (Policy::checks_abandonment) {
             if (owes_protocol_()) [[unlikely]] {
                 detail::report_dropped_protocol(wrapper_name(), full_handle_type_name(), type_display_name_v<Proto>,
-                                                detail::next_method_hint<Proto>(), tracker_.construction_loc(),
+                                                detail::next_method_hint<Proto>(), tracker_.construction_site(),
                                                 tracker_.session().endpoint, Policy::action);
             }
         }
@@ -596,15 +591,14 @@ public:
 
     constexpr SessionHandleBase() noexcept = default;
 
-    // Derived constructors default their own location parameter to
-    // std::source_location::current(), so the site captured here is the
-    // caller's, not the framework's.
-    constexpr explicit SessionHandleBase(std::source_location loc) noexcept : tracker_{loc} {}
+    // A derived class gives the site of the mint of its caller
+    // (MintSite::handle_site), so the site names the place of the call of
+    // the mint and no line of the framework.
+    constexpr explicit SessionHandleBase(HandleSite site) noexcept : tracker_{site} {}
 
     // The handle family passes the record that fixy/session/Watch.h keeps
     // for the session.  A decorator passes none.
-    constexpr SessionHandleBase(std::source_location loc, watch::session_ref session) noexcept
-        : tracker_{loc, session} {}
+    constexpr SessionHandleBase(HandleSite site, watch::session_ref session) noexcept : tracker_{site, session} {}
 
     // A handle is linear, and a handle on the heap can outlive every path
     // that ends its protocol.  The class refuses the new-expression, as
@@ -974,7 +968,7 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
 
     // Builds the first handle of a protocol on a session record.
     template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
-    [[nodiscard]] static constexpr auto start_(Resource r, HoldSlots<PS> slots, std::source_location loc,
+    [[nodiscard]] static constexpr auto start_(Resource r, HoldSlots<PS> slots, HandleSite site,
                                                watch::session_ref session) noexcept;
 
     // Claims a new record for a session, with the priority of its
@@ -1239,10 +1233,11 @@ public:
     // a borrow of its Resource that the body keeps in an object that it
     // captures by reference outlives the pin.  So the body stores no borrow
     // outside the call (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
-    // A handle holds a std::source_location, whose pointer the store walk
-    // reads as a pointer that the body can write.  So a body that captures
-    // this of a class that holds a handle is refused, and such a body
-    // captures the parts that it writes.
+    // The site of a handle is a HandleSite of fixy/session/Stepping.h, whose
+    // file is a StaticText, and the walk reads the pointer of a StaticText as
+    // no borrow.  So a handle adds no borrow to a class that holds it, and a
+    // body that captures this of a stage that holds a handle over a Resource
+    // with no borrow pins.
     template <typename Ctx, typename Proto, typename Resource, typename LoopCtx, AbandonAction Action, typename PS,
               typename Body>
         requires ::foundation::effects::IsExecCtx<Ctx> && (!is_terminal_state_v<Proto>) && PinBody<Body>
@@ -1842,7 +1837,7 @@ protected:
     // the site and the count of this handle (HandleFactory::pin).  A turn is
     // no step, so the count and the site stay.
     [[nodiscard]] constexpr step_origin turn_origin_() const noexcept {
-        return {this->session_(), this->construction_loc_(), tally_.value()};
+        return {this->session_(), this->construction_site_(), tally_.value()};
     }
 
 public:
@@ -2725,7 +2720,7 @@ constexpr auto HandleFactory::make_(Resource r, HoldSlots<PS> slots,
 // its holder.  The two open_ overloads below differ only in how they get
 // the record.
 template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
-constexpr auto HandleFactory::start_(Resource r, HoldSlots<PS> slots, std::source_location loc,
+constexpr auto HandleFactory::start_(Resource r, HoldSlots<PS> slots, HandleSite site,
                                      watch::session_ref session) noexcept {
     static_assert(WellFormedRunnableProtocol<Proto>,
                   "fixy::session::diagnostic [Protocol_Ill_Formed]: the handle factory opens a session only on a "
@@ -2742,7 +2737,7 @@ constexpr auto HandleFactory::start_(Resource r, HoldSlots<PS> slots, std::sourc
                   "iteration, or reaches End with an open loan.  The walk visits every branch, so an arm that no "
                   "run selects counts too.");
     return step_<Proto, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(r), std::move(slots),
-                                                       detail::step_origin{session, loc});
+                                                       detail::step_origin{session, site});
 }
 
 template <typename Proto, typename Resource, AbandonmentPolicy Policy>
@@ -2766,7 +2761,7 @@ constexpr watch::session_ref HandleFactory::claim_(MintSite site) noexcept {
 // priority of its Resource.  The calling thread holds the first handle.
 template <typename Proto, typename Resource, AbandonmentPolicy Policy, typename PS, typename LoopCtx>
 constexpr auto HandleFactory::open_(SessionOpenKey const&, Resource r, HoldSlots<PS> slots, MintSite site) noexcept {
-    return start_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), std::move(slots), site.location(),
+    return start_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), std::move(slots), site.handle_site(),
                                                         claim_<Proto, Resource, Policy>(site));
 }
 
@@ -2782,7 +2777,7 @@ constexpr auto HandleFactory::open_(SessionOpenKey const&, Resource r, HoldSlots
             session = {endpoint, watch::note_holder(endpoint)};
         }
     }
-    return start_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), std::move(slots), site.location(),
+    return start_<Proto, Resource, Policy, PS, LoopCtx>(std::forward<Resource>(r), std::move(slots), site.handle_site(),
                                                         session);
 }
 
@@ -2803,7 +2798,7 @@ constexpr auto HandleFactory::rewind(
     Resource resource = std::move(at_end).close();
     return step_<R, Resource, LoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
         std::forward<Resource>(resource), HoldSlots<::foundation::permissions::EmptyPermSet>{},
-        detail::step_origin{claim_<R, Resource, Policy>(site), site.location()});
+        detail::step_origin{claim_<R, Resource, Policy>(site), site.handle_site()});
 }
 
 // The precondition reads the marks of the two handles at End.  The two ends
@@ -2842,9 +2837,9 @@ constexpr auto HandleFactory::rewind_channel(
     }
     using NoSlots = HoldSlots<::foundation::permissions::EmptyPermSet>;
     auto rewound = step_<R, Resource, LoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
-        std::forward<Resource>(resource), NoSlots{}, detail::step_origin{session, site.location()});
+        std::forward<Resource>(resource), NoSlots{}, detail::step_origin{session, site.handle_site()});
     auto peer_rewound = step_<PeerR, PeerResource, PeerLoopCtx, Policy, ::foundation::permissions::EmptyPermSet>(
-        std::forward<PeerResource>(peer_resource), NoSlots{}, detail::step_origin{peer_session, site.location()});
+        std::forward<PeerResource>(peer_resource), NoSlots{}, detail::step_origin{peer_session, site.handle_site()});
     return RewoundChannel<decltype(rewound), decltype(peer_rewound)>{std::move(rewound), std::move(peer_rewound)};
 }
 

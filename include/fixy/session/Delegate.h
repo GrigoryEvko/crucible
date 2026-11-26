@@ -77,7 +77,6 @@
 #include <cstdlib>
 #include <meta>
 #include <new>
-#include <source_location>
 #include <type_traits>
 #include <utility>
 
@@ -306,7 +305,7 @@ public:
         std::is_nothrow_move_constructible_v<Resource>) {
         using Handle = SessionHandle<Proto, Resource, void, Policy, PS>;
         if (!handle.is_live()) [[unlikely]]
-            detail::report_use_after_consume(Handle::wrapper_name(), Handle::protocol_name(), std::source_location{});
+            detail::report_use_after_consume(Handle::wrapper_name(), Handle::protocol_name(), HandleSite{});
         return DelegatedSession<Proto, Resource, Policy, PS>{DelegationKey{}, std::move(handle)};
     }
 };

@@ -1728,6 +1728,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::session::MintSite,
      "the place of the call of a session mint: a constant that the handle keeps for its reports, never a value in "
      "a kernel signature"},
+    {^^::fixy::session::HandleSite,
+     "the file and the line of the mint of a session that the policy of a handle keeps for its reports, never a "
+     "value in a kernel signature"},
     {^^::fixy::session::DelegationKey,
      "the passkey of the DelegatedSession constructor: only the delegation door makes one, for one call, and it is "
      "never stored or a template argument of a kernel signature"},

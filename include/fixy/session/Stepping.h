@@ -67,18 +67,43 @@
 
 #include <foundation/Transfer.h>
 #include <foundation/algebra/Modality.h>
+#include <foundation/core/Fatal.h>
+#include <foundation/core/StaticText.h>
 #include <foundation/core/Text.h>
 
 #include <concepts>
 #include <cstdint>
 #include <meta>
-#include <source_location>
 #include <string_view>
 #include <type_traits>
 
 namespace fixy::session {
 
 using ::foundation::algebra::ModalityKind;
+
+// The site of the mint of a session, as a handle keeps it for its reports:
+// the file and the line.  The file comes only from a Site of
+// foundation/core/Fatal.h, whose one constructor is consteval, so it is a text
+// of static storage that no thread writes.  The text is a StaticText, which
+// states refers_static{} (foundation/Transfer.h), so the store check of a
+// frame body reads the site as no borrow.  A default site names no file and
+// the line zero: a handle that a step built names no site.
+class HandleSite {
+public:
+    constexpr HandleSite() noexcept = default;
+    constexpr explicit HandleSite(::foundation::core::Site const& site) noexcept
+        : file_{site}, line_{::foundation::core::detail::site_line_(site)} {}
+
+    // The file, or an empty text when the site names none.  Complexity:
+    // linear in the length of the file.
+    [[nodiscard]] constexpr ::foundation::core::TextView file() const noexcept { return file_.view(); }
+
+    [[nodiscard]] constexpr std::uint32_t line() const noexcept { return line_; }
+
+private:
+    ::foundation::core::StaticText file_{""};
+    std::uint32_t line_ = 0;
+};
 
 // What a destructor does with a handle that still owes its protocol.
 enum class AbandonAction : std::uint8_t {
@@ -124,7 +149,7 @@ class policy_record {
     // that a step built names no site, and the report of a dropped protocol
     // then reads the site of the mint from the record of the session
     // (fixy/session/Handle.h).  A move keeps the site.
-    std::source_location loc_{};
+    HandleSite site_{};
 
     // Tells the watch when the handle is on a thread other than the one
     // it last saw.  A handle that stays on its thread reads one
@@ -159,13 +184,13 @@ public:
     }
 
     constexpr policy_record() noexcept = default;
-    constexpr explicit policy_record(std::source_location loc) noexcept : loc_{loc} {}
+    constexpr explicit policy_record(HandleSite site) noexcept : site_{site} {}
     // A step builds the next handle on the thread that runs the step.
     // That thread is the holder from now on, although it can differ from
     // the holder that the reference names when it reached the handle
     // through a pointer.
-    constexpr policy_record(std::source_location loc, watch::session_ref session) noexcept
-        : holder_{session.holder}, endpoint_{session.endpoint}, loc_{loc} {
+    constexpr policy_record(HandleSite site, watch::session_ref session) noexcept
+        : holder_{session.holder}, endpoint_{session.endpoint}, site_{site} {
         track_holder_();
     }
 
@@ -185,7 +210,7 @@ public:
         endpoint_ = watch::endpoint_id::none;
     }
     [[nodiscard]] constexpr bool was_marked() const noexcept { return flag_; }
-    [[nodiscard]] constexpr std::source_location construction_loc() const noexcept { return loc_; }
+    [[nodiscard]] constexpr HandleSite construction_site() const noexcept { return site_; }
     [[nodiscard]] constexpr watch::session_ref session() const noexcept { return {endpoint_, holder_}; }
 
     // A self-move must not change the tracker.  Without the guard,
@@ -199,27 +224,33 @@ public:
     // A move of a live handle under the tracked policy tells the watch that
     // the calling thread holds it now, which is what the deadlock detector
     // reads.  A move under the pinned policy stays on the thread of the pin.
+    //
+    // The check reads no part of the site, so the copy of the site comes
+    // after it.  A step builds the next handle with the same check, and with
+    // no store of the site between the two checks GCC 16 merges them in a loop
+    // that steps a handle in the memory of its caller (send_in_caller_memory
+    // of test/shape/session_send.cpp).  With the copy before the check, that
+    // loop holds the two checks.
     constexpr void move_from(policy_record& other) noexcept {
         if (this == &other) [[unlikely]]
             return;
         flag_ = other.flag_;
         holder_ = other.holder_;
         endpoint_ = other.endpoint_;
-        loc_ = other.loc_;
         other.flag_ = true;
         other.endpoint_ = watch::endpoint_id::none;
         track_holder_();
+        site_ = other.site_;
     }
 };
 
 // The policy of a handle that can go to another thread: Enforced and Cancel.
 // Each step and each move compares the holder with the calling thread.
 //
-// A source_location names strings of static storage that no thread writes,
-// and each other member of the record is a value.  So the policy moves to
-// another thread with its handle (foundation/Transfer.h), as a delegated
-// endpoint does, and as the site of a channel mint of fixy/session/Handle.h
-// does.
+// The site names a text of static storage that no thread writes, and each
+// other member of the record is a value.  So the policy moves to another
+// thread with its handle (foundation/Transfer.h), as a delegated endpoint
+// does, and as the site of a channel mint of fixy/session/Handle.h does.
 template <AbandonAction Action>
 class[[= ::foundation::transfer::sendable{}]] tracked_policy : public policy_record<Action, HolderCheck::EachStep> {
 public:
@@ -302,15 +333,15 @@ public:
 
     constexpr Off() noexcept = default;
     // The signatures match Enforced, so a handle constructor forwards a
-    // location and a record with no branch on the policy.  Off keeps
-    // neither, so no mint gives it a record.
-    constexpr explicit Off(std::source_location) noexcept {}
-    constexpr Off(std::source_location, watch::session_ref) noexcept {}
+    // site and a record with no branch on the policy.  Off keeps neither, so
+    // no mint gives it a record.
+    constexpr explicit Off(HandleSite) noexcept {}
+    constexpr Off(HandleSite, watch::session_ref) noexcept {}
 
     constexpr void mark() noexcept {}
     [[nodiscard]] constexpr bool was_marked() const noexcept { return true; }
     constexpr void move_from(Off&) noexcept {}
-    [[nodiscard]] constexpr std::source_location construction_loc() const noexcept { return std::source_location{}; }
+    [[nodiscard]] constexpr HandleSite construction_site() const noexcept { return HandleSite{}; }
     [[nodiscard]] constexpr watch::session_ref session() const noexcept { return {}; }
 };
 
@@ -324,17 +355,17 @@ public:
 // The last clause binds the two constants.  A policy that claims to
 // check and then ignores a dropped protocol, or the reverse, is refused.
 template <typename P>
-concept AbandonmentPolicy = requires(P policy, P other, std::source_location loc, watch::session_ref session) {
+concept AbandonmentPolicy = requires(P policy, P other, HandleSite site, watch::session_ref session) {
     { P::checks_abandonment } -> std::convertible_to<bool>;
     { P::action } -> std::convertible_to<AbandonAction>;
     { P::name() } noexcept -> std::same_as<std::string_view>;
     P{};
-    P{loc};
-    P{loc, session};
+    P{site};
+    P{site, session};
     { policy.mark() } noexcept;
     { policy.was_marked() } noexcept -> std::same_as<bool>;
     { policy.move_from(other) } noexcept;
-    { policy.construction_loc() } noexcept -> std::same_as<std::source_location>;
+    { policy.construction_site() } noexcept -> std::same_as<HandleSite>;
     { policy.session() } noexcept -> std::same_as<watch::session_ref>;
     requires(P::checks_abandonment == (P::action != AbandonAction::Ignore));
 };

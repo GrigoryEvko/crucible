@@ -9,8 +9,6 @@
 // Expected diagnostic: no member of the door accepts the protocol.
 #include <fixy/session/CrashTransport.h>
 
-#include <source_location>
-
 namespace neg_sess_crash_door_states_the_gate_types {
 struct Alice {};
 struct Bob {};
@@ -25,8 +23,7 @@ int main() {
     s::CrashCell<Alice, Bob> own;
     auto forged =
         s::CrashSessionDoor::open<s::Recv<int, s::End>, Alice, Bob, s::ReliableSet<>, s::DefaultAbandonmentPolicy>(
-            ctx, Wire{}, cell, s::mint_crash_writer(own), s::CrashWriter<Alice, s::NoThirdRole>{},
-            std::source_location{});
+            ctx, Wire{}, cell, s::mint_crash_writer(own), s::CrashWriter<Alice, s::NoThirdRole>{}, s::MintSite{});
     std::move(forged).detach(s::detach_reason::TestInstrumentation{});
     return 0;
 }

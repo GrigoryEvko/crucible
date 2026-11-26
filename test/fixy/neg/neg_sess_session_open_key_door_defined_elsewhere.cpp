@@ -12,8 +12,6 @@
 #include <fixy/session/Handle.h>
 #include <foundation/Quarantine.h>
 
-#include <source_location>
-
 namespace neg_sess_session_open_key_door_defined_elsewhere_types {
 struct Wire {
     int words = 0;
@@ -32,7 +30,7 @@ public:
             neg_sess_session_open_key_door_defined_elsewhere_types::Region>();
         return HandleFactory::open_<Recv<int, End>, neg_sess_session_open_key_door_defined_elsewhere_types::Wire,
                                     check::Enforced, ::foundation::permissions::PermSet<decltype(root)>>(
-            SessionOpenKey{}, wire, HoldFactory::slots_of(std::move(root)), std::source_location::current());
+            SessionOpenKey{}, wire, HoldFactory::slots_of(std::move(root)), MintSite{});
     }
 };
 }  // namespace fixy::session

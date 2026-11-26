@@ -100,10 +100,12 @@ static_assert(!::foundation::linear::LinearValue<HandleAt<Owes, check::Off>>);
 namespace detail::pin_body_self_test {
 
 // A pin asks StoresNoBorrowOutside of its body.  A body that captures this of
-// a class that holds a session handle reaches the std::source_location of the
-// handle, whose pointer the store walk reads as a writable pointer, so the pin
-// refuses it while the handle holds a std::source_location and no site of the
-// base.  A body that captures only the part that it writes passes.
+// a stage that holds a session handle reaches the site of the handle, whose
+// file is a StaticText (HandleSite of fixy/session/Stepping.h), and the store
+// walk reads it as no borrow.  So the pin takes such a body, as it takes a
+// body that captures only the part that it writes.  The walk still reads each
+// other part of the stage, so a body that captures this of a stage that keeps
+// a View is refused.
 struct PinWire {
     int sent = 0;
 };
@@ -127,8 +129,23 @@ private:
     ::fixy::Option<PinHead> held_{};
     int steps_ = 0;
 };
-static_assert(!::foundation::core::StoresNoBorrowOutside<decltype(PinStage{}.body_of_this())>);
+class PinStageKeepingAView {
+public:
+    [[nodiscard]] auto body_of_this() noexcept {
+        return [this](auto pinned) noexcept {
+            kept_ = ::fixy::none;
+            return pinned;
+        };
+    }
+
+private:
+    ::fixy::Option<PinHead> held_{};
+    ::fixy::Option<::fixy::View<int const>> kept_{};
+};
+static_assert(::foundation::core::StoresNoBorrowOutside<decltype(PinStage{}.body_of_this())>);
 static_assert(::foundation::core::StoresNoBorrowOutside<decltype(PinStage{}.body_of_steps())>);
+static_assert(!::foundation::core::StoresNoBorrowOutside<decltype(PinStageKeepingAView{}.body_of_this())>);
+static_assert(::foundation::core::StoresNoBorrowOutside<HandleSite>);
 
 }  // namespace detail::pin_body_self_test
 

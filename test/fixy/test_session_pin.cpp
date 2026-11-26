@@ -4,7 +4,8 @@
 // body steps the handle under the pinned policy, which keeps each check of
 // the tracked policy and has no holder check, and the pin turns the handle
 // that the body gives back to the tracked policy.  The cells below run the
-// pin, read the count of the steps across it, show that the pinned handle
+// pin, also with a body that captures this of a stage that holds the handle,
+// read the count of the steps across it, show that the pinned handle
 // cannot leave its thread, and show that a dropped pinned handle still
 // reports the drop.  Two more cells run a bind and a release with no body,
 // and a session that opens under the pinned policy.
@@ -86,6 +87,53 @@ void pin_steps_the_handle(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "  pin_steps_the_handle: PASSED\n");
 }
 
+// A stage parks the handle of one session in an Option, and pins the handle
+// of another session with a body that captures this, to count the sends in a
+// member.  The site of a handle is a HandleSite, whose file is a StaticText,
+// so the store check of the pin reads no borrow in the stage and takes the
+// body.
+class Stage {
+public:
+    explicit Stage(TrackedHandle parked) noexcept { parked_.fill(std::move(parked)); }
+
+    [[nodiscard]] TrackedHandle send_three(TrackedHandle handle) noexcept {
+        const auto ctx = ::foundation::effects::testing::foreground();
+        return s::HandleFactory::pin(ctx, std::move(handle), [this](PinnedHandle pinned) noexcept {
+            for (int round = 1; round <= 3; ++round) {
+                pinned = std::move(pinned).send(Ping{round}, write_ping);
+                ++sent_;
+            }
+            return pinned;
+        });
+    }
+
+    [[nodiscard]] int sent() const noexcept { return sent_; }
+
+    // Ends the stage and gives its parked handle back.
+    [[nodiscard]] TrackedHandle give_back() && noexcept {
+        return parked_.take().expect("the stage parks its handle until it gives it back");
+    }
+
+private:
+    ::fixy::Option<TrackedHandle> parked_{};
+    int sent_ = 0;
+};
+
+void pin_a_body_of_a_stage(::fixy::TestRunnerCtx const& test) {
+    const auto ctx = ::foundation::effects::testing::foreground();
+    Stage stage{s::mint_session<Pings>(ctx, Wire{})};
+    auto head = s::mint_session<Pings>(ctx, Wire{});
+    const std::uint64_t minted = head.step_count();
+    TrackedHandle stepped = stage.send_three(std::move(head));
+    CRUCIBLE_TEST_ASSERT(test, stage.sent() == 3);
+    CRUCIBLE_TEST_ASSERT(test, stepped.step_count() == minted + 3);
+    std::move(stepped).detach(s::detach_reason::TestInstrumentation{});
+    TrackedHandle parked = std::move(stage).give_back();
+    CRUCIBLE_TEST_ASSERT(test, parked.is_live());
+    std::move(parked).detach(s::detach_reason::TestInstrumentation{});
+    ::fixy::check::pass(test, "  pin_a_body_of_a_stage: PASSED\n");
+}
+
 // A body can end the protocol: the turn back gives the handle at End, which
 // closes.
 void pin_reaches_the_end(::fixy::TestRunnerCtx const& test) {
@@ -157,6 +205,7 @@ void pin_reports_a_drop(::fixy::TestRunnerCtx const& test) {
 int main() {
     const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     pin_steps_the_handle(test);
+    pin_a_body_of_a_stage(test);
     pin_reaches_the_end(test);
     bind_and_release_the_handle(test);
     mint_a_pinned_session(test);

@@ -52,7 +52,7 @@ static_assert(is_sealed_key<s::HandleKey> && is_sealed_key<s::SessionOpenKey> &&
 // A handle, its core and a DelegatedSession take a key, so no expression
 // without one builds them.
 static_assert(!std::is_constructible_v<Handle, Wire, s::HoldSlots<::foundation::permissions::EmptyPermSet>,
-                                       s::watch::session_ref, std::source_location>);
+                                       s::watch::session_ref, s::HandleSite>);
 static_assert(!std::is_constructible_v<
               s::DelegatedSession<Proto, Wire, s::DefaultAbandonmentPolicy, ::foundation::permissions::EmptyPermSet>,
               Handle, s::PermHold<::foundation::permissions::EmptyPermSet>>);

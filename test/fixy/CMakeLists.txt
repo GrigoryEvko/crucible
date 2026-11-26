@@ -5391,8 +5391,8 @@ fixy_neg_compile_test(neg_sess_factory_pole_branch_indexed_with_a_caller_transpo
   "use of deleted function .static void fixy::session::HandleFactory::branch_indexed\\(fixy::session::SessionHandle<fixy::session::Offer<Branches \\.\\.\\.>, Resource, LoopCtx, Policy, PS>&&, Transport, Handler\\)"
   "Pole_Owns_Its_Transport. a branch over a pole of a channel reads a label word")
 fixy_neg_compile_test(neg_sess_mint_site_from_a_run_time_location
-  "call to consteval function .fixy::session::MintSite\\(policy\\..*construction_loc\\(\\)\\). is not a constant expression"
-  "the value of .policy. is not usable in a constant expression")
+  "call to consteval function .fixy::session::MintSite\\(\\(is_this_file \\?.*\\). is not a constant expression"
+  "the value of .is_this_file. is not usable in a constant expression")
 fixy_neg_compile_test(neg_sess_recorded_pole_send_with_a_caller_transport
   "use of deleted function .void fixy::session::Recorded<Inner>::send\\(First&&, Second&&\\) &&"
   "Pole_Owns_Its_Transport. a session over a pole of a channel sends through the write that the pole table")

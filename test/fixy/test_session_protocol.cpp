@@ -13,7 +13,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <meta>
-#include <source_location>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -231,12 +230,17 @@ int main() {
         return 1;
     }
 
-    // The location round-trips, which is what makes the destructor's
-    // diagnostic point at the caller rather than at the framework.
-    const auto here = std::source_location::current();
+    // The site round-trips, which is what makes the destructor's
+    // diagnostic point at the caller rather than at the framework.  A
+    // default site names no file.
+    const s::HandleSite here{::foundation::core::Site{}};
     const s::check::Enforced located{here};
-    if (located.construction_loc().line() != here.line()) {
-        std::fprintf(stderr, "construction location did not round-trip\n");
+    const s::HandleSite kept = located.construction_site();
+    const s::HandleSite unknown{};
+    const bool is_kept = here.line() != 0 && kept.line() == here.line() && kept.file() == here.file();
+    const bool is_unknown_empty = unknown.file().size() == 0 && unknown.line() == 0;
+    if (!is_kept || !is_unknown_empty) {
+        std::fprintf(stderr, "construction site did not round-trip, or a default site names a file or a line\n");
         return 1;
     }
 

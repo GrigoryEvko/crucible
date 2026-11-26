@@ -44,7 +44,6 @@
 #include <cstdlib>
 #include <meta>
 #include <optional>
-#include <source_location>
 #include <string_view>
 #include <thread>
 #include <type_traits>
@@ -166,8 +165,8 @@ static_assert(!std::is_constructible_v<AtSend, ValueWire>);
 //
 // The abandonment-policy decision, stated as two sizes.  Under Off the
 // tracker is empty, [[no_unique_address]] collapses it, and a handle
-// costs exactly its Resource.  Under Enforced it carries a flag and a
-// source_location, and a test binary pays for them deliberately.
+// costs exactly its Resource.  Under Enforced it carries a flag and the
+// site of its mint, and a test binary pays for them deliberately.
 
 using OffHandle = s::SessionHandle<s::Send<Ping, s::End>, ValueWire, void, s::check::Off>;
 using EnforcedHandle = s::SessionHandle<s::Send<Ping, s::End>, ValueWire, void, s::check::Enforced>;
@@ -175,14 +174,15 @@ using EnforcedHandle = s::SessionHandle<s::Send<Ping, s::End>, ValueWire, void, 
 static_assert(sizeof(OffHandle) == sizeof(ValueWire));
 static_assert(sizeof(EnforcedHandle) > sizeof(ValueWire));
 
-// The record of fixy/session/Watch.h sits in the padding of the policy.  A
-// handle outside each loop keeps no count of its steps, so a checked handle
-// over a small resource is three words, and a handle in a loop adds the
-// count, one word.
-static_assert(sizeof(EnforcedHandle) == 3 * sizeof(void*));
+// The record of fixy/session/Watch.h sits in the padding of the policy, and
+// the site is two words: the file and the line (HandleSite of
+// fixy/session/Stepping.h).  A handle outside each loop keeps no count of its
+// steps, so a checked handle over a small resource is four words, and a
+// handle in a loop adds the count, one word.
+static_assert(sizeof(EnforcedHandle) == 4 * sizeof(void*));
 static_assert(sizeof(s::SessionHandle<s::Send<Ping, s::Continue>, ValueWire, s::Loop<s::Send<Ping, s::Continue>>,
                                       s::check::Enforced>)
-              == 4 * sizeof(void*));
+              == 5 * sizeof(void*));
 
 // A handle refuses a new-expression, as Permission and ReadView do.  A
 // container builds it in place, so an optional of a handle stays legal.

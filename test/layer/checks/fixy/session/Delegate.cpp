@@ -34,8 +34,8 @@ static_assert(!::fixy::session::DelegatableHandle<int>
 
 // A hand-off moves its endpoint to the thread of its recipient, so the
 // endpoint under the tracked policy is Sendable and holds no borrow
-// (foundation/Transfer.h).  The policy keeps a source_location, which names
-// strings of static storage.
+// (foundation/Transfer.h).  The policy keeps a HandleSite, whose file is a
+// text of static storage.
 namespace fixy::session::detail::delegatable_armed_witness {
 using Handed = DelegatedSession<End, Wire, DefaultAbandonmentPolicy, ::foundation::permissions::EmptyPermSet>;
 }  // namespace fixy::session::detail::delegatable_armed_witness
