@@ -1,0 +1,36 @@
+// The arm of a borrow match holds a Ref by a capture by copy, and no write
+// through it reaches the sum that the match reads: the Ref names a different
+// Option, the Ref of the same Option only reads it, and the write through the
+// Ref comes after the match.
+#include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
+
+namespace planted {
+
+using ::foundation::core::none;
+using ::foundation::core::Option;
+
+int assigned_a_different_option() {
+    Option<int> held = Option<int>::some(1);
+    Option<int> spare = Option<int>::some(2);
+    auto other = ::foundation::core::to(spare);
+    int const value = held.match([other](int const& payload) mutable { *other = none; return payload; },
+                                 [] { return 0; });
+    return value + (spare.is_some() ? 1 : 0);
+}
+
+int read_through_a_ref() {
+    Option<int> held = Option<int>::some(3);
+    auto other = ::foundation::core::to(held);
+    return held.match([other](int const& value) { return other->is_some() ? value : 0; }, [] { return 0; });
+}
+
+int assigned_after_the_match() {
+    Option<int> held = Option<int>::some(4);
+    auto other = ::foundation::core::to(held);
+    int const value = held.match([](int const& payload) { return payload; }, [] { return 0; });
+    *other = none;
+    return value;
+}
+
+}  // namespace planted

@@ -2,10 +2,13 @@
 
 #include <foundation/core/BitSet.h>
 
+#include <foundation/Linear.h>
 #include <foundation/core/Verbs.h>
+#include <foundation/reflect/Annotation.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 #include <utility>
 
@@ -141,6 +144,30 @@ template <class Set>
 concept LendsCursorOut =
     requires(Set const& set) { set.with_keys([](auto const & keys) noexcept { return keys.begin(); }); };
 static_assert(!LendsCursorOut<BitSet<64>> && !LendsCursorOut<HeapBitSet<SlotTag>>);
+// The door with_keys of a heap set that takes a body states borrow_match{}, so
+// the rule borrow-match refuses a body that changes the set while the walk reads
+// its heap block.  The check counts the specializations for a body that reads
+// the keys: the door gives one with the mark, and the refusal of a temporary set
+// gives one with no mark.
+struct ReadsKeys {
+    int operator()(BitKeys<BitId<SlotTag>, std::uint64_t> const&) const noexcept { return 0; }
+};
+consteval int marked_heap_walks() {
+    int marked = 0;
+    auto const count_walk = [&marked](std::meta::info member) {
+        if (!::foundation::reflect::has_identifier_named(member, "with_keys")
+            || !std::meta::is_function_template(member) || !std::meta::can_substitute(member, {^^ReadsKeys})) {
+            return false;
+        }
+        std::meta::info const walk = std::meta::substitute(member, {^^ReadsKeys});
+        marked += ::foundation::reflect::carries_annotation(walk, ^^::foundation::linear::borrow_match) ? 1 : 0;
+        return false;
+    };
+    static_cast<void>(::foundation::reflect::find_member(^^HeapBitSet<SlotTag>,
+                                                         std::meta::access_context::unprivileged(), count_walk));
+    return marked;
+}
+static_assert(marked_heap_walks() == 1);
 
 // The word of a set of at most 64 positions is its storage word, and a set
 // past 64 positions has no word.

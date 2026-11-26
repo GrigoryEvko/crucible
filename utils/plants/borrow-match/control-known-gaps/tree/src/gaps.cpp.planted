@@ -1,10 +1,12 @@
 // These writes still end or change the payload that the arm borrows, and the rule
 // does not see them: a write of a payload with no end in a function that the arm
-// calls, a write through a second reference parameter to the same sum, and a write
-// in an arm that the caller gives as a parameter.  A write through a pointer to the
-// sum does not compile: the arm captures the pointer by reference, and the store
-// check of the borrow match refuses an arm that reaches a pointer that it can write.
+// calls, a write through a second reference parameter to the same sum, a write in
+// an arm that the caller gives as a parameter, and a write through a Ref that the
+// body of the arm makes.  A write through a pointer to the sum does not compile:
+// the arm captures the pointer by reference, and the store check of the borrow
+// match refuses an arm that reaches a pointer that it can write.
 #include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
 
 namespace planted {
 
@@ -26,9 +28,17 @@ int given_arm(Option<int>& held, Arm const& arm) {
     return held.match(arm, [] { return 0; });
 }
 
+int ref_in_the_arm(Option<int>& held) {
+    return held.match([&held](int const& value) {
+        auto other = ::foundation::core::to(held);
+        *other = none;
+        return value;
+    }, [] { return 0; });
+}
+
 int calls(Option<int>& source) {
     auto const arm = [&source](int const& value) { source = none; return value; };
-    return callee(source) + second_reference(source, source) + given_arm(source, arm);
+    return callee(source) + second_reference(source, source) + given_arm(source, arm) + ref_in_the_arm(source);
 }
 
 }  // namespace planted

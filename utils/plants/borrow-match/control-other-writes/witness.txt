@@ -8,3 +8,10 @@
 compile others src/others.cpp
 flag others -freflection
 exit others pass
+
+# In the unit referents an arm holds a Ref by a capture by copy: the Ref names a
+# different Option, the Ref of the same Option only reads it, and the write
+# through the Ref comes after the match.
+compile referents src/referents.cpp
+flag referents -freflection
+exit referents pass

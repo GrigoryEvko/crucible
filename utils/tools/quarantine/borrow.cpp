@@ -52,6 +52,14 @@
 //     std::forward and std::as_const, which give their argument back.  A static
 //     variable is the root of its own path.
 //
+// Referents
+//     A member of a borrow class whose result points at the first type argument
+//     of the class, such as operator* of a Ref, names the object of the borrow.
+//     The walk takes that object from the initializer of a local borrow, such as
+//     to(X) or a copy of a local borrow, and from the braced initializer of each
+//     field of a borrow class of an arm.  So a write through a Ref that a capture
+//     by copy holds names the receiver when the Ref names it.
+//
 // Writes
 //     In the body of an arm, these writes are findings:
 //       assignment     an assignment of the receiver or of an object that holds
@@ -97,9 +105,10 @@
 //     receiver.  A callee that changes a payload with no end, such as an int,
 //     gives no finding.  A write through a pointer or a second reference
 //     parameter to the sum, an arm that a function of a different unit or a
-//     parameter of the caller gives, and a receiver behind a call, such as the
-//     operator-> of a Box, give no finding.  The control control-known-gaps of
-//     utils/plants/borrow-match/ pins each of them.  The owning storage of a sum
+//     parameter of the caller gives, a receiver behind a call, such as the
+//     operator-> of a Box, and a Ref that the body of the arm makes give no
+//     finding.  The control control-known-gaps of utils/plants/borrow-match/ pins
+//     each of them.  The owning storage of a sum
 //     (foundation/core/Choice.h) counts the borrow matches that lend its
 //     payload, and a write of the sum while a match lends the payload ends the
 //     process, in each build.  A cursor counts no lend, so an owning Option has
@@ -121,6 +130,10 @@ namespace {
 // The step of a dereference in a path.  A field step is the DECL_UID of the
 // field, which is never negative.
 constexpr int kDereference = -1;
+
+// The step from a borrow to the object that it names, through a member of the
+// borrow class such as operator* of a Ref (the referents).
+constexpr int kReferent = -2;
 
 // The root of a path that names no object.  A DECL_UID is never negative.
 constexpr int kNoRoot = -1;
@@ -177,10 +190,12 @@ struct Receiver {
 
 // The arm of one call: the TYPE_UID of its closure, and the path of the object
 // that the value of each field of a pointer or a reference type points at, by
-// the DECL_UID of the field.
+// the DECL_UID of the field.  REFERENTS holds the path of the object that the
+// value of each field of a borrow class names (the referents).
 struct CallArm {
     unsigned closure = 0;
     std::unordered_map<int, Path> pointees;
+    std::unordered_map<int, Path> referents;
 };
 
 struct MatchCall {
@@ -354,6 +369,37 @@ Path lvalue_path(tree node, tree closure, int depth) {
     }
 }
 
+// The path of the object that a borrow names, when the call NODE is a member of
+// a borrow class whose result points at the first type argument of the class,
+// such as operator* or operator-> of a Ref (the referents).  The path is the path
+// of the borrow with the step kReferent, or a path with no root.
+Path referent_path(tree node, tree closure, int depth) {
+    tree const callee = cp_get_callee_fndecl_nofold(node);
+    if (callee == NULL_TREE || DECL_LANG_SPECIFIC(callee) == nullptr || !DECL_OBJECT_MEMBER_FUNCTION_P(callee)
+        || !TYPE_P(DECL_CONTEXT(callee)) || call_expr_nargs(node) < 1) {
+        return {};
+    }
+    tree const owner = TYPE_MAIN_VARIANT(DECL_CONTEXT(callee));
+    tree const result = TREE_TYPE(TREE_TYPE(callee));
+    tree const info = CLASS_TYPE_P(owner) ? CLASSTYPE_TEMPLATE_INFO(owner) : NULL_TREE;
+    tree const arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    tree const target =
+        arguments != NULL_TREE && TREE_VEC_LENGTH(arguments) > 0 ? TREE_VEC_ELT(arguments, 0) : NULL_TREE;
+    if (!is_borrow_class(owner) || !is_indirect_type(result) || target == NULL_TREE || !TYPE_P(target)
+        || TYPE_MAIN_VARIANT(TREE_TYPE(result)) != TYPE_MAIN_VARIANT(target)) {
+        return {};
+    }
+    tree const borrow = CALL_EXPR_ARG(node, 0);
+    Path path = lvalue_path(borrow, closure, depth + 1);
+    if (path.root == kNoRoot) {
+        path = pointee_path(borrow, closure, depth + 1);
+    }
+    if (path.root != kNoRoot) {
+        path.steps.push_back(kReferent);
+    }
+    return path;
+}
+
 // The path of the object that the pointer or the reference value NODE points
 // at, or a path with no root.
 Path pointee_path(tree node, tree closure, int depth) {
@@ -363,6 +409,12 @@ Path pointee_path(tree node, tree closure, int depth) {
     }
     if (TREE_CODE(node) == ADDR_EXPR) {
         return lvalue_path(TREE_OPERAND(node, 0), closure, depth + 1);
+    }
+    if (TREE_CODE(node) == CALL_EXPR) {
+        Path referent = referent_path(node, closure, depth);
+        if (referent.root != kNoRoot) {
+            return referent;
+        }
     }
     // A local reference names the object of its initializer for its whole
     // scope, as the range of a loop over the sum does.
@@ -594,13 +646,43 @@ void record_arm(tree function) {
 using Pointees = std::unordered_map<int, Path>;
 
 // The state of the walk of the calls of one function: the pointees of each
-// local variable of a class type, and the receiver of each cursor of a loop
-// door (the loop), by the DECL_UID of the variable.  The walk visits an
-// initializer before a later call that names the variable.
+// local variable of a class type, the receiver of each cursor of a loop door
+// (the loop), and the referent of each local variable of a borrow class (the
+// referents), by the DECL_UID of the variable.  The walk visits an initializer
+// before a later call that names the variable.
 struct CallWalk {
     std::unordered_map<int, Pointees> named;
     std::unordered_map<int, Receiver> cursors;
+    std::unordered_map<int, Path> borrows;
 };
+
+// The path of the object that the borrow value VALUE names: the object of the
+// first argument by a pointer or a reference of the call that makes it, such as
+// to(X), or the referent of a local borrow that it copies (the referents).  A path
+// with no root when the walk cannot see it.
+Path referent_of(const CallWalk& walk, tree value) {
+    for (int depth = 0; value != NULL_TREE && depth < kTypeDepth; ++depth) {
+        value = strip_wrappers(value);
+        if (value == NULL_TREE || TREE_CODE(value) != TARGET_EXPR) {
+            break;
+        }
+        value = TARGET_EXPR_INITIAL(value);
+    }
+    if (value == NULL_TREE) {
+        return {};
+    }
+    if (VAR_P(value)) {
+        auto found = walk.borrows.find(static_cast<int>(DECL_UID(value)));
+        return found != walk.borrows.end() ? found->second : Path{};
+    }
+    if (TREE_CODE(value) != CALL_EXPR || call_expr_nargs(value) < 1) {
+        return {};
+    }
+    tree const argument = CALL_EXPR_ARG(value, 0);
+    return TREE_TYPE(argument) != NULL_TREE && is_indirect_type(TREE_TYPE(argument))
+             ? pointee_path(argument, NULL_TREE, 0)
+             : Path{};
+}
 
 // The receiver of a call of a borrow match: the object of its first argument,
 // the object parameter of a member or the reference parameter of a free
@@ -682,11 +764,18 @@ Pointees pointees_of(tree constructor) {
 // Records the initializer of a local variable of an arm class: a braced
 // initializer of the whole variable, or a store to one field of a pointer or
 // a reference type, as the front end splits an initializer that is no
-// constant.  LEFT is the stored object and RIGHT its value.
+// constant.  LEFT is the stored object and RIGHT its value.  The referent of a
+// local variable of a borrow class comes from its initializer too.
 void record_initializer(CallWalk& walk, tree left, tree right) {
     left = strip_wrappers(left);
     if (left == NULL_TREE) {
         return;
+    }
+    if (VAR_P(left) && is_borrow_class(TYPE_MAIN_VARIANT(TREE_TYPE(left)))) {
+        Path referent = referent_of(walk, right);
+        if (referent.root != kNoRoot) {
+            walk.borrows[static_cast<int>(DECL_UID(left))] = std::move(referent);
+        }
     }
     if (VAR_P(left) && is_arm_class(TREE_TYPE(left))) {
         tree value = arm_object(right);
@@ -725,6 +814,19 @@ void record_call(const CallWalk& walk, tree call) {
         arm.closure = TYPE_UID(TYPE_MAIN_VARIANT(TREE_TYPE(object)));
         if (TREE_CODE(object) == CONSTRUCTOR) {
             arm.pointees = pointees_of(object);
+            unsigned position = 0;
+            tree field = NULL_TREE;
+            tree value = NULL_TREE;
+            FOR_EACH_CONSTRUCTOR_ELT(CONSTRUCTOR_ELTS(object), position, field, value) {
+                if (field == NULL_TREE || TREE_CODE(field) != FIELD_DECL
+                    || !is_borrow_class(TYPE_MAIN_VARIANT(TREE_TYPE(field)))) {
+                    continue;
+                }
+                Path const referent = referent_of(walk, value);
+                if (referent.root != kNoRoot) {
+                    arm.referents.emplace(static_cast<int>(DECL_UID(field)), referent);
+                }
+            }
         } else if (VAR_P(object)) {
             auto found = walk.named.find(static_cast<int>(DECL_UID(object)));
             if (found != walk.named.end()) {
@@ -875,17 +977,20 @@ tree walk_calls(tree* node_pointer, int* walk_subtrees, void* data) {
 // The path in the frame of the call that the write WRITE of ARM names, or a
 // path with no root (the paths).  A closure path starts with the dereference
 // of the object parameter and a field of the closure.  Only a dereference of
-// a field of a pointer or a reference type reaches an object of the caller.
+// a field of a pointer or a reference type, and the referent of a field of a
+// borrow class (the referents), reach an object of the caller.
 Path resolve(const ArmWrite& write, const CallArm& arm) {
     const Path& target = write.target;
     if (!target.is_closure) {
         return target;
     }
-    if (target.steps.size() < 3 || target.steps[0] != kDereference || target.steps[2] != kDereference) {
+    if (target.steps.size() < 3 || target.steps[0] != kDereference
+        || (target.steps[2] != kDereference && target.steps[2] != kReferent)) {
         return {};
     }
-    auto found = arm.pointees.find(target.steps[1]);
-    if (found == arm.pointees.end()) {
+    const Pointees& fields = target.steps[2] == kReferent ? arm.referents : arm.pointees;
+    auto found = fields.find(target.steps[1]);
+    if (found == fields.end()) {
         return {};
     }
     Path resolved = found->second;

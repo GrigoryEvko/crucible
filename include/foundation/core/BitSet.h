@@ -826,14 +826,17 @@ public:
     // and the door gives the result of body, which holds no borrow.  The walk
     // and its cursors do not copy and do not move, so no cursor outlives the
     // storage of the set.  An id is not a proven index: each door of the set
-    // compares an id with the count of the set.  Complexity of a full walk:
-    // O(extent() / 64 + size()).
+    // compares an id with the count of the set.  The door states borrow_match{},
+    // so the rule borrow-match refuses a body that changes the set while the walk
+    // reads its storage.  Complexity of a full walk: O(extent() / 64 + size()).
     template <class Body>
         requires std::is_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>
               && HoldsNoBorrow<std::invoke_result_t<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>>
               && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
-    constexpr std::invoke_result_t<Body, BitKeys<BitId<Tag>, std::uint64_t> const&> with_keys(
-        Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>) {
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body,
+                                                                              BitKeys<BitId<Tag>, std::uint64_t> const&>
+        with_keys(Body&& body) const& noexcept(
+            std::is_nothrow_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>) {
         BitKeys<BitId<Tag>, std::uint64_t> const ids{words_()};
         return static_cast<Body&&>(body)(ids);
     }

@@ -1,0 +1,53 @@
+// The arm of a borrow match holds a Ref of the sum by a capture by copy, and it
+// writes the sum through that Ref: an assignment through operator*, a mutating
+// call through operator->, the same through a copy of a local Ref, and an
+// assignment of a heap bit set whose keys the door lends.
+#include <foundation/core/BitSet.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+using ::foundation::core::none;
+using ::foundation::core::Option;
+
+int assigned_through_a_ref() {
+    Option<int> held = Option<int>::some(1);
+    auto other = ::foundation::core::to(held);
+    return held.match([other](int const& value) mutable { *other = none; return value; }, [] { return 0; });
+}
+
+int changed_through_a_ref() {
+    Option<int> held = Option<int>::some(2);
+    auto other = ::foundation::core::to(held);
+    return held.match([other](int const& value) mutable {
+        return value + other->with_mut([](auto item) noexcept { return *item; }, [] noexcept { return 0; });
+    }, [] { return 0; });
+}
+
+int assigned_through_a_copy_of_a_ref() {
+    Option<int> held = Option<int>::some(3);
+    auto alias = ::foundation::core::to(held);
+    auto other = alias;
+    return held.match([other](int const& value) mutable { *other = none; return value; }, [] { return 0; });
+}
+
+struct BitTag final {};
+
+unsigned long assigned_heap_set(::foundation::effects::Alloc alloc) {
+    using Count = ::foundation::core::Quantity<::foundation::core::unit::Element, unsigned int>;
+    auto set = ::foundation::core::mint_heap_bit_set<BitTag>(alloc, Count{64});
+    auto other = ::foundation::core::to(set);
+    return set.with_keys([other, alloc](auto const& keys) mutable noexcept {
+        *other = ::foundation::core::mint_heap_bit_set<BitTag>(alloc, Count{8});
+        unsigned long count = 0;
+        for (auto key : keys) {
+            static_cast<void>(key);
+            ++count;
+        }
+        return count;
+    });
+}
+
+}  // namespace planted
