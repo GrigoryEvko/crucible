@@ -329,6 +329,11 @@ crucible_contract_ignore_target(test_background_thread_handles_ignore)
 crucible_test(test_background_thread_flush)
 # A flush that waits with no end fails the test at the time limit.
 set_tests_properties(test_background_thread_flush PROPERTIES TIMEOUT 120)
+# The build stage copies the records of a work before the publish stage
+# releases them.  The run writes the metadata log two times.  Under the tsan
+# preset, a release before the copy races the write of the producer into a
+# copied slot and stops the test.
+crucible_test(test_background_thread_copy_before_release)
 crucible_test(test_vigil_record_count)
 crucible_test(test_region_hash_wiring)
 crucible_test(test_build_address_reuse)
