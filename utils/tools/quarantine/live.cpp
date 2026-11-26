@@ -170,9 +170,14 @@
 //     result that holds a borrow gives its result the loans of its captures, and a
 //     generic closure gives none.  A call that consumes an owner beside a plain
 //     argument that borrows it ends the borrow only when its body ends the owner
-//     (the ends beside a borrow).  The product gives an arena and a pointer into it
-//     to one object (Vigil.h, keep_load_), and the split mints take a Box and the Ref
-//     of its object (SpscEnds.h), and their bodies keep the owner.
+//     (the ends beside a borrow).  A closure that ends an owner whose storage holds
+//     the object of a different argument, as a Box holds a keyed array, gives a
+//     finding when the callee lends that object to the closure (the holders).  A
+//     member function of that object counts as a lender, also when it only reads the
+//     object, because the record does not show which member lends (fail closed).
+//     The product gives an arena and a pointer into it to one object (Vigil.h,
+//     keep_load_), and the split mints take a Box and the Ref of its object
+//     (SpscEnds.h), and their bodies keep the owner.
 //     A callee with no body that takes a class which the unit never completes ends
 //     only a loan whose route or targets hold that class.  So an end through such a
 //     class, of an owner that it reaches by a path that the unit cannot see, is no
@@ -473,6 +478,9 @@ struct StaleUse {
     bool is_through = false;  // a closure holds the loan through a capture, so a move of an owner changes it
     TypeSet named;  // the types that the loan through a capture names, or none for the whole object
     Taking closure;  // the parameter that gets the closure of a loan through a capture
+    bool is_holder = false;  // a closure ends an owner that holds the object that the callee lends
+    bool is_receiver = false;  // the lent object is the object of a member function
+    Taking lender;  // the parameter that gets the lent object
 };
 
 // What one reading of a body gives.
@@ -2675,6 +2683,55 @@ private:
                     }
                 }
                 check_borrows_through(arguments[lender], lender, bindings[writer], arguments[writer], writer, callee);
+                check_holders(arguments[lender], arguments[writer], writer, callee);
+            }
+        }
+    }
+
+    // The closure CLOSURE captures by a unique reference an owner whose storage holds
+    // the object of the argument OTHER at OTHER_INDEX, as a Box holds its payload (the
+    // holders).  The callee can lend that object to the closure, and the closure can
+    // end the owner, also when the object has no end of its own.  The use is a record,
+    // and the end of the unit judges it when the callee lends the object: a member
+    // function lends its own object, and a different callee lends a parameter whose
+    // ends show a loan to a closure (is_lent).  A member function that only reads its
+    // object gives a finding too (fail closed), because the record cannot see which
+    // member lends.  Complexity: the loans of the closure times the loans of OTHER.
+    void check_holders(const Argument& closure, const Argument& other, std::size_t other_index, tree callee) {
+        if (!closure.is_closure || other.is_closure) {
+            return;
+        }
+        unsigned const own = closure_id_of(closure);
+        for (int held : closure.loans) {
+            const Loan& capture = loans_[held];
+            if (capture.source != LoanSource::capture || capture.closure != own || capture.place == kNoPlace
+                || !capture.is_unique) {
+                continue;
+            }
+            for (int lent : other.loans) {
+                // The route of the loan of the argument holds an owner, and the closure
+                // captures the place of that owner, so the owner keeps the storage of
+                // the object of the argument.
+                const Loan& loan = loans_[lent];
+                if (loan.place == kNoPlace || loan.route.empty() || !places_.overlaps(capture.place, loan.place)) {
+                    continue;
+                }
+                int const place = loan.named != kNoPlace ? loan.named : loan.place;
+                End end = make_end(EndKind::call, capture.place);
+                end.callee = callee;
+                end.is_closure = true;
+                end.taking = taking_of_capture(capture.closure, capture.field);
+                end.types = loan.route;
+                StaleUse use;
+                use.location = location_;
+                use.borrow = "borrow of " + places_.text(place) + " in a closure of "
+                           + (callee != NULL_TREE ? qualified_name(callee) : std::string("a call"));
+                use.ends.push_back(JudgedEnd{end.kind, end.location, end_text(end), end.taking, end.types});
+                use.is_holder = true;
+                use.lender = taking_of_parameter(callee, other_index, other.held);
+                use.is_receiver = other_index == 0 && callee != NULL_TREE && DECL_LANG_SPECIFIC(callee) != nullptr
+                               && DECL_OBJECT_MEMBER_FUNCTION_P(callee);
+                reading_.uses.push_back(std::move(use));
             }
         }
     }
@@ -3627,7 +3684,10 @@ void finish_live_borrows() {
                 continue;
             }
             for (const JudgedEnd& end : use.ends) {
-                std::string const text = use.is_through ? judged_through_text(use, end) : judged_text(end);
+                bool const is_lent = !use.is_holder || use.is_receiver || ends_of(use.lender).is_lent;
+                std::string const text = !is_lent       ? std::string()
+                                       : use.is_through ? judged_through_text(use, end)
+                                                        : judged_text(end);
                 if (!text.empty()) {
                     add_finding(Kind::stale_borrow, nullptr, place, use.borrow + " after " + text);
                     end_locations.emplace(place.spelling, end.location);

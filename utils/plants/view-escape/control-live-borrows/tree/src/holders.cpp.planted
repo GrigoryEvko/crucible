@@ -1,0 +1,75 @@
+// A Box holds an owner whose elements have no end of their own, and a door of that
+// owner lends its run in place to a closure.  The run lives while the closure ends a
+// different Box, and while the Box ends after the door.
+#include <fixy/Core.h>
+#include <foundation/core/WindowStack.h>
+#include <foundation/effects/Effect.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Alloc = ::foundation::effects::Alloc;
+
+template <class Owner>
+void move_away_and_end(Owner& owner) noexcept {
+    Owner const taken{std::move(owner)};
+    static_cast<void>(taken);
+}
+
+template <class Owner>
+[[nodiscard]] auto box_of(Alloc alloc, Owner&& owner) noexcept {
+    return ::fixy::mint_box<Owner>(alloc, std::move(owner));
+}
+
+int end_a_different_box(Alloc alloc) noexcept {
+    int read = 0;
+    auto [array, key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<int, 8>);
+    auto box = box_of(alloc, std::move(array));
+    auto spare = ::fixy::mint_box<int>(alloc, 1);
+    auto& held = *box;
+    held.with_mut(key, [&spare, &read](auto run) noexcept {
+        move_away_and_end(spare);
+        for (int& element : run) {
+            element = 7;
+        }
+        read = 7;
+    });
+    return read;
+}
+
+int end_the_box_of_a_keyed_array_after_the_door(Alloc alloc) noexcept {
+    int read = 0;
+    auto [array, key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<int, 8>);
+    auto box = box_of(alloc, std::move(array));
+    auto& held = *box;
+    held.with_mut(key, [&read](auto run) noexcept {
+        for (int& element : run) {
+            element = 7;
+        }
+        read = 7;
+    });
+    move_away_and_end(box);
+    return read;
+}
+
+int end_the_box_of_a_window_stack_after_the_door(Alloc alloc) noexcept {
+    int read = 0;
+    auto box = fc::mint_box<fc::WindowStack<int, 8>>(alloc);
+    auto& held = *box;
+    held.with_window(
+        fc::WindowCount{3},
+        [&read](auto window) noexcept {
+            for (int& element : window) {
+                element = 7;
+            }
+            read = 7;
+        },
+        []() noexcept {});
+    move_away_and_end(box);
+    return read;
+}
+
+}  // namespace planted

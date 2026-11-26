@@ -51,6 +51,11 @@
 # copy of the View in the closure (43), the View in a captured closure (51), and a
 # View beside a callee that replaces the owner (58).
 #
+# In the unit holders a Box holds an owner whose elements have no end of their own,
+# a door of that owner lends its run to a closure, and the closure ends the Box by a
+# captured reference: a keyed FixedArray and its with_mut (33), and a WindowStack and
+# its with_window (47).
+#
 # In the unit numbers a borrow of a resource by its number is stale after: an
 # assignment of its owner, the end of the scope of its owner, a member door and a
 # function door that take the owner by an rvalue reference, and a generic function
@@ -340,3 +345,11 @@ error linear_moves src/linear_moves.cpp:28 | this use reads a borrow of token in
 error linear_moves src/linear_moves.cpp:48 | this use reads a borrow of token.items in all after a move of token
 error linear_moves src/linear_moves.cpp:60 | this use reads a borrow of token in all after a move of token
 error linear_moves src/linear_moves.cpp:71 | this use reads a borrow of token.items in items after a move of token
+
+compile holders src/holders.cpp
+flag holders -freflection
+exit holders fail
+finding holders view-escape stale-borrow src/holders.cpp:33:18 | borrow of box in a closure of foundation::core::FixedArray::with_mut after a call of a closure that captures box
+finding holders view-escape stale-borrow src/holders.cpp:47:21 | borrow of box in a closure of foundation::core::WindowStack::with_window after a call of a closure that captures box
+error holders src/holders.cpp:33 | this use reads a borrow of box in a closure of foundation::core::FixedArray::with_mut after a call of a closure that captures box
+error holders src/holders.cpp:47 | this use reads a borrow of box in a closure of foundation::core::WindowStack::with_window after a call of a closure that captures box

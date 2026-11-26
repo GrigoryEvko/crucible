@@ -28,7 +28,8 @@
 # linear object reads it before its move, and a Ref of an owner that is no linear
 # class reads the moved-from owner.  A View of the heap block of a member of a
 # linear object lives past the move, and a View of an inline array is read before
-# the move.
+# the move.  In the unit holders a door of an owner in a Box lends its run to a
+# closure that ends a different Box, and the Box ends after the door.
 
 compile live src/live.cpp
 flag live -freflection
@@ -81,3 +82,7 @@ exit parts pass
 compile linear_moves src/linear_moves.cpp must-consume=on
 flag linear_moves -freflection
 exit linear_moves pass
+
+compile holders src/holders.cpp
+flag holders -freflection
+exit holders pass
