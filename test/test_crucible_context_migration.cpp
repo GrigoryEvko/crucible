@@ -222,9 +222,6 @@ void test_smaller_new_slot_takes_its_own_size() {
     auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
     CRUCIBLE_TEST_ASSERT(kTest, context.activate(context_key, *old_region));
     // The output of the first op holds each byte of the old slot.
-    const auto compiled = context.mint_compiled_view(kVigilForeground);
-    CRUCIBLE_TEST_ASSERT(kTest, context.advance(SchemaHash{100}, ShapeHash{200}, compiled).status()
-                                    == crucible::ReplayStatus::MATCH);
     const auto fill_outputs = [](auto& views) noexcept {
         std::size_t count = 0;
         std::move(views).drain([&count](auto view) noexcept {
@@ -235,9 +232,13 @@ void test_smaller_new_slot_takes_its_own_size() {
         });
         return count;
     };
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         context.with_output_views<std::uint8_t>(compiled, fill_outputs)
-                             .is_ok_and([](std::size_t const& count) noexcept { return count == 2 * kSlotBytes; }));
+    const auto is_filled = [&fill_outputs](crucible::CompiledScope& scope) noexcept {
+        return scope.advance(SchemaHash{100}, ShapeHash{200}).status() == crucible::ReplayStatus::MATCH
+            && scope.with_output_views<std::uint8_t>(fill_outputs).is_ok_and([](std::size_t const& count) noexcept {
+                   return count == 2 * kSlotBytes;
+               });
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, context.with_compiled(context_key, is_filled) == ::fixy::some(true));
     CRUCIBLE_TEST_ASSERT(kTest, context.switch_region(context_key, *new_region, 1));
     CRUCIBLE_TEST_ASSERT(kTest, context.pool().bytes().size() == kSlotBytes);
     for (const std::uint8_t byte : context.pool().bytes()) {

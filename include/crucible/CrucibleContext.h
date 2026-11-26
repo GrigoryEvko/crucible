@@ -82,8 +82,12 @@ struct DispatchResult {
 };
 
 // The position of an input of the matched op, below the count of its inputs.
-// input_view takes it in place of a raw number.
+// input_view and input_ptr take it in place of a raw number.
 using InputPosition = ::fixy::Id<struct InputPositionTag, uint16_t>;
+
+// The position of an output of the matched op, below the count of its outputs.
+// output_ptr takes it in place of a raw number.
+using OutputPosition = ::fixy::Id<struct OutputPositionTag, uint16_t>;
 
 // Why with_output_views refused the outputs of the matched op.
 enum class OutputRefusal : uint8_t {
@@ -147,25 +151,6 @@ struct foreign_block_stays final {};
 template <class Licence>
 concept ForeignViewLicence = std::is_same_v<Licence, foreign_block_stays>;
 
-struct CrucibleContext;
-
-// The body of a scope of external slots: it takes the context with no throw, its
-// result holds no borrow, and it keeps no linear value and no borrow outside.
-template <class Body>
-concept ExternalScopeBody =
-    std::is_nothrow_invocable_v<Body&&, CrucibleContext&>
-    && (std::is_void_v<std::invoke_result_t<Body&&, CrucibleContext&>>
-        || ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, CrucibleContext&>>)
-    && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>;
-
-// The answer of a scope of external slots: the refusal of the list, or the result
-// of body, which is Unit for a body that gives void.
-template <class Body>
-using ExternalAnswer =
-    ::fixy::Result<std::conditional_t<std::is_void_v<std::invoke_result_t<Body&&, CrucibleContext&>>, ::fixy::Unit,
-                                      std::remove_cv_t<std::invoke_result_t<Body&&, CrucibleContext&>>>,
-                   ViewRefusal>;
-
 // Why register_external refused an address.
 enum class ExternalRefusal : uint8_t {
     OutsidePlan,  // the plan of the active region has no slot of this id
@@ -208,6 +193,42 @@ using ContextKey = ::foundation::core::LoanKey<ContextKeyBrand>;
     return ::foundation::core::mint_held_key<ContextKeyBrand>(ContextKeyBrand::key_proof{});
 }
 
+struct CrucibleContext;
+class CompiledScope;
+
+// The body of with_compiled (the compiled scope): it takes the scope with no
+// throw, its result holds no borrow, it reaches no key of a context, and it keeps
+// no linear value and no borrow outside.  So no body changes the mode of a
+// context, opens a second scope, or keeps the scope past its call.
+template <class Body>
+concept CompiledBody =
+    std::is_nothrow_invocable_v<Body&&, CompiledScope&>
+    && (std::is_void_v<std::invoke_result_t<Body&&, CompiledScope&>>
+        || ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, CompiledScope&>>)
+    && ::foundation::core::ReachesNoLoanKey<Body, ContextKeyBrand> && ::foundation::linear::HoldsNoLinearValue<Body>
+    && ::foundation::core::StoresNoBorrowOutside<Body>;
+
+// The result of a body of the scope: the result of body, or Unit for a body that
+// gives void.
+template <class Body>
+using CompiledResult = std::conditional_t<std::is_void_v<std::invoke_result_t<Body&&, CompiledScope&>>, ::fixy::Unit,
+                                          std::remove_cv_t<std::invoke_result_t<Body&&, CompiledScope&>>>;
+
+// The answer of with_compiled: no value while the context records, or the result
+// of body.
+template <class Body>
+using CompiledAnswer = ::fixy::Option<CompiledResult<Body>>;
+
+// The body of a scope of external slots: the body of the scope of its context
+// (CompiledBody).
+template <class Body>
+concept ExternalScopeBody = CompiledBody<Body>;
+
+// The answer of a scope of external slots: the refusal of the list, or the result
+// of body.
+template <class Body>
+using ExternalAnswer = ::fixy::Result<CompiledResult<Body>, ViewRefusal>;
+
 struct CrucibleContext {
     // The caller gives the allocation capability of its context.  The pool
     // of each region that the context activates allocates through it.
@@ -246,8 +267,7 @@ struct CrucibleContext {
         mode_ = ContextMode::RECORD;
         drop_external_reads_();
         // The slot table of the engine is a View of the column of the pool, so
-        // the engine lets it go before the pool ends.  A stale CompiledView
-        // then ends the process at a check of the engine.
+        // the engine lets it go before the pool ends.
         engine_.clear_();
         pool_.destroy();
         active_region_ = ActiveRegionLink{};
@@ -268,31 +288,50 @@ struct CrucibleContext {
         deactivate(key);
     }
 
-    [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash) {
-        CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
-        return advance_(schema_hash, shape_hash);
-    }
+    // Lends the compiled scope of this context to body while the context
+    // replays a region, and gives the result of body.  While the context
+    // records, body does not run, and the door gives no value (the compiled
+    // scope).  The key of the context opens the door.  The definition follows
+    // the class CompiledScope.  Complexity: one test of the mode, and the cost
+    // of body.
+    template <class Body>
+        requires CompiledBody<Body>
+    [[nodiscard]] CRUCIBLE_INLINE CompiledAnswer<Body> with_compiled(ContextKey& key, Body&& body) & noexcept;
 
-    // Binds one of the operation's tensors to its slot in the memory plan.
-    //
-    // Each address points into the pool, and the pool is a member of this
-    // context.  A temporary context releases its pool at the end of the
-    // statement.  A deleted `const&&` twin refuses each call on a temporary
-    // context.
-    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t j) const& {
-        CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
-        return engine_.output_ptr(j);
-    }
-
-    ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t) const&& =
+    // A body that reaches a key of a context, and a temporary context, bind to
+    // these overloads, so the refusal gives its reason.
+    template <class Body>
+        requires(!::foundation::core::ReachesNoLoanKey<Body, ContextKeyBrand>)
+    void with_compiled(ContextKey& key, Body&& body) & =
+        delete("a body of with_compiled reaches a key of a context, so it could change the mode of a context or open a "
+               "second scope: capture no key, and no object that holds one");
+    template <class Body>
+    void with_compiled(ContextKey& key, Body&& body) && =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
-    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t j) const& {
-        CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
-        return engine_.input_ptr(j);
+    // The address of the slot of an output or an input of the matched op
+    // (CompiledScope::output_ptr), for a front end at the foreign ABI, such as
+    // the vessel.  The address stays valid until the next dispatch or the next
+    // change of the mode of the context.  A body of with_compiled gives no
+    // address back, so an address leaves the replay only through these two
+    // doors.  Each takes the key of the context, which in product code only the
+    // Vigil holds.  No value while the context records, as with_compiled gives
+    // none, and the inner Option is the address of the slot (no address for an
+    // output with no slot).  Complexity: O(1).
+    using OutsideAddress = ::fixy::Option<::fixy::Option<::fixy::RunAddress>>;
+    [[nodiscard]] CRUCIBLE_HOT OutsideAddress read_output_address(ContextKey& /*key*/, OutputPosition position) const& {
+        if (mode_ != ContextMode::COMPILED) [[unlikely]]
+            return ::fixy::none;
+        return OutsideAddress::some(output_ptr_(position));
     }
-
-    ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t) const&& =
+    [[nodiscard]] CRUCIBLE_HOT OutsideAddress read_input_address(ContextKey& /*key*/, InputPosition position) const& {
+        if (mode_ != ContextMode::COMPILED) [[unlikely]]
+            return ::fixy::none;
+        return OutsideAddress::some(input_ptr_(position));
+    }
+    OutsideAddress read_output_address(ContextKey& key, OutputPosition position) const&& =
+        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
+    OutsideAddress read_input_address(ContextKey& key, InputPosition position) const&& =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
     // Safe to call part-way through an iteration.  A region with no memory
@@ -356,50 +395,60 @@ struct CrucibleContext {
     [[nodiscard]] bool is_compiled() const { return mode_ == ContextMode::COMPILED; }
     [[nodiscard]] bool is_recording() const { return mode_ == ContextMode::RECORD; }
 
-    using CompiledView = ::fixy::ScopedView<CrucibleContext, ctx_mode::Compiled>;
-
     [[nodiscard]] friend constexpr bool view_ok(CrucibleContext const& c,
                                                 std::type_identity<ctx_mode::Compiled>) noexcept {
         return c.mode_ == ContextMode::COMPILED;
     }
 
-    // The context is foreground state, so the proof that it is compiled is
-    // minted only on the thread that holds the producer claim of its Vigil.
-    // The door gives the view on the erased identity through erase_brand.
-    // The brand of mint_view names the door and not the caller, so each
-    // context gets the same brand, and the rule brand-escape refuses a fresh
-    // brand that leaves the door.  A brand for each context waits for the
-    // brand of an arena or a store.
-    [[nodiscard]] CRUCIBLE_INLINE constexpr CompiledView mint_compiled_view(VigilFgCtx const&) const noexcept {
-        CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
-        return ::fixy::erase_brand(::fixy::mint_view<ctx_mode::Compiled>(*this));
-    }
+    [[nodiscard]] uint64_t compiled_iterations() const { return compiled_iterations_.get(); }
+    [[nodiscard]] uint64_t diverged_count() const { return diverged_count_.get(); }
+    // The Vigil owns the region, and this context only points at it.  The
+    // reference does not point into this context, and it has no twin.  It
+    // is empty while the context records.
+    [[nodiscard]] ::fixy::Option<DagRef<RegionNode const>> active_region() const { return active_region_.value(); }
 
-    // These overloads take the proof in place of the mode check. A proof that
-    // the context is compiled implies both the engine and the pool are live,
-    // because activation initialises the two together, so the inner proofs
-    // can be minted from the outer one.
-
-    [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash,
-                                                                CompiledView const&) {
-        return advance_(schema_hash, shape_hash);
-    }
-
-    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t j, CompiledView const&) const& {
-        auto av = engine_.active_view_();
-        return engine_.output_ptr(j, av);
-    }
-
-    ::fixy::Option<::fixy::RunAddress> output_ptr(uint16_t, CompiledView const&) const&& =
+    [[nodiscard]] const ReplayEngine& engine() const& { return engine_; }
+    const ReplayEngine& engine() const&& =
+        delete("a temporary context releases its engine at the end of the statement. Use a context that has a name");
+    // The test door of the engine: a test or a bench of the engine alone drives
+    // the engine of a context, which owns the pool that the engine reads.  The
+    // capability of a test keeps product code out.  An advance or a reset
+    // through the door counts no iteration and moves no cursor of the external
+    // reads.
+    [[nodiscard]] ReplayEngine& engine(::foundation::effects::Test const& /*test*/) & noexcept { return engine_; }
+    [[nodiscard]] const PoolAllocator& pool() const& { return pool_; }
+    const PoolAllocator& pool() const&& =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
-    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t j, CompiledView const&) const& {
+private:
+    // The scope lends the doors below to a body, while the context replays a
+    // region (the compiled scope).  Each door reads no mode: the scope is its
+    // proof of the compiled mode.
+    friend class CompiledScope;
+
+    // The proof of the compiled mode that the scope holds.  The door gives the
+    // view on the erased identity through erase_brand.  The brand of mint_view
+    // names the door and not the caller, so each context gets the same brand,
+    // and the rule brand-escape refuses a fresh brand that leaves the door.
+    using CompiledView = ::fixy::ScopedView<CrucibleContext, ctx_mode::Compiled>;
+
+    // The addresses of the slots of the matched op (ReplayEngine::output_ptr
+    // and input_ptr).  The engine checks that it is live.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<::fixy::RunAddress> output_ptr_(OutputPosition position) const {
         auto av = engine_.active_view_();
-        return engine_.input_ptr(j, av);
+        return engine_.output_ptr(position.raw(), av);
+    }
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<::fixy::RunAddress> input_ptr_(InputPosition position) const {
+        auto av = engine_.active_view_();
+        return engine_.input_ptr(position.raw(), av);
     }
 
-    ::fixy::Option<::fixy::RunAddress> input_ptr(uint16_t, CompiledView const&) const&& =
-        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
+    // The column of addresses of the pool for body (PoolAllocator::with_addresses).
+    template <class Body>
+    [[nodiscard]] auto with_addresses_(Body&& body) const noexcept {
+        auto pv = pool_.initialized_view_();
+        return pool_.with_addresses(pv, static_cast<Body&&>(body));
+    }
 
     // The address of an external slot and the device of its owner
     // (PoolAllocator::register_external).  The door reads the flag of the
@@ -408,8 +457,8 @@ struct CrucibleContext {
     // refusal gives its ExternalRefusal, and the pool keeps the slot as it
     // was.  The replay of an op binds its external slots through
     // bind_external_reads, which reads no plan.  Complexity: O(1).
-    [[nodiscard, gnu::cold]] ::fixy::Result<::fixy::Unit, ExternalRefusal>
-    register_external(SlotId sid, TensorData data, CompiledView const&) {
+    [[nodiscard, gnu::cold]] ::fixy::Result<::fixy::Unit, ExternalRefusal> register_planned_external_(SlotId sid,
+                                                                                                      TensorData data) {
         using Registered = ::fixy::Result<::fixy::Unit, ExternalRefusal>;
         const ::fixy::View<const TensorSlot> plan_slots = active_plan_().slots.view();
         if (plan_slots.get(sid.raw()).is_none()) return ::fixy::err(ExternalRefusal::OutsidePlan);
@@ -434,7 +483,7 @@ struct CrucibleContext {
     // so a listed id is always an external slot of the active plan.  Two
     // passes, one to count and one to fill, so the list takes one allocation.
     // Complexity: O(the inputs of the region).
-    [[gnu::cold]] void list_external_reads(OpIndex resume_op, CompiledView const&) {
+    [[gnu::cold]] void list_external_reads_(OpIndex resume_op) {
         const RegionNode& region = active_region_node_();
         const ::fixy::View<const TensorSlot> plan_slots = active_plan_().slots.view();
         const auto each_read = [&region, plan_slots](auto&& on_read) {
@@ -471,7 +520,7 @@ struct CrucibleContext {
 
     // Takes the cursor of bind_external_reads back to the first read, for
     // the first op of an iteration.
-    CRUCIBLE_INLINE void rewind_external_reads() noexcept { next_external_read_ = 0; }
+    CRUCIBLE_INLINE void rewind_external_reads_() noexcept { next_external_read_ = 0; }
 
     // Binds each external slot that the op at matched reads to the storage of
     // that input of the live op.  The replay of each op calls the door once,
@@ -480,7 +529,7 @@ struct CrucibleContext {
     // The list holds only external slots of the active plan
     // (list_external_reads), so the door reads no plan, and it writes no
     // pooled slot.  Complexity: O(the reads of the op).
-    CRUCIBLE_INLINE void bind_external_reads(OpIndex matched, const ValidatedOp& live, CompiledView const&) {
+    CRUCIBLE_INLINE void bind_external_reads_(OpIndex matched, const ValidatedOp& live) {
         const bool has_read =
             external_reads_.view().get(next_external_read_).is_some_and([matched](auto const& next) noexcept {
                 return next->op.raw() <= matched.raw();
@@ -490,7 +539,7 @@ struct CrucibleContext {
 
     // Scope of external slots
     //   with_external_blocks registers the bytes of some external slots for the
-    //   time of body, gives body this context, and drops them before the door
+    //   time of body, gives body the compiled scope, and drops them before the door
     //   returns.  The blocks move into the frame of the door, so no name that
     //   body reaches ends a block or changes a window of the scope, and they come
     //   back in a Record after the answer.  A block keeps its bytes where they
@@ -511,8 +560,9 @@ struct CrucibleContext {
     //   an address for it.  A scope in body can register other slots, such as a
     //   batch beside the parameters of an outer scope.  The pool is lent for the
     //   time of body, so a deactivation, an activation or a switch of region in
-    //   it ends the process (PoolAllocator, the lent pool).  A body that meets a
-    //   divergence gives it back as its result.
+    //   it ends the process (PoolAllocator, the lent pool).  A body reaches no key
+    //   of a context, so only a second key, which a test can mint, reaches such a
+    //   change.  A body that meets a divergence gives it back as its result.
     //
     //   with_foreign_views is the same scope for bytes whose owner is outside the
     //   program.  The frame of the door cannot hold that owner, so the caller
@@ -520,47 +570,23 @@ struct CrucibleContext {
     //   bytes live until the door returns.
     // Complexity: O(entries of the list), and the cost of body.
     template <class Body>
-        requires ExternalScopeBody<Body>
     [[nodiscard]] ::fixy::Record<ExternalAnswer<Body>, ExternalBlocks>
-    with_external_blocks(ExternalBlocks&& given, CompiledView const&, Body&& body) & noexcept {
+    with_external_blocks_(ExternalBlocks&& given, CompiledScope& scope, Body&& body) noexcept {
         ExternalBlocks held{std::move(given)};
         [[maybe_unused]] auto const lend = pool_.lends_.lend();
-        ExternalAnswer<Body> answer =
-            answer_scope_(register_windows_(held), ::fixy::as_const(held.windows).view(), static_cast<Body&&>(body));
+        ExternalAnswer<Body> answer = answer_scope_(register_windows_(held), ::fixy::as_const(held.windows).view(),
+                                                    scope, static_cast<Body&&>(body));
         return {std::move(answer), std::move(held)};
     }
-    template <class Licence, class Body>
-        requires ForeignViewLicence<Licence> && ExternalScopeBody<Body>
+    template <class Body>
     [[nodiscard]] ::fixy::Record<ExternalAnswer<Body>, ::fixy::HeapArray<ForeignView>>
-    with_foreign_views(::fixy::HeapArray<ForeignView>&& given, CompiledView const&, Body&& body) & noexcept {
+    with_foreign_views_(::fixy::HeapArray<ForeignView>&& given, CompiledScope& scope, Body&& body) noexcept {
         ::fixy::HeapArray<ForeignView> held{std::move(given)};
         [[maybe_unused]] auto const lend = pool_.lends_.lend();
         ExternalAnswer<Body> answer =
-            answer_scope_(register_foreign_(held.view()), held.view(), static_cast<Body&&>(body));
+            answer_scope_(register_foreign_(held.view()), held.view(), scope, static_cast<Body&&>(body));
         return {std::move(answer), std::move(held)};
     }
-
-    // A list that stays with the caller, a foreign list with no licence, and a
-    // temporary context each bind to an overload of these, so the refusal gives
-    // its reason.
-    template <class Body>
-    void with_external_blocks(ExternalBlocks& given, CompiledView const&, Body&&) & = delete(
-        "with_external_blocks takes the blocks into its frame and gives them back: pass std::move(blocks), and keep "
-        "the blocks that the call returns");
-    template <class Licence, class Body>
-    void with_foreign_views(::fixy::HeapArray<ForeignView>& given, CompiledView const&, Body&&) & = delete(
-        "with_foreign_views takes the list of the Views into its frame and gives it back: pass std::move(views), and "
-        "keep the list that the call returns");
-    template <class Body>
-    void with_foreign_views(::fixy::HeapArray<ForeignView>&& given, CompiledView const&, Body&&) & = delete(
-        "no check proves that a block outside the program lives: name the licence foreign_block_stays, or give bytes "
-        "that the program owns to with_external_blocks");
-    template <class Body>
-    void with_external_blocks(ExternalBlocks&&, CompiledView const&, Body&&) && =
-        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
-    template <class Licence, class Body>
-    void with_foreign_views(::fixy::HeapArray<ForeignView>&&, CompiledView const&, Body&&) && =
-        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
     // The bytes of an input of the matched op as a read-only View of T, for a
     // kernel that reads them (PoolAllocator::slot_view).  No value for an
@@ -570,8 +596,7 @@ struct CrucibleContext {
     // through its ViewMut of with_output_views alone.  Complexity:
     // O(outputs of the op).
     template <class T>
-        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
-    [[nodiscard]] ::fixy::Option<::fixy::View<T const>> input_view(InputPosition position, CompiledView const&) const& {
+    [[nodiscard]] ::fixy::Option<::fixy::View<T const>> input_view_(InputPosition position) const {
         const TraceEntry& op = engine_.current_entry();
         const ::fixy::View<const SlotId> inputs = op.input_slot_ids();
         CRUCIBLE_PRE(position.raw() < inputs.size());
@@ -584,10 +609,6 @@ struct CrucibleContext {
         auto pv = pool_.initialized_view_();
         return pool_.slot_view<T>(sid, pv);
     }
-
-    template <class T>
-    ::fixy::Option<::fixy::View<T const>> input_view(InputPosition, CompiledView const&) const&& =
-        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
     // body gets a reference to a FixedList of one ViewMut<T> for each output
     // of the matched op, in the order of the outputs, and the door gives the
@@ -609,8 +630,7 @@ struct CrucibleContext {
     // O(outputs) for the windows, O(outputs^2) for the check of overlap, and
     // the cost of body.
     template <class T, class Body>
-        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
-    [[nodiscard]] auto with_output_views(CompiledView const&, Body&& body) & {
+    [[nodiscard]] auto with_output_views_(Body&& body) {
         return output_windows_().and_then([this, &body](OutputWindows windows) noexcept {
             [[maybe_unused]] auto const lend = pool_.lends_.lend();
             auto [written, block] =
@@ -621,31 +641,6 @@ struct CrucibleContext {
         });
     }
 
-    template <class T, class Body>
-    void with_output_views(CompiledView const&, Body&&) && =
-        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
-
-    [[nodiscard]] uint64_t compiled_iterations() const { return compiled_iterations_.get(); }
-    [[nodiscard]] uint64_t diverged_count() const { return diverged_count_.get(); }
-    // The Vigil owns the region, and this context only points at it.  The
-    // reference does not point into this context, and it has no twin.  It
-    // is empty while the context records.
-    [[nodiscard]] ::fixy::Option<DagRef<RegionNode const>> active_region() const { return active_region_.value(); }
-
-    [[nodiscard]] const ReplayEngine& engine() const& { return engine_; }
-    const ReplayEngine& engine() const&& =
-        delete("a temporary context releases its engine at the end of the statement. Use a context that has a name");
-    // The test door of the engine: a test or a bench of the engine alone drives
-    // the engine of a context, which owns the pool that the engine reads.  The
-    // capability of a test keeps product code out.  An advance or a reset
-    // through the door counts no iteration and moves no cursor of the external
-    // reads.
-    [[nodiscard]] ReplayEngine& engine(::foundation::effects::Test const& /*test*/) & noexcept { return engine_; }
-    [[nodiscard]] const PoolAllocator& pool() const& { return pool_; }
-    const PoolAllocator& pool() const&& =
-        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
-
-private:
     // The bitset below is sized at this bound, so a plan with more slots than
     // this would lose track of which it had already copied and copy some
     // twice. It is far tighter than the allocator's own slot ceiling, which is
@@ -786,16 +781,17 @@ private:
     // cost of body.
     template <class Entry, class Body>
     [[nodiscard]] ExternalAnswer<Body> answer_scope_(::fixy::Option<ViewRefusal> refusal,
-                                                     ::fixy::View<const Entry> entries, Body&& body) noexcept {
+                                                     ::fixy::View<const Entry> entries, CompiledScope& scope,
+                                                     Body&& body) noexcept {
         using Answer = ExternalAnswer<Body>;
         return refusal.match([](ViewRefusal reason) noexcept -> Answer { return ::fixy::err(reason); },
-                             [this, entries, &body]() noexcept -> Answer {
-                                 if constexpr (std::is_void_v<std::invoke_result_t<Body&&, CrucibleContext&>>) {
-                                     static_cast<Body&&>(body)(*this);
+                             [this, entries, &scope, &body]() noexcept -> Answer {
+                                 if constexpr (std::is_void_v<std::invoke_result_t<Body&&, CompiledScope&>>) {
+                                     static_cast<Body&&>(body)(scope);
                                      drop_slots_(entries);
                                      return ::fixy::Unit{};
                                  } else {
-                                     Answer given{static_cast<Body&&>(body)(*this)};
+                                     Answer given{static_cast<Body&&>(body)(scope)};
                                      drop_slots_(entries);
                                      return given;
                                  }
@@ -916,7 +912,7 @@ private:
         }
     }
 
-    // The one body of both advance overloads.  A switch rather than a chain
+    // The body of the advance of the scope.  A switch rather than a chain
     // of tests, so that a status added later has to be given a meaning here
     // instead of silently counting as a divergence.
     [[gnu::always_inline]] ReplayStep advance_(SchemaHash schema_hash, ShapeHash shape_hash) {
@@ -1059,5 +1055,162 @@ private:
     // constructor sets it.
     [[no_unique_address]] ::foundation::effects::Alloc allocation_;
 };
+
+// Compiled scope
+//   with_compiled(key, body) of a CrucibleContext lends a CompiledScope to
+//   body while the context replays a region, and gives no value while it
+//   records.  The scope holds each door of the compiled mode: the advance of an
+//   op, the addresses and the views of the slots of the matched op, the list
+//   and the binds of the reads of the external slots, and the scopes of
+//   external slots.
+//
+//   A door that changes the mode takes the key of the context (the key of a
+//   context), and the gate of with_compiled refuses a body that reaches a key
+//   of a context (CompiledBody).  So no body changes the mode of a context
+//   while a scope lives, and no body opens a second scope.  The scope does not
+//   copy or move, and the result of a body holds no borrow, so the scope ends
+//   with the call of its body.  So no proof of the compiled mode outlives the
+//   mode, and no door of the scope tests the mode.  The scope holds its context
+//   and the private proof of the mode of the context.
+class [[nodiscard]] CompiledScope final {
+public:
+    CompiledScope(CompiledScope const&) = delete("a compiled scope lives for the call of the body of with_compiled");
+    CompiledScope&
+    operator=(CompiledScope const&) = delete("a compiled scope lives for the call of the body of with_compiled");
+    CompiledScope(CompiledScope&&) = delete("a compiled scope lives for the call of the body of with_compiled");
+    CompiledScope&
+    operator=(CompiledScope&&) = delete("a compiled scope lives for the call of the body of with_compiled");
+    ~CompiledScope() = default;
+
+    // Advances the replay over one op: the guard of the op at the cursor reads
+    // the two hashes (ReplayEngine::advance).  A COMPLETE counts an iteration
+    // of the region, and a DIVERGED counts a divergence.
+    [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash) & {
+        return context_->advance_(schema_hash, shape_hash);
+    }
+
+    // The address of the slot of an output of the matched op: the first byte
+    // of the storage of the output (ReplayEngine::output_ptr).  It points into
+    // the pool of the context, or into the storage that the owner of an
+    // external slot registered.  input_ptr gives the same for an input.
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_ptr(OutputPosition position) const& {
+        return context_->output_ptr_(position);
+    }
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_ptr(InputPosition position) const& {
+        return context_->input_ptr_(position);
+    }
+
+    // The address of an external slot and the device of its owner.  A slot
+    // that the plan of the active region does not mark external gives its
+    // ExternalRefusal, and the pool keeps the slot as it was.  Complexity: O(1).
+    [[nodiscard, gnu::cold]] ::fixy::Result<::fixy::Unit, ExternalRefusal> register_external(SlotId sid,
+                                                                                             TensorData data) & {
+        return context_->register_planned_external_(sid, data);
+    }
+
+    // Lists each read of an external slot by an op of the active region, from
+    // the op resume_op (CrucibleContext::list_external_reads_).  Complexity:
+    // O(the inputs of the region).
+    [[gnu::cold]] void list_external_reads(OpIndex resume_op) & { context_->list_external_reads_(resume_op); }
+
+    // Takes the cursor of bind_external_reads back to the first read, for the
+    // first op of an iteration.
+    CRUCIBLE_INLINE void rewind_external_reads() & noexcept { context_->rewind_external_reads_(); }
+
+    // Binds each external slot that the op at matched reads to the storage of
+    // that input of the live op (CrucibleContext::bind_external_reads_).
+    // Complexity: O(the reads of the op).
+    CRUCIBLE_INLINE void bind_external_reads(OpIndex matched, const ValidatedOp& live) & {
+        context_->bind_external_reads_(matched, live);
+    }
+
+    // The bytes of an input of the matched op as a read-only View of T
+    // (CrucibleContext::input_view_).  Complexity: O(outputs of the op).
+    template <class T>
+        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
+    [[nodiscard]] ::fixy::Option<::fixy::View<T const>> input_view(InputPosition position) const& {
+        return context_->template input_view_<T>(position);
+    }
+
+    // body gets one ViewMut<T> for each output of the matched op, for the time
+    // of the call (CrucibleContext::with_output_views_).  Complexity: O(outputs)
+    // for the windows, O(outputs^2) for the check of overlap, and the cost of
+    // body.
+    template <class T, class Body>
+        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
+    [[nodiscard]] auto with_output_views(Body&& body) & {
+        return context_->template with_output_views_<T>(static_cast<Body&&>(body));
+    }
+
+    // body gets the View of the column of addresses of the pool, for the time of
+    // the call (PoolAllocator::with_addresses).  Complexity: the cost of body.
+    template <class Body>
+        requires PoolColumnBody<Body>
+    [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] auto with_addresses(Body&& body) const& noexcept {
+        return context_->with_addresses_(static_cast<Body&&>(body));
+    }
+
+    // The scopes of external slots (the scope of external slots of
+    // CrucibleContext): body gets this scope while the bytes of the slots of
+    // the list are in the pool.  Complexity: O(entries of the list), and the
+    // cost of body.
+    template <class Body>
+        requires ExternalScopeBody<Body>
+    [[nodiscard]] ::fixy::Record<ExternalAnswer<Body>, ExternalBlocks> with_external_blocks(ExternalBlocks&& given,
+                                                                                            Body&& body) & noexcept {
+        return context_->with_external_blocks_(std::move(given), *this, static_cast<Body&&>(body));
+    }
+    template <class Licence, class Body>
+        requires ForeignViewLicence<Licence> && ExternalScopeBody<Body>
+    [[nodiscard]] ::fixy::Record<ExternalAnswer<Body>, ::fixy::HeapArray<ForeignView>>
+    with_foreign_views(::fixy::HeapArray<ForeignView>&& given, Body&& body) & noexcept {
+        return context_->with_foreign_views_(std::move(given), *this, static_cast<Body&&>(body));
+    }
+
+    // A list that stays with the caller and a foreign list with no licence bind
+    // to these overloads, so the refusal gives its reason.
+    template <class Body>
+    void with_external_blocks(ExternalBlocks& given, Body&& body) & = delete(
+        "with_external_blocks takes the blocks into its frame and gives them back: pass std::move(blocks), and keep "
+        "the blocks that the call returns");
+    template <class Licence, class Body>
+    void with_foreign_views(::fixy::HeapArray<ForeignView>& given, Body&& body) & = delete(
+        "with_foreign_views takes the list of the Views into its frame and gives it back: pass std::move(views), and "
+        "keep the list that the call returns");
+    template <class Body>
+    void with_foreign_views(::fixy::HeapArray<ForeignView>&& given, Body&& body) & = delete(
+        "no check proves that a block outside the program lives: name the licence foreign_block_stays, or give bytes "
+        "that the program owns to with_external_blocks");
+
+    // The context of the scope, for a read of its state, such as its pool or
+    // its counts.
+    [[nodiscard]] CrucibleContext const& context() const& noexcept { return *context_; }
+
+private:
+    friend struct CrucibleContext;
+
+    CompiledScope(CrucibleContext& context, CrucibleContext::CompiledView const& view) noexcept
+        : context_{::fixy::erase_brand(::fixy::to(context))}, view_{view} {}
+
+    ::fixy::Ref<CrucibleContext> context_;
+    // The proof that the context replays a region.  The scope ends before the
+    // mode can change, so the proof is never stale.
+    [[maybe_unused]] CrucibleContext::CompiledView view_;
+};
+
+template <class Body>
+    requires CompiledBody<Body>
+CRUCIBLE_INLINE CompiledAnswer<Body> CrucibleContext::with_compiled(ContextKey& /*key*/, Body&& body) & noexcept {
+    using Answer = CompiledAnswer<Body>;
+    if (mode_ != ContextMode::COMPILED) [[unlikely]]
+        return Answer{::fixy::none};
+    CompiledScope scope{*this, ::fixy::erase_brand(::fixy::mint_view<ctx_mode::Compiled>(*this))};
+    if constexpr (std::is_void_v<std::invoke_result_t<Body&&, CompiledScope&>>) {
+        static_cast<Body&&>(body)(scope);
+        return Answer::some(::fixy::Unit{});
+    } else {
+        return Answer::some(static_cast<Body&&>(body)(scope));
+    }
+}
 
 }  // namespace crucible

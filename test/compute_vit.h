@@ -141,7 +141,7 @@ void compute_reference(const Weights& weights, Reference& reference);
 // ops 0 to 6, the attention block (test_compute_vit_attention.cpp).  The
 // second does ops 7 to 14, the feed-forward block and the head
 // (test_compute_vit_head.cpp).
-void run_attention_ops(crucible::CrucibleContext& ctx, const crucible::CrucibleContext::CompiledView& cv);
-void run_ffn_and_head_ops(crucible::CrucibleContext& ctx, const crucible::CrucibleContext::CompiledView& cv);
+void run_attention_ops(crucible::CompiledScope& scope);
+void run_ffn_and_head_ops(crucible::CompiledScope& scope);
 
 }  // namespace test_compute_vit

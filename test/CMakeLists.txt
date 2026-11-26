@@ -4526,20 +4526,14 @@ crucible_neg_compile_test(neg_trace_loader_refuses_foreground_io
   "required for the satisfaction of .CtxFitsTraceLoad<Ctx>."
   "neg_trace_loader_refuses_foreground_io.cpp:10")
 
-# The view mints of CrucibleContext, PoolAllocator and ReplayEngine.  Each
-# carrier has one typed view, so the per-state mismatch used for
-# CKernelTable and SchemaTable does not apply.  Two fixtures per mint:
+# The view mints of PoolAllocator and ReplayEngine.  Each carrier has one
+# typed view, so the per-state mismatch used for CKernelTable and SchemaTable
+# does not apply.  Two fixtures per mint:
 #   * _cross_carrier: the view is offered where a CKernelTable view is
 #     required, and the two fixy::ScopedView instantiations do not
 #     convert, so the carrier is locked into the type.
 #   * _in_field: a class that stores the view fails the field audit
 #     no_scoped_view_field_check, which sees through the view alias.
-crucible_neg_compile_test(neg_crucible_context_mint_compiled_view_cross_carrier
-  "invalid initialization of reference of type .const crucible::CKernelTable::MutableView&."
-  "from expression of type .fixy::ScopedView<crucible::CrucibleContext, crucible::ctx_mode::Compiled>.")
-crucible_neg_compile_test(neg_crucible_context_mint_compiled_view_in_field
-  "static assertion failed: Type contains a fixy::ScopedView<> in some field"
-  "! fixy::contains_scoped_view<OffendingCtxContainer>\\(\\). evaluates to false")
 
 crucible_neg_compile_test(neg_pool_allocator_bytes_write
   "binding reference of type .uint8_t&. \\{aka .unsigned char&.\\} to .const unsigned char. discards qualifiers"
@@ -4567,18 +4561,40 @@ crucible_neg_compile_test(neg_replay_engine_mint_active_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<OffendingEngineContainer>\\(\\). evaluates to false")
 
-# The foreground views are read only by the thread that holds the claim
-# of the Vigil, so each gate asks for the context of the Vigil's brand.
-# A context with no brand and a context of another state are refused.
-crucible_neg_compile_test(neg_crucible_context_compiled_view_unbranded_ctx
-  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
-  "neg_crucible_context_compiled_view_unbranded_ctx.cpp:11")
-crucible_neg_compile_test(neg_crucible_context_compiled_view_other_brand
-  "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
-  "neg_crucible_context_compiled_view_other_brand.cpp:15")
+# The compiled scope of a context (with_compiled) lends the doors of the compiled
+# mode to a body for one call, and no proof of the mode outlives the scope.
+#   * neg_crucible_context_compiled_body_reaches_the_key,
+#     neg_crucible_context_compiled_body_reaches_a_second_key and
+#     neg_crucible_context_compiled_body_changes_the_mode: a body reaches no key
+#     of a context, by a capture or through a member of a holder, so no body
+#     changes the mode or opens a second scope.
+#   * neg_crucible_context_scope_leaves_its_body,
+#     neg_crucible_context_scope_gives_an_address and
+#     neg_crucible_context_scope_copied: the scope and an address of the pool do
+#     not leave the body.
+crucible_neg_compile_test(neg_crucible_context_compiled_body_reaches_the_key
+  "use of deleted function .void crucible::CrucibleContext::with_compiled\\(crucible::ContextKey&, Body&&\\) &"
+  "a body of with_compiled reaches a key of a context")
+crucible_neg_compile_test(neg_crucible_context_compiled_body_reaches_a_second_key
+  "use of deleted function .void crucible::CrucibleContext::with_compiled\\(crucible::ContextKey&, Body&&\\) &"
+  "a body of with_compiled reaches a key of a context")
+crucible_neg_compile_test(neg_crucible_context_compiled_body_changes_the_mode
+  "use of deleted function .void crucible::CrucibleContext::with_compiled\\(crucible::ContextKey&, Body&&\\) &"
+  "a body of with_compiled reaches a key of a context")
+crucible_neg_compile_test(neg_crucible_context_scope_leaves_its_body
+  "no matching function for call to .crucible::CrucibleContext::with_compiled\\("
+  "CompiledBody"
+  "no operand of the disjunction is satisfied")
+crucible_neg_compile_test(neg_crucible_context_scope_gives_an_address
+  "no matching function for call to .crucible::CrucibleContext::with_compiled\\("
+  "CompiledBody"
+  "no operand of the disjunction is satisfied")
+crucible_neg_compile_test(neg_crucible_context_scope_copied
+  "use of deleted function .crucible::CompiledScope::CompiledScope\\(const crucible::CompiledScope&\\)."
+  "a compiled scope lives for the call of the body of with_compiled")
 
 # A body of with_output_views opens no second frame of the outputs: the frame
-# door of the windows refuses a capture of the context that is not const.
+# door of the windows refuses a capture of the scope.
 crucible_neg_compile_test(neg_crucible_context_nested_output_views
   "no matching function for call to .with_mut_windows<float>\\("
   "no matching function for call to .foundation::core::Result<foundation::core::FixedList<foundation::ByteWindow, 8>, crucible::OutputRefusal>::and_then\\("
@@ -4599,8 +4615,8 @@ crucible_neg_compile_test(neg_crucible_context_unchecked_register_of_a_slot_id
   "cannot convert .crucible::SlotId. to .crucible::CrucibleContext::ExternalSlotId."
   "neg_crucible_context_unchecked_register_of_a_slot_id\\.cpp:17:")
 crucible_neg_compile_test(neg_crucible_context_register_external_unread_refusal
-  "ignoring return value of .*crucible::CrucibleContext::register_external\\(crucible::SlotId, crucible::TensorData"
-  "neg_crucible_context_register_external_unread_refusal\\.cpp:16:")
+  "ignoring return value of .*crucible::CompiledScope::register_external\\(crucible::SlotId, crucible::TensorData"
+  "neg_crucible_context_register_external_unread_refusal\\.cpp:17:")
 
 # A key of a context opens each context, so only its holders mint one: the
 # Vigil, for its own context, and a test through mint_context_key.
@@ -4637,27 +4653,27 @@ crucible_neg_compile_test(neg_crucible_context_key_proof_private
 #   * neg_pool_allocator_external_bytes_are_private: only the context gives bytes
 #     to its pool.
 crucible_neg_compile_test(neg_crucible_context_external_blocks_named
-  "use of deleted function .void crucible::CrucibleContext::with_external_blocks\\("
+  "use of deleted function .void crucible::CompiledScope::with_external_blocks\\("
   "with_external_blocks takes the blocks into its frame and gives them back")
 crucible_neg_compile_test(neg_crucible_context_external_blocks_of_temporary
-  "use of deleted function .void crucible::CrucibleContext::with_external_blocks\\("
+  "use of deleted function .void crucible::CrucibleContext::with_compiled\\(crucible::ContextKey&, Body&&\\) &&"
   "a temporary context releases its pool at the end of the statement")
 crucible_neg_compile_test(neg_crucible_context_external_blocks_body_holds_the_context
-  "no matching function for call to .crucible::CrucibleContext::with_external_blocks\\("
+  "no matching function for call to .crucible::CompiledScope::with_external_blocks\\("
   "ExternalScopeBody"
   "StoresNoBorrowOutside")
 crucible_neg_compile_test(neg_crucible_context_external_blocks_body_gives_a_view
-  "no matching function for call to .crucible::CrucibleContext::with_external_blocks\\("
+  "no matching function for call to .crucible::CompiledScope::with_external_blocks\\("
   "ExternalScopeBody"
   "no operand of the disjunction is satisfied")
 crucible_neg_compile_test(neg_crucible_context_foreign_views_without_licence
-  "use of deleted function .void crucible::CrucibleContext::with_foreign_views\\("
+  "use of deleted function .void crucible::CompiledScope::with_foreign_views\\("
   "name the licence foreign_block_stays")
 crucible_neg_compile_test(neg_crucible_context_foreign_views_other_licence
-  "no matching function for call to .crucible::CrucibleContext::with_foreign_views<"
+  "no matching function for call to .crucible::CompiledScope::with_foreign_views<"
   "ForeignViewLicence")
 crucible_neg_compile_test(neg_crucible_context_foreign_views_named
-  "use of deleted function .void crucible::CrucibleContext::with_foreign_views\\("
+  "use of deleted function .void crucible::CompiledScope::with_foreign_views\\("
   "with_foreign_views takes the list of the Views into its frame and gives it back")
 crucible_neg_compile_test(neg_pool_allocator_external_bytes_are_private
   "void crucible::PoolAllocator::register_external_bytes_\\(.*is private within this context"

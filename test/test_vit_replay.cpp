@@ -85,13 +85,15 @@ void verify_attention_data_flow(Vigil& vigil) {
     auto p7 = build_op(7, 9999);
     auto r7 = crucible::test::dispatch_synthetic(vigil, p7.entry, p7.metas, p7.n_metas);
     CRUCIBLE_TEST_ASSERT(kTest, r7.action == DispatchResult::Action::COMPILED);
-    std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0)), 0xCD, 64);
+    std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{0})),
+                0xCD, 64);
 
     auto p8 = build_op(8, 9999);
     auto r8 = crucible::test::dispatch_synthetic(vigil, p8.entry, p8.metas, p8.n_metas);
     CRUCIBLE_TEST_ASSERT(kTest, r8.action == DispatchResult::Action::COMPILED);
 
-    auto* in_data = crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), 0));
+    auto* in_data =
+        crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), crucible::InputPosition{0}));
     bool ok = true;
     for (uint32_t i = 0; i < 64; i++)
         if (in_data[i] != 0xCD) {

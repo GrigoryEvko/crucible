@@ -8,7 +8,7 @@
 
 int main() {
     crucible::Vigil vigil;
-    auto const out = vigil.output_ptr(::foundation::effects::testing::foreground(), 0);
+    auto const out = vigil.output_ptr(::foundation::effects::testing::foreground(), crucible::OutputPosition{0});
     (void)out;
     return 0;
 }

@@ -36,49 +36,50 @@ void check_data_flow(crucible::test::TraceRig& /*rig*/, BackgroundThread const& 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
-    auto cv = ctx.mint_compiled_view(kVigilForeground);
+    const auto replayed = ctx.with_compiled(context_key, [](CompiledScope& scope) noexcept {
+        // The byte that the next write of an output writes, and that the next
+        // read of an input expects.
+        std::uint8_t pattern = 0x11;
+        // Writes pattern into each byte of the output of the matched op.
+        const auto is_output_written = [&scope, &pattern]() noexcept {
+            return scope
+                .with_output_views<std::uint8_t>([&pattern](auto& views) noexcept {
+                    std::size_t count = 0;
+                    std::move(views).drain([&pattern, &count](auto view) noexcept {
+                        for (std::uint8_t& byte : view) {
+                            byte = pattern;
+                            ++count;
+                        }
+                    });
+                    return count;
+                })
+                .is_ok_and([](std::size_t const& count) noexcept { return count == kTensorBytes; });
+        };
+        // True when each byte of the input of the matched op holds pattern.
+        const auto is_input_pattern = [&scope, &pattern]() noexcept {
+            return scope.input_view<std::uint8_t>(InputPosition{0})
+                .is_some_and([&pattern](::fixy::View<std::uint8_t const> const& bytes) noexcept {
+                    return bytes.size() == kTensorBytes
+                        && bytes.walk().all_of(
+                            [&pattern](std::uint8_t const& byte) noexcept { return byte == pattern; });
+                });
+        };
 
-    // The byte that the next write of an output writes, and that the next
-    // read of an input expects.
-    std::uint8_t pattern = 0x11;
-    // Writes pattern into each byte of the output of the matched op.
-    const auto is_output_written = [&ctx, &cv, &pattern]() noexcept {
-        return ctx
-            .with_output_views<std::uint8_t>(cv,
-                                             [&pattern](auto& views) noexcept {
-                                                 std::size_t count = 0;
-                                                 std::move(views).drain([&pattern, &count](auto view) noexcept {
-                                                     for (std::uint8_t& byte : view) {
-                                                         byte = pattern;
-                                                         ++count;
-                                                     }
-                                                 });
-                                                 return count;
-                                             })
-            .is_ok_and([](std::size_t const& count) noexcept { return count == kTensorBytes; });
-    };
-    // True when each byte of the input of the matched op holds pattern.
-    const auto is_input_pattern = [&ctx, &cv, &pattern]() noexcept {
-        return ctx.input_view<std::uint8_t>(InputPosition{0}, cv)
-            .is_some_and([&pattern](::fixy::View<std::uint8_t const> const& bytes) noexcept {
-                return bytes.size() == kTensorBytes
-                    && bytes.walk().all_of([&pattern](std::uint8_t const& byte) noexcept { return byte == pattern; });
-            });
-    };
-
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[0], SHAPE[0], cv).status() == ReplayStatus::MATCH);
-    CRUCIBLE_TEST_ASSERT(kTest, is_output_written());
-
-    for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[i], SHAPE[i], cv).status() == ReplayStatus::MATCH);
-        CRUCIBLE_TEST_ASSERT(kTest, is_input_pattern());
-        pattern = static_cast<std::uint8_t>(0x11 + i);
+        CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SCHEMA[0], SHAPE[0]).status() == ReplayStatus::MATCH);
         CRUCIBLE_TEST_ASSERT(kTest, is_output_written());
-    }
 
-    // The last op reads the output of the op before it.
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[7], SHAPE[7], cv).status() == ReplayStatus::COMPLETE);
-    CRUCIBLE_TEST_ASSERT(kTest, is_input_pattern());
+        for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
+            CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SCHEMA[i], SHAPE[i]).status() == ReplayStatus::MATCH);
+            CRUCIBLE_TEST_ASSERT(kTest, is_input_pattern());
+            pattern = static_cast<std::uint8_t>(0x11 + i);
+            CRUCIBLE_TEST_ASSERT(kTest, is_output_written());
+        }
+
+        // The last op reads the output of the op before it.
+        CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SCHEMA[7], SHAPE[7]).status() == ReplayStatus::COMPLETE);
+        CRUCIBLE_TEST_ASSERT(kTest, is_input_pattern());
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, replayed.is_some());
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
@@ -97,42 +98,43 @@ void check_pool_bounds(crucible::test::TraceRig& /*rig*/, BackgroundThread const
     CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().pool_base().is_some());
     CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().pool_bytes() > 0);
 
-    auto cv2 = ctx.mint_compiled_view(kVigilForeground);
+    const auto replayed = ctx.with_compiled(context_key, [](CompiledScope& scope) noexcept {
+        // True when the door lends the output of the matched op, with the
+        // tensor bytes.
+        const auto is_output_inside = [&scope]() noexcept {
+            return scope
+                .with_output_views<std::uint8_t>([](auto& views) noexcept {
+                    std::size_t count = 0;
+                    for (auto const& view : views) {
+                        for (std::uint8_t const& byte : view) {
+                            static_cast<void>(byte);
+                            ++count;
+                        }
+                    }
+                    return count;
+                })
+                .is_ok_and([](std::size_t const& count) noexcept { return count == kTensorBytes; });
+        };
 
-    // True when the door lends the output of the matched op, with the tensor
-    // bytes.
-    const auto is_output_inside = [&ctx, &cv2]() noexcept {
-        return ctx
-            .with_output_views<std::uint8_t>(cv2,
-                                             [](auto& views) noexcept {
-                                                 std::size_t count = 0;
-                                                 for (auto const& view : views) {
-                                                     for (std::uint8_t const& byte : view) {
-                                                         static_cast<void>(byte);
-                                                         ++count;
-                                                     }
-                                                 }
-                                                 return count;
-                                             })
-            .is_ok_and([](std::size_t const& count) noexcept { return count == kTensorBytes; });
-    };
-
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        static_cast<void>(ctx.advance(SCHEMA[i], SHAPE[i], cv2));
-        CRUCIBLE_TEST_ASSERT(kTest, is_output_inside());
-    }
-
-    // The loop above consumed the iteration, so this one replays it.  No
-    // reset is needed: the first advance after COMPLETE rewinds.
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        static_cast<void>(ctx.advance(SCHEMA[i], SHAPE[i], cv2));
-        if (i > 0) {
-            CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<std::uint8_t>(InputPosition{0}, cv2)
-                                            .is_some_and([](::fixy::View<std::uint8_t const> const& bytes) noexcept {
-                                                return bytes.size() == kTensorBytes;
-                                            }));
+        for (uint32_t i = 0; i < NUM_OPS; i++) {
+            static_cast<void>(scope.advance(SCHEMA[i], SHAPE[i]));
+            CRUCIBLE_TEST_ASSERT(kTest, is_output_inside());
         }
-    }
+
+        // The loop above consumed the iteration, so this one replays it.  No
+        // reset is needed: the first advance after COMPLETE rewinds.
+        for (uint32_t i = 0; i < NUM_OPS; i++) {
+            static_cast<void>(scope.advance(SCHEMA[i], SHAPE[i]));
+            if (i > 0) {
+                CRUCIBLE_TEST_ASSERT(kTest,
+                                     scope.input_view<std::uint8_t>(InputPosition{0})
+                                         .is_some_and([](::fixy::View<std::uint8_t const> const& bytes) noexcept {
+                                             return bytes.size() == kTensorBytes;
+                                         }));
+            }
+        }
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, replayed.is_some());
 
     ctx.deactivate(context_key);
 }

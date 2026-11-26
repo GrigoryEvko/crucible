@@ -14,9 +14,12 @@ struct OwnStatement final {};
 int main() {
     auto const test = ::foundation::effects::testing::test();
     crucible::CrucibleContext ctx{test.alloc};
-    auto const cv = ctx.mint_compiled_view(::foundation::effects::testing::foreground<crucible::Vigil>());
-    auto given = ctx.with_foreign_views<OwnStatement>(::fixy::HeapArray<crucible::ForeignView>{}, cv,
-                                                      [](crucible::CrucibleContext&) noexcept {});
+    auto context_key = crucible::mint_context_key(test);
+    auto given = ctx.with_compiled(context_key, [](crucible::CompiledScope& scope) noexcept {
+        auto kept = scope.with_foreign_views<OwnStatement>(::fixy::HeapArray<crucible::ForeignView>{},
+                                                           [](crucible::CompiledScope&) noexcept {});
+        static_cast<void>(kept);
+    });
     static_cast<void>(given);
     return 0;
 }

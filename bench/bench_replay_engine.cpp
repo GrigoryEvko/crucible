@@ -135,16 +135,26 @@ ReplayStatus walk_advance_only(ReplayEngine& engine, ::fixy::View<const TraceEnt
     return last_ptr;
 }
 
-// CrucibleContext drives its internal ReplayEngine; no external reset.
-::fixy::Option<::fixy::RunAddress> walk_context(CrucibleContext& ctx, ::fixy::View<const TraceEntry> ops) {
-    auto cv = ctx.mint_compiled_view(kVigilForeground);
-    ::fixy::Option<::fixy::RunAddress> last_ptr{::fixy::none};
-    for (const TraceEntry& op : ops) {
-        auto s = ctx.advance(op.schema_hash, op.shape_hash, cv);
-        last_ptr = ctx.output_ptr(0, cv);
-        bench::do_not_optimize(s);
-    }
-    return last_ptr;
+// CrucibleContext drives its internal ReplayEngine; no external reset.  One
+// compiled scope holds the walk of the region.  No address leaves the scope,
+// so the body keeps the last address from the optimizer and gives the last
+// status back.
+ReplayStatus walk_context(CrucibleContext& ctx, crucible::ContextKey& key, ::fixy::View<const TraceEntry> ops) {
+    return ctx
+        .with_compiled(key,
+                       [ops](crucible::CompiledScope& scope) noexcept {
+                           ReplayStatus last = ReplayStatus::MATCH;
+                           ::fixy::Option<::fixy::RunAddress> last_ptr{::fixy::none};
+                           for (const TraceEntry& op : ops) {
+                               auto s = scope.advance(op.schema_hash, op.shape_hash);
+                               last_ptr = scope.output_ptr(crucible::OutputPosition{0});
+                               bench::do_not_optimize(s);
+                               last = s.status();
+                           }
+                           bench::do_not_optimize(last_ptr);
+                           return last;
+                       })
+        .expect("the bench activates the context first");
 }
 
 }  // namespace
@@ -199,7 +209,7 @@ int main() {
                               bench::do_not_optimize(p);
                           }));
         bench::add_report(reports, bench::run(label4, [&] {
-                              auto p = walk_context(ctx, region_ops);
+                              auto p = walk_context(ctx, context_key, region_ops);
                               bench::do_not_optimize(p);
                           }));
     }

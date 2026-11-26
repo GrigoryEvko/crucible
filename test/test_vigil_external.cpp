@@ -158,7 +158,7 @@ void test_external_follows_the_live_op() {
     // Each later iteration reads a new batch, and the slot follows it.
     for (uint32_t iter = 4; iter < 7; ++iter) {
         CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, memory, iter, 0).action == DispatchResult::Action::COMPILED);
-        CRUCIBLE_TEST_ASSERT(kTest, vigil.input_ptr(fg, 0) == batch_address(memory, iter)
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.input_ptr(fg, crucible::InputPosition{0}) == batch_address(memory, iter)
                                         && "the external slot holds the address of the batch of the live op");
         for (uint32_t op = 1; op < NUM_OPS; ++op)
             CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, memory, iter, op).action == DispatchResult::Action::COMPILED);
@@ -183,10 +183,10 @@ void test_views_of_an_external_bind_its_storage() {
     for (uint32_t iter = 4; iter < 7; ++iter) {
         CRUCIBLE_TEST_ASSERT(kTest,
                              dispatch(vigil, memory, iter, 0, kViewFirst).action == DispatchResult::Action::COMPILED);
-        CRUCIBLE_TEST_ASSERT(kTest, vigil.input_ptr(fg, 0) == batch_address(memory, iter));
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.input_ptr(fg, crucible::InputPosition{0}) == batch_address(memory, iter));
         CRUCIBLE_TEST_ASSERT(kTest,
                              dispatch(vigil, memory, iter, 1, kViewFirst).action == DispatchResult::Action::COMPILED);
-        CRUCIBLE_TEST_ASSERT(kTest, vigil.input_ptr(fg, 0) == batch_address(memory, iter)
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.input_ptr(fg, crucible::InputPosition{0}) == batch_address(memory, iter)
                                         && "the view binds the slot to the first byte of its storage");
         for (uint32_t op = 2; op < NUM_OPS; ++op)
             CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, memory, iter, op, kViewFirst).action
@@ -212,13 +212,13 @@ void test_internal_slot_of_a_nest_keeps_its_pool_bytes() {
     for (uint32_t iter = 4; iter < 7; ++iter) {
         CRUCIBLE_TEST_ASSERT(kTest,
                              dispatch(vigil, memory, iter, 0, kNestResult).action == DispatchResult::Action::COMPILED);
-        const ::fixy::Option<::fixy::RunAddress> planned = vigil.input_ptr(fg, 0);
+        const ::fixy::Option<::fixy::RunAddress> planned = vigil.input_ptr(fg, crucible::InputPosition{0});
         CRUCIBLE_TEST_ASSERT(kTest, planned.is_some() && "the pool holds the bytes of R");
         CRUCIBLE_TEST_ASSERT(kTest, !(planned == ::fixy::mint_run_address(memory, activation_offset(iter, 1)))
                                         && "no bind gives the internal slot of R the address of the live R");
         CRUCIBLE_TEST_ASSERT(kTest,
                              dispatch(vigil, memory, iter, 1, kNestResult).action == DispatchResult::Action::COMPILED);
-        CRUCIBLE_TEST_ASSERT(kTest, vigil.input_ptr(fg, 0) == batch_address(memory, iter)
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.input_ptr(fg, crucible::InputPosition{0}) == batch_address(memory, iter)
                                         && "the batch is still an external slot");
         for (uint32_t op = 2; op < NUM_OPS; ++op)
             CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, memory, iter, op, kNestResult).action
@@ -272,7 +272,7 @@ void test_register_external_checks_the_plan() {
     for (uint32_t op = 0; op < NUM_OPS; ++op)
         CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, memory, 4, op).action == DispatchResult::Action::COMPILED);
     CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, memory, 5, 0).action == DispatchResult::Action::COMPILED);
-    CRUCIBLE_TEST_ASSERT(kTest, vigil.input_ptr(fg, 0) == batch_address(memory, 5));
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.input_ptr(fg, crucible::InputPosition{0}) == batch_address(memory, 5));
 
     ::fixy::check::pass(kTest, "  test_register_external_checks_the_plan: PASSED\n");
 }

@@ -8,11 +8,14 @@
 int main() {
     auto const test = ::foundation::effects::testing::test();
     crucible::CrucibleContext ctx{test.alloc};
-    auto const cv = ctx.mint_compiled_view(::foundation::effects::testing::foreground<crucible::Vigil>());
-    auto const read_input = [&cv](crucible::CrucibleContext& scoped) noexcept {
-        return scoped.input_view<float>(crucible::InputPosition{0}, cv);
-    };
-    auto given = ctx.with_external_blocks(crucible::ExternalBlocks{}, cv, read_input);
+    auto context_key = crucible::mint_context_key(test);
+    auto given = ctx.with_compiled(context_key, [](crucible::CompiledScope& scope) noexcept {
+        auto const read_input = [](crucible::CompiledScope& scoped) noexcept {
+            return scoped.input_view<float>(crucible::InputPosition{0});
+        };
+        auto kept = scope.with_external_blocks(crucible::ExternalBlocks{}, read_input);
+        static_cast<void>(kept);
+    });
     static_cast<void>(given);
     return 0;
 }

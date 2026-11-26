@@ -721,8 +721,11 @@ static void test_integration_with_pool() {
     auto context_key = crucible::mint_context_key(test);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     alignas(256) char fake_param[128];
-    ctx.register_external(SlotId{2}, crucible::test::host_data(fake_param), ctx.mint_compiled_view(kVigilForeground))
-        .expect("the plan marks slot 2 external");
+    const crucible::TensorData param_data = crucible::test::host_data(fake_param);
+    const auto registered = ctx.with_compiled(context_key, [param_data](crucible::CompiledScope& scope) noexcept {
+        scope.register_external(SlotId{2}, param_data).expect("the plan marks slot 2 external");
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, registered.is_some());
     const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
 

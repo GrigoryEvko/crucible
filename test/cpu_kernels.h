@@ -581,26 +581,25 @@ void transpose_2d(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X
 
 // ── The ops of a replay ────────────────────────────────────────────────
 //
-// A test that replays a region through a compiled context reads each input
-// of the matched op through input_view, and it writes the one output of
-// the op through with_output_views.  The kernel gets the ViewMut of the
-// output, for the time of the call.
+// A test that replays a region through a compiled scope reads each input of
+// the matched op through input_view, and it writes the one output of the op
+// through with_output_views.  The kernel takes the Views of the inputs by
+// value, read before the frame of the output, and it gets the ViewMut of the
+// output for the time of the call.
 
 // The input at a position of the matched op, as floats.  An input that the
-// context gives no View of floats ends the process.
-[[nodiscard]] inline ::fixy::View<float const>
-read_input(CrucibleContext const& ctx, CrucibleContext::CompiledView const& cv, InputPosition position) {
-    return ctx.input_view<float>(position, cv).expect("each input of a reference op is a slot of floats");
+// scope gives no View of floats ends the process.
+[[nodiscard]] inline ::fixy::View<float const> read_input(CompiledScope const& scope, InputPosition position) {
+    return scope.input_view<float>(position).expect("each input of a reference op is a slot of floats");
 }
 
 // Runs kernel on the ViewMut of the one output of the matched op.  A refusal
 // of the outputs, or an op with a count of outputs other than one, fails the
 // test.
 template <class Kernel>
-void write_output(::fixy::TestRunnerCtx const& test, CrucibleContext& ctx, CrucibleContext::CompiledView const& cv,
-                  Kernel const& kernel) {
+void write_output(::fixy::TestRunnerCtx const& test, CompiledScope& scope, Kernel const& kernel) {
     std::size_t outputs = 0;
-    const auto written = ctx.with_output_views<float>(cv, [&kernel, &outputs](auto& views) noexcept {
+    const auto written = scope.with_output_views<float>([&kernel, &outputs](auto& views) noexcept {
         std::move(views).drain([&kernel, &outputs](auto view) noexcept {
             kernel(std::move(view));
             ++outputs;

@@ -63,15 +63,17 @@ void check_second_region(crucible::test::TraceRig& rig, BackgroundThread const& 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region2));
-    auto cv = ctx.mint_compiled_view(kVigilForeground);
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        const ReplayStatus s = ctx.advance(SCHEMA[i], SHAPE[i], cv).status();
-        if (i < NUM_OPS - 1) {
-            CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        } else {
-            CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
+    const auto replayed = ctx.with_compiled(context_key, [](CompiledScope& scope) noexcept {
+        for (uint32_t i = 0; i < NUM_OPS; i++) {
+            const ReplayStatus s = scope.advance(SCHEMA[i], SHAPE[i]).status();
+            if (i < NUM_OPS - 1) {
+                CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
+            } else {
+                CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
+            }
         }
-    }
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, replayed.is_some());
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
     ctx.deactivate(context_key);

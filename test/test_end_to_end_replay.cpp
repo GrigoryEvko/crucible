@@ -63,28 +63,29 @@ void check_replay(crucible::test::TraceRig& /*rig*/, BackgroundThread const& /*b
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(ctx.active_region(), ::fixy::some(region)));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().is_initialized());
 
-    auto cv = ctx.mint_compiled_view(kVigilForeground);
-
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        const ReplayStatus s = ctx.advance(SCHEMA[i], SHAPE[i], cv).status();
-        if (i < NUM_OPS - 1) {
-            CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        } else {
-            CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
+    const auto replayed = ctx.with_compiled(context_key, [&ctx = ::fixy::as_const(ctx)](CompiledScope& scope) noexcept {
+        for (uint32_t i = 0; i < NUM_OPS; i++) {
+            const ReplayStatus s = scope.advance(SCHEMA[i], SHAPE[i]).status();
+            if (i < NUM_OPS - 1) {
+                CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
+            } else {
+                CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
+            }
+            CRUCIBLE_TEST_ASSERT(kTest, scope.output_ptr(OutputPosition{0}).is_some());
         }
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.output_ptr(0, cv).is_some());
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
-    // No explicit reset: the first advance after COMPLETE rewinds.
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        const ReplayStatus s = ctx.advance(SCHEMA[i], SHAPE[i], cv).status();
-        if (i < NUM_OPS - 1) {
-            CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        } else {
-            CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
+        // No explicit reset: the first advance after COMPLETE rewinds.
+        for (uint32_t i = 0; i < NUM_OPS; i++) {
+            const ReplayStatus s = scope.advance(SCHEMA[i], SHAPE[i]).status();
+            if (i < NUM_OPS - 1) {
+                CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
+            } else {
+                CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
+            }
         }
-    }
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, replayed.is_some());
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 2);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 0);
 
@@ -97,22 +98,23 @@ void check_divergence(crucible::test::TraceRig& /*rig*/, BackgroundThread const&
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
-    auto cv = ctx.mint_compiled_view(kVigilForeground);
+    const auto replayed = ctx.with_compiled(context_key, [&ctx = ::fixy::as_const(ctx)](CompiledScope& scope) noexcept {
+        for (uint32_t i = 0; i < 3; i++) {
+            CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SCHEMA[i], SHAPE[i]).status() == ReplayStatus::MATCH);
+        }
 
-    for (uint32_t i = 0; i < 3; i++) {
-        CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[i], SHAPE[i], cv).status() == ReplayStatus::MATCH);
-    }
+        CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SchemaHash{0xBAD}, SHAPE[3]).status() == ReplayStatus::DIVERGED);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 1);
+        // A divergence does not switch modes.  Choosing a fallback is the
+        // caller's decision, not the context's.
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xBAD}, SHAPE[3], cv).status() == ReplayStatus::DIVERGED);
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 1);
-    // A divergence does not switch modes.  Choosing a fallback is the
-    // caller's decision, not the context's.
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
-
-    // The position did not move, so op 3 is still the one under test.
-    // This time the schema matches and the shape does not.
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[3], ShapeHash{0xBAD}, cv).status() == ReplayStatus::DIVERGED);
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 2);
+        // The position did not move, so op 3 is still the one under test.
+        // This time the schema matches and the shape does not.
+        CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SCHEMA[3], ShapeHash{0xBAD}).status() == ReplayStatus::DIVERGED);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 2);
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, replayed.is_some());
 
     ctx.deactivate(context_key);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());

@@ -335,8 +335,10 @@ public:
         //    vessel/torch/vessel_api.cpp, called by crucible_mode.py) does
         //    not ask is_producer_thread(), so this gate is its only guard.
         //
-        // The gate returns the context of this Vigil's claim, and every view
-        // of the replay chain below is minted from it.
+        // The gate returns the context of this Vigil's claim, which the record
+        // path takes.  It is the one check of the thread on each path of the
+        // dispatch: the replay below takes the key of the context, which this
+        // Vigil holds, and checks the thread no second time.
         const VigilFgCtx fg = assert_producer_thread_();
         const TraceRing::Entry& entry = op.entry();
 
@@ -345,15 +347,20 @@ public:
         // inside it (OpNest::is_unrecorded).
         op_record_stack_.note_given(depth);
 
-        // The branch itself proves the context is compiled.  Minting the
-        // view once here is what makes the engine transition below reachable
-        // only from inside this branch.
-        if (replay_.context().is_compiled()) [[likely]] {
-            auto compiled_view = replay_.context().mint_compiled_view(fg);
-            const ReplayStep step = replay_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
+        // The scope of the context is open only while the context replays, so
+        // the advance runs only in the compiled mode.  The body advances, binds
+        // the reads of the external slots, and gives the step back.  The binds
+        // of the data slots and the divergence run after it: they write this
+        // Vigil, which holds the key of the context, and no body reaches the key.
+        const SchemaHash schema_hash = entry.schema_hash;
+        const ShapeHash shape_hash = entry.shape_hash;
+        ::fixy::Option<ReplayStep> replayed = replay_.with_compiled(
+            [schema_hash, shape_hash, &op, &bound = bound_scalars_] [[gnu::always_inline]] (
+                CompiledScope & scope) noexcept { return replay_op_(scope, schema_hash, shape_hash, op, bound); });
+        if (replayed.is_some()) [[likely]] {
+            const ReplayStep step = std::move(replayed).expect("the test above found the step of the scope");
             if (step.status() == ReplayStatus::DIVERGED) [[unlikely]]
                 return handle_divergence_(fg, op);
-            bind_inputs_(op, step, compiled_view);
             return compiled_result_(step);
         }
 
@@ -640,43 +647,52 @@ public:
         return true;
     }
 
-    // The pre-allocated address of the slot of output j of the current op.
+    // The pre-allocated address of the slot of an output of the current op.
     // A slot holds one storage, so the address is the first byte of the
     // storage of the output, and a view at an offset starts storage_offset
     // elements later (strided_view_of).  Valid only after dispatch_op
-    // returned COMPILED with a matching or complete status, which is what the
-    // minted view's precondition checks.  The context proves that the caller
-    // holds this Vigil's producer claim.  The pool gives the device of a slot
-    // (PoolAllocator::slot_data).  input_ptr gives the same for input j.
+    // returned COMPILED with a matching or complete status, until the next
+    // dispatch or the next change of the mode.  A call while the context
+    // records ends the process.  The address leaves the replay through the
+    // keyed door of the context for the foreign ABI
+    // (CrucibleContext::read_output_address).  The context proves that the
+    // caller holds this Vigil's producer claim.  The pool gives the device of a
+    // slot (PoolAllocator::slot_data).  input_ptr gives the same for an input.
     //
     // Each address and each reference that the members that follow return
     // points into a member of this Vigil.  A temporary Vigil releases its
     // members at the end of the statement.  A deleted twin refuses each call
     // on a temporary Vigil.
-    [[nodiscard]] ::fixy::Option<::fixy::RunAddress> output_ptr(VigilFgCtx const& fg, uint16_t j) const& {
-        auto compiled_view = replay_.context().mint_compiled_view(fg);
-        return replay_.context().output_ptr(j, compiled_view);
+    [[nodiscard]] ::fixy::Option<::fixy::RunAddress> output_ptr(VigilFgCtx const& /*fg*/, OutputPosition position) & {
+        const CrucibleContext::OutsideAddress read = replay_.read_output_address(position);
+        return read.match([](::fixy::Option<::fixy::RunAddress> const& address) noexcept { return address; },
+                          [] noexcept -> ::fixy::Option<::fixy::RunAddress> { refuse_call_outside_replay_(); });
     }
 
-    ::fixy::Option<::fixy::RunAddress> output_ptr(VigilFgCtx const&, uint16_t) const&& =
+    ::fixy::Option<::fixy::RunAddress> output_ptr(VigilFgCtx const&, OutputPosition) && =
         delete("a temporary Vigil releases its pool at the end of the statement. Use a Vigil that has a name");
 
-    [[nodiscard]] ::fixy::Option<::fixy::RunAddress> input_ptr(VigilFgCtx const& fg, uint16_t j) const& {
-        auto compiled_view = replay_.context().mint_compiled_view(fg);
-        return replay_.context().input_ptr(j, compiled_view);
+    [[nodiscard]] ::fixy::Option<::fixy::RunAddress> input_ptr(VigilFgCtx const& /*fg*/, InputPosition position) & {
+        const CrucibleContext::OutsideAddress read = replay_.read_input_address(position);
+        return read.match([](::fixy::Option<::fixy::RunAddress> const& address) noexcept { return address; },
+                          [] noexcept -> ::fixy::Option<::fixy::RunAddress> { refuse_call_outside_replay_(); });
     }
 
-    ::fixy::Option<::fixy::RunAddress> input_ptr(VigilFgCtx const&, uint16_t) const&& =
+    ::fixy::Option<::fixy::RunAddress> input_ptr(VigilFgCtx const&, InputPosition) && =
         delete("a temporary Vigil releases its pool at the end of the statement. Use a Vigil that has a name");
 
     // The address of an external slot of the active region and the device of
     // its owner.  A slot that the plan of the active region does not mark
-    // external gives its ExternalRefusal
-    // (CrucibleContext::register_external), and the slot stays as it was.
+    // external gives its ExternalRefusal (CompiledScope::register_external),
+    // and the slot stays as it was.  A call while the context records ends the
+    // process.
     [[nodiscard, gnu::cold]] ::fixy::Result<::fixy::Unit, ExternalRefusal>
-    register_external(VigilFgCtx const& fg, SlotId sid, TensorData data) {
-        auto compiled_view = replay_.context().mint_compiled_view(fg);
-        return replay_.register_external(sid, data, compiled_view);
+    register_external(VigilFgCtx const& /*fg*/, SlotId sid, TensorData data) {
+        using Registered = ::fixy::Result<::fixy::Unit, ExternalRefusal>;
+        return replay_
+            .with_compiled([sid, data](CompiledScope& scope) noexcept { return scope.register_external(sid, data); })
+            .match([](Registered registered) noexcept { return registered; },
+                   [] noexcept -> Registered { refuse_call_outside_replay_(); });
     }
 
     // One data slot of an op of a replayed region (ScalarRole of Types.h),
@@ -690,12 +706,12 @@ public:
     // The data slots of the region of the last activation or switch, in the
     // order of the ops and of the slots, each with its value.  The activation
     // gives each slot the value of the recording, and the replay of each op
-    // writes the value of each data slot of the live op (bind_inputs_).  So
+    // writes the value of each data slot of the live op (bind_scalars_).  So
     // after the replay of an op, its slots hold the values of this iteration,
     // and a kernel of the region reads its scalar arguments here.  Each slot
     // keeps its value while the Vigil records after a divergence.
     [[nodiscard]] ::fixy::View<const BoundScalar> bound_scalars(VigilFgCtx const&) const& noexcept {
-        return bound_scalars_.view();
+        return bound_scalars_.slots.view();
     }
 
     ::fixy::View<const BoundScalar> bound_scalars(VigilFgCtx const&) const&& =
@@ -840,6 +856,12 @@ public:
     // from the region-ready callback.
 
 private:
+    // Ends the process for a call of output_ptr, input_ptr or register_external
+    // while the context records.  A front end calls them only after dispatch_op
+    // gave COMPILED, so such a call is a defect of the caller.  The body is in
+    // src/Vigil.cpp, so a call of a compiled op costs the branch alone.
+    [[noreturn]] CRUCIBLE_COLD static void refuse_call_outside_replay_() noexcept;
+
     // The first call claims the thread; every later call verifies the match.
     // A call from a second thread ends the process, in every build mode.
     // This is the one check between a second producer and a ring that tears
@@ -988,6 +1010,17 @@ private:
             Holders::CAP);
     }
 
+    // The data slots of the active region, in the order of the ops, and the
+    // next slot of the iteration, at most the count of the slots.  Each
+    // activation and each switch of a region writes them
+    // (register_inputs_from_region_), and replay_op_ walks them.  Only the
+    // producer thread reads or writes them.  The reads of the external slots
+    // stand in the replay context, beside the active region.
+    struct BoundScalars {
+        ::fixy::HeapArray<BoundScalar> slots{};
+        uint32_t next = 0;
+    };
+
     // Binds the inputs of the op that the replay matched to the live op: each
     // external tensor to the data of the live op, and each data slot to the
     // value of the live op.  An external is a tensor that no op of the region
@@ -995,23 +1028,32 @@ private:
     // address can change from one iteration to the next.  A data scalar, such
     // as a step size, can change its value from one iteration to the next.
     // The activation lists each read of an external
-    // (CrucibleContext::list_external_reads) and each data slot
-    // (bound_scalars_), in the order of the ops, and two cursors walk the
-    // lists once in each iteration.  An op that reads no external and has no
-    // data slot costs four compares.  The cursors go back to the start at op 0
-    // and when the iteration completes.  O(1) for each op, and O(the reads and
-    // the slots) for the iteration.
-    CRUCIBLE_INLINE void bind_inputs_(const ValidatedOp& op, ReplayStep step,
-                                      CrucibleContext::CompiledView const& compiled_view) {
+    // (CompiledScope::list_external_reads) and each data slot (BoundScalars),
+    // in the order of the ops, and two cursors walk the lists once in each
+    // iteration.  An op that reads no external and has no data slot costs four
+    // compares.  The cursors go back to the start at op 0 and when the
+    // iteration completes.  O(1) for each op, and O(the reads and the slots) for
+    // the iteration.
+    //
+    // The advance and the binds run in one compiled scope of the context, so
+    // one test of the mode serves them.  The body of the scope reaches the data
+    // slots of this Vigil and no other part of it, because this Vigil holds the
+    // key of the context.  A DIVERGED step binds nothing.
+    [[nodiscard]] CRUCIBLE_INLINE static ReplayStep replay_op_(CompiledScope& scope, SchemaHash schema_hash,
+                                                               ShapeHash shape_hash, const ValidatedOp& op,
+                                                               BoundScalars& bound) {
+        const ReplayStep step = scope.advance(schema_hash, shape_hash);
+        if (step.status() == ReplayStatus::DIVERGED) [[unlikely]]
+            return step;
         const uint32_t matched = step.matched_op_index().value().raw();
         // A new iteration starts the cursors again.  The COMPLETE below does
         // that too, but the switch of a region advances the engine with no
-        // call here, so a rewind can pass this function by.
+        // bind, so a rewind can pass this function by.
         if (matched == 0) {
-            replay_.rewind_external_reads();
-            next_bound_scalar_ = 0;
+            scope.rewind_external_reads();
+            bound.next = 0;
         }
-        replay_.bind_external_reads(OpIndex{matched}, op, compiled_view);
+        scope.bind_external_reads(OpIndex{matched}, op);
         // The cursor passes the slots of the earlier ops, writes the value of
         // each slot of the live op, and stops at the first slot of a later op.
         // The element door of each step lends the slot at the cursor in place,
@@ -1022,8 +1064,8 @@ private:
             Stop,
             Next,
         };
-        while (bound_scalars_.with_element(
-                   next_bound_scalar_,
+        while (bound.slots.with_element(
+                   bound.next,
                    [matched, &op](BoundScalar& slot) noexcept {
                        if (slot.op.raw() > matched) return SlotStep::Stop;
                        if (slot.op.raw() == matched) slot.value = op.entry().scalar_values.at(slot.slot.value());
@@ -1031,12 +1073,13 @@ private:
                    },
                    [] noexcept { return SlotStep::Stop; })
                == SlotStep::Next) {
-            ++next_bound_scalar_;
+            ++bound.next;
         }
         if (step.status() == ReplayStatus::COMPLETE) {
-            replay_.rewind_external_reads();
-            next_bound_scalar_ = 0;
+            scope.rewind_external_reads();
+            bound.next = 0;
         }
+        return step;
     }
 
     // The result of an op that the replay matched: the status of its guard
@@ -1105,10 +1148,13 @@ private:
         if (is_switched) {
             // The switch leaves the context compiled, so advance past the
             // divergent op.
-            auto compiled_view = replay_.context().mint_compiled_view(fg);
-            const ReplayStep step = replay_.advance(schema_hash, shape_hash, compiled_view);
+            const ReplayStep step = replay_
+                                        .with_compiled([schema_hash, shape_hash, &live = ::fixy::as_const(op),
+                                                        &bound = bound_scalars_](CompiledScope& scope) noexcept {
+                                            return replay_op_(scope, schema_hash, shape_hash, live, bound);
+                                        })
+                                        .expect("a switch of region leaves the context compiled");
             if (step.status() != ReplayStatus::DIVERGED) {
-                bind_inputs_(op, step, compiled_view);
                 publish_held_regions_();
                 return compiled_result_(step);
             }
@@ -1304,17 +1350,24 @@ private:
 
             // The matched ops already executed eagerly, so the engine has
             // to skip them for the next op to check against the right entry.
-            for (uint32_t i = 0; i < uint32_t{alignment_pos_.value()}; i++) {
-                const ReplayStatus status =
-                    replay_.advance(region.op_at(i).schema_hash, region.op_at(i).shape_hash).status();
-                // The hashes fed in here are the region's own, and alignment
-                // already compared each one against the same entry, so a
-                // mismatch means that the cursor of the engine is out of
-                // step.  The data is not bad.  The check stays in each build,
-                // and it runs once for each aligned op, at the activation of
-                // a region only.
-                CRUCIBLE_FATAL_INVARIANT(status == ReplayStatus::MATCH || status == ReplayStatus::COMPLETE);
-            }
+            const uint32_t aligned = alignment_pos_.value();
+            static_cast<void>(
+                replay_
+                    .with_compiled([&region, aligned](CompiledScope& scope) noexcept {
+                        for (uint32_t i = 0; i < aligned; i++) {
+                            const ReplayStatus status =
+                                scope.advance(region.op_at(i).schema_hash, region.op_at(i).shape_hash).status();
+                            // The hashes fed in here are the region's own, and
+                            // alignment already compared each one against the
+                            // same entry, so a mismatch means that the cursor of
+                            // the engine is out of step.  The data is not bad.
+                            // The check stays in each build, and it runs once
+                            // for each aligned op, at the activation of a region
+                            // only.
+                            CRUCIBLE_FATAL_INVARIANT(status == ReplayStatus::MATCH || status == ReplayStatus::COMPLETE);
+                        }
+                    })
+                    .expect("an activation that gave true leaves the context compiled"));
 
             pending_activation_ = ::fixy::none;
             return;
@@ -1363,26 +1416,37 @@ private:
 
     // Walks the region's ops to recover the storage address of each external
     // slot from the recorded tensor metadata, and lists each read of an
-    // external and each data slot for bind_inputs_.  The replay resumes at op
+    // external and each data slot for advance_and_bind_reads_ and
+    // bind_scalars_.  The replay resumes at op
     // resume_op, so each cursor starts at the first item of that op or of a
     // later op.  A read of an earlier op of this iteration keeps the recorded
     // address, and a data slot of an earlier op keeps the recorded value,
     // until the next iteration binds it again.  Runs once per activation and
-    // per switch of a region.  O(the inputs and the scalars of the region)
-    // and one allocation of each list.
-    [[gnu::cold]] void register_inputs_from_region_(VigilFgCtx const& fg, const RegionNode& region,
+    // per switch of a region, on the producer thread, which the context of the
+    // claim proves.  O(the inputs and the scalars of the region) and one
+    // allocation of each list.
+    [[gnu::cold]] void register_inputs_from_region_(VigilFgCtx const& /*fg*/, const RegionNode& region,
                                                     uint32_t resume_op) {
         list_bound_scalars_(region, resume_op);
         // Every call site activates the context on the region immediately
         // before it calls here, so the context is compiled, and the region
         // has a plan.
-        auto compiled_view = replay_.context().mint_compiled_view(fg);
-        replay_.list_external_reads(OpIndex{resume_op}, compiled_view);
         const DagRef<MemoryPlan const> plan = PlanLink{region.plan}.expect("an active region has a memory plan");
+        static_cast<void>(replay_
+                              .with_compiled([&region, &plan, resume_op](CompiledScope& scope) noexcept {
+                                  scope.list_external_reads(OpIndex{resume_op});
+                                  register_recorded_externals_(scope, region, *plan);
+                              })
+                              .expect("each caller activates the context on the region first"));
+    }
 
-        // The id of a slot is its position in the plan, which the inputs of
-        // the ops name.
-        const ::fixy::View<const TensorSlot> plan_slots = plan->slots.view();
+    // Registers the storage address of each external slot of the plan, from
+    // the recorded metadata of the first input of the region that reads it.
+    // The id of a slot is its position in the plan, which the inputs of the
+    // ops name.  O(the external slots times the inputs of the region).
+    [[gnu::cold]] static void register_recorded_externals_(CompiledScope& scope, const RegionNode& region,
+                                                           const MemoryPlan& plan) {
+        const ::fixy::View<const TensorSlot> plan_slots = plan.slots.view();
         for (uint32_t position = 0; position < plan_slots.size(); position++) {
             if (!plan_slots.get(position).expect("the loop bounds the position")->is_external) continue;
             const SlotId target{position};
@@ -1403,8 +1467,7 @@ private:
             }
 
             for (const TensorData found : data)
-                replay_.register_external(target, found, compiled_view)
-                    .expect("the plan of the active region marks the slot external");
+                scope.register_external(target, found).expect("the plan of the active region marks the slot external");
         }
     }
 
@@ -1431,10 +1494,10 @@ private:
         each_slot([&count](const BoundScalar&) noexcept { ++count; });
         ::fixy::HeapArray<BoundScalar> listed = ::fixy::mint_heap_array(allocation_, count, BoundScalar{});
         uint32_t filled = 0;
-        next_bound_scalar_ = count;
+        bound_scalars_.next = count;
         // The body captures the counter that it writes, and not the Vigil, so
         // it writes no borrow of its frame into the Vigil.
-        listed = ::fixy::with_mut(std::move(listed), [&each_slot, &filled, &next_bound = next_bound_scalar_, count,
+        listed = ::fixy::with_mut(std::move(listed), [&each_slot, &filled, &next_bound = bound_scalars_.next, count,
                                                       resume_op](auto scalars) noexcept {
             each_slot([&](const BoundScalar& bound) noexcept {
                 auto slot = scalars.get_mut(filled).expect("the first pass counted each slot");
@@ -1443,7 +1506,7 @@ private:
                 ++filled;
             });
         });
-        bound_scalars_ = std::move(listed);
+        bound_scalars_.slots = std::move(listed);
     }
 
     // Verifies the prefix match, then delegates the pool detach, the slot
@@ -1629,29 +1692,24 @@ private:
             return true;
         }
 
-        [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash,
-                                                                    CrucibleContext::CompiledView const& view) {
-            return ctx_.advance(schema_hash, shape_hash, view);
+        // Lends the compiled scope of the context to body while the context
+        // replays, with the key of the context, and gives no value while it
+        // records (CrucibleContext::with_compiled).  The gate of the door
+        // refuses a body that reaches the key, so a body that names this class
+        // or the Vigil does not compile.
+        template <class Body>
+            requires CompiledBody<Body>
+        [[nodiscard]] CRUCIBLE_INLINE CompiledAnswer<Body> with_compiled(Body&& body) noexcept {
+            return ctx_.with_compiled(key_, static_cast<Body&&>(body));
         }
 
-        [[nodiscard]] ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash) {
-            return ctx_.advance(schema_hash, shape_hash);
+        // The addresses of the slots of the matched op for the vessel, with the
+        // key of the context (CrucibleContext::read_output_address).
+        [[nodiscard]] CrucibleContext::OutsideAddress read_output_address(OutputPosition position) noexcept {
+            return ctx_.read_output_address(key_, position);
         }
-
-        [[nodiscard, gnu::cold]] ::fixy::Result<::fixy::Unit, ExternalRefusal>
-        register_external(SlotId sid, TensorData data, CrucibleContext::CompiledView const& view) {
-            return ctx_.register_external(sid, data, view);
-        }
-
-        [[gnu::cold]] void list_external_reads(OpIndex resume_op, CrucibleContext::CompiledView const& view) {
-            ctx_.list_external_reads(resume_op, view);
-        }
-
-        CRUCIBLE_INLINE void rewind_external_reads() noexcept { ctx_.rewind_external_reads(); }
-
-        CRUCIBLE_INLINE void bind_external_reads(OpIndex matched, const ValidatedOp& live,
-                                                 CrucibleContext::CompiledView const& view) {
-            ctx_.bind_external_reads(matched, live, view);
+        [[nodiscard]] CrucibleContext::OutsideAddress read_input_address(InputPosition position) noexcept {
+            return ctx_.read_input_address(key_, position);
         }
 
     private:
@@ -1675,14 +1733,9 @@ private:
     // the Vigil on.
     OpRecordStack op_record_stack_{};
 
-    // The data slots of the active region, in the order of the ops.  Each
-    // activation and each switch of a region writes them
-    // (register_inputs_from_region_), and bind_inputs_ walks them.  Only the
-    // producer thread reads or writes the two members.  The reads of the
-    // external slots stand in the replay context, beside the active region.
-    ::fixy::HeapArray<BoundScalar> bound_scalars_{};
-    // The next data slot of the iteration, at most the count of the slots.
-    uint32_t next_bound_scalar_ = 0;
+    // The data slots of the active region and the cursor of the iteration
+    // (BoundScalars).
+    BoundScalars bound_scalars_{};
 
     // The regions that the foreground holds, for the sweep of the region
     // store on the publish stage (crucible/HeldRegions.h).  The foreground

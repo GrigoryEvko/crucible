@@ -194,10 +194,6 @@ int main() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
-    // The view is const, so a body that captures it by reference writes no part
-    // of it.
-    const auto cv = ctx.mint_compiled_view(kVigilForeground);
-
     Reference reference;
     compute_reference(weights, reference);
 
@@ -222,14 +218,20 @@ int main() {
     ExternalBlocks weight_blocks{
         .blocks = ::fixy::mint_heap_array_with<::foundation::AlignedBytes>(test.alloc, 12, take_block),
         .windows = ::fixy::mint_heap_array_with<ExternalWindow>(test.alloc, 12, make_window)};
-    const auto replay_iterations = [&cv](CrucibleContext& scoped) noexcept {
+    const auto replay_iterations = [](CompiledScope& scoped) noexcept {
         for (int iter = 0; iter < 50; iter++) {
-            run_attention_ops(scoped, cv);
-            run_ffn_and_head_ops(scoped, cv);
+            run_attention_ops(scoped);
+            run_ffn_and_head_ops(scoped);
         }
     };
-    auto [replayed, externals] = ctx.with_external_blocks(std::move(weight_blocks), cv, replay_iterations);
-    CRUCIBLE_TEST_ASSERT(kTest, replayed.is_ok() && externals.blocks.size() == 12);
+    // The body gives the answer alone: a result of a body of the scope holds no
+    // owner of bytes, so the blocks end in the body after the scope.
+    const auto replayed =
+        ctx.with_compiled(context_key, [&weight_blocks, &replay_iterations](CompiledScope& scope) noexcept {
+            auto [answer, held] = scope.with_external_blocks(std::move(weight_blocks), replay_iterations);
+            return answer.is_ok() && held.blocks.size() == 12;
+        });
+    CRUCIBLE_TEST_ASSERT(kTest, replayed == ::fixy::some(true));
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 50);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 0);

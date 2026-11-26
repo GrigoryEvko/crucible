@@ -211,7 +211,7 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
     CRUCIBLE_TEST_ASSERT(kTest, head_result.action == DispatchResult::Action::COMPILED);
     CRUCIBLE_TEST_ASSERT(
         kTest,
-        crucible::test::host_ptr(vigil.input_ptr(fg, 0)) == parameter_ptr()
+        crucible::test::host_ptr(vigil.input_ptr(fg, crucible::InputPosition{0})) == parameter_ptr()
             && "the activation registered the data pointer of a record that the foreground wrote after the release");
 
     ::fixy::check::pass(kTest, "  test_region_keeps_its_metadata_after_the_log_wraps: PASSED\n");

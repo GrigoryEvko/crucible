@@ -471,12 +471,22 @@ int main() {
         auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
         (void)ctx.activate(context_key, *br.region);
 
+        // Each op opens one compiled scope, as a dispatch of the Vigil does.  The
+        // body gives the step to the sink, as the row of the engine does, and the
+        // row sinks only the bool of the answer.  A sink of the answer itself
+        // writes an Option of the step to memory for each op, and the row then
+        // measures that copy and not the scope.
         OpSlot slot = ::fixy::index<0>();
-        auto cv = ctx.mint_compiled_view(kVigilForeground);
         auto r = bench::run("CrucibleContext::advance (cyclic, 8 ops)", [&] {
             bench::do_not_optimize(ctx);
-            auto s = ctx.advance(SCHEMA.at(slot), SHAPE.at(slot), cv);
-            bench::do_not_optimize(s);
+            const bool is_replayed = ctx.with_compiled(context_key,
+                                                       [schema = SCHEMA.at(slot), shape = SHAPE.at(slot)](
+                                                           crucible::CompiledScope& scope) noexcept {
+                                                           auto step = scope.advance(schema, shape);
+                                                           bench::do_not_optimize(step);
+                                                       })
+                                         .is_some();
+            bench::do_not_optimize(is_replayed);
             slot = next_in_cycle(slot);
         });
         ctx.deactivate(context_key);
@@ -497,12 +507,19 @@ int main() {
         auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
         (void)ctx.activate(context_key, *br.region);
 
+        // Each op opens one compiled scope, and the body sinks the step, as in
+        // the row of 8 ops.
         BigSlot slot = ::fixy::index<0>();
-        auto cv = ctx.mint_compiled_view(kVigilForeground);
         auto r = bench::run("CrucibleContext::advance (cyclic, 32 ops)", [&] {
             bench::do_not_optimize(ctx);
-            auto s = ctx.advance(big_sch.at(slot), big_shp.at(slot), cv);
-            bench::do_not_optimize(s);
+            const bool is_replayed = ctx.with_compiled(context_key,
+                                                       [schema = big_sch.at(slot), shape = big_shp.at(slot)](
+                                                           crucible::CompiledScope& scope) noexcept {
+                                                           auto step = scope.advance(schema, shape);
+                                                           bench::do_not_optimize(step);
+                                                       })
+                                         .is_some();
+            bench::do_not_optimize(is_replayed);
             slot = next_in_cycle(slot);
         });
         ctx.deactivate(context_key);
@@ -619,7 +636,8 @@ int main() {
         return bench::run("dispatch_op [COMPILED + output_ptr]", [&] {
             const OpData& d = ops.at(slot);
             auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
-            if (r.action == DispatchResult::Action::COMPILED) bench::do_not_optimize(vigil.output_ptr(fg, 0));
+            if (r.action == DispatchResult::Action::COMPILED)
+                bench::do_not_optimize(vigil.output_ptr(fg, crucible::OutputPosition{0}));
             bench::do_not_optimize(r);
             slot = next_in_cycle(slot);
         });

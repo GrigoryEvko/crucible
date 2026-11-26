@@ -10,8 +10,7 @@
 // PoolAllocator has only one typed view (InitializedView; no companion
 // "DestroyedView") so the intra-carrier per-state mismatch pattern used
 // for CKernelTable/SchemaTable doesn't apply.  The cross-carrier
-// mismatch is the equivalent type-system gate, mirroring the
-// CrucibleContext::mint_compiled_view cross-carrier fixture.
+// mismatch is the equivalent type-system gate.
 //
 // HS14 — paired with neg_pool_allocator_mint_initialized_view_in_field
 // for distinct mismatch classes (value-level call-time vs structural

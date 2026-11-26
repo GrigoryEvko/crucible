@@ -10,9 +10,12 @@
 
 int main() {
     crucible::CrucibleContext context{::foundation::effects::testing::test().alloc};
-    auto view = context.mint_compiled_view(::foundation::effects::testing::foreground<crucible::Vigil>());
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
     const crucible::TensorData data{::fixy::mint_foreign_run_address(&context).expect("a context has an address"),
                                     crucible::kHostDevice};
-    context.register_external(crucible::SlotId{1}, data, view);
+    auto given = context.with_compiled(context_key, [data](crucible::CompiledScope& scope) noexcept {
+        scope.register_external(crucible::SlotId{1}, data);
+    });
+    static_cast<void>(given);
     return 0;
 }

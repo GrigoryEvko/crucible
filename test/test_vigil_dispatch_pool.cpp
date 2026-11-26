@@ -44,7 +44,8 @@ void test_dispatch_data_flow() {
     auto r0 = crucible::test::dispatch_synthetic(vigil, d0.entry, d0.metas, d0.n_metas);
     CRUCIBLE_TEST_ASSERT(kTest, r0.action == DispatchResult::Action::COMPILED);
     CRUCIBLE_TEST_ASSERT(kTest, r0.status == ReplayStatus::MATCH);
-    std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0)), 0x42, 4096);
+    std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{0})),
+                0x42, 4096);
 
     for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
         auto d = make_op(4, i);
@@ -52,13 +53,15 @@ void test_dispatch_data_flow() {
         CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
         CRUCIBLE_TEST_ASSERT(kTest, r.status == ReplayStatus::MATCH);
 
-        auto* in_data = crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), 0));
+        auto* in_data = crucible::test::host_ptr<uint8_t>(
+            vigil.input_ptr(vigil.mint_producer_context(), crucible::InputPosition{0}));
         uint8_t expected = static_cast<uint8_t>(0x42 + i - 1);
         for (uint32_t b = 0; b < 4096; b++)
             CRUCIBLE_TEST_ASSERT(kTest, in_data[b] == expected);
 
-        std::memset(crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), 0)),
-                    static_cast<int>(0x42 + i), 4096);
+        std::memset(
+            crucible::test::host_ptr(vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{0})),
+            static_cast<int>(0x42 + i), 4096);
     }
 
     auto d7 = make_op(4, NUM_OPS - 1);
@@ -66,7 +69,8 @@ void test_dispatch_data_flow() {
     CRUCIBLE_TEST_ASSERT(kTest, r7.action == DispatchResult::Action::COMPILED);
     CRUCIBLE_TEST_ASSERT(kTest, r7.status == ReplayStatus::COMPLETE);
 
-    auto* in_last = crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), 0));
+    auto* in_last =
+        crucible::test::host_ptr<uint8_t>(vigil.input_ptr(vigil.mint_producer_context(), crucible::InputPosition{0}));
     uint8_t expected_last = static_cast<uint8_t>(0x42 + NUM_OPS - 2);
     for (uint32_t b = 0; b < 4096; b++)
         CRUCIBLE_TEST_ASSERT(kTest, in_last[b] == expected_last);
@@ -99,7 +103,8 @@ void test_dispatch_pool_bounds() {
         CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
 
         auto* pool_base = crucible::test::host_ptr<uint8_t>(pool.pool_base());
-        auto* p = crucible::test::host_ptr<uint8_t>(vigil.output_ptr(vigil.mint_producer_context(), 0));
+        auto* p = crucible::test::host_ptr<uint8_t>(
+            vigil.output_ptr(vigil.mint_producer_context(), crucible::OutputPosition{0}));
         CRUCIBLE_TEST_ASSERT(kTest, p >= pool_base);
         CRUCIBLE_TEST_ASSERT(kTest, p + 4096 <= pool_base + pool_bytes);
     }

@@ -109,40 +109,42 @@ static constexpr uint32_t N_SLOTS = 7;
 static constexpr uint32_t N_OPS = 4;
 
 // Replays the four operations of one iteration, each with its kernel on the
-// View of its inputs and the ViewMut of its output.  The trailing names say
-// which slot each index reaches, which the index alone does not.
-static void run_iteration(CrucibleContext& ctx, CrucibleContext::CompiledView const& cv) {
-    auto s = ctx.advance(H_MM1, S_MM1, cv).status();
+// View of its inputs and the ViewMut of its output.  The kernel takes the Views
+// of the inputs by value, read before the frame of the output.  The trailing
+// names say which slot each index reaches, which the index alone does not.
+static void run_iteration(CompiledScope& scope) {
+    auto s = scope.advance(H_MM1, S_MM1).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto mm1_out) noexcept {
-        cpu::mm(kTest, make_input<LeftFactor>(read_input(ctx, cv, InputPosition{0})),  // X
-                make_input<RightFactor>(read_input(ctx, cv, InputPosition{1})),  // W1
-                std::move(mm1_out), make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(HIDDEN),
-                make_dim<roles::Inner>(IN_DIM));
+    write_output(kTest, scope,
+                 [left = read_input(scope, InputPosition{0}),  // X
+                  right = read_input(scope, InputPosition{1})](auto mm1_out) noexcept {  // W1
+                     cpu::mm(kTest, make_input<LeftFactor>(left), make_input<RightFactor>(right), std::move(mm1_out),
+                             make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(HIDDEN),
+                             make_dim<roles::Inner>(IN_DIM));
+                 });
+
+    s = scope.advance(H_RELU, S_RELU).status();
+    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
+    write_output(kTest, scope, [input = read_input(scope, InputPosition{0})](auto relu_out) noexcept {  // mm1_out
+        cpu::relu(kTest, input, std::move(relu_out), make_dim<roles::Count>(BATCH * HIDDEN));
     });
 
-    s = ctx.advance(H_RELU, S_RELU, cv).status();
+    s = scope.advance(H_MM2, S_MM2).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto relu_out) noexcept {
-        cpu::relu(kTest, read_input(ctx, cv, InputPosition{0}),  // mm1_out
-                  std::move(relu_out), make_dim<roles::Count>(BATCH * HIDDEN));
-    });
-
-    s = ctx.advance(H_MM2, S_MM2, cv).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto mm2_out) noexcept {
-        cpu::mm(kTest, make_input<LeftFactor>(read_input(ctx, cv, InputPosition{0})),  // relu_out
-                make_input<RightFactor>(read_input(ctx, cv, InputPosition{1})),  // W2
-                std::move(mm2_out), make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(OUT_DIM),
-                make_dim<roles::Inner>(HIDDEN));
-    });
+    write_output(kTest, scope,
+                 [left = read_input(scope, InputPosition{0}),  // relu_out
+                  right = read_input(scope, InputPosition{1})](auto mm2_out) noexcept {  // W2
+                     cpu::mm(kTest, make_input<LeftFactor>(left), make_input<RightFactor>(right), std::move(mm2_out),
+                             make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(OUT_DIM),
+                             make_dim<roles::Inner>(HIDDEN));
+                 });
 
     // The last operation of an iteration completes it rather than matching.
-    s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv).status();
+    s = scope.advance(H_SOFTMAX, S_SOFTMAX).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
-    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto softmax_out) noexcept {
-        cpu::softmax(kTest, read_input(ctx, cv, InputPosition{0}),  // mm2_out
-                     std::move(softmax_out), make_dim<roles::Rows>(BATCH), make_dim<roles::Width>(OUT_DIM));
+    write_output(kTest, scope, [input = read_input(scope, InputPosition{0})](auto softmax_out) noexcept {  // mm2_out
+        cpu::softmax(kTest, input, std::move(softmax_out), make_dim<roles::Rows>(BATCH),
+                     make_dim<roles::Width>(OUT_DIM));
     });
 }
 
@@ -316,17 +318,10 @@ int main() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
-    // The view is minted once, because the context stays compiled for
-    // the whole loop.  Passing it to every call costs nothing at run
-    // time and makes each call site state, in its own types, that it
-    // is only reachable in compiled mode.
-    // The view is const, so a kernel that captures it by reference writes no
-    // part of it.
-    auto const cv = ctx.mint_compiled_view(kVigilForeground);
-
     // The blocks of the external slots are in the scope for the time of the
     // loop, so no View of them stays in the pool after it.  A move keeps the
-    // bytes of a block where they are.
+    // bytes of a block where they are.  The context stays compiled for the
+    // whole loop, so one compiled scope holds it.
     ::fixy::FixedArray<ExternalWindow, 3> const windows{
         ExternalWindow{.slot = SlotId{SL_X}, .block = BlockPosition{0}},
         ExternalWindow{.slot = SlotId{SL_W1}, .block = BlockPosition{1}},
@@ -334,28 +329,34 @@ int main() {
     ::fixy::FixedArray<::fixy::Option<::fixy::RunAddress>, 3> const addresses{
         ::fixy::mint_run_address(x_block.view(), 0), ::fixy::mint_run_address(w1_block.view(), 0),
         ::fixy::mint_run_address(w2_block.view(), 0)};
-    const auto replay_iterations = [&cv, &windows, &addresses](CrucibleContext& scoped) noexcept {
+    const auto replay_iterations = [&windows, &addresses](CompiledScope& scoped) noexcept {
         // A read-only view, so that even these checks reach the pool the way
         // the hot path does.
-        auto const pv = scoped.pool().mint_initialized_view(kVigilForeground);
+        PoolAllocator const& pool = scoped.context().pool();
+        auto const pv = pool.mint_initialized_view(kVigilForeground);
         for (auto const index : windows.indices()) {
-            CRUCIBLE_TEST_ASSERT(kTest, scoped.pool().slot_ptr(windows.at(index).slot, pv) == addresses.at(index));
+            CRUCIBLE_TEST_ASSERT(kTest, pool.slot_ptr(windows.at(index).slot, pv) == addresses.at(index));
         }
         for (int iter = 0; iter < 100; iter++)
-            run_iteration(scoped, cv);
+            run_iteration(scoped);
     };
-    auto [replayed, externals] = ctx.with_external_blocks(
-        ExternalBlocks{.blocks = ::fixy::mint_heap_array_with<::foundation::AlignedBytes>(
-                           test.alloc, 3,
-                           [&x_block, &w1_block, &w2_block](std::size_t position) noexcept {
-                               return std::move(position == 0 ? x_block : position == 1 ? w1_block : w2_block);
-                           }),
-                       .windows = ::fixy::mint_heap_array_copy<ExternalWindow>(test.alloc, windows.view())},
-        cv, replay_iterations);
-    CRUCIBLE_TEST_ASSERT(kTest, replayed.is_ok() && externals.blocks.size() == 3);
-    x_block = externals.blocks.exchange(0, ::foundation::AlignedBytes{});
-    w1_block = externals.blocks.exchange(1, ::foundation::AlignedBytes{});
-    w2_block = externals.blocks.exchange(2, ::foundation::AlignedBytes{});
+    ExternalBlocks blocks{.blocks = ::fixy::mint_heap_array_with<::foundation::AlignedBytes>(
+                              test.alloc, 3,
+                              [&x_block, &w1_block, &w2_block](std::size_t position) noexcept {
+                                  return std::move(position == 0 ? x_block : position == 1 ? w1_block : w2_block);
+                              }),
+                          .windows = ::fixy::mint_heap_array_copy<ExternalWindow>(test.alloc, windows.view())};
+    // The scope gives the blocks back into their list, and the body gives the
+    // answer alone: a result of a body of the scope holds no owner of bytes.
+    const auto replayed = ctx.with_compiled(context_key, [&blocks, &replay_iterations](CompiledScope& scope) noexcept {
+        auto [answer, held] = scope.with_external_blocks(std::move(blocks), replay_iterations);
+        blocks = std::move(held);
+        return answer.is_ok();
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, replayed == ::fixy::some(true) && blocks.blocks.size() == 3);
+    x_block = blocks.blocks.exchange(0, ::foundation::AlignedBytes{});
+    w1_block = blocks.blocks.exchange(1, ::foundation::AlignedBytes{});
+    w2_block = blocks.blocks.exchange(2, ::foundation::AlignedBytes{});
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 100);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 0);
