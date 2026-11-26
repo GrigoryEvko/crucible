@@ -174,6 +174,14 @@
 //     object of one owner thread thus moves no such object.  Each statement is
 //     a claim that the code of the class makes true, and the comment beside
 //     it gives the reason.
+//     owns_by_number{} states that the class owns a resource of the kernel by
+//     its number, as a Handle owns a descriptor, and that its first type
+//     argument names that resource.  refers_by_number{} states that the class
+//     refers to such a resource by its number, as a HandleRef does.  No
+//     pointer names the resource, so the quarantine plugin reads the two
+//     marks: the end of the owner, or a call of a door of the owner that takes
+//     it by an rvalue reference, ends each borrow of its number.  The walks of
+//     this header do not read the two marks.
 //
 // Doors of a synchronized class
 //     The check of a statement of synchronized{} also reads the member
@@ -404,6 +412,10 @@ struct thread_bound final {};
 struct payload_cell final {};
 struct synchronized final {};
 struct shares final {};
+// An owner of a resource of the kernel by its number, and a borrow of such a
+// resource by its number.  Only the quarantine plugin reads the two marks.
+struct owns_by_number final {};
+struct refers_by_number final {};
 
 // A statement of the facts of a class that is only declared, and the seal of
 // a registry of such statements (the opaque types).  is_synchronized states
