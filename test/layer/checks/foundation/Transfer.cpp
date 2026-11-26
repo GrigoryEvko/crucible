@@ -661,8 +661,8 @@ static_assert(!holds_its_statement(^^Plain), "a class with no statement holds no
 
 // The constructors of static storage.  A class passes when each constructor
 // is consteval, takes a key tied to the class, or takes only classes whose
-// constructors pass.  A ClosedTextKey is closed: only its owner builds one.
-// An OpenTextKey is not, so it ties nothing.
+// parts pass.  A ClosedTextKey is closed: only its owner builds one.  An
+// OpenTextKey is not, so it ties nothing.
 class ConstantSite {
 public:
     consteval explicit ConstantSite(int line) noexcept : line_{line} {}
@@ -720,13 +720,48 @@ private:
 struct AggregateText {
     int word = 0;
 };
-static_assert(first_open_static_constructor(^^ConstantSite, static_walk_depth) == std::meta::info{});
-static_assert(first_open_static_constructor(^^TextOfASite, static_walk_depth) == std::meta::info{});
-static_assert(first_open_static_constructor(^^TextOfAClosedKey, static_walk_depth) == std::meta::info{});
-static_assert(first_open_static_constructor(^^LooseSite, static_walk_depth) != std::meta::info{});
-static_assert(first_open_static_constructor(^^TextOfALooseSite, static_walk_depth) != std::meta::info{});
-static_assert(first_open_static_constructor(^^TextOfAnOpenKey, static_walk_depth) != std::meta::info{});
-static_assert(first_open_static_constructor(^^AggregateText, static_walk_depth) == ^^AggregateText);
+// A caller writes a public member, and a member function that is not const
+// writes what it takes, so each of them opens the class.  A const reader does
+// not.  The Site arm reads the parts of the class of a parameter too.
+class PublicLine {
+public:
+    consteval PublicLine() noexcept {}
+    int line = 0;
+};
+class WritingLine {
+public:
+    consteval WritingLine() noexcept {}
+    constexpr void set(int line) noexcept { line_ = line; }
+
+private:
+    int line_ = 0;
+};
+class ReadingLine {
+public:
+    consteval ReadingLine() noexcept {}
+    [[nodiscard]] constexpr int line() const noexcept { return line_; }
+
+private:
+    int line_ = 0;
+};
+class TextOfAPublicLine {
+public:
+    constexpr explicit TextOfAPublicLine(PublicLine const& site) noexcept : line_{site.line} {}
+
+private:
+    int line_ = 0;
+};
+static_assert(first_open_static_part(^^ConstantSite, static_walk_depth) == std::meta::info{});
+static_assert(first_open_static_part(^^TextOfASite, static_walk_depth) == std::meta::info{});
+static_assert(first_open_static_part(^^TextOfAClosedKey, static_walk_depth) == std::meta::info{});
+static_assert(first_open_static_part(^^ReadingLine, static_walk_depth) == std::meta::info{});
+static_assert(first_open_static_part(^^LooseSite, static_walk_depth) != std::meta::info{});
+static_assert(first_open_static_part(^^TextOfALooseSite, static_walk_depth) != std::meta::info{});
+static_assert(first_open_static_part(^^TextOfAnOpenKey, static_walk_depth) != std::meta::info{});
+static_assert(first_open_static_part(^^AggregateText, static_walk_depth) == ^^AggregateText);
+static_assert(first_open_static_part(^^PublicLine, static_walk_depth) != std::meta::info{});
+static_assert(first_open_static_part(^^WritingLine, static_walk_depth) != std::meta::info{});
+static_assert(first_open_static_part(^^TextOfAPublicLine, static_walk_depth) != std::meta::info{});
 
 // GCC 16 gives no query for consteval, so is_consteval_function reads the
 // word in the text of display_string_of.  The pins fail when that text
@@ -739,7 +774,7 @@ static_assert(is_consteval_function(first_constructor_of(^^ConstantSite)),
               "display_string_of of a consteval constructor holds the word consteval");
 static_assert(!is_consteval_function(first_constructor_of(^^LooseSite)),
               "display_string_of of a constexpr constructor holds no word consteval");
-static_assert(first_open_static_constructor(^^::foundation::core::StaticText, static_walk_depth) == std::meta::info{},
+static_assert(first_open_static_part(^^::foundation::core::StaticText, static_walk_depth) == std::meta::info{},
               "each constructor of StaticText passes the check of refers_static{}");
 
 }  // namespace detail::transfer_self_test

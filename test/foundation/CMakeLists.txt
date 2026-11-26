@@ -5819,10 +5819,11 @@ foundation_neg_compile_test(neg_core_find_if_keeps_an_element
 foundation_neg_compile_test(neg_core_store_mark_outside_the_base
   "use of deleted function .void foundation::core::find_if\\(View<T, Extent>, Predicate\\)"
   "a body of a frame door stores no borrow outside the frame")
-# The read of refers_static{} of foundation/Transfer.h checks each constructor
-# of a class of the base that states it: a constexpr constructor of a pointer,
-# a constructor of a class that fails the rule, and a constructor with a key
-# that each caller builds can each take a pointer of the run time.
+# The read of refers_static{} of foundation/Transfer.h checks each part of a
+# class of the base that states it: a constexpr constructor of a pointer, a
+# constructor of a class that fails the rule, a constructor with a key that
+# each caller builds, a public pointer and a member function that keeps a
+# pointer can each give the class a pointer of the run time.
 foundation_neg_compile_test(neg_core_static_storage_constructor_takes_a_pointer
   "static assertion failed: transfer: a class states refers_static\\{\\}, so each pointer that it holds names static storage"
   "static assertion failed: foundation::core::static_storage_probe::LooseText"
@@ -5835,6 +5836,14 @@ foundation_neg_compile_test(neg_core_static_storage_key_has_a_public_maker
   "static assertion failed: transfer: a class states refers_static\\{\\}, so each pointer that it holds names static storage"
   "static assertion failed: foundation::core::static_storage_probe::KeyedText"
   "static assertion failed: constexpr foundation::core::static_storage_probe::KeyedText::KeyedText\\(const char\\*, const foundation::core::static_storage_probe::OpenTextKey<")
+foundation_neg_compile_test(neg_core_static_storage_public_pointer
+  "static assertion failed: transfer: a class states refers_static\\{\\}, so each pointer that it holds names static storage"
+  "static assertion failed: foundation::core::static_storage_probe::PublicText"
+  "static assertion failed: foundation::core::static_storage_probe::PublicText::first")
+foundation_neg_compile_test(neg_core_static_storage_member_keeps_a_pointer
+  "static assertion failed: transfer: a class states refers_static\\{\\}, so each pointer that it holds names static storage"
+  "static assertion failed: foundation::core::static_storage_probe::KeepingText"
+  "static assertion failed: constexpr void foundation::core::static_storage_probe::KeepingText::keep\\(const char\\*\\)")
 # The borrow walk reads an owner of the base by its type arguments, so a Box of
 # a View holds a borrow, and it trusts an owner mark only in the base, so a
 # marked class with a View outside the base holds one too.  An rvalue match
