@@ -297,9 +297,11 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     };
     // The consumer keeps its copy of the tail.  The drains track their
     // position here, and they publish to tail only once the copies are
-    // complete.
+    // complete.  The copy is a wide counter that starts at zero and steps by
+    // the entries of one drain, at most CAPACITY, so a publish moves it
+    // forward with no compare.
     struct alignas(64) consumer_state {
-        uint64_t consumer_tail = 0;
+        ::fixy::WideMonotonic<CAPACITY> own_tail = ::fixy::mint_wide_monotonic<CAPACITY>();
     };
 
     // The two ends of a ring.  The side doors below are the only doors that
@@ -461,12 +463,12 @@ public:
         TraceRing& ring = *producer.owner_;
         ring.head_.reset_under_quiescence();
         ring.tail_.reset_under_quiescence();
-        consumer.state_.consumer_tail = 0;
+        consumer.state_.own_tail.reset_under_quiescence(::fixy::WideStart::zero());
         producer.state_.cached_tail.reset_under_quiescence();
         producer.state_.own_head.reset_under_quiescence(::fixy::WideStart::zero());
         CRUCIBLE_POST(0, ring.head_.get() == 0);
         CRUCIBLE_POST(0, ring.tail_.get() == 0);
-        CRUCIBLE_POST(0, consumer.state_.consumer_tail == 0);
+        CRUCIBLE_POST(0, consumer.state_.own_tail.get() == 0);
         CRUCIBLE_POST(0, producer.state_.cached_tail.get() == 0);
         CRUCIBLE_POST(0, producer.state_.own_head.get() == 0);
     }
@@ -641,7 +643,7 @@ private:
 
         TraceRing& ring = *consumer.owner_;
         const uint64_t h = ring.head_.get();
-        const uint64_t t = consumer.state_.consumer_tail;
+        const uint64_t t = consumer.state_.own_tail.get();
 
         // The clamp is an assignment and a conditional assignment.  GCC 16
         // at -O1 with -fsanitize=bounds-strict does not keep the bound
@@ -670,12 +672,16 @@ private:
 
         // Publishing the new tail declares slots [t, t + count) free. The
         // producer only reads tail after finding the ring full, so it sees
-        // this before it can overwrite any of them.  t is the copy of the
-        // consumer of its last store to tail, and the consumer end proves the
-        // one writer, so the publish loads nothing from tail.
-        const uint64_t next_tail = t + count;
-        consumer.state_.consumer_tail = next_tail;
-        ring.tail_.advance_sole_writer_by_proof_from(prove_tail_writer_(), t, next_tail);
+        // this before it can overwrite any of them.  The copy of the tail
+        // steps by the count, and tail takes the value of the copy.  The
+        // consumer end proves the one writer, so the publish loads nothing
+        // from tail.  The count is at least one after the test of zero, and
+        // at most room.  So the check of the step folds where the extent of
+        // out bounds room by CAPACITY, as the batch of the drain stage does,
+        // and the publish holds no compare (the wide counter of
+        // fixy/Mutation.h).
+        ring.tail_.advance_sole_writer_by_wide_step(prove_tail_writer_(), consumer.state_.own_tail,
+                                                    ::fixy::WideStep<CAPACITY>::check_within_bound(count));
         CRUCIBLE_POST(count, count <= room);
         // The count came from a 32-bit difference, so it fits the result.
         return static_cast<uint32_t>(count);
