@@ -191,14 +191,15 @@
 //     at namespace scope, a static data member and a static local, also a
 //     const one and a reference.  A type holds the class when it is the
 //     class, or through a reference to it, an element of an array, a base, a
-//     data member, or the first type argument of a class that states
-//     by_arguments{}, payload_cell{}, refers{}, refers_unique{} or
-//     refers_deep{}, at each depth.  Each other type argument can be a brand
-//     or a tag, which names no object, and a pointer holds nothing, so the
-//     walk reads neither.  A thread_local object belongs to one thread, so it
-//     can hold such a class.  The rule reads each file of the family (the
-//     scope), so a test can hold no such global either.  A variable of a type
-//     that depends on a template parameter is read in no instance.
+//     data member, a type argument that a class owns (by_arguments), or the
+//     first type argument of a class that states payload_cell{}, refers{},
+//     refers_unique{} or refers_deep{}, at each depth.  Each other type
+//     argument can be a brand or a tag, which names no object, and a pointer
+//     holds nothing, so the walk reads neither.  A thread_local object
+//     belongs to one thread, so it can hold such a class.  The rule reads each
+//     file of the family (the scope), so a test can hold no such global
+//     either.  A variable of a type that depends on a template parameter is
+//     read in no instance.
 //
 // Loan-key statics (the rule process-wide-state)
 //     A loan key of foundation/core/Frame.h opens the frames of the keyed
@@ -2700,8 +2701,10 @@ bool reaches_static_mark(tree type, StaticWalk kind, ReachWalk& walk, int depth)
     static tree const loan_key_mark = get_identifier("loan_key_mark");
     static tree const core = get_identifier("core");
     static tree const first_argument_annotations[] = {
-        get_identifier("by_arguments"),  get_identifier("payload_cell"), get_identifier("refers"),
-        get_identifier("refers_unique"), get_identifier("refers_deep"),
+        get_identifier("payload_cell"),
+        get_identifier("refers"),
+        get_identifier("refers_unique"),
+        get_identifier("refers_deep"),
     };
     bool const is_key_walk = kind == StaticWalk::loan_key;
     if (depth > kTypeDepth) {
@@ -2745,20 +2748,22 @@ bool reaches_static_mark(tree type, StaticWalk kind, ReachWalk& walk, int depth)
             is_held = reaches_static_mark(TREE_TYPE(field), kind, walk, depth + 1);
         }
     }
-    // A class that owns or refers to the object of its first type argument
-    // behind a pointer or in its own bytes states it, as a Box, a Ref and an
-    // Option do.  Each other type argument can be a brand or a tag, which
-    // names no object.
-    bool is_first_argument_held = false;
+    // A class that refers to or holds the object of its first type argument
+    // behind a pointer or in its own bytes states it, as a Ref and an Option
+    // do, and an owner states each argument that it owns, as a Box does.  Each
+    // other type argument can be a brand or a tag, which names no object.  The
+    // walk also reads the members, so it reads the owned arguments of a class
+    // outside the base too: the mark only adds a reach.
+    OwnedPositions owned = owned_positions(type);
     for (tree name : first_argument_annotations) {
-        is_first_argument_held =
-            is_first_argument_held || carries_base_annotation(TYPE_ATTRIBUTES(type), name, transfer);
+        if (!owned.is_stated && carries_base_annotation(TYPE_ATTRIBUTES(type), name, transfer)) {
+            owned = OwnedPositions::first();
+        }
     }
-    tree info = CLASSTYPE_TEMPLATE_INFO(type);
-    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
-    if (!is_held && is_first_argument_held && arguments != NULL_TREE && TREE_VEC_LENGTH(arguments) > 0) {
-        tree argument = TREE_VEC_ELT(arguments, 0);
-        is_held = argument != NULL_TREE && TYPE_P(argument) && reaches_static_mark(argument, kind, walk, depth + 1);
+    if (!is_held) {
+        visit_owned_arguments(type, owned, [&](tree argument) {
+            is_held = is_held || reaches_static_mark(argument, kind, walk, depth + 1);
+        });
     }
     return walk.leave(type, is_held);
 }

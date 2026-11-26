@@ -1,54 +1,55 @@
 # Bodies that name an owner of a class that is incomplete there and that holds a
 # borrow at the end of the unit (the kept bodies of plugin.cpp).  A store, a
 # result, a local that carries the borrow and the result of a closure have a
-# line before the class is complete (23, 27, 32 and 37) and a line after it (53,
-# 57, 62 and 67).  The plugin that reads each body one time gives only the second
+# line before the class is complete (29, 33, 38 and 43) and a line after it (59,
+# 63, 68 and 73).  The plugin that reads each body one time gives only the second
 # line of each pair.  The compile answers has bodies whose first reading gives no
 # line, and where one answer of an open question gives a line: a part of a local
-# (47 and 52), a local with no borrow of its own (57), a member that names one
-# (62), a local beside a moved owner (67), an argument after an object of an
-# empty class (72), a name of a structured binding (79), and a borrowed parameter
-# (82).  Their twins have the lines 91 to 121.  The compile collected runs a
+# (53 and 58), a local with no borrow of its own (63), a member that names one
+# (68), a local beside a moved owner (73), an argument after an object of an
+# empty class (78), a name of a structured binding (85), and a borrowed parameter
+# (88).  Their twins have the lines 97 to 127.  The compile collected runs a
 # garbage collection at each opportunity, and each collection keeps the copy of
-# the body (24).  It reads the instance of a template, whose body the unit makes
-# at its end (29), one time.
+# the body (30).  It reads the instance of a template, whose body the unit makes
+# at its end (35), one time.  The owner of each unit is a class of the base,
+# because the rule trusts by_arguments only there.
 
 compile early src/early.cpp errors=early
 flag early -freflection
 exit early fail
-finding early view-escape stored-borrow src/early.cpp:23:9 | borrow of the local local into the parameter out
-finding early view-escape escaped-borrow src/early.cpp:27:22 | borrow of the local local
-finding early view-escape escaped-borrow src/early.cpp:32:21 | borrow of the local local
-finding early view-escape escaped-borrow src/early.cpp:37:26 | borrow of the local local
-finding early view-escape stored-borrow src/early.cpp:53:9 | borrow of the local local into the parameter out
-finding early view-escape escaped-borrow src/early.cpp:57:22 | borrow of the local local
-finding early view-escape escaped-borrow src/early.cpp:62:21 | borrow of the local local
-finding early view-escape escaped-borrow src/early.cpp:67:26 | borrow of the local local
+finding early view-escape stored-borrow src/early.cpp:29:9 | borrow of the local local into the parameter out
+finding early view-escape escaped-borrow src/early.cpp:33:22 | borrow of the local local
+finding early view-escape escaped-borrow src/early.cpp:38:21 | borrow of the local local
+finding early view-escape escaped-borrow src/early.cpp:43:26 | borrow of the local local
+finding early view-escape stored-borrow src/early.cpp:59:9 | borrow of the local local into the parameter out
+finding early view-escape escaped-borrow src/early.cpp:63:22 | borrow of the local local
+finding early view-escape escaped-borrow src/early.cpp:68:21 | borrow of the local local
+finding early view-escape escaped-borrow src/early.cpp:73:26 | borrow of the local local
 compile answers src/answers.cpp errors=answers
 flag answers -freflection
 exit answers fail
-finding answers view-escape escaped-borrow src/answers.cpp:47:22 | borrow of the local shell
-finding answers view-escape escaped-borrow src/answers.cpp:52:22 | borrow of the local shell
-finding answers view-escape escaped-borrow src/answers.cpp:57:28 | borrow of the local owner
-finding answers view-escape escaped-borrow src/answers.cpp:62:26 | borrow of the local owner
-finding answers view-escape escaped-borrow src/answers.cpp:67:35 | borrow of the local shell
-finding answers view-escape escaped-borrow src/answers.cpp:72:30 | borrow of the local shell
-finding answers view-escape escaped-borrow src/answers.cpp:79:18 | borrow of the local shell
-finding answers lifetime-twin missing-mark src/answers.cpp:82:48 | planted::parameter_early() parameter 1
-finding answers view-escape escaped-borrow src/answers.cpp:91:22 | borrow of the local shell
-finding answers view-escape escaped-borrow src/answers.cpp:96:22 | borrow of the local shell
-finding answers view-escape escaped-borrow src/answers.cpp:100:28 | borrow of the local owner
-finding answers view-escape escaped-borrow src/answers.cpp:105:26 | borrow of the local owner
-finding answers view-escape escaped-borrow src/answers.cpp:109:35 | borrow of the local shell
-finding answers view-escape escaped-borrow src/answers.cpp:113:30 | borrow of the local shell
-finding answers view-escape escaped-borrow src/answers.cpp:119:18 | borrow of the local shell
-finding answers lifetime-twin missing-mark src/answers.cpp:121:47 | planted::parameter_late() parameter 1
-finding answers quarantine raw-pointer-object src/answers.cpp:13:17 | place
-finding answers quarantine raw-pointer-object src/answers.cpp:75:13 | binding_early
-finding answers quarantine raw-pointer-object src/answers.cpp:115:13 | binding_late
+finding answers view-escape escaped-borrow src/answers.cpp:53:22 | borrow of the local shell
+finding answers view-escape escaped-borrow src/answers.cpp:58:22 | borrow of the local shell
+finding answers view-escape escaped-borrow src/answers.cpp:63:28 | borrow of the local owner
+finding answers view-escape escaped-borrow src/answers.cpp:68:26 | borrow of the local owner
+finding answers view-escape escaped-borrow src/answers.cpp:73:35 | borrow of the local shell
+finding answers view-escape escaped-borrow src/answers.cpp:78:30 | borrow of the local shell
+finding answers view-escape escaped-borrow src/answers.cpp:85:18 | borrow of the local shell
+finding answers lifetime-twin missing-mark src/answers.cpp:88:48 | planted::parameter_early() parameter 1
+finding answers view-escape escaped-borrow src/answers.cpp:97:22 | borrow of the local shell
+finding answers view-escape escaped-borrow src/answers.cpp:102:22 | borrow of the local shell
+finding answers view-escape escaped-borrow src/answers.cpp:106:28 | borrow of the local owner
+finding answers view-escape escaped-borrow src/answers.cpp:111:26 | borrow of the local owner
+finding answers view-escape escaped-borrow src/answers.cpp:115:35 | borrow of the local shell
+finding answers view-escape escaped-borrow src/answers.cpp:119:30 | borrow of the local shell
+finding answers view-escape escaped-borrow src/answers.cpp:125:18 | borrow of the local shell
+finding answers lifetime-twin missing-mark src/answers.cpp:127:47 | planted::parameter_late() parameter 1
+finding answers quarantine raw-pointer-object src/answers.cpp:14:17 | place
+finding answers quarantine raw-pointer-object src/answers.cpp:81:13 | binding_early
+finding answers quarantine raw-pointer-object src/answers.cpp:121:13 | binding_late
 compile collected src/collected.cpp errors=collected
 flag collected -freflection --param=ggc-min-expand=0 --param=ggc-min-heapsize=0
 exit collected fail
-finding collected view-escape stored-borrow src/collected.cpp:24:9 | borrow of the local local into the parameter out
-finding collected view-escape escaped-borrow src/collected.cpp:29:22 | borrow of the local local
-finding collected quarantine raw-pointer-object src/collected.cpp:27:21 | (unnamed)
+finding collected view-escape stored-borrow src/collected.cpp:30:9 | borrow of the local local into the parameter out
+finding collected view-escape escaped-borrow src/collected.cpp:35:22 | borrow of the local local
+finding collected quarantine raw-pointer-object src/collected.cpp:33:21 | (unnamed)

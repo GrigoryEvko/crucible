@@ -4,13 +4,19 @@
 // static storage, or a function gives it back, and no line comes.
 #include <foundation/Transfer.h>
 
-namespace planted {
-
-// An owner of its first argument.
+// An owner of its first argument.  It is a class of the base, because the rule
+// trusts by_arguments only there.  The control runs without the rule
+// base-namespace.
+namespace fixy::planted {
 template <class T>
 struct [[= ::foundation::transfer::by_arguments{}]] Own {
     int word = 0;
 };
+}  // namespace fixy::planted
+
+namespace planted {
+
+using ::fixy::planted::Own;
 
 struct Node {
     Own<Node> next{};

@@ -7,10 +7,14 @@
 //   A type holds a borrow when it is a reference or a pointer, or a class that
 //   states refers{}, refers_unique{} or refers_deep{} of
 //   include/foundation/Transfer.h, such as a View or a Ref, at each depth of
-//   its bases and its members.  A class that states by_arguments{},
-//   payload_cell{} or one of the three refers marks holds the object of its
-//   first type argument in its own bytes or behind a pointer, as an Option, a
-//   Box and a Ref do, so the walk reads that argument too.  A class of the
+//   its bases and its members.  A class of the base that states by_arguments
+//   owns an object of each type argument that the mark names, as a Box does,
+//   so the walk reads those arguments and no member.  The rule trusts the mark
+//   only in a class of the base, and reads the members of a marked class
+//   outside it.  A class that states payload_cell{} or one of the three refers
+//   marks holds the object of its first type argument in its own bytes or
+//   behind a pointer, as an Option and a Ref do, so the walk reads that
+//   argument too.  A class of the
 //   base that states owns_its_storage{} holds no borrow: its pointers name its
 //   own storage.  So a Box of an arena holds no borrow, and the object of a
 //   door of the Box is the Box (the marked owners).  The rule reads each
@@ -168,7 +172,6 @@ struct EscapeNames {
     tree refers = NULL_TREE;
     tree refers_unique = NULL_TREE;
     tree refers_deep = NULL_TREE;
-    tree by_arguments = NULL_TREE;
     tree payload_cell = NULL_TREE;
     tree foundation = NULL_TREE;
     tree fixy = NULL_TREE;
@@ -301,21 +304,12 @@ bool reaches_borrow(tree type, ReachWalk& walk, int depth) {
     bool const is_borrow = carries_mark(type, escape_names.refers) || carries_mark(type, escape_names.refers_unique)
                         || carries_mark(type, escape_names.refers_deep);
     bool is_held = is_borrow;
-    // An owner holds its pointers, and a value of its first type argument or
-    // of each type argument: a class that states by_arguments{} or
-    // payload_cell{}, and a class on OwnerCore.
-    bool const is_first_owner =
-        carries_mark(type, escape_names.by_arguments) || carries_mark(type, escape_names.payload_cell);
-    bool const is_core_owner = is_owner_core_class(type);
-    tree info = CLASSTYPE_TEMPLATE_INFO(type);
-    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
-    if (is_first_owner || is_core_owner) {
-        int const last = arguments == NULL_TREE ? 0 : (is_first_owner ? 1 : TREE_VEC_LENGTH(arguments));
-        for (int index = 0; !is_held && arguments != NULL_TREE && index < last && index < TREE_VEC_LENGTH(arguments);
-             ++index) {
-            tree argument = TREE_VEC_ELT(arguments, index);
-            is_held = argument != NULL_TREE && TYPE_P(argument) && reaches_borrow(argument, walk, depth + 1);
-        }
+    // An owner holds its pointers, and a value of each type argument that it
+    // owns, so the walk reads those arguments and no member.
+    OwnedPositions const owned = held_owner_arguments(type);
+    if (owned.is_stated) {
+        visit_owned_arguments(type, owned,
+                              [&](tree argument) { is_held = is_held || reaches_borrow(argument, walk, depth + 1); });
         return walk.leave(type, is_held);
     }
     tree binfo = TYPE_BINFO(type);
@@ -1451,16 +1445,19 @@ bool reaches_unstatic_borrow(tree type, ReachWalk& walk, int depth) {
     bool const is_borrow = carries_mark(type, escape_names.refers) || carries_mark(type, escape_names.refers_unique)
                         || carries_mark(type, escape_names.refers_deep);
     bool is_held = is_borrow && !names_static_brand(type);
-    bool const is_first_owner =
-        carries_mark(type, escape_names.by_arguments) || carries_mark(type, escape_names.payload_cell);
-    tree info = CLASSTYPE_TEMPLATE_INFO(type);
-    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
-    if (!is_borrow && (is_first_owner || is_owner_core_class(type)) && arguments != NULL_TREE) {
-        int const last = is_first_owner ? 1 : TREE_VEC_LENGTH(arguments);
-        for (int index = 0; !is_held && index < last && index < TREE_VEC_LENGTH(arguments); ++index) {
-            tree argument = TREE_VEC_ELT(arguments, index);
-            is_held = argument != NULL_TREE && TYPE_P(argument) && reaches_unstatic_borrow(argument, walk, depth + 1);
-        }
+    // The walk also reads the bases and the members, so it reads the owned
+    // arguments of a class outside the base too: the mark only adds a reach.
+    OwnedPositions owned = owned_positions(type);
+    if (!owned.is_stated && carries_mark(type, escape_names.payload_cell)) {
+        owned = OwnedPositions::first();
+    }
+    if (!owned.is_stated && is_owner_core_class(type)) {
+        owned = OwnedPositions::each();
+    }
+    if (!is_borrow) {
+        visit_owned_arguments(type, owned, [&](tree argument) {
+            is_held = is_held || reaches_unstatic_borrow(argument, walk, depth + 1);
+        });
     }
     tree binfo = TYPE_BINFO(type);
     for (unsigned index = 0; !is_borrow && !is_held && binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo);
@@ -1520,22 +1517,26 @@ void on_collection(void*, void*) {
 
 bool holds_borrow(tree type) { return can_hold_borrow(type); }
 
-int held_owner_arguments(tree type) {
+OwnedPositions held_owner_arguments(tree type) {
     type = TYPE_MAIN_VARIANT(type);
     if (!CLASS_TYPE_P(type)) {
-        return -1;
+        return OwnedPositions{};
     }
     if (is_base_storage_owner(type)) {
-        return 0;
+        return OwnedPositions{true, false, 0};
     }
-    bool const is_first_owner =
-        carries_mark(type, escape_names.by_arguments) || carries_mark(type, escape_names.payload_cell);
-    if (!is_first_owner && !is_owner_core_class(type)) {
-        return -1;
+    // The rule trusts by_arguments{} only in a class of the base, because the
+    // owner gives no member to the walk.
+    if (is_of_base_namespace(type)) {
+        OwnedPositions const owned = owned_positions(type);
+        if (owned.is_stated) {
+            return owned;
+        }
     }
-    tree info = CLASSTYPE_TEMPLATE_INFO(type);
-    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
-    return arguments == NULL_TREE ? 0 : (is_first_owner ? 1 : TREE_VEC_LENGTH(arguments));
+    if (carries_mark(type, escape_names.payload_cell)) {
+        return OwnedPositions::first();
+    }
+    return is_owner_core_class(type) ? OwnedPositions::each() : OwnedPositions{};
 }
 
 bool is_borrow_class(tree type) {
@@ -1619,7 +1620,6 @@ void register_view_escape(const char* plugin_name) {
     escape_names.refers = get_identifier("refers");
     escape_names.refers_unique = get_identifier("refers_unique");
     escape_names.refers_deep = get_identifier("refers_deep");
-    escape_names.by_arguments = get_identifier("by_arguments");
     escape_names.payload_cell = get_identifier("payload_cell");
     escape_names.foundation = get_identifier("foundation");
     escape_names.fixy = get_identifier("fixy");

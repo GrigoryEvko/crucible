@@ -8,12 +8,18 @@ struct refers final {};
 
 }  // namespace foundation::transfer
 
-namespace planted {
-
+// The owner is a class of the base, because the rule trusts by_arguments only
+// there.
+namespace fixy::planted {
 template <class T>
 struct [[= ::foundation::transfer::by_arguments{}]] Own {
     int word = 0;
 };
+}  // namespace fixy::planted
+
+namespace planted {
+
+using ::fixy::planted::Own;
 
 struct Node;
 

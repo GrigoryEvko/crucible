@@ -4,14 +4,20 @@
 // them.
 #include <foundation/Transfer.h>
 
-namespace planted {
-
-// An owner of its first argument.
+// An owner of its first argument.  It is a class of the base, because the rule
+// trusts by_arguments only there.  The plant runs without the rule
+// base-namespace.
+namespace fixy::planted {
 template <class T>
 struct [[= ::foundation::transfer::by_arguments{}]] Own {
     long word = 0;
     long const* place = nullptr;
 };
+}  // namespace fixy::planted
+
+namespace planted {
+
+using ::fixy::planted::Own;
 template <class T>
 struct Shell {
     long word = 0;

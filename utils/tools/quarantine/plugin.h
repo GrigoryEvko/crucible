@@ -3323,6 +3323,57 @@ void report_open_regions();
 // is_std_as_const() for std::as_const.
 tree annotation_class(tree attribute);
 bool carries_base_annotation(tree attributes, tree name, tree space);
+
+// The type arguments that a class owns, from its annotation by_arguments of
+// include/foundation/Transfer.h: each type argument when the annotation names
+// no position, or one bit for each named position.  A position is the index
+// in the flat list of the type and value arguments, where each argument of a
+// pack counts as one, and a template argument that is a template counts as
+// none, as in the header.  owned_positions() reads the positions from the
+// template arguments of the class of the annotation, so it reads no evaluated
+// value, and it trusts the mark of each class.  A rule that reads no member of an
+// owner asks is_of_base_namespace() first.  visit_owned_arguments() calls
+// VISIT with each type argument of TYPE that OWNED names.  Each is linear in
+// the attributes or the template arguments.
+struct OwnedPositions {
+    bool is_stated = false;
+    bool is_each = false;
+    std::uint64_t positions = 0;
+
+    // True when the class owns the argument at POSITION.
+    bool owns(int position) const {
+        return is_stated && (is_each || (position >= 0 && position < 64 && ((positions >> position) & 1U) != 0));
+    }
+
+    // The owner of its first type argument, as a cell of a payload is.
+    static OwnedPositions first() { return OwnedPositions{true, false, 1}; }
+    // The owner of each type argument, as an owner on OwnerCore is.
+    static OwnedPositions each() { return OwnedPositions{true, true, 0}; }
+};
+OwnedPositions owned_positions(tree type);
+
+template <typename Visit>
+void visit_owned_arguments(tree type, OwnedPositions owned, Visit visit) {
+    tree info = owned.is_stated && CLASS_TYPE_P(type) ? CLASSTYPE_TEMPLATE_INFO(type) : NULL_TREE;
+    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    int position = 0;
+    for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
+        tree argument = TREE_VEC_ELT(arguments, index);
+        tree pack = argument != NULL_TREE && ARGUMENT_PACK_P(argument) ? ARGUMENT_PACK_ARGS(argument) : NULL_TREE;
+        int const count = pack != NULL_TREE ? TREE_VEC_LENGTH(pack) : 1;
+        for (int element = 0; element < count; ++element) {
+            tree each = pack != NULL_TREE ? TREE_VEC_ELT(pack, element) : argument;
+            // A template argument that is a template has no position.
+            if (each == NULL_TREE || TREE_CODE(each) == TEMPLATE_DECL || TREE_CODE(each) == TEMPLATE_TEMPLATE_PARM) {
+                continue;
+            }
+            if (TYPE_P(each) && owned.owns(position)) {
+                visit(each);
+            }
+            ++position;
+        }
+    }
+}
 bool function_carries_base_annotation(tree function, tree name, tree space);
 bool is_std_move_cast(tree function);
 bool is_std_as_const(tree function);
@@ -3496,9 +3547,10 @@ void report_view_escape(const Finding& finding);
 
 // escape.cpp: the facts of a type that the rule reads (the borrow), for the
 // families borrow route and live borrow.  holds_borrow() is true when a value of
-// TYPE can hold a borrow.  held_owner_arguments() gives the count of the type
-// arguments that the values of an owner of the base hold, or -1 for a class that
-// is no such owner.  is_borrow_class() is true for a class that states refers{},
+// TYPE can hold a borrow.  held_owner_arguments() gives the positions of the type
+// arguments that the values of an owner of the base hold, with no statement for
+// a class that is no such owner.  It trusts by_arguments{} only in a class of the
+// base.  is_borrow_class() is true for a class that states refers{},
 // refers_unique{} or refers_deep{}, is_unique_borrow_class() for a class that
 // states refers_unique{}, is_storage_owner() for a class of the base that states
 // owns_its_storage{}, is_block_keeper() for a class of the base that states
@@ -3506,7 +3558,7 @@ void report_view_escape(const Finding& finding);
 // of the base that releases nothing at its end (the runs outside).  In a wide
 // reading an incomplete class can hold a borrow (set_wide_borrows).
 bool holds_borrow(tree type);
-int held_owner_arguments(tree type);
+OwnedPositions held_owner_arguments(tree type);
 bool is_borrow_class(tree type);
 bool is_unique_borrow_class(tree type);
 bool is_storage_owner(tree type);

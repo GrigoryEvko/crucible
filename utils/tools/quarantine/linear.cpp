@@ -733,7 +733,6 @@ struct LinearNames {
     tree refers = NULL_TREE;
     tree refers_unique = NULL_TREE;
     tree refers_deep = NULL_TREE;
-    tree by_arguments = NULL_TREE;
     tree payload_cell = NULL_TREE;
     tree drop_door = NULL_TREE;
     tree detach_door = NULL_TREE;
@@ -5554,20 +5553,26 @@ tree reached_member_arena(tree type, std::set<std::pair<tree, bool>>& seen, bool
         return is_const ? NULL_TREE : type;
     }
     // A class holds what its fields show, so the walk reads the type arguments
-    // only of a class that states that it holds their values in its own bytes
-    // (by_arguments{} or payload_cell{} of include/foundation/Transfer.h).  An
-    // argument of each other class can be a phantom type, such as the owner of
-    // a context, of which the class holds no value.
+    // only of a class that states that it holds their values in its own bytes:
+    // the arguments that an owner owns (by_arguments of
+    // include/foundation/Transfer.h), and each argument of a cell
+    // (payload_cell{}).  An argument of each other class can be a phantom
+    // type, such as the owner of a context, of which the class holds no value.
+    // The walk also reads the fields, so the mark of a class outside the base
+    // only adds a reach.
     tree found = NULL_TREE;
     tree attributes = TYPE_ATTRIBUTES(type);
-    bool const holds_arguments = carries_annotation(attributes, linear_names.by_arguments, linear_names.transfer)
-                              || carries_annotation(attributes, linear_names.payload_cell, linear_names.transfer);
-    if (holds_arguments && CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
-        each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
-            if (found == NULL_TREE && TYPE_P(argument)) {
-                found = reached_member_arena(argument, seen, is_const || TYPE_READONLY(argument), depth + 1);
-            }
-        });
+    auto const read_argument = [&](tree argument) {
+        if (found == NULL_TREE && TYPE_P(argument)) {
+            found = reached_member_arena(argument, seen, is_const || TYPE_READONLY(argument), depth + 1);
+        }
+    };
+    OwnedPositions const owned = owned_positions(type);
+    if (owned.is_stated) {
+        visit_owned_arguments(type, owned, read_argument);
+    } else if (carries_annotation(attributes, linear_names.payload_cell, linear_names.transfer)
+               && CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
+        each_type_argument(CLASSTYPE_TI_ARGS(type), read_argument);
     }
     if (!COMPLETE_TYPE_P(type)) {
         ++unread_parts;
@@ -7505,7 +7510,6 @@ void register_linear(const char* plugin_name, bool checks_must_consume, bool che
     linear_names.refers = get_identifier("refers");
     linear_names.refers_unique = get_identifier("refers_unique");
     linear_names.refers_deep = get_identifier("refers_deep");
-    linear_names.by_arguments = get_identifier("by_arguments");
     linear_names.payload_cell = get_identifier("payload_cell");
     linear_names.drop_door = get_identifier("drop_door");
     linear_names.detach_door = get_identifier("detach_door");

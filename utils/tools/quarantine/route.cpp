@@ -185,18 +185,11 @@ bool is_standard_class(tree type) {
 // owner.
 template <typename Visit>
 bool visit_owner_arguments(tree type, Visit visit) {
-    int const owned = CLASS_TYPE_P(type) ? held_owner_arguments(type) : -1;
-    if (owned < 0) {
+    OwnedPositions const owned = CLASS_TYPE_P(type) ? held_owner_arguments(type) : OwnedPositions{};
+    if (!owned.is_stated) {
         return false;
     }
-    tree info = CLASSTYPE_TEMPLATE_INFO(type);
-    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
-    for (int index = 0; arguments != NULL_TREE && index < owned && index < TREE_VEC_LENGTH(arguments); ++index) {
-        tree argument = TREE_VEC_ELT(arguments, index);
-        if (argument != NULL_TREE && TYPE_P(argument)) {
-            visit(argument);
-        }
-    }
+    visit_owned_arguments(type, owned, visit);
     return true;
 }
 

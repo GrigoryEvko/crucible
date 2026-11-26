@@ -899,7 +899,10 @@ tree annotation_class(tree attribute) {
     return CLASS_TYPE_P(type) ? type : NULL_TREE;
 }
 
-bool carries_base_annotation(tree attributes, tree name, tree space) {
+// The class of the first annotation of ATTRIBUTES that is the class
+// foundation::SPACE::NAME, or a specialization of the template of that name,
+// or null.  Complexity: linear in the attributes.
+tree find_base_annotation(tree attributes, tree name, tree space) {
     static tree const foundation = get_identifier("foundation");
     for (tree attribute = attributes; attribute != NULL_TREE; attribute = TREE_CHAIN(attribute)) {
         tree annotation = annotation_class(attribute);
@@ -916,10 +919,43 @@ bool carries_base_annotation(tree attributes, tree name, tree space) {
         }
         if (scope != NULL_TREE && TREE_CODE(scope) == NAMESPACE_DECL && DECL_NAME(scope) == foundation
             && CP_DECL_CONTEXT(scope) == global_namespace) {
-            return true;
+            return annotation;
         }
     }
-    return false;
+    return NULL_TREE;
+}
+
+bool carries_base_annotation(tree attributes, tree name, tree space) {
+    return find_base_annotation(attributes, name, space) != NULL_TREE;
+}
+
+OwnedPositions owned_positions(tree type) {
+    static tree const name = get_identifier("by_arguments");
+    static tree const transfer = get_identifier("transfer");
+    OwnedPositions owned;
+    tree annotation = type != NULL_TREE && CLASS_TYPE_P(type)
+                        ? find_base_annotation(TYPE_ATTRIBUTES(type), name, transfer)
+                        : NULL_TREE;
+    if (annotation == NULL_TREE) {
+        return owned;
+    }
+    owned.is_stated = true;
+    owned.is_each = true;
+    tree info = CLASSTYPE_TEMPLATE_INFO(annotation);
+    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
+        tree argument = TREE_VEC_ELT(arguments, index);
+        tree values = argument != NULL_TREE && ARGUMENT_PACK_P(argument) ? ARGUMENT_PACK_ARGS(argument) : NULL_TREE;
+        for (int position = 0; values != NULL_TREE && position < TREE_VEC_LENGTH(values); ++position) {
+            tree value = TREE_VEC_ELT(values, position);
+            if (value != NULL_TREE && TREE_CODE(value) == INTEGER_CST && tree_fits_uhwi_p(value)
+                && tree_to_uhwi(value) < 64) {
+                owned.positions |= std::uint64_t{1} << tree_to_uhwi(value);
+                owned.is_each = false;
+            }
+        }
+    }
+    return owned;
 }
 
 bool function_carries_base_annotation(tree function, tree name, tree space) {
