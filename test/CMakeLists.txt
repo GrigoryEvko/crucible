@@ -4642,6 +4642,15 @@ crucible_neg_compile_test(neg_crucible_context_scope_gives_an_address
   "no matching function for call to .crucible::CrucibleContext::with_compiled\\("
   "CompiledBody"
   "no operand of the disjunction is satisfied")
+# The proof of a matched op: only the engine makes one, and no body of a
+# compiled scope gives one back.
+crucible_neg_compile_test(neg_replay_matched_op_built_outside_engine
+  "is private within this context"
+  "crucible::MatchedOp::MatchedOp\\(foundation::core::Ref<const crucible::TraceEntry")
+crucible_neg_compile_test(neg_replay_matched_op_leaves_compiled_scope
+  "no matching function for call to .crucible::CrucibleContext::with_compiled\\("
+  "CompiledBody"
+  "no operand of the disjunction is satisfied")
 crucible_neg_compile_test(neg_crucible_context_scope_copied
   "use of deleted function .crucible::CompiledScope::CompiledScope\\(const crucible::CompiledScope&\\)."
   "a compiled scope lives for the call of the body of with_compiled")

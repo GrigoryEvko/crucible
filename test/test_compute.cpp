@@ -114,39 +114,36 @@ static constexpr uint32_t N_OPS = 4;
 // of the inputs by value, read before the frame of the output.  The trailing
 // names say which slot each index reaches, which the index alone does not.
 static void run_iteration(CompiledScope& scope) {
-    auto s = scope.advance(H_MM1, S_MM1).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
+    const MatchedOp mm1 = cpu::advance_op(kTest, scope, H_MM1, S_MM1, ReplayStatus::MATCH);
     write_output(kTest, scope,
-                 [left = read_input(scope, InputPosition{0}),  // X
-                  right = read_input(scope, InputPosition{1})](auto mm1_out) noexcept {  // W1
+                 [left = read_input(scope, mm1, InputPosition{0}),  // X
+                  right = read_input(scope, mm1, InputPosition{1})](auto mm1_out) noexcept {  // W1
                      cpu::mm(kTest, make_input<LeftFactor>(left), make_input<RightFactor>(right), std::move(mm1_out),
                              make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(HIDDEN),
                              make_dim<roles::Inner>(IN_DIM));
                  });
 
-    s = scope.advance(H_RELU, S_RELU).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    write_output(kTest, scope, [input = read_input(scope, InputPosition{0})](auto relu_out) noexcept {  // mm1_out
+    const MatchedOp relu = cpu::advance_op(kTest, scope, H_RELU, S_RELU, ReplayStatus::MATCH);
+    write_output(kTest, scope, [input = read_input(scope, relu, InputPosition{0})](auto relu_out) noexcept {  // mm1_out
         cpu::relu(kTest, input, std::move(relu_out), make_dim<roles::Count>(BATCH * HIDDEN));
     });
 
-    s = scope.advance(H_MM2, S_MM2).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
+    const MatchedOp mm2 = cpu::advance_op(kTest, scope, H_MM2, S_MM2, ReplayStatus::MATCH);
     write_output(kTest, scope,
-                 [left = read_input(scope, InputPosition{0}),  // relu_out
-                  right = read_input(scope, InputPosition{1})](auto mm2_out) noexcept {  // W2
+                 [left = read_input(scope, mm2, InputPosition{0}),  // relu_out
+                  right = read_input(scope, mm2, InputPosition{1})](auto mm2_out) noexcept {  // W2
                      cpu::mm(kTest, make_input<LeftFactor>(left), make_input<RightFactor>(right), std::move(mm2_out),
                              make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(OUT_DIM),
                              make_dim<roles::Inner>(HIDDEN));
                  });
 
     // The last operation of an iteration completes it rather than matching.
-    s = scope.advance(H_SOFTMAX, S_SOFTMAX).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
-    write_output(kTest, scope, [input = read_input(scope, InputPosition{0})](auto softmax_out) noexcept {  // mm2_out
-        cpu::softmax(kTest, input, std::move(softmax_out), make_dim<roles::Rows>(BATCH),
-                     make_dim<roles::Width>(OUT_DIM));
-    });
+    const MatchedOp softmax = cpu::advance_op(kTest, scope, H_SOFTMAX, S_SOFTMAX, ReplayStatus::COMPLETE);
+    write_output(kTest, scope,
+                 [input = read_input(scope, softmax, InputPosition{0})](auto softmax_out) noexcept {  // mm2_out
+                     cpu::softmax(kTest, input, std::move(softmax_out), make_dim<roles::Rows>(BATCH),
+                                  make_dim<roles::Width>(OUT_DIM));
+                 });
 }
 
 int main() {

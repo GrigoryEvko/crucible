@@ -238,7 +238,11 @@ static void test_full_replay() {
     const auto replayed = ctx.with_compiled(context_key, [&ctx = ::fixy::as_const(ctx),
                                                           &pv](crucible::CompiledScope& scope) noexcept {
         constexpr crucible::OutputPosition first_output{0};
-        CRUCIBLE_TEST_ASSERT(kTest, scope.advance(SchemaHash{100}, ShapeHash{200}).status() == ReplayStatus::MATCH);
+        const crucible::ReplayStep step = scope.advance(SchemaHash{100}, ShapeHash{200});
+        CRUCIBLE_TEST_ASSERT(kTest, step.status() == ReplayStatus::MATCH);
+        // The proof of the match gives the address of the slot with no refusal.
+        const crucible::MatchedOp op0 = scope.matched_op(step).expect("a MATCH step gives the proof of its op");
+        CRUCIBLE_TEST_ASSERT(kTest, scope.output_address(op0, first_output) == ctx.pool().slot_ptr(SlotId{0}, pv));
         // Op 0 has one output and no input.  A position past them gives its
         // refusal, and the replay goes on.
         CRUCIBLE_TEST_ASSERT(kTest, scope.output_ptr(crucible::OutputPosition{1})

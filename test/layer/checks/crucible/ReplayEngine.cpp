@@ -21,9 +21,23 @@ static_assert(::fixy::no_scoped_view_field_check<ReplayEngine>());
 
 // A step is eight trivially copyable bytes, so an advance gives it back in
 // one register.  Only the engine makes a step: it has no public constructor
-// apart from the copy and the move.
+// apart from the copy and the move.  It holds no borrow, so a body of the
+// compiled scope gives it back.
 static_assert(sizeof(ReplayStep) == 8 && std::is_trivially_copyable_v<ReplayStep>);
 static_assert(!std::is_default_constructible_v<ReplayStep>);
 static_assert(!std::is_constructible_v<ReplayStep, ReplayStatus, OpIndex>);
+static_assert(::foundation::core::HoldsNoBorrow<ReplayStep>);
+
+// The proof of a matched op: only the engine makes one.  It is a borrow of
+// the region, so no body of a compiled scope gives it back.  Its copy is
+// trivial, so its Option is a plain Option that a loop reads.
+static_assert(!std::is_default_constructible_v<MatchedOp>);
+static_assert(!std::is_constructible_v<MatchedOp, ::fixy::Ref<const TraceEntry>>);
+static_assert(std::is_trivially_copy_constructible_v<MatchedOp> && sizeof(MatchedOp) == 8);
+static_assert(!::foundation::core::HoldsNoBorrow<MatchedOp>);
+static_assert(requires(::fixy::Option<MatchedOp> const& proof) {
+    proof.begin();
+    proof.end();
+});
 
 }  // namespace crucible

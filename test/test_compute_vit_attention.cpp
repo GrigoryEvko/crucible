@@ -33,60 +33,45 @@ namespace test_compute_vit {
 namespace {
 
 // The op of a matrix product of [B*S, D] with [D, D].
-void run_square_mm(CompiledScope& scope) {
-    write_output(
-        kTest, scope,
-        [left = read_input(scope, InputPosition{0}), right = read_input(scope, InputPosition{1})](auto out) noexcept {
-            cpu::mm(kTest, make_input<LeftFactor>(left), make_input<RightFactor>(right), std::move(out),
-                    make_dim<roles::Rows>(B * S), make_dim<roles::Columns>(D), make_dim<roles::Inner>(D));
-        });
+void run_square_mm(CompiledScope& scope, MatchedOp const& op) {
+    write_output(kTest, scope,
+                 [left = read_input(scope, op, InputPosition{0}),
+                  right = read_input(scope, op, InputPosition{1})](auto out) noexcept {
+                     cpu::mm(kTest, make_input<LeftFactor>(left), make_input<RightFactor>(right), std::move(out),
+                             make_dim<roles::Rows>(B * S), make_dim<roles::Columns>(D), make_dim<roles::Inner>(D));
+                 });
 }
 
 }  // namespace
 
 void run_attention_ops(CompiledScope& scope) {
-    ReplayStatus s;
-
-    s = scope.advance(H_LN1, S_LN1).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
+    const MatchedOp ln1 = cpu::advance_op(kTest, scope, H_LN1, S_LN1, ReplayStatus::MATCH);
     write_output(kTest, scope,
-                 [input = read_input(scope, InputPosition{0}), scale = read_input(scope, InputPosition{1}),
-                  shift = read_input(scope, InputPosition{2})](auto out) noexcept {
+                 [input = read_input(scope, ln1, InputPosition{0}), scale = read_input(scope, ln1, InputPosition{1}),
+                  shift = read_input(scope, ln1, InputPosition{2})](auto out) noexcept {
                      cpu::layer_norm(kTest, input, make_input<roles::Scale>(scale), make_input<roles::Shift>(shift),
                                      std::move(out), make_dim<roles::Rows>(B * S), make_dim<roles::Width>(D));
                  });
 
-    s = scope.advance(H_MMQ, S_MMQ).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    run_square_mm(scope);
+    run_square_mm(scope, cpu::advance_op(kTest, scope, H_MMQ, S_MMQ, ReplayStatus::MATCH));
+    run_square_mm(scope, cpu::advance_op(kTest, scope, H_MMK, S_MMK, ReplayStatus::MATCH));
+    run_square_mm(scope, cpu::advance_op(kTest, scope, H_MMV, S_MMV, ReplayStatus::MATCH));
 
-    s = scope.advance(H_MMK, S_MMK).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    run_square_mm(scope);
-
-    s = scope.advance(H_MMV, S_MMV).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    run_square_mm(scope);
-
-    s = scope.advance(H_SDPA, S_SDPA).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
+    const MatchedOp sdpa = cpu::advance_op(kTest, scope, H_SDPA, S_SDPA, ReplayStatus::MATCH);
     write_output(kTest, scope,
-                 [queries = read_input(scope, InputPosition{0}), keys = read_input(scope, InputPosition{1}),
-                  values = read_input(scope, InputPosition{2})](auto out) noexcept {
+                 [queries = read_input(scope, sdpa, InputPosition{0}), keys = read_input(scope, sdpa, InputPosition{1}),
+                  values = read_input(scope, sdpa, InputPosition{2})](auto out) noexcept {
                      cpu::sdpa(kTest, queries, make_input<roles::Keys>(keys), make_input<roles::Values>(values),
                                std::move(out), make_dim<roles::Batch>(B), make_dim<roles::Sequence>(S),
                                make_dim<roles::Width>(D));
                  });
 
-    s = scope.advance(H_MMOUT, S_MMOUT).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    run_square_mm(scope);
+    run_square_mm(scope, cpu::advance_op(kTest, scope, H_MMOUT, S_MMOUT, ReplayStatus::MATCH));
 
-    s = scope.advance(H_ADD1, S_ADD1).status();
-    CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
+    const MatchedOp add1 = cpu::advance_op(kTest, scope, H_ADD1, S_ADD1, ReplayStatus::MATCH);
     write_output(kTest, scope,
-                 [augend = read_input(scope, InputPosition{0}),
-                  addend = read_input(scope, InputPosition{1})](auto out) noexcept {
+                 [augend = read_input(scope, add1, InputPosition{0}),
+                  addend = read_input(scope, add1, InputPosition{1})](auto out) noexcept {
                      cpu::add(kTest, make_input<roles::Augend>(augend), make_input<roles::Addend>(addend),
                               std::move(out), make_dim<roles::Count>(B * S * D));
                  });

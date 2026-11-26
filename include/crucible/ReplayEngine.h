@@ -21,6 +21,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
 #include <fixy/ScopedView.h>
+#include <foundation/Transfer.h>
 #include <fixy/Tagged.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
@@ -80,13 +81,43 @@ enum class AddressRefusal : uint8_t {
 // did not register), or the refusal.
 using SlotAddress = ::fixy::Result<::fixy::Option<::fixy::RunAddress>, AddressRefusal>;
 
+// The proof that an advance matched an op: the entry of that op in the active
+// region.  Only the engine makes one, for the step of an advance that matched
+// (ReplayEngine::matched_op).  The doors of an address that take it read the
+// slot ids of its entry, so they test no matched op and give no refusal.  It
+// is a borrow of the region, so no result of a body of the compiled scope
+// holds it, and it lives no longer than the scope that keeps the region
+// active.  A token that a caller keeps past the next advance still names an op
+// of the active region, so a read through it stays in the memory of the
+// region.
+class[[= ::foundation::transfer::refers{}]] MatchedOp final {
+public:
+    // A copy and an assignment give a proof of the same op, which an advance
+    // matched.  The trivial copy makes an Option of a proof a plain Option, so
+    // a loop reads it and no lend is counted.
+    MatchedOp(MatchedOp const&) = default;
+    MatchedOp& operator=(MatchedOp const&) = default;
+
+    // The entry of the matched op.
+    [[nodiscard]] constexpr TraceEntry const& entry() const noexcept { return *entry_; }
+
+private:
+    friend struct ReplayEngine;
+
+    constexpr explicit MatchedOp(::fixy::Ref<const TraceEntry> entry) noexcept : entry_{entry} {}
+
+    ::fixy::Ref<const TraceEntry> entry_;
+};
+
 // The result of one advance: the status of the guard and the position of
 // the op that it matched.  A MATCH or a COMPLETE matched the op at the
 // cursor that the advance read, so the advance gives that position from the
 // cursor in its registers, and no reader loads the cursor that it stored.  A
 // DIVERGED step matched no op, so it has no matched position.  Only the
 // engine makes a step.  The step is eight bytes, so it comes back in one
-// register.
+// register.  It holds no borrow of the region, so a body of the compiled
+// scope gives it back (Vigil::dispatch_op), and the proof of its op comes
+// from the engine (ReplayEngine::matched_op).
 class ReplayStep {
 public:
     [[nodiscard]] constexpr ReplayStatus status() const noexcept { return status_; }
@@ -219,6 +250,36 @@ struct ReplayEngine {
     [[nodiscard]] CRUCIBLE_HOT SlotAddress input_ptr(InputPosition position, ActiveView const&) const {
         CRUCIBLE_TRY(sid, input_slot_(position));
         return address_of_slot_(sid);
+    }
+
+    // The proof of the op that the last advance matched, for its step, or no
+    // value for a DIVERGED step.  A DIVERGED advance keeps the op of the
+    // advance before it, so the door tests the status of the step first.  A
+    // step that matched leaves the engine with a matched op until the next
+    // advance, so the second test reads that op.  Where the advance inlines
+    // into the caller, the compiler knows the two answers from the advance,
+    // and the door costs no test.  Complexity: O(1).
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<MatchedOp> matched_op(ReplayStep step, ActiveView const&) const {
+        return matched_op_(step);
+    }
+
+    // The address of the slot of an output of the op that the token names,
+    // for a caller in the replay that holds the proof of the match.  The
+    // token proves a matched op, so the door tests none.  The position comes
+    // from code of the program, so a position past the outputs of the op is
+    // a defect of the caller, and the precondition ends the process for it.
+    // The window of one slot id folds into the precondition.  An output with
+    // no slot, or an external slot that its owner did not register, gives no
+    // address.  Complexity: O(1).
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_address(MatchedOp const& op,
+                                                                                 OutputPosition position) const {
+        return address_at_(op.entry().output_slot_ids(), position.raw());
+    }
+
+    // The same for one of the inputs.
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_address(MatchedOp const& op,
+                                                                                InputPosition position) const {
+        return address_at_(op.entry().input_slot_ids(), position.raw());
     }
 
     CRUCIBLE_INLINE void reset(ActiveView const&) { reset(); }
@@ -406,6 +467,28 @@ private:
                 return found.at(::fixy::index<0>());
             },
             [] noexcept -> ::fixy::Result<SlotId, AddressRefusal> { return ::fixy::err(AddressRefusal::NoPosition); });
+    }
+
+    // The proof of the matched op for step (matched_op).  The member is read
+    // into a local, so no read of a member goes through this in a constant
+    // evaluation.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<MatchedOp> matched_op_(ReplayStep step) const noexcept {
+        if (step.status() == ReplayStatus::DIVERGED) return ::fixy::none;
+        const ::fixy::Option<::fixy::Ref<const TraceEntry>> matched = current_;
+        for (::fixy::Ref<const TraceEntry> const& entry : matched)
+            return ::fixy::some(MatchedOp{entry});
+        return ::fixy::none;
+    }
+
+    // The address of the slot of the id at position of slot_ids.  The
+    // precondition bounds the position, and the window of one id folds into
+    // it.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<::fixy::RunAddress> address_at_(::fixy::View<const SlotId> slot_ids,
+                                                                                 uint16_t position) const noexcept {
+        CRUCIBLE_PRE(position < slot_ids.size());
+        const SlotId sid =
+            slot_ids.window<1>(position).expect("the precondition bounds the position").at(::fixy::index<0>());
+        return address_of_slot_(sid);
     }
 
     // The address of the slot sid, or no address for the id with no slot and

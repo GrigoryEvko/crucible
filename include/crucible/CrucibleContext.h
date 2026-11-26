@@ -430,6 +430,13 @@ private:
     // and the rule brand-escape refuses a fresh brand that leaves the door.
     using CompiledView = ::fixy::ScopedView<CrucibleContext, ctx_mode::Compiled>;
 
+    // The proof of the op that the last advance matched, for its step
+    // (ReplayEngine::matched_op).  The scope proves the compiled mode, so the
+    // engine is live.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<MatchedOp> matched_op_(ReplayStep step) const {
+        return engine_.matched_op_(step);
+    }
+
     // The addresses of the slots of the matched op (ReplayEngine::output_ptr
     // and input_ptr).  The engine checks that it is live.
     [[nodiscard]] CRUCIBLE_INLINE SlotAddress output_ptr_(OutputPosition position) const {
@@ -601,8 +608,30 @@ private:
     [[nodiscard]] InputView<T> input_view_(InputPosition position) const {
         CRUCIBLE_TRY(sid, engine_.input_slot_(position));
         // The engine gave a slot id, so it has a matched op.
-        const bool is_written = engine_.current_entry().output_slot_ids().walk().any_of(
-            [sid](SlotId const& output) noexcept { return output == sid; });
+        return input_slot_view_<T>(engine_.current_entry(), sid);
+    }
+
+    // The same View of an input of the op that the token names, for a caller
+    // in the replay that holds the proof of the match.  A position past the
+    // inputs of the op is a defect of the caller, so the precondition ends
+    // the process for it, as for ReplayEngine::input_address.  Complexity:
+    // O(outputs of the op).
+    template <class T>
+    [[nodiscard]] ::fixy::Option<::fixy::View<T const>> input_view_(MatchedOp const& op, InputPosition position) const {
+        const ::fixy::View<const SlotId> inputs = op.entry().input_slot_ids();
+        CRUCIBLE_PRE(position.raw() < inputs.size());
+        const SlotId sid = inputs.window<1>(position.raw())
+                               .expect("the precondition bounds the input position")
+                               .at(::fixy::index<0>());
+        return input_slot_view_<T>(op.entry(), sid);
+    }
+
+    // The View of the slot sid of an input of op, or no View for a slot that
+    // op also writes, and the cases of PoolAllocator::slot_view.
+    template <class T>
+    [[nodiscard]] ::fixy::Option<::fixy::View<T const>> input_slot_view_(TraceEntry const& op, SlotId sid) const {
+        const bool is_written =
+            op.output_slot_ids().walk().any_of([sid](SlotId const& output) noexcept { return output == sid; });
         if (is_written) return ::fixy::Option<::fixy::View<T const>>{::fixy::none};
         auto pv = pool_.initialized_view_();
         return pool_.slot_view<T>(sid, pv);
@@ -1100,6 +1129,25 @@ public:
         return context_->input_ptr_(position);
     }
 
+    // The proof of the op that the last advance of the scope matched, for its
+    // step, or no value for a DIVERGED step (ReplayEngine::matched_op).
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<MatchedOp> matched_op(ReplayStep step) const& {
+        return context_->matched_op_(step);
+    }
+
+    // The address of the slot of an output of the op that the token names
+    // (ReplayEngine::output_address), for a body that holds the proof of the
+    // match of its advance.  No refusal: a position past the outputs ends the
+    // process.  input_address gives the same for an input.
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> output_address(MatchedOp const& op,
+                                                                                 OutputPosition position) const& {
+        return context_->engine_.output_address(op, position);
+    }
+    [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<::fixy::RunAddress> input_address(MatchedOp const& op,
+                                                                                InputPosition position) const& {
+        return context_->engine_.input_address(op, position);
+    }
+
     // The address of an external slot and the device of its owner.  A slot
     // that the plan of the active region does not mark external gives its
     // ExternalRefusal, and the pool keeps the slot as it was.  Complexity: O(1).
@@ -1131,6 +1179,15 @@ public:
         requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
     [[nodiscard]] InputView<T> input_view(InputPosition position) const& {
         return context_->template input_view_<T>(position);
+    }
+
+    // The same View of an input of the op that the token names, with no
+    // refusal (CrucibleContext::input_view_ of a token).  Complexity:
+    // O(outputs of the op).
+    template <class T>
+        requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
+    [[nodiscard]] ::fixy::Option<::fixy::View<T const>> input_view(MatchedOp const& op, InputPosition position) const& {
+        return context_->template input_view_<T>(op, position);
     }
 
     // body gets one ViewMut<T> for each output of the matched op, for the time

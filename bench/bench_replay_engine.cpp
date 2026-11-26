@@ -104,10 +104,6 @@ private:
     }
 };
 
-// The address that a walk keeps for a refused read, which the walks of the
-// bench never meet: each op of the region has an input and an output.
-constexpr ::fixy::Option<::fixy::RunAddress> kNoAddress{::fixy::none};
-
 // Walks — each calls engine.reset() at top so repeated invocation
 // through auto-batch is stateless.  Each helper mints its own
 // ActiveView; engine is already initialized before being passed in.
@@ -126,8 +122,10 @@ ReplayStatus walk_advance_only(ReplayEngine& engine, ::fixy::View<const TraceEnt
     engine.reset(av);
     ::fixy::Option<::fixy::RunAddress> last_ptr{::fixy::none};
     for (const TraceEntry& op : ops) {
-        (void)engine.advance(op.schema_hash, op.shape_hash, av);
-        last_ptr = engine.output_ptr(crucible::OutputPosition{0}, av).value_or(kNoAddress);
+        // Each op of the walk matches, so each step gives the proof of its op.
+        const crucible::ReplayStep step = engine.advance(op.schema_hash, op.shape_hash, av);
+        for (const crucible::MatchedOp& matched : engine.matched_op(step, av))
+            last_ptr = engine.output_address(matched, crucible::OutputPosition{0});
     }
     return last_ptr;
 }
@@ -137,9 +135,11 @@ ReplayStatus walk_advance_only(ReplayEngine& engine, ::fixy::View<const TraceEnt
     engine.reset(av);
     ::fixy::Option<::fixy::RunAddress> last_ptr{::fixy::none};
     for (const TraceEntry& op : ops) {
-        (void)engine.advance(op.schema_hash, op.shape_hash, av);
-        last_ptr = engine.output_ptr(crucible::OutputPosition{0}, av).value_or(kNoAddress);
-        bench::do_not_optimize(engine.input_ptr(crucible::InputPosition{0}, av).value_or(kNoAddress));
+        const crucible::ReplayStep step = engine.advance(op.schema_hash, op.shape_hash, av);
+        for (const crucible::MatchedOp& matched : engine.matched_op(step, av)) {
+            last_ptr = engine.output_address(matched, crucible::OutputPosition{0});
+            bench::do_not_optimize(engine.input_address(matched, crucible::InputPosition{0}));
+        }
     }
     return last_ptr;
 }
@@ -155,8 +155,9 @@ ReplayStatus walk_context(CrucibleContext& ctx, crucible::ContextKey& key, ::fix
                            ReplayStatus last = ReplayStatus::MATCH;
                            ::fixy::Option<::fixy::RunAddress> last_ptr{::fixy::none};
                            for (const TraceEntry& op : ops) {
-                               auto s = scope.advance(op.schema_hash, op.shape_hash);
-                               last_ptr = scope.output_ptr(crucible::OutputPosition{0}).value_or(kNoAddress);
+                               const crucible::ReplayStep s = scope.advance(op.schema_hash, op.shape_hash);
+                               for (const crucible::MatchedOp& matched : scope.matched_op(s))
+                                   last_ptr = scope.output_address(matched, crucible::OutputPosition{0});
                                bench::do_not_optimize(s);
                                last = s.status();
                            }

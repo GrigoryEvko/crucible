@@ -790,6 +790,70 @@ static void test_integration_with_pool() {
     ::fixy::check::pass(kTest, "  test_integration_with_pool: PASSED\n");
 }
 
+// The step of an advance that matched gives the proof of its op, and the doors
+// of the proof give the addresses of the doors with a refusal.  A DIVERGED
+// step gives no proof.  A position past the outputs of the op ends the
+// process in each build.  The proof of an op stays the proof of that op after
+// the next advance.
+static void test_matched_op_token(::fixy::TestRunnerCtx const& test) {
+    auto source = ::foundation::effects::testing::test();
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
+    const crucible::DagRef<RegionNode> region =
+        build_region(source.alloc, arena, 2, [&source](auto& frame, auto& ops_run) noexcept {
+            auto out0 = ::fixy::check::run_of(kTest, source.alloc, frame, SlotId{0});
+            auto out1 = ::fixy::check::run_of(kTest, source.alloc, frame, SlotId{1});
+            auto in1 = ::fixy::check::run_of(kTest, source.alloc, frame, SlotId{0});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            ::fixy::View<TraceEntry, 2> const ops =
+                ops_run.view().template window<2>(0).expect("the run holds two ops");
+            ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{50};
+            ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{60};
+            set_output_slots(frame, ops_run, 0, out0);
+            ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{51};
+            ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{61};
+            set_output_slots(frame, ops_run, 1, out1);
+            set_input_slots(frame, ops_run, 1, in1);
+            return make_simple_plan(source.alloc, frame, 2);
+        });
+    CrucibleContext ctx{source.alloc};
+    auto context_key = crucible::mint_context_key(source);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
+    const PoolAllocator& pool = ctx.pool();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
+    ReplayEngine& engine = ctx.engine(source);
+    auto av = engine.mint_active_view(kVigilForeground);
+
+    CRUCIBLE_TEST_ASSERT(kTest, engine.matched_op(engine.advance(SchemaHash{99}, ShapeHash{60}, av), av).is_none());
+    engine.reset(av);
+
+    const crucible::MatchedOp first = engine.matched_op(engine.advance(SchemaHash{50}, ShapeHash{60}, av), av)
+                                          .expect("a MATCH step gives the proof of its op");
+    // A DIVERGED advance keeps the op of the advance before it, and its step
+    // still gives no proof.
+    const ReplayStep diverged = engine.advance(SchemaHash{98}, ShapeHash{61}, av);
+    CRUCIBLE_TEST_ASSERT(kTest, diverged.status() == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, engine.matched_op(diverged, av).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_address(first, OutputPosition{0}) == pool.slot_ptr(SlotId{0}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_address(first, OutputPosition{0})
+                                    == engine.output_ptr(OutputPosition{0}, av).expect("op 0 has an output"));
+
+    const crucible::MatchedOp second = engine.matched_op(engine.advance(SchemaHash{51}, ShapeHash{61}, av), av)
+                                           .expect("a COMPLETE step gives the proof of its op");
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_address(second, OutputPosition{0}) == pool.slot_ptr(SlotId{1}, pv));
+    CRUCIBLE_TEST_ASSERT(kTest, engine.input_address(second, InputPosition{0}) == pool.slot_ptr(SlotId{0}, pv));
+    // The proof of op 0 still names op 0 after the advance over op 1.
+    CRUCIBLE_TEST_ASSERT(kTest, engine.output_address(first, OutputPosition{0}) == pool.slot_ptr(SlotId{0}, pv));
+
+    ::fixy::check::expect_dies(
+        test, [&engine, &second] noexcept { static_cast<void>(engine.output_address(second, OutputPosition{1})); },
+        ::fixy::TextView{"contract violation: position < slot_ids.size()"});
+    ::fixy::check::expect_dies(
+        test, [&engine, &first] noexcept { static_cast<void>(engine.input_address(first, InputPosition{0})); },
+        ::fixy::TextView{"contract violation: position < slot_ids.size()"});
+
+    ::fixy::check::pass(kTest, "  test_matched_op_token: PASSED\n");
+}
+
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     ::fixy::report(::fixy::Sink::Out, "test_replay_engine:\n");
@@ -798,6 +862,7 @@ int main() {
     test_shape_divergence();
     test_reset();
     test_input_ptr();
+    test_matched_op_token(test);
     test_invalid_slot();
     test_current_entry();
     test_matched_index_after_reset();
