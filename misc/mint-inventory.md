@@ -52,7 +52,7 @@ that the axis does not apply to the row.
 | `SchemaTableOf::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | HS14: 2 |
 | `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 4 |
 | `mint_context_key` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | token | · | HS14: 16 |
-| `mint_dag_node` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 11 |
+| `mint_dag_node` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 13 |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | HS14: 11 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |

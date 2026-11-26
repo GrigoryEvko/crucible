@@ -314,7 +314,7 @@ src/perf/ | opted-out | 3 | ABI: libbpf attaches a program to the raw descriptor
 src/perf/ | opted-out | 2 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
 src/perf/ | region | 1 | ABI: libbpf attaches a program to the raw descriptor of a perf event | libbpf takes the raw descriptor of a perf event, and the link that it gives owns the descriptor and closes it
 src/perf/ | region | 1 | ABI: libbpf gives the program of an object by its C name as a raw pointer | -
-test/ | c-array-object | 49 | - | -
+test/ | c-array-object | 48 | - | -
 test/ | c-library-call | 91 | - | -
 test/ | c-library-object | 7 | - | -
 test/ | door-header | 3 | - | -
@@ -343,7 +343,7 @@ test/ | opted-out | 26 | PROBE: the trace shows the directory of each sync of th
 test/ | opted-out | 1 | PROBE: two parameters get one unique view to read its old name | the kind two-names of the rule view-escape makes each call that gives one linear object or one unique view to two parameters a compile error, so a test of such a call stands in a PROBE region
 test/ | raw-function-pointer | 1 | - | -
 test/ | raw-new-delete | 2 | - | -
-test/ | raw-pointer-object | 119 | - | -
+test/ | raw-pointer-object | 118 | - | -
 test/ | region | 1 | ABI: dlsym finds each entry point of a test library by its C name | the case fallbacks of test_process_wide_across_libraries finds the two entry points of each test library by their C names with dlsym, as Python finds the entry points of the vessel, so the two declarations have C linkage
 test/ | region | 1 | ABI: the case calls the C entries of the vessel library with raw pointers | the tests of the C entries of the vessel call the entries of libcrucible_vessel.so with the raw pointers and the counts of a C caller, and the door test gives misaligned and null pointers
 test/ | region | 1 | ABI: the case gives the records of a C caller as a pointer and a count | the tests of the C entries of the vessel call the entries of libcrucible_vessel.so with the raw pointers and the counts of a C caller, and the door test gives misaligned and null pointers
@@ -369,7 +369,7 @@ test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Ci
 test/ | region | 1 | PROBE: two parameters get one unique view to read its old name | the kind two-names of the rule view-escape makes each call that gives one linear object or one unique view to two parameters a compile error, so a test of such a call stands in a PROBE region
 test/ | replace-pending:<limits> | 7 | - | -
 test/ | replace-pending:std::bit_cast | 24 | - | -
-test/ | std-entity | 296 | - | -
+test/ | std-entity | 294 | - | -
 test/ | std-object | 101 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
