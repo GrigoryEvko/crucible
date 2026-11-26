@@ -191,7 +191,7 @@ public:
     [[nodiscard]] CRUCIBLE_INLINE Claim claim(WriteKey const& /*key*/) noexcept { return list_.claim_slot_(); }
     [[nodiscard]] CRUCIBLE_INLINE std::size_t count(WriteKey const& /*key*/) const noexcept { return list_.size(); }
     [[nodiscard]] CRUCIBLE_INLINE std::size_t settle(WriteKey const& /*key*/, Claim const& claim) noexcept {
-        list_.settle_(claim, 1);
+        SegmentList<T>::settle_(list_.state_, claim, 1);
         return list_.size();
     }
 

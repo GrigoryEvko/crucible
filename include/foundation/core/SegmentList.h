@@ -908,9 +908,9 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
         return claim;
     }
 
-    // Counts the first count elements of the claimed slots.
-    CRUCIBLE_INLINE void settle_(Claim const& claim, std::size_t count) noexcept {
-        State& state = this->state_;
+    // Counts the first count elements of the claimed slots.  The body is static
+    // and takes the state, so the call names the list only through the claim.
+    CRUCIBLE_INLINE static void settle_(State& state, Claim const& claim, std::size_t count) noexcept {
         state.tail = claim.slot + count;
         state.tail_end = claim.end;
         state.count += count;
@@ -926,7 +926,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
         } else {
             Claim const claim = claim_slot_();
             ::new(static_cast<void*>(claim.slot)) T(static_cast<T&&>(value));
-            settle_(claim, 1);
+            settle_(this->state_, claim, 1);
         }
     }
 
@@ -946,7 +946,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
             for (std::size_t offset = 0; offset != count; ++offset) {
                 ::new(static_cast<void*>(claim.slot + offset)) T(source[offset]);
             }
-            settle_(claim, count);
+            settle_(this->state_, claim, count);
             source += count;
             left -= count;
         }
@@ -1019,7 +1019,7 @@ public:
     [[= ::foundation::linear::borrow_match{}]] void append_with(Marker /*allocation*/, Make&& make) & noexcept {
         Claim const claim = claim_slot_();
         ::new(static_cast<void*>(claim.slot)) T(make(std::size_t{this->state_.count}));
-        settle_(claim, 1);
+        settle_(this->state_, claim, 1);
     }
     template <class Marker, class Make>
         requires AllocationCapability<Marker> && std::is_invocable_v<Make&, std::size_t>
