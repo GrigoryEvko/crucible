@@ -245,6 +245,61 @@ static_assert(DrainsWith<Lanes, PlainDrop> && !DrainsWith<Lanes, LinearDrop>);
 static_assert(AccessesWith<Wire, PlainAccess> && !AccessesWith<Wire, LinearAccess>);
 static_assert(DrainsRingWith<Lanes::ring_type, PlainDrop> && !DrainsRingWith<Lanes::ring_type, LinearDrop>);
 
+// Each item of a drain is a temporary of the door, the index of a lane that
+// freed gets is a local of the ring, and the ring of a recombined access lives
+// in the frame of the access.  So each door refuses a callable that takes that
+// value by reference and captures by reference an Option of a View, which the
+// caller reads after the call.  The same callable with a reference to a count
+// passes, and a drop or a freed that takes its value by value gets a copy, so
+// it passes too (LentArmStoresNoBorrow of foundation/core/Choice.h).
+using KeptView = ::foundation::core::Option<::foundation::core::View<int const>>;
+template <class Kept>
+struct KeepsItemByReference {
+    Kept& kept;
+    void operator()(int const& /*item*/) const noexcept {}
+};
+template <class Kept>
+struct KeepsItemByValue {
+    Kept& kept;
+    void operator()(int /*item*/) const noexcept {}
+};
+template <class Kept>
+struct KeepsLaneByReference {
+    Kept& kept;
+    void operator()(Lanes::lane_index const& /*lane*/) const noexcept {}
+};
+template <class Kept>
+struct KeepsLaneByValue {
+    Kept& kept;
+    void operator()(Lanes::lane_index /*lane*/) const noexcept {}
+};
+template <class Kept>
+struct KeepsAccess {
+    Kept& kept;
+    void operator()(Wire::RecombinedRing& /*ring*/) const noexcept {}
+};
+template <class Ring, class Freed>
+concept RingReceivesFreeing = requires(Ring& ring, typename Ring::ConsumerProof const& proof, Freed&& freed) {
+    ring.try_receive_freeing(proof, std::move(freed));
+};
+template <class Ring, class Freed>
+concept RingAsksNextReady = requires(Ring& ring, typename Ring::ConsumerProof const& proof, Freed&& freed) {
+    ring.is_next_ready(proof, std::move(freed));
+};
+static_assert(!DrainsWith<Wire, KeepsItemByReference<KeptView>> && DrainsWith<Wire, KeepsItemByReference<int>>
+              && DrainsWith<Wire, KeepsItemByValue<KeptView>>);
+static_assert(!DrainsWith<Lanes, KeepsItemByReference<KeptView>> && DrainsWith<Lanes, KeepsItemByReference<int>>);
+static_assert(!DrainsRingWith<Lanes::ring_type, KeepsItemByReference<KeptView>>
+              && DrainsRingWith<Lanes::ring_type, KeepsItemByReference<int>>
+              && DrainsRingWith<Lanes::ring_type, KeepsItemByValue<KeptView>>);
+static_assert(!RingReceivesFreeing<Lanes::ring_type, KeepsLaneByReference<KeptView>>
+              && RingReceivesFreeing<Lanes::ring_type, KeepsLaneByReference<int>>
+              && RingReceivesFreeing<Lanes::ring_type, KeepsLaneByValue<KeptView>>);
+static_assert(!RingAsksNextReady<Lanes::ring_type, KeepsLaneByReference<KeptView>>
+              && RingAsksNextReady<Lanes::ring_type, KeepsLaneByReference<int>>
+              && RingAsksNextReady<Lanes::ring_type, KeepsLaneByValue<KeptView>>);
+static_assert(!AccessesWith<Wire, KeepsAccess<KeptView>> && AccessesWith<Wire, KeepsAccess<int>>);
+
 // A door can end a body that it did not call at end_unrun_body of
 // foundation/Linear.h when the body holds no linear value, or each linear
 // value that it holds states its own end.  A Permission states its own end,

@@ -297,9 +297,13 @@ public:
     // parks its producers wakes the producer of the lane there.  The call can
     // come before the result, and it reaches no state of the ring, so it can
     // make a system call.  The receive borrows the callable, so it holds no
-    // linear value, and the door has no deleted twin, as the drain below.
+    // linear value, and the door has no deleted twin, as the drain below.  The
+    // index of the lane is a local of the door, so a callable that takes it
+    // by reference stores no borrow outside the call (LentArmStoresNoBorrow
+    // of foundation/core/Choice.h).
     template <class Freed>
         requires LaneFreedCall<Freed, lane_index> && ::foundation::linear::HoldsNoLinearValue<Freed>
+              && ::foundation::core::LentArmStoresNoBorrow<Freed, lane_index>
     [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive_freeing(ConsumerProof const& /*proof*/,
                                                                                       Freed&& freed) noexcept {
         if (!turn_.is_empty()) [[likely]] {
@@ -318,9 +322,12 @@ public:
     // false when it gives NoItem::Empty.  It takes no item.  Before a false
     // answer it publishes each tail and calls freed, as a receive does, so the
     // caller can park after it (the room).  A lane that ended and holds no
-    // item leaves the turn here.  The proof names the one consumer.
+    // item leaves the turn here.  The proof names the one consumer.  freed
+    // stores no borrow of the index of a lane outside the call, as in
+    // try_receive_freeing.
     template <class Freed>
         requires LaneFreedCall<Freed, lane_index> && ::foundation::linear::HoldsNoLinearValue<Freed>
+              && ::foundation::core::LentArmStoresNoBorrow<Freed, lane_index>
     [[nodiscard]] bool is_next_ready(ConsumerProof const& /*proof*/, Freed&& freed) noexcept {
         while (!turn_.is_empty()) {
             lane_type& lane = lane_of_turn_();
@@ -351,14 +358,17 @@ public:
     // no deferred pop.  The proof names the one consumer, and the caller holds
     // the ring alone: no push runs at the same time.  The drain borrows its
     // drop and calls it for each item, so the drop holds no linear value
-    // (HoldsNoLinearValue of foundation/Linear.h).  The drain has no deleted
-    // twin: the ring states synchronized{}, and the door check of
-    // foundation/Transfer.h finds no specialization of a deleted member
-    // template for its probe body, so it would refuse the ring.  A drop that
-    // holds a linear value meets the failed constraint, which names the gate.
+    // (HoldsNoLinearValue of foundation/Linear.h).  Each item is a temporary
+    // of the door, so a drop that takes it by reference stores no borrow
+    // outside the call (LentArmStoresNoBorrow of foundation/core/Choice.h).
+    // The drain has no deleted twin: the ring states synchronized{}, and the
+    // door check of foundation/Transfer.h finds no specialization of a deleted
+    // member template for its probe body, so it would refuse the ring.  A drop
+    // that the gates refuse meets the failed constraint, which names the gate.
     // Complexity: linear in the items, and quadratic in the lanes at most.
     template <typename Drop>
         requires LaneDrainDrop<Drop, T> && ::foundation::linear::HoldsNoLinearValue<Drop>
+              && ::foundation::core::LentArmStoresNoBorrow<Drop, T>
     void drain(ConsumerProof const& /*proof*/, Drop&& drop) noexcept {
         while (!turn_.is_empty()) {
             ::foundation::core::Option<T> item = pop_lane_of_turn_();

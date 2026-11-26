@@ -6371,6 +6371,36 @@ fixy_neg_compile_test(neg_mpsc_drain_with_state
 fixy_neg_compile_test(neg_mpsc_drain_claim_without_root
   "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, .anonymous.::UserTag, .anonymous.::UserBrand>::claim_drain\\(\\)."
   "candidate expects 1 argument, 0 provided")
+# The drain of a ring of lanes and of a channel gives each item as a temporary
+# of the door, and try_receive_freeing and is_next_ready give the index of a
+# lane as a local of the ring.  Each door refuses a callable that takes that
+# value by reference and captures by reference an Option of a View, which the
+# caller reads after the call.  The doors have no deleted twin, so the failed
+# constraint names the gate.
+fixy_neg_compile_test(neg_lane_ring_drain_keeps_an_item
+  "no matching function for call to .fixy::concurrent::LaneRing<long unsigned int, 4, \\(fixy::concurrent::LaneCount\\)2, .anonymous.::LanesOwner>::drain\\("
+  "required for the satisfaction of .LentArmStoresNoBorrow<Drop, T>.")
+fixy_neg_compile_test(neg_lane_ring_freed_keeps_a_lane
+  "no matching function for call to .fixy::concurrent::LaneRing<long unsigned int, 4, \\(fixy::concurrent::LaneCount\\)2, .anonymous.::LanesOwner>::try_receive_freeing\\("
+  "required for the satisfaction of .LentArmStoresNoBorrow<Freed, ")
+fixy_neg_compile_test(neg_lane_ring_next_ready_keeps_a_lane
+  "no matching function for call to .fixy::concurrent::LaneRing<long unsigned int, 4, \\(fixy::concurrent::LaneCount\\)2, .anonymous.::LanesOwner>::is_next_ready\\("
+  "required for the satisfaction of .LentArmStoresNoBorrow<Freed, ")
+fixy_neg_compile_test(neg_channel_drain_keeps_an_item
+  "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, .anonymous.::UserTag, .anonymous.::UserBrand>::drain\\("
+  "required for the satisfaction of .LentArmStoresNoBorrow<Drop, T>.")
+fixy_neg_compile_test(neg_channel_freed_keeps_a_lane
+  "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::lanes, int, 8, .anonymous.::UserTag, .anonymous.::UserBrand, \\(fixy::concurrent::LaneCount\\)2>::ConsumerEnd::try_receive_freeing\\("
+  "required for the satisfaction of .LentArmStoresNoBorrow<Freed, ")
+fixy_neg_compile_test(neg_channel_next_ready_keeps_a_lane
+  "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::lanes, int, 8, .anonymous.::UserTag, .anonymous.::UserBrand, \\(fixy::concurrent::LaneCount\\)2>::ConsumerEnd::is_next_ready\\("
+  "required for the satisfaction of .LentArmStoresNoBorrow<Freed, ")
+# The recombined access lends its body a ring in the frame of the access, and
+# the claims of the roles end with it.  The access refuses a body that captures
+# by reference an Option of a View, which the caller reads after the access.
+fixy_neg_compile_test(neg_channel_recombined_access_keeps_a_view
+  "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, .anonymous.::UserTag, .anonymous.::UserBrand>::with_recombined_access\\("
+  "required for the satisfaction of .StoresNoBorrowOutside<Body>.")
 fixy_neg_compile_test(neg_nondet_tag_from_the_source_of_a_narrow_ctx
   "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >::cap\\(\\) const."
   "required for the satisfaction of .Subrow<foundation::effects::cap_permitted_row_t<Cap>, Row>.")

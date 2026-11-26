@@ -969,22 +969,28 @@ public:
         // As try_receive of a lanes channel, and it calls freed with the index
         // of each lane after it published the tail of that lane (the room of
         // fixy/concurrent/LaneRing.h).  The parked form wakes the producer of
-        // the lane there.
+        // the lane there.  freed stores no borrow of the index of a lane
+        // outside the call, and the door gives it to the ring in its own
+        // category, so the ring reads the same gate.
         template <class Freed>
             requires(Form == ChannelForm::lanes)
                  && LaneFreedCall<Freed, lane_index> && ::foundation::linear::HoldsNoLinearValue<Freed>
+                 && ::foundation::core::LentArmStoresNoBorrow<Freed, lane_index>
         [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive_freeing(Freed&& freed) noexcept {
-            return ch_->side_.ring_.try_receive_freeing(PermissionedChannel::prove_consumer_(), freed);
+            return ch_->side_.ring_.try_receive_freeing(PermissionedChannel::prove_consumer_(),
+                                                        static_cast<Freed&&>(freed));
         }
 
         // True when the next receive of a lanes channel gives an item or the
         // end of the stream.  Before a false answer it publishes each tail and
-        // calls freed, so the caller can park after it.
+        // calls freed, so the caller can park after it.  freed passes the gate
+        // of try_receive_freeing.
         template <class Freed>
             requires(Form == ChannelForm::lanes)
                  && LaneFreedCall<Freed, lane_index> && ::foundation::linear::HoldsNoLinearValue<Freed>
+                 && ::foundation::core::LentArmStoresNoBorrow<Freed, lane_index>
         [[nodiscard]] bool is_next_ready(Freed&& freed) noexcept {
-            return ch_->side_.ring_.is_next_ready(PermissionedChannel::prove_consumer_(), freed);
+            return ch_->side_.ring_.is_next_ready(PermissionedChannel::prove_consumer_(), static_cast<Freed&&>(freed));
         }
 
         // The oldest item, or NoItem::Closed after the last item of a closed
@@ -1187,14 +1193,17 @@ public:
     // The drain empties what the last session left.  The token comes back, so
     // the caller can split the whole again or deposit the lease.  The access
     // borrows its body, so the body holds no linear value (HoldsNoLinearValue
-    // of foundation/Linear.h).  The access and the drain have no deleted
-    // twin: the channel states synchronized{}, and the door check of
-    // foundation/Transfer.h finds no specialization of a deleted member
-    // template for its probe body, so it would refuse the channel.  A body
-    // that holds a linear value meets the failed constraint, which names the
-    // gate.
+    // of foundation/Linear.h).  The ring of the access is a local of the door,
+    // and the claims end with it, so the body stores no borrow outside the
+    // access (StoresNoBorrowOutside of foundation/core/CaptureStore.h).  The
+    // access and the drain have no deleted twin: the channel states
+    // synchronized{}, and the door check of foundation/Transfer.h finds no
+    // specialization of a deleted member template for its probe body, so it
+    // would refuse the channel.  A body that the gates refuse meets the failed
+    // constraint, which names the gate.
     template <typename Body>
         requires RecombinedAccessBody<Body, RecombinedRing> && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::core::StoresNoBorrowOutside<Body>
     [[nodiscard]] recombined_token
     with_recombined_access(recombined_token&& token,
                            Body&& body) noexcept(std::is_nothrow_invocable_v<Body, RecombinedRing&>) {
@@ -1382,9 +1391,13 @@ public:
     // items that end only through a door, such as the words of a Box channel,
     // calls it at its own end.  The drain borrows its drop and calls it for
     // each item, so the drop holds no linear value (HoldsNoLinearValue of
-    // foundation/Linear.h).  Complexity: linear in the count of the items.
+    // foundation/Linear.h).  Each item is a temporary of the door, so a drop
+    // that takes it by reference stores no borrow outside the call
+    // (LentArmStoresNoBorrow of foundation/core/Choice.h).  Complexity: linear
+    // in the count of the items.
     template <typename Drop>
         requires ChannelDrainDrop<Drop, T, Form> && ::foundation::linear::HoldsNoLinearValue<Drop>
+              && ::foundation::core::LentArmStoresNoBorrow<Drop, T>
     void drain(DrainClaim& claim, Drop&& drop) noexcept {
         if (!claim.is_claim_of(*this)) [[unlikely]] {
             ::foundation::core::fatal("a drain of a channel with the claim of another channel of its type.  Take "
