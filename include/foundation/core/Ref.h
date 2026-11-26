@@ -1078,6 +1078,16 @@ class Hole;
 template <class T, class Marker, class... Args>
 concept CanMintBox = CompleteBoxPayload<T> && AllocationCapability<Marker> && std::constructible_from<T, Args&&...>;
 
+// A build of the object of a Box of T: a callable that gives a T as a
+// prvalue and does not throw, with the allocation capability.  The build
+// holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h): the mint calls it one time and ends it, and a call is
+// no consume.
+template <class T, class Marker, class Build>
+concept CanMintBoxBuilt =
+    CompleteBoxPayload<T> && AllocationCapability<Marker> && ::foundation::linear::HoldsNoLinearValue<Build>
+    && std::is_nothrow_invocable_v<Build&&> && std::same_as<std::invoke_result_t<Build&&>, T>;
+
 // True when a Box of T is linear: T is complete where the Box is first
 // named, and T is linear.  A Box of a linear payload holds a value that a
 // path must consume, so the Box is linear too, as each owner of an element
@@ -1486,6 +1496,23 @@ template <class T, class Marker, class... Args>
 [[nodiscard]] Box<T> mint_box(Marker /*allocation*/, Args&&... args) noexcept {
     return Box<T>{detail::BoxDoor::key(), static_cast<Args&&>(args)...};
 }
+
+// The Box of the T that build gives as a prvalue.  The guaranteed elision
+// builds the object in the storage of the Box, so a T that cannot move and
+// that only a mint makes fits a Box: the build calls the mint.  A build that
+// gives another type, or that can throw, and a tag that is not the
+// allocation capability, fail the gate at the call.
+template <class T, class Marker, class Build>
+    requires CanMintBoxBuilt<T, Marker, Build>
+[[nodiscard]] Box<T> mint_box_built(Marker /*allocation*/, Build&& build) noexcept {
+    return Box<T>{detail::BoxDoor::key(), detail::BoxBuild{}, static_cast<Build&&>(build)};
+}
+
+// A build that holds a linear value by value binds to this overload, so the
+// refusal gives its reason.
+template <class T, class Marker, class Build>
+    requires(!::foundation::linear::HoldsNoLinearValue<Build>)
+void mint_box_built(Marker /*allocation*/, Build&& build) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // The Box of the object of a word (the word of a Box).  The authority claims
 // each word that it made at most one time.

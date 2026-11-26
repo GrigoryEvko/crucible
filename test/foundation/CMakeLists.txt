@@ -4096,6 +4096,14 @@ foundation_neg_compile_test(neg_core_box_array_payload
 foundation_neg_compile_test(neg_core_box_copied
   "use of deleted function .foundation::core::Box<T>::Box\\(const foundation::core::Box<T>&\\) \\[with T = int\\]."
   "a Box owns its object alone: a copy would free the object two times")
+# mint_box_built takes only a build that gives the payload as a prvalue and
+# does not throw.
+foundation_neg_compile_test(neg_core_box_built_of_another_type
+  "no matching function for call to .mint_box_built<int>\\(foundation::core::Alloc, main\\(\\)::<lambda\\(\\)>\\)."
+  "required for the satisfaction of .__same_as<_Tp, _Up>. \\[with _Tp = long int; _Up = int\\]")
+foundation_neg_compile_test(neg_core_box_built_of_a_throwing_build
+  "no matching function for call to .mint_box_built<int>\\(foundation::core::Alloc, main\\(\\)::<lambda\\(\\)>\\)."
+  "the expression .is_nothrow_invocable_v<Build&&> \\[with Build = main::._anon_[0-9]+\\]. evaluated to .false.")
 # Only a member of the authority builds the key of its box words, and a key
 # of a second authority claims no word of the first.
 foundation_neg_compile_test(neg_core_box_word_key_outside_authority

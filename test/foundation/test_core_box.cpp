@@ -99,6 +99,24 @@ void test_destruction_counts() {
     CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
 }
 
+// A Box of an object that cannot move takes the prvalue of a build in its
+// storage: the build runs one time, and the Box destroys the object one time.
+void test_mint_built_object_that_cannot_move() {
+    static_assert(!std::is_move_constructible_v<CountedObject>);
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    int builds = 0;
+    {
+        Box<CountedObject> built = ::foundation::core::mint_box_built<CountedObject>(alloc, [&builds]() noexcept {
+            ++builds;
+            return CountedObject{7};
+        });
+        CRUCIBLE_FATAL_INVARIANT(builds == 1);
+        CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
+        CRUCIBLE_FATAL_INVARIANT(built->label() == 7);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+}
+
 // Moves the source into the target through two names.  The kind self-move of
 // the rule must-consume refuses a self-move that one function names, so the
 // test reaches the self-move of a Box through this function, as an alias of
@@ -549,6 +567,7 @@ void test_word_borrow(::fixy::TestRunnerCtx const& test) {
 int main() {
     test_mint_and_access();
     test_destruction_counts();
+    test_mint_built_object_that_cannot_move();
     test_self_move_assignment_keeps_the_object();
     test_consume();
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};

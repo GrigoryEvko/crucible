@@ -177,6 +177,7 @@ using ::foundation::core::CallRef;
 using ::foundation::core::claim_box;
 using ::foundation::core::Hole;
 using ::foundation::core::mint_box;
+using ::foundation::core::mint_box_built;
 using ::foundation::core::mint_hole;
 using ::foundation::core::Address;
 using ::foundation::core::address_of;
