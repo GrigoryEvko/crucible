@@ -13,6 +13,12 @@
 // loaded by its hash has that hash and passes every region claim, and each
 // loaded session event is a record that the event decoder accepts.
 //
+// The open loads HEAD and the head log.  After the loads, the harness commits
+// at the last step of the log.  The load takes no step and no order above its
+// ceiling, so the commit gives no step error, and the order ends only at a
+// line whose order is MAX_COMMIT_ORDER.  A commit that passes is the head of a
+// reopen, because the store loads each line that it writes.
+//
 // The index lines go through the append door of the store itself,
 // mint_durable_append_file of fixy/os/Fs.h.
 
@@ -103,7 +109,8 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
         return cursor.take_bytes(count);
     };
     static_cast<void>(write_scratch_file("store/HEAD", take_chunk()));
-    static_cast<void>(write_scratch_file("store/log", take_chunk()));
+    const ::fixy::View<std::byte const> log_bytes = take_chunk();
+    static_cast<void>(write_scratch_file("store/log", log_bytes));
     const auto object_hash = cursor.take<std::uint64_t>();
     detail::StorePath const object = detail::object_path(object_hash);
     static_cast<void>(write_scratch_file(object.c_text(), take_chunk()));
@@ -219,6 +226,34 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
         auto const record = event.encode();
         CRUCIBLE_FUZZ_CLAIM("cipher_store", ::fixy::session::decode_session_log(test_alloc(), record.view()).is_ok());
     }
+
+    // A commit at the last step of the log, or at step zero when the log
+    // holds no commit.
+    const std::uint64_t step = cipher.last_committed_step().match(
+        [](::fixy::session::StepId last) noexcept { return last.raw(); }, [] noexcept { return std::uint64_t{0}; });
+    constexpr ContentHash kCommitted{0x5eed5eed5eed5eedULL};
+    const Cipher::CommitResult committed = cipher.record_event(kHarnessCtx, view, kCommitted, step);
+    const auto is_error = [&committed](Cipher::CommitError error) noexcept {
+        return committed.is_err_and([error](Cipher::CommitError const& given) noexcept { return given == error; });
+    };
+    CRUCIBLE_FUZZ_CLAIM("cipher_store", !is_error(Cipher::CommitError::step_order));
+    CRUCIBLE_FUZZ_CLAIM("cipher_store", !is_error(Cipher::CommitError::step_above_limit));
+    // A line whose order is the ceiling holds its decimal digits, so a log
+    // with no such digits leaves the commit a place.
+    ::fixy::FixedText<20> ceiling_digits{};
+    const ::fixy::TextView ceiling = ::fixy::format(ceiling_digits, "{}", Cipher::MAX_COMMIT_ORDER)
+                                         .expect("twenty digits hold the ceiling of the order");
+    const ::fixy::HeapText log_text = text_of(log_bytes);
+    CRUCIBLE_FUZZ_CLAIM("cipher_store", !is_error(Cipher::CommitError::order_exhausted)
+                                            || ::fixy::find(log_text.view(), ceiling).is_some());
+    if (committed.is_ok()) {
+        const Cipher reopened = Cipher::open(kHarnessCtx, test_alloc(),
+                                             ::fixy::mint_tagged<::fixy::tags::source::External>(root.c_text().view()))
+                                    .expect("the harness opens its store again");
+        CRUCIBLE_FUZZ_CLAIM("cipher_store", reopened.head() == kCommitted);
+        CRUCIBLE_FUZZ_CLAIM("cipher_store", reopened.last_committed_step().is_some_and(
+                                                [step](::fixy::session::StepId last) { return last.raw() == step; }));
+    }
 }
 
 // The seeds of the store.  Each seed holds a store with one region object, a
@@ -235,6 +270,11 @@ enum class CipherSeed : std::uint8_t {
     foreign_name,
     // A head log whose steps go back.
     backward_log,
+    // A head log with a line whose order is above MAX_COMMIT_ORDER, and a
+    // sound line after it.
+    order_above_ceiling,
+    // A head log with no line, so the open reads the head from HEAD.
+    head_only,
 };
 
 // Byte offsets in a 72-byte event record.
@@ -250,6 +290,7 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
     std::byte patch_byte{kCloseOp};
     std::uint64_t object_name_xor = 0;
     ::fixy::TextView log_tail{};
+    bool has_log_line = true;
     switch (kind) {
         case CipherSeed::sound:
             break;
@@ -264,7 +305,13 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
             object_name_xor = 0x1;
             break;
         case CipherSeed::backward_log:
-            log_tail = ::fixy::TextView{"0,1,0\n"};
+            log_tail = ::fixy::TextView{"0,1,2\n"};
+            break;
+        case CipherSeed::order_above_ceiling:
+            log_tail = ::fixy::TextView{"2,00000000000000bb,18446744073709551615\n3,00000000000000cc,3\n"};
+            break;
+        case CipherSeed::head_only:
+            has_log_line = false;
             break;
         default:
             ::fixy::unreachable();
@@ -286,9 +333,11 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
     head.append_text(hex.c_text().view());
     head.append_text("\n");
     SeedWriter log{};
-    log.append_text("1,");
-    log.append_text(hex.c_text().view());
-    log.append_text(",0\n");
+    if (has_log_line) {
+        log.append_text("1,");
+        log.append_text(hex.c_text().view());
+        log.append_text(",1\n");
+    }
     log.append_text(log_tail);
     const SeedBytes head_bytes = head.finish();
     const SeedBytes log_bytes = log.finish();
@@ -328,6 +377,11 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
     // Regression: a head log whose steps go back.  The log append
     // aborted on its order contract when the store opened.
     add_seed(seeds, cipher_store_seed(CipherSeed::backward_log));
+    // Regression: a head log line whose order is 2^64 - 1.  The load took
+    // it, skipped each later line, and each later commit found no place.
+    add_seed(seeds, cipher_store_seed(CipherSeed::order_above_ceiling));
+    // A store whose head log holds no line, so the open parses HEAD.
+    add_seed(seeds, cipher_store_seed(CipherSeed::head_only));
     return seeds;
 }
 

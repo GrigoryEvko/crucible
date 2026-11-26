@@ -447,11 +447,17 @@ public:
     // with a larger step is corrupt.
     static constexpr std::uint64_t MAX_COMMIT_STEP = (std::uint64_t{1} << 62U) - 1U;
 
+    // The largest order of a commit.  Each commit takes one place of the
+    // order, also a commit whose append fails, so a real store does not get
+    // near it.  A log line with a larger order is corrupt, and the store
+    // writes no such line.
+    static constexpr std::uint64_t MAX_COMMIT_ORDER = (std::uint64_t{1} << 62U) - 1U;
+
     // The step of a commit that failed, or the reason that refused it.
     enum class CommitError : std::uint8_t {
-        // The place of the last commit is the largest count, so the next
-        // commit has no place.  Only a log line from the disk gives that
-        // place.
+        // The place of the last commit is MAX_COMMIT_ORDER, so the next
+        // commit has no place.  A store gets there only after that many
+        // commits, or from a log line at the ceiling.
         order_exhausted,
         log_append,
         head_write,
@@ -619,8 +625,9 @@ private:
     ::fixy::OrderedAppendOnly<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess> log_ =
         ::fixy::mint_ordered_append_only<LogEntry, ::fixy::session::StepIdKeyFn, ::fixy::session::StepIdLess>();
     // The place of the last commit that the store wrote or read: zero
-    // before the first commit.  Each commit takes the next place, and the
-    // open continues from the place of the last line of the log.
+    // before the first commit, and at most MAX_COMMIT_ORDER.  Each commit
+    // takes the next place, and the open continues from the place of the
+    // last line of the log that it takes.
     ::fixy::Monotonic<std::uint64_t> commits_ = ::fixy::mint_monotonic<std::uint64_t>(0);
     // The entries in the order of use, least recent first.  The capacity is
     // the entry limit, so the cache holds its slots in the Cipher and a
@@ -692,11 +699,15 @@ private:
     open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation,
                ::fixy::Path<::fixy::tags::source::Sanitized> const& root);
 
-    // Malformed lines are skipped rather than fatal.  A corrupt or
-    // truncated log leaves the in-memory state as a proper prefix of what
-    // was on disk instead of killing the process.  The steps and the places
-    // of the commits only grow, so a line whose step goes back, or whose
-    // place does not grow, is a corrupt line too.
+    // The log is a file, so it is data from outside the process, and this
+    // load is its one check.  Malformed lines are skipped rather than fatal.
+    // A corrupt or truncated log leaves the in-memory state as a proper
+    // prefix of what was on disk instead of killing the process.  A line
+    // whose step is above MAX_COMMIT_STEP, or whose order is above
+    // MAX_COMMIT_ORDER, is corrupt.  The steps and the places of the commits
+    // only grow, so a line whose step goes back, or whose place does not
+    // grow, is a corrupt line too.  The load reports each line that it skips
+    // on the standard error, with the number of the line and the reason.
     void load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation);
 };
 

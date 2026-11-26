@@ -667,6 +667,43 @@ struct LogLine {
     return ::fixy::some(LogLine{.step = step, .hash = hash, .order = order});
 }
 
+// The reason that the load of the head log skips a line.
+enum class LogLineSkip : std::uint8_t {
+    // The last line has no newline, so its append did not end.
+    torn,
+    // The line is not a decimal step, a hexadecimal hash and a decimal
+    // order, each after a comma but the first.
+    malformed,
+    // The step is above Cipher::MAX_COMMIT_STEP.
+    step_above_limit,
+    // The order is above Cipher::MAX_COMMIT_ORDER.
+    order_above_limit,
+    // The step is below the step of the last line that the load took.
+    step_order,
+    // The order is not above the order of the last line that the load took.
+    order_not_growing,
+};
+
+// The text of a reason, for the report of a skipped line.
+[[nodiscard]] ::fixy::TextView log_line_skip_text_(LogLineSkip reason) noexcept {
+    switch (reason) {
+        case LogLineSkip::torn:
+            return ::fixy::TextView{"the last line has no newline, so its append did not end"};
+        case LogLineSkip::malformed:
+            return ::fixy::TextView{"the line is not a decimal step, a hexadecimal hash and a decimal order"};
+        case LogLineSkip::step_above_limit:
+            return ::fixy::TextView{"the step is above MAX_COMMIT_STEP"};
+        case LogLineSkip::order_above_limit:
+            return ::fixy::TextView{"the order is above MAX_COMMIT_ORDER"};
+        case LogLineSkip::step_order:
+            return ::fixy::TextView{"the step is below the step of the last line that the load took"};
+        case LogLineSkip::order_not_growing:
+            return ::fixy::TextView{"the order is not above the order of the last line that the load took"};
+        default:
+            ::fixy::unreachable();
+    }
+}
+
 // One line of a session-event index:
 // "<first_step>,<last_step>,<count>,<16 hexadecimal digits>".
 struct IndexLine {
@@ -1224,8 +1261,10 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     // The commit takes the next place before its append.  A write that
     // passed before a failed flush can leave the record in the file, and a
     // reopen then reads that commit.  So a failed append keeps its place,
-    // and the next commit gets a larger one.
-    if (commits_.get() == ::fixy::max_of<std::uint64_t>) {
+    // and the next commit gets a larger one.  The load takes no place above
+    // MAX_COMMIT_ORDER, and the count stops there, so each place that this
+    // function writes loads again.
+    if (commits_.get() == MAX_COMMIT_ORDER) {
         return ::fixy::err(CommitError::order_exhausted);
     }
     commits_.bump();
@@ -1432,35 +1471,65 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
         return ::fixy::fs::read_whole_at(ctx, allocation, root_directory_.ref(), "log", text).is_ok();
     }));
     const ::fixy::HeapText log_text = ::fixy::freeze(std::move(text));
-    // Appends the commit of one line that parsed, or skips a corrupt line.
-    const auto replay_line = [this, allocation](LogLine const& line) noexcept {
+    // Appends the commit of one line that parsed, or gives the reason that
+    // the load skips the line.
+    const auto replay_line = [this, allocation](LogLine const& line) noexcept -> ::fixy::Option<LogLineSkip> {
+        // A step above the ceiling is corrupt: advance_head refuses such a
+        // step, and a run that opens the store starts after the last step.
+        if (line.step > MAX_COMMIT_STEP) return ::fixy::some(LogLineSkip::step_above_limit);
+        // An order above the ceiling is corrupt: advance_head writes no such
+        // order.  A line that took the count past the ceiling would make
+        // each later line a place that does not grow, and each later commit
+        // would find no place.
+        if (line.order > MAX_COMMIT_ORDER) return ::fixy::some(LogLineSkip::order_above_limit);
         // The log only grows in step order, and its append checks that
         // order with a contract that aborts.  A line out of order is a
-        // corrupt line, so it is skipped like the others.  A step above the
-        // ceiling is corrupt too: advance_head refuses such a step, and a run
-        // that opens the store starts after the last step.
-        if (line.step > MAX_COMMIT_STEP) return;
-        if (!log_.empty() && line.step < log_.back().step_id().raw()) return;
+        // corrupt line, so it is skipped like the others.
+        if (!log_.empty() && line.step < log_.back().step_id().raw()) return ::fixy::some(LogLineSkip::step_order);
         // Each commit takes a larger place than the commit before it, also
         // after a failed append, so a place that does not grow is a corrupt
         // line.  The test keeps the count from going back.
-        if (line.order <= commits_.get()) return;
+        if (line.order <= commits_.get()) return ::fixy::some(LogLineSkip::order_not_growing);
 
         commits_.advance(line.order);
         log_.append(allocation, SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted,
                                                            ::fixy::session::StepId{line.step},
                                                            ::fixy::session::StateHash{line.hash},
                                                            ::fixy::session::CipherEventOrder{line.order}));
+        return ::fixy::none;
+    };
+    // The number of the line of the loop below, from one.  A report gives
+    // the number and the fields that parsed, and no byte of the line, because
+    // the bytes come from outside the process.
+    std::uint64_t line_number = 0;
+    const auto report_line = [&line_number](LogLineSkip reason) noexcept {
+        ::fixy::report(::fixy::Sink::Err, "[crucible] the Cipher store skips the line {} of its head log: {}\n",
+                       line_number, log_line_skip_text_(reason));
+    };
+    const auto report_fields = [&line_number](LogLine const& line, LogLineSkip reason) noexcept {
+        ::fixy::report(::fixy::Sink::Err,
+                       "[crucible] the Cipher store skips the line {} of its head log, with the step {} and the order "
+                       "{}: {}\n",
+                       line_number, line.step, line.order, log_line_skip_text_(reason));
     };
     for (::fixy::TextView rest = log_text.view(); rest.size() != 0;) {
         const LineSplit split = split_line_(rest);
         rest = split.rest;
+        ++line_number;
         // A last line with no newline is a torn record, also when it parses.
         // Its append did not end, so advance_head reported no commit and HEAD
         // did not move.  The next append cuts it.
-        if (!split.is_terminated) break;
-        for (LogLine const& line : parse_log_line_(split.line))
-            replay_line(line);
+        if (!split.is_terminated) {
+            report_line(LogLineSkip::torn);
+            break;
+        }
+        parse_log_line_(split.line)
+            .match(
+                [&](LogLine line) noexcept {
+                    replay_line(line).match([&](LogLineSkip reason) noexcept { report_fields(line, reason); },
+                                            [] noexcept {});
+                },
+                [&] noexcept { report_line(LogLineSkip::malformed); });
     }
 }
 

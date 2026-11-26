@@ -13,6 +13,7 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <fixy/os/Fs.h>
+#include <fixy/os/Process.h>
 #include <foundation/effects/Row.h>
 #include <foundation/os/PathText.h>
 
@@ -160,6 +161,44 @@ static void write_log_of(Cipher const& cipher, ::fixy::TextView text) {
             .expect("the test opens the log to write it")
             .consume();
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fs::write_full(store_ctx(), file.ref(), text).is_ok());
+}
+
+// The report of an open of the store at the path name under the scratch
+// directory.  The open runs in a child, so the test reads the standard error
+// of the open.
+[[nodiscard]] static ::fixy::process::ChildReport open_report_of(::fixy::fs::TemporaryDirectory const& scratch,
+                                                                 ::fixy::TextView name) {
+    const ::fixy::TestRunnerCtx child_ctx = store_ctx();
+    ::fixy::process::ChildReport report =
+        ::fixy::process::wait(
+            ::fixy::process::spawn_child(child_ctx,
+                                         [&scratch, name] noexcept { static_cast<void>(open_store(scratch, name)); })
+                .expect("the test starts a child"))
+            .expect("the test waits for its child");
+    CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0) && "the open of the store ends with no error");
+    return report;
+}
+
+// The count of the places in text where needle starts.  Complexity: one
+// search of the rest of the text for each place.
+[[nodiscard]] static std::size_t count_in(::fixy::TextView text, ::fixy::TextView needle) noexcept {
+    std::size_t count = 0;
+    ::fixy::TextView rest = text;
+    bool is_found = true;
+    while (is_found) {
+        is_found =
+            ::fixy::find(rest, needle)
+                .match(
+                    [&](std::size_t at) noexcept {
+                        ++count;
+                        const std::size_t next = at + needle.size();
+                        rest =
+                            rest.window(next, rest.size() - next).expect("the place after the needle is in the text");
+                        return true;
+                    },
+                    [] noexcept { return false; });
+    }
+    return count;
 }
 
 static void test_t01_required_row_pinned() {
@@ -499,23 +538,109 @@ static void test_t14_open_skips_a_place_that_does_not_grow(::fixy::fs::Temporary
     ::fixy::check::pass(kTest, "  T14 open_skips_a_place_that_does_not_grow: PASSED\n");
 }
 
-// A log whose last place is the largest count leaves the next commit no
-// place.  The commit reports it, and the head does not move.
+// A log whose last order is one below MAX_COMMIT_ORDER leaves the next commit
+// the last place.  The commit at that place loads again.  The commit after it
+// has no place: it reports order_exhausted, and the head does not move.
 
-static void test_t15_no_place_after_the_largest(::fixy::fs::TemporaryDirectory const& scratch) {
-    constexpr ::fixy::TextView largest{"1,0000000000006001,18446744073709551615\n"};
-    write_log_of(open_store(scratch, "t15"), largest);
+static void test_t15_no_place_after_the_ceiling(::fixy::fs::TemporaryDirectory const& scratch) {
+    static_assert(Cipher::MAX_COMMIT_ORDER == 4611686018427387903u);
+    constexpr ::fixy::TextView below{"1,0000000000006001,4611686018427387902\n"};
+    write_log_of(open_store(scratch, "t15"), below);
+    {
+        auto cipher = open_store(scratch, "t15");
+        const auto view = cipher.mint_open_view(store_ctx());
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x6001u});
+        record(cipher, store_ctx(), view, ContentHash{0x6002u}, 2u);
+    }
+
     auto cipher = open_store(scratch, "t15");
     const auto view = cipher.mint_open_view(store_ctx());
-    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x6001u});
-
-    CRUCIBLE_TEST_ASSERT(kTest, failure_of(cipher.record_event(store_ctx(), view, ContentHash{0x6002u}, 2u))
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x6002u} && "the commit at the ceiling loads again");
+    CRUCIBLE_TEST_ASSERT(kTest, failure_of(cipher.record_event(store_ctx(), view, ContentHash{0x6003u}, 3u))
                                     == Cipher::CommitError::order_exhausted);
-    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x6001u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x6002u});
     const ::fixy::HeapText log = log_text_of(cipher);
-    CRUCIBLE_TEST_ASSERT(kTest, log.view() == largest);
+    CRUCIBLE_TEST_ASSERT(kTest, log.view()
+                                    == ::fixy::TextView{"1,0000000000006001,4611686018427387902\n"
+                                                        "2,0000000000006002,4611686018427387903\n"});
 
-    ::fixy::check::pass(kTest, "  T15 no_place_after_the_largest:          PASSED\n");
+    ::fixy::check::pass(kTest, "  T15 no_place_after_the_ceiling:          PASSED\n");
+}
+
+// A line whose order is above MAX_COMMIT_ORDER is corrupt, as a line whose
+// step is above MAX_COMMIT_STEP is.  The open skips the line and reports it,
+// and the lines after it load.  The next commit takes the order after the
+// last line that loads.  The old store took the order 2^64 - 1, skipped each
+// later line, and refused each later commit with order_exhausted.
+
+static void test_t16_open_skips_an_order_above_the_ceiling(::fixy::fs::TemporaryDirectory const& scratch) {
+    write_log_of(open_store(scratch, "t16"), ::fixy::TextView{"1,0000000000007001,1\n"
+                                                              "2,0000000000007002,18446744073709551615\n"
+                                                              "3,0000000000007003,3\n"});
+    auto cipher = open_store(scratch, "t16");
+    const auto view = cipher.mint_open_view(store_ctx());
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x7003u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 2u) == ContentHash{0x7001u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 3u) == ContentHash{0x7003u});
+
+    record(cipher, store_ctx(), view, ContentHash{0x7004u}, 4u);
+    const ::fixy::HeapText log = log_text_of(cipher);
+    CRUCIBLE_TEST_ASSERT(kTest, log.view()
+                                    == ::fixy::TextView{"1,0000000000007001,1\n"
+                                                        "2,0000000000007002,18446744073709551615\n"
+                                                        "3,0000000000007003,3\n"
+                                                        "4,0000000000007004,4\n"});
+
+    const ::fixy::process::ChildReport report = open_report_of(scratch, "t16");
+    CRUCIBLE_TEST_ASSERT(kTest, count_in(report.output(), "[crucible] the Cipher store skips the line ") == 1);
+    constexpr ::fixy::TextView kSkip{
+        "[crucible] the Cipher store skips the line 2 of its head log, with the step 2 and the order "
+        "18446744073709551615: the order is above MAX_COMMIT_ORDER\n"};
+    CRUCIBLE_TEST_ASSERT(kTest, count_in(report.output(), kSkip) == 1);
+
+    ::fixy::check::pass(kTest, "  T16 open_skips_an_order_above_the_ceiling: PASSED\n");
+}
+
+// The open skips each kind of corrupt line, and reports each skipped line
+// one time, with its number and its reason.  The lines between them load.
+
+static void test_t17_open_reports_each_skipped_line(::fixy::fs::TemporaryDirectory const& scratch) {
+    write_log_of(open_store(scratch, "t17"), ::fixy::TextView{"1,0000000000008001,1\n"
+                                                              "a line with no field\n"
+                                                              "4611686018427387904,0000000000008002,2\n"
+                                                              "2,0000000000008003,4611686018427387904\n"
+                                                              "0,0000000000008004,3\n"
+                                                              "2,0000000000008005,1\n"
+                                                              "2,0000000000008006,4\n"
+                                                              "3,0000000000008007,5"});
+    auto cipher = open_store(scratch, "t17");
+    const auto view = cipher.mint_open_view(store_ctx());
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x8006u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 1u) == ContentHash{0x8001u});
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 3u) == ContentHash{0x8006u});
+    CRUCIBLE_TEST_ASSERT(
+        kTest, cipher.last_committed_step().is_some_and([](::fixy::session::StepId step) { return step.raw() == 2u; }));
+
+    const ::fixy::process::ChildReport report = open_report_of(scratch, "t17");
+    const ::fixy::TextView output = report.output();
+    CRUCIBLE_TEST_ASSERT(kTest, count_in(output, "[crucible] the Cipher store skips the line ") == 6);
+    constexpr ::fixy::FixedArray<::fixy::TextView, 6> kReports{
+        "the line 2 of its head log: the line is not a decimal step, a hexadecimal hash and a decimal order\n",
+        "the line 3 of its head log, with the step 4611686018427387904 and the order 2: the step is above "
+        "MAX_COMMIT_STEP\n",
+        "the line 4 of its head log, with the step 2 and the order 4611686018427387904: the order is above "
+        "MAX_COMMIT_ORDER\n",
+        "the line 5 of its head log, with the step 0 and the order 3: the step is below the step of the last line "
+        "that the load took\n",
+        "the line 6 of its head log, with the step 2 and the order 1: the order is not above the order of the last "
+        "line that the load took\n",
+        "the line 8 of its head log: the last line has no newline, so its append did not end\n",
+    };
+    for (::fixy::Index<6> const i : kReports.indices()) {
+        CRUCIBLE_TEST_ASSERT(kTest, count_in(output, kReports.at(i)) == 1);
+    }
+
+    ::fixy::check::pass(kTest, "  T17 open_reports_each_skipped_line:      PASSED\n");
 }
 
 // The header asserts the content of the required row where it
@@ -750,7 +875,9 @@ int main() {
     test_t12_two_runs_write_one_log(scratch);
     test_t13_reopen_continues_the_places(scratch);
     test_t14_open_skips_a_place_that_does_not_grow(scratch);
-    test_t15_no_place_after_the_largest(scratch);
+    test_t15_no_place_after_the_ceiling(scratch);
+    test_t16_open_skips_an_order_above_the_ceiling(scratch);
+    test_t17_open_reports_each_skipped_line(scratch);
 
     test_required_row_header_fence();
     test_multi_event_durability(scratch);
