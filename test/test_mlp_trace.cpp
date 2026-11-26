@@ -67,7 +67,7 @@ int main() {
     ::fixy::report(::fixy::Sink::Out, "   BackgroundThread built RegionNode with {} ops\n", region->num_ops());
 
     CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_some());
-    const DagRef<MemoryPlan const> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
+    const DagRef<MemoryPlan const> plan = region->plan.expect("the published region has a memory plan");
 
     ::fixy::report(::fixy::Sink::Out, "\n── Memory Plan ──\n");
     ::fixy::report(::fixy::Sink::Out, "   Pool size: {} bytes\n", static_cast<unsigned long long>(plan->pool_bytes));
@@ -87,6 +87,10 @@ int main() {
         ::fixy::report(::fixy::Sink::Out, "\n");
         s++;
     }
+    // The summary reports this plan.  The iterations after this line can
+    // publish a different region, so the summary does not read the plan again.
+    const uint64_t pool_bytes = plan->pool_bytes;
+    const uint64_t internal_slots = plan->num_slots() - plan->num_external;
 
     activate_compiled_mode(vigil);
     run_compiled_iterations(vigil);
@@ -96,8 +100,8 @@ int main() {
     ::fixy::report(::fixy::Sink::Out, "Total compiled iterations: {}\n", vigil.compiled_iterations());
     ::fixy::report(::fixy::Sink::Out, "Divergences: {}\n", vigil.diverged_count());
     ::fixy::report(::fixy::Sink::Out, "Pool bytes: {} (vs eager: ~{} per iteration)\n",
-                   static_cast<unsigned long long>(plan->pool_bytes),
-                   static_cast<unsigned long long>(plan->num_slots() - plan->num_external) * BATCH * HIDDEN * 4);
+                   static_cast<unsigned long long>(pool_bytes),
+                   static_cast<unsigned long long>(internal_slots) * BATCH * HIDDEN * 4);
     ::fixy::report(::fixy::Sink::Out, "Mode: {}\n",
                    vigil.context().is_compiled() ? ::fixy::TextView{"COMPILED"} : ::fixy::TextView{"RECORDING"});
     ::fixy::check::pass(kTest, "\ntest_mlp_trace: PASSED\n");

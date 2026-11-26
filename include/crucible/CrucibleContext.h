@@ -246,7 +246,7 @@ struct CrucibleContext {
     [[nodiscard]] bool activate(ContextKey& key, const RegionNode& region) CRUCIBLE_NO_THREAD_SAFETY {
         if (region.plan.is_none()) [[unlikely]]
             return false;
-        const DagRef<MemoryPlan const> plan = PlanLink{region.plan}.expect("the test above found the plan");
+        const DagRef<MemoryPlan const> plan = region.plan.expect("the test above found the plan");
 
         if (mode_ == ContextMode::COMPILED) deactivate(key);
 
@@ -342,7 +342,7 @@ struct CrucibleContext {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         if (alt.plan.is_none()) [[unlikely]]
             return false;
-        const DagRef<MemoryPlan const> new_plan = PlanLink{alt.plan}.expect("the test above found the plan");
+        const DagRef<MemoryPlan const> new_plan = alt.plan.expect("the test above found the plan");
 
         if (div_pos == 0) return activate(key, alt);
 
@@ -841,7 +841,7 @@ private:
     // The plan of the active region.  A compiled context has a region, and
     // the region of an activation has a plan.
     [[nodiscard]] const MemoryPlan& active_plan_() const {
-        return *PlanLink{active_region_node_().plan}.expect("an active region has a memory plan");
+        return *active_region_node_().plan.expect("an active region has a memory plan");
     }
 
     // True when the first byte of the bytes is aligned for an element of the
@@ -941,8 +941,8 @@ private:
                                ::fixy::View<const uint8_t> old_pool, uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
         // The two regions are compiled regions, so each has a plan.  A region
         // with no plan ends the process in each build.
-        const MemoryPlan& old_plan = *PlanLink{old_region.plan}.expect("the region of a migration has a memory plan");
-        const MemoryPlan& new_plan = *PlanLink{alt.plan}.expect("the region of a migration has a memory plan");
+        const MemoryPlan& old_plan = *old_region.plan.expect("the region of a migration has a memory plan");
+        const MemoryPlan& new_plan = *alt.plan.expect("the region of a migration has a memory plan");
         const uint32_t old_num_slots = old_plan.num_slots();
         const uint32_t new_num_slots = new_plan.num_slots();
         // The bound of the bitset below.  The check runs in each build and

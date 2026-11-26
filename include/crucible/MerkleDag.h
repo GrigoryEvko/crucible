@@ -76,9 +76,11 @@ struct[[= ::fixy::derive_protocol{}]] TensorSlot {
 
 // External slots keep the allocations they already have: they are counted in
 // num_external and are not placed in the pool.  The slots are in the arena of
-// the region, and the plan only borrows them as a run of the DAG arena.
+// the plan, and the plan only borrows them as a run slot of a frame.
 struct MemoryPlan {
-    ::fixy::ArenaRun<TensorSlot const, DagArena> slots{};
+    // The slots of the plan.  frame.store fills the slot, so a plan with
+    // slots lives in the arena of its slots.  A plan does not copy or move.
+    ::foundation::core::FrameRunSlot<TensorSlot const, DagArena> slots{};
     uint64_t pool_bytes = 0;
     uint32_t num_external = 0;
 
@@ -99,22 +101,16 @@ struct MemoryPlan {
     }
 };
 
-// A link to the memory plan of a region, or no plan.  The plan is in a DAG
-// arena, and the link only borrows it with the brand of the arena.  A region
-// only reads its plan, so the link refers to a const plan.  The empty link is
-// the null pointer, so a link takes eight bytes.
+// The memory plan of a region, or no plan, as the region reads it.  The plan
+// is in a DAG arena, and the link only borrows it with the brand of the arena.
+// A region only reads its plan, so the link refers to a const plan.  The empty
+// link is the null pointer, so a link takes eight bytes.
 using PlanLink = ::fixy::Option<::fixy::Ref<MemoryPlan const, DagArena>>;
 
-// A full link to the plan that a DAG arena holds.
-[[nodiscard]] inline PlanLink make_plan_link(::fixy::Ref<MemoryPlan const, DagArena> plan) noexcept {
-    return ::fixy::some(plan);
-}
-
-// The link to the plan that a planner or a loader made, or no plan.
-[[nodiscard]] inline PlanLink make_plan_link(::fixy::Option<::fixy::Ref<MemoryPlan, DagArena>> const& plan) noexcept {
-    return plan.match([](::fixy::Ref<MemoryPlan, DagArena> const& made) noexcept { return make_plan_link(made); },
-                      []() noexcept { return PlanLink{}; });
-}
+// The slot of the plan of a region: a link slot of a frame, so only
+// frame.store fills it, with the region and a plan of one frame.  An empty
+// slot is a region with no plan, and option() gives the PlanLink of a read.
+using PlanSlot = ::foundation::core::FrameLink<MemoryPlan const, DagArena>;
 
 // True when the byte ranges of the slots live at op `op` are pairwise
 // disjoint.  Only the simultaneously-live set is checked: two slots whose
@@ -519,9 +515,9 @@ struct RegionNode : TraceNode {
     using VariantCounter = ::fixy::Monotonic<uint32_t>;
     VariantCounter variant_id = ::fixy::mint_monotonic<uint32_t>(0u);
 
-    // The memory plan of the region.  A region has no plan until the
-    // liveness analysis runs.
-    PlanLink plan{};
+    // The memory plan of the region, in the arena of the region.  A region
+    // has no plan until the liveness analysis runs.
+    PlanSlot plan{};
 
     void set_measured_ms(float ms) noexcept {
         CRUCIBLE_PRE(ms >= 0.0f);  // >= also rejects NaN

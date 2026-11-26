@@ -224,9 +224,9 @@ void test_find_alternate_tracks_live_plan() {
         slot.death_op = OpIndex{1};
         slot.slot_id = SlotId{0};
         const auto plan = frame.template make<MemoryPlan>(alloc);
-        plan->slots = slots_run.weaken();
+        frame.store(plan, &MemoryPlan::slots, slots_run);
         plan->pool_bytes = 4096;
-        made->plan = make_plan_link(plan.weaken());
+        frame.store(made, &RegionNode::plan, plan);
 
         CRUCIBLE_TEST_ASSERT(
             kTest, ::fixy::same_target(cache.find_alternate(0, op0.schema_hash, op0.shape_hash), ::fixy::some(region))

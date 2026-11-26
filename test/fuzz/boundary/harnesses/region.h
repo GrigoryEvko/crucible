@@ -77,12 +77,11 @@ enum class SeedSlotFault : std::uint8_t {
 // The block size of each arena of the seeds and of each load.
 inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaBlock{std::size_t{1} << 20};
 
-// The ops, their arrays, the region and the slots of the plan are in
-// dag_arena, and one frame on it builds them.  The plan is in arena.
-[[nodiscard]] inline DagRef<RegionNode> build_seed_region(::fixy::BumpArena<DagArena>& arena,
-                                                          ::fixy::BumpArena<DagArena>& dag_arena, SeedPlan seed_plan,
+// The ops, their arrays, the region, the plan and its slots are in
+// dag_arena, and one frame on it builds them.
+[[nodiscard]] inline DagRef<RegionNode> build_seed_region(::fixy::BumpArena<DagArena>& dag_arena, SeedPlan seed_plan,
                                                           SeedSlotFault fault = SeedSlotFault::none) noexcept {
-    return ::foundation::core::with_arena_frame(dag_arena, [&arena, seed_plan, fault](auto& frame) noexcept {
+    return ::foundation::core::with_arena_frame(dag_arena, [seed_plan, fault](auto& frame) noexcept {
         const auto alloc = test_alloc();
         constexpr std::uint32_t kOps = 2;
         const bool has_plan = seed_plan == SeedPlan::two_slots;
@@ -107,7 +106,7 @@ inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaB
         }
         const auto region = make_region(alloc, frame, ops_run);
         if (has_plan) {
-            const auto plan = arena.make<MemoryPlan>(alloc);
+            const auto plan = frame.template make<MemoryPlan>(alloc);
             plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
             plan->num_external = 0;
             plan->device_type = DeviceType::CPU;
@@ -125,8 +124,8 @@ inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaB
             TensorSlot& second = *slots.get(1).expect("the seed plan holds two slots");
             if (fault == SeedSlotFault::past_pool) second.nbytes = std::uint64_t{1} << 40;
             if (fault == SeedSlotFault::misaligned) second.offset_bytes += 8;
-            plan->slots = slots_run.weaken();
-            region->plan = make_plan_link(plan);
+            frame.store(plan, &MemoryPlan::slots, slots_run);
+            frame.store(region, &RegionNode::plan, plan);
         }
         return region.weaken();
     });
@@ -152,11 +151,10 @@ inline constexpr std::size_t kImageHasPlanOffset = 52;
 // region type.  The loader must refuse each one.  They go after the seeds of
 // seeds.
 inline void add_region_regressions(SeedList& seeds) noexcept {
-    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
     ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
 
     // The header states a content hash that is not the hash of the ops.
-    SeedBytes wrong_hash = region_image(*build_seed_region(arena, dag_arena, SeedPlan::none));
+    SeedBytes wrong_hash = region_image(*build_seed_region(dag_arena, SeedPlan::none));
     wrong_hash.with_element(
         kImageContentHashOffset,
         [](std::byte& hash_byte) noexcept {
@@ -166,7 +164,7 @@ inline void add_region_regressions(SeedList& seeds) noexcept {
     add_seed(seeds, std::move(wrong_hash));
 
     // The plan flag holds a byte that is no value of a bool.
-    SeedBytes bad_bool = region_image(*build_seed_region(arena, dag_arena, SeedPlan::none));
+    SeedBytes bad_bool = region_image(*build_seed_region(dag_arena, SeedPlan::none));
     bad_bool.with_element(
         kImageHasPlanOffset, [](std::byte& flag) noexcept { flag = std::byte{0x02}; },
         [] noexcept { ::fixy::fatal("the image holds its plan flag"); });
@@ -174,16 +172,15 @@ inline void add_region_regressions(SeedList& seeds) noexcept {
 
     // A slot reaches past the pool, and a slot starts off the alignment.
     // The pool allocator aborts on either one.
-    add_seed(seeds, region_image(*build_seed_region(arena, dag_arena, SeedPlan::two_slots, SeedSlotFault::past_pool)));
-    add_seed(seeds, region_image(*build_seed_region(arena, dag_arena, SeedPlan::two_slots, SeedSlotFault::misaligned)));
+    add_seed(seeds, region_image(*build_seed_region(dag_arena, SeedPlan::two_slots, SeedSlotFault::past_pool)));
+    add_seed(seeds, region_image(*build_seed_region(dag_arena, SeedPlan::two_slots, SeedSlotFault::misaligned)));
 }
 
 [[nodiscard]] inline SeedList seeds_region() noexcept {
-    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
     ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
     SeedList seeds = empty_seed_list();
-    add_seed(seeds, region_image(*build_seed_region(arena, dag_arena, SeedPlan::none)));
-    add_seed(seeds, region_image(*build_seed_region(arena, dag_arena, SeedPlan::two_slots)));
+    add_seed(seeds, region_image(*build_seed_region(dag_arena, SeedPlan::none)));
+    add_seed(seeds, region_image(*build_seed_region(dag_arena, SeedPlan::two_slots)));
     add_region_regressions(seeds);
     return seeds;
 }

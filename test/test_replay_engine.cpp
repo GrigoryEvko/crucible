@@ -5,6 +5,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include "entry_arrays.h"
+#include "plan_rig.h"
 #include <fixy/Core.h>
 #include <fixy/check/Fixture.h>
 #include "tensor_data.h"
@@ -51,19 +52,21 @@ using crucible::ShapeHash;
 // Of the entry fields a caller fills in, only schema_hash, shape_hash, the
 // two counts and the two arrays of slot ids reach the replay engine.  The
 // rest are left at their defaults on purpose.  One frame on the arena makes
-// count ops, gives the frame and the run of the ops to fill, and links the
-// run to a region that comes fresh from mint_dag_node, so each other field of
-// the region holds its default.
+// count ops and gives the frame and the run of the ops to fill, which fills
+// the ops and gives the plan of the region in the frame.  The region comes
+// fresh from mint_dag_node, so each other field of the region holds its
+// default.
 template <class Fill>
 static crucible::DagRef<RegionNode> build_region(::foundation::effects::Alloc alloc, ::fixy::BumpArena<DagArena>& arena,
                                                  size_t count, Fill const& fill) {
     return ::foundation::core::with_arena_frame(arena, [alloc, count, &fill](auto& frame) noexcept {
         auto ops_run = frame.template build_array<TraceEntry>(alloc, ::fixy::ElementCount{count},
                                                               [](::fixy::RunStart) noexcept { return TraceEntry{}; });
-        fill(frame, ops_run);
+        const auto plan = fill(frame, ops_run);
         const auto region = crucible::mint_dag_node<RegionNode>(alloc, frame);
         region->kind = TraceNodeKind::REGION;
         frame.store(region, &RegionNode::ops, ops_run);
+        frame.store(region, &RegionNode::plan, plan);
         return region.weaken();
     });
 }
@@ -81,15 +84,17 @@ static void set_output_slots(TraceEntry& op, ::fixy::ArenaRun<SlotId const, DagA
     crucible::test::set_output_slots(g_test.alloc, g_runs, op, slot_ids);
 }
 
-// Every slot is internal and 256 bytes wide, so slot i sits at offset
-// i * 256 and no two slots overlap.  The plan is in the arena of the slots,
-// and a context that replays its region owns the pool of the plan.
-static crucible::DagRef<MemoryPlan> make_simple_plan(::foundation::effects::Alloc alloc,
-                                                     ::fixy::BumpArena<DagArena>& arena,
-                                                     ::fixy::ArenaRun<TensorSlot, DagArena> slots) {
-    const uint32_t n = static_cast<uint32_t>(slots.size());
+// A plan of count slots.  Every slot is internal and 256 bytes wide, so slot
+// i sits at offset i * 256 and no two slots overlap.  The plan and its slots
+// are in the arena of the frame, and a context that replays its region owns
+// the pool of the plan.
+template <class Fresh>
+static crucible::DagFrameRef<MemoryPlan, Fresh> make_simple_plan(::foundation::effects::Alloc alloc,
+                                                                 crucible::DagFrame<Fresh>& frame, size_t count) {
+    auto slots_run = frame.array(alloc, count, TensorSlot{});
+    const uint32_t n = static_cast<uint32_t>(slots_run.size());
     uint32_t i = 0;
-    for (TensorSlot& slot : slots.view()) {
+    for (TensorSlot& slot : slots_run.view()) {
         slot = {.offset_bytes = i * 256,
                 .nbytes = 256,
                 .birth_op = OpIndex{0},
@@ -104,8 +109,8 @@ static crucible::DagRef<MemoryPlan> make_simple_plan(::foundation::effects::Allo
                 .pad2 = {}};
         ++i;
     }
-    const crucible::DagRef<MemoryPlan> plan = arena.make<MemoryPlan>(alloc);
-    plan->slots = slots;
+    const auto plan = frame.template make<MemoryPlan>(alloc);
+    frame.store(plan, &MemoryPlan::slots, slots_run);
     plan->num_external = 0;
     plan->pool_bytes = n * 256;
     plan->device_type = DeviceType::CPU;
@@ -127,10 +132,9 @@ static void test_linear_match() {
                 op.shape_hash = ShapeHash{200 + i};
                 set_output_slots(op, ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{i}).weaken());
             }
+            return make_simple_plan(test.alloc, frame, 3);
         });
 
-    auto slots_run = arena.array(test.alloc, 3, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
     auto context_key = crucible::mint_context_key(test);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -189,10 +193,9 @@ static void test_schema_divergence() {
                 op.shape_hash = ShapeHash{200};
                 set_output_slots(op, out_slot);
             }
+            return make_simple_plan(test.alloc, frame, 1);
         });
 
-    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
     auto context_key = crucible::mint_context_key(test);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -230,10 +233,9 @@ static void test_shape_divergence() {
             ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{101};
             ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{201};
             set_output_slots(ops.at(::foundation::core::index<1>()), out_slot);
+            return make_simple_plan(test.alloc, frame, 1);
         });
 
-    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
     auto context_key = crucible::mint_context_key(test);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -267,10 +269,9 @@ static void test_reset() {
             ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{11};
             ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{21};
             set_output_slots(ops.at(::foundation::core::index<1>()), out_slot);
+            return make_simple_plan(test.alloc, frame, 1);
         });
 
-    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
     auto context_key = crucible::mint_context_key(test);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -321,10 +322,9 @@ static void test_input_ptr() {
             ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{61};
             set_output_slots(ops.at(::foundation::core::index<1>()), out1);
             set_input_slots(ops.at(::foundation::core::index<1>()), in1);
+            return make_simple_plan(test.alloc, frame, 2);
         });
 
-    auto slots_run = arena.array(test.alloc, 2, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
     auto context_key = crucible::mint_context_key(test);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -356,10 +356,9 @@ static void test_invalid_slot() {
             ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{77};
             ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{88};
             set_output_slots(ops.at(::foundation::core::index<0>()), out);
+            return make_simple_plan(test.alloc, frame, 1);
         });
 
-    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
     auto context_key = crucible::mint_context_key(test);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -390,10 +389,9 @@ static void test_current_entry() {
                 op.shape_hash = ShapeHash{400 + i};
                 set_output_slots(op, out);
             }
+            return make_simple_plan(test.alloc, frame, 1);
         });
 
-    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
     auto context_key = crucible::mint_context_key(test);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -428,9 +426,8 @@ static void test_matched_index_after_reset() {
                 op.shape_hash = ShapeHash{600 + i};
                 set_output_slots(op, out_slot);
             }
+            return make_simple_plan(test.alloc, frame, 1);
         });
-    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
     auto context_key = crucible::mint_context_key(test);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -476,9 +473,8 @@ static void test_matched_index_follows_the_cursor() {
                 op.shape_hash = ShapeHash{800 + i};
                 set_output_slots(op, out_slot);
             }
+            return make_simple_plan(test.alloc, frame, 1);
         });
-    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
     auto context_key = crucible::mint_context_key(test);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -520,9 +516,8 @@ static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx
                 op.shape_hash = ShapeHash{800 + i};
                 set_output_slots(op, out_slot);
             }
+            return make_simple_plan(source.alloc, frame, 1);
         });
-    auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(source.alloc, arena, slots_run));
     CrucibleContext ctx{source.alloc};
     auto context_key = crucible::mint_context_key(source);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -559,9 +554,8 @@ static void test_diverged_step_has_no_matched_position(::fixy::TestRunnerCtx con
                 op.shape_hash = ShapeHash{910 + i};
                 set_output_slots(op, out_slot);
             }
+            return make_simple_plan(source.alloc, frame, 1);
         });
-    auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(source.alloc, arena, slots_run));
     CrucibleContext ctx{source.alloc};
     auto context_key = crucible::mint_context_key(source);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -590,9 +584,8 @@ static void test_advance_after_the_end_guards_the_first_op() {
             ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{70};
             ops.at(::foundation::core::index<0>()).shape_hash = ShapeHash{71};
             set_output_slots(ops.at(::foundation::core::index<0>()), out_slot);
+            return make_simple_plan(source.alloc, frame, 1);
         });
-    auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(source.alloc, arena, slots_run));
     CrucibleContext ctx{source.alloc};
     auto context_key = crucible::mint_context_key(source);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
@@ -628,9 +621,8 @@ static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const&
             ops.at(::foundation::core::index<1>()).schema_hash = SchemaHash{82};
             ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{83};
             set_input_slots(ops.at(::foundation::core::index<1>()), in_slot);
+            return make_simple_plan(source.alloc, frame, 2);
         });
-    auto slots_run = arena.array(source.alloc, 2, TensorSlot{});
-    region->plan = crucible::make_plan_link(make_simple_plan(source.alloc, arena, slots_run));
     ::fixy::check::expect_dies(
         test,
         [region] noexcept {
@@ -694,16 +686,10 @@ static void test_integration_with_pool() {
                                                 .slot_id = SlotId{2},
                                                 .pad2 = {}};
 
-    const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
-    crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
-    crucible::BackgroundThread::PlanTarget const target{};
-    sweep_scratch.arena.with_epoch([target, alloc = test.alloc, plan_storage,
-                                    &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
-        static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
-                              .expect("the slots of the test fit in 64 bits"));
-    });
+    // The planner plans a copy of the slots in the frame of the region.
+    const ::fixy::View<TensorSlot const> planned_slots = slots_run.view();
     const crucible::DagRef<RegionNode> region =
-        build_region(test.alloc, arena, 2, [&test](auto& frame, auto& ops_run) noexcept {
+        build_region(test.alloc, arena, 2, [&test, planned_slots](auto& frame, auto& ops_run) noexcept {
             auto op0_out = ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{0}).weaken();
             auto op0_in = ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{2}).weaken();
             auto op1_out = ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{1}).weaken();
@@ -720,9 +706,9 @@ static void test_integration_with_pool() {
             ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{0xDDDD};
             set_output_slots(ops.at(::foundation::core::index<1>()), op1_out);
             set_input_slots(ops.at(::foundation::core::index<1>()), op1_in);
+            return crucible::test::plan_in_frame(test.alloc, frame, planned_slots)
+                .expect("the slots of the test fit in 64 bits");
         });
-    // The plan is in the arena of the slots.
-    region->plan = crucible::make_plan_link(plan_storage);
 
     CrucibleContext ctx{test.alloc};
     auto context_key = crucible::mint_context_key(test);

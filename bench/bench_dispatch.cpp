@@ -293,7 +293,7 @@ void wait_region_published(Vigil& vigil) {
 // The count of the external slots of the plan that the Vigil replays.
 [[nodiscard]] uint32_t count_external_slots(Vigil const& vigil) {
     const DagRef<RegionNode const> region = vigil.context().active_region().expect("the Vigil replays a region");
-    return PlanLink{region->plan}.expect("an active region has a plan")->num_external;
+    return region->plan.expect("an active region has a plan")->num_external;
 }
 
 // The benches below measure a plan for one CPU device with no distribution,
@@ -323,46 +323,23 @@ void check_cpu_slot(const TensorSlot& slot) {
 // shape hashes have the same count.
 struct BenchRegion {
     ::foundation::effects::Test test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena<DagArena> arena =
-        ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
     ::fixy::BumpArena<DagArena> dag_arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
     DagRef<RegionNode> region;
-    DagRef<MemoryPlan> plan;
 
     BenchRegion(::fixy::View<const SchemaHash> schemas, ::fixy::View<const ShapeHash> shapes)
-        : region{make_ops_region_(schemas, shapes)}, plan{arena.make<MemoryPlan>(test.alloc)} {
-        const auto n_ops = static_cast<uint32_t>(schemas.size());
-        auto slots_run = dag_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TensorSlot> slots = slots_run.view();
-        uint32_t i = 0;
-        for (TensorSlot& slot : slots) {
-            slot.offset_bytes = i * 4096;
-            slot.nbytes = 4096;
-            slot.slot_id = SlotId{i};
-            slot.birth_op = OpIndex{i};
-            slot.death_op = OpIndex{i < n_ops - 1 ? i + 1 : i};
-            slot.dtype = ScalarType::Float;
-            slot.is_external = false;
-            check_cpu_slot(slot);
-            i++;
-        }
-
-        plan->slots = slots_run;
-        plan->num_external = 0;
-        plan->pool_bytes = n_ops * 4096;
-        check_single_cpu_plan(*plan);
-        region->plan = make_plan_link(plan);
+        : region{make_ops_region_(schemas, shapes)} {
+        check_single_cpu_plan(*region->plan.expect("the region of the bench has a plan"));
     }
 
 private:
-    // The region of one op for each pair of hashes.  Op i reads the output
-    // of op i - 1.
+    // The region of one op for each pair of hashes, with a plan of one slot
+    // for each op.  Op i reads the output of op i - 1.
     [[nodiscard]] DagRef<RegionNode> make_ops_region_(::fixy::View<const SchemaHash> schemas,
                                                       ::fixy::View<const ShapeHash> shapes) {
         CRUCIBLE_BENCH_CHECK(schemas.size() == shapes.size());
-        // One frame on dag_arena builds the ops, their arrays and the region.
+        // One frame on dag_arena builds the ops, their arrays, the plan, its
+        // slots and the region.
         return ::foundation::core::with_arena_frame(
             dag_arena, [alloc = test.alloc, schemas, shapes](auto& frame) noexcept {
                 const auto n_ops = static_cast<uint32_t>(schemas.size());
@@ -388,7 +365,27 @@ private:
                     const auto output_slots_run = frame.array(alloc, 1, SlotId{i});
                     op.set_outputs(output_metas_run.weaken(), output_slots_run.weaken());
                 }
-                return make_region(alloc, frame, ops_run).weaken();
+                const auto made = make_region(alloc, frame, ops_run);
+
+                auto slots_run = frame.template array<TensorSlot>(alloc, n_ops, TensorSlot{});
+                uint32_t position = 0;
+                for (TensorSlot& slot : slots_run.view()) {
+                    slot.offset_bytes = position * 4096;
+                    slot.nbytes = 4096;
+                    slot.slot_id = SlotId{position};
+                    slot.birth_op = OpIndex{position};
+                    slot.death_op = OpIndex{position < n_ops - 1 ? position + 1 : position};
+                    slot.dtype = ScalarType::Float;
+                    slot.is_external = false;
+                    check_cpu_slot(slot);
+                    position++;
+                }
+                const auto plan = frame.template make<MemoryPlan>(alloc);
+                frame.store(plan, &MemoryPlan::slots, slots_run);
+                plan->num_external = 0;
+                plan->pool_bytes = n_ops * 4096;
+                frame.store(made, &RegionNode::plan, plan);
+                return made.weaken();
             });
     }
 };
@@ -452,28 +449,29 @@ int main() {
         auto test = ::foundation::effects::testing::test();
         ::fixy::BumpArena<DagArena> arena =
             ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
-        ::fixy::BumpArena<DagArena> slot_arena =
-            ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
         constexpr uint32_t NSLOTS = 16;
-        auto slots_run = slot_arena.array<TensorSlot>(test.alloc, NSLOTS, TensorSlot{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TensorSlot> slots = slots_run.view();
-        uint32_t i = 0;
-        for (TensorSlot& slot : slots) {
-            slot.offset_bytes = i * 256;
-            slot.nbytes = 256;
-            slot.slot_id = SlotId{i};
-            slot.birth_op = OpIndex{0};
-            slot.death_op = OpIndex{0};
-            slot.dtype = ScalarType::Float;
-            slot.is_external = false;
-            check_cpu_slot(slot);
-            i++;
-        }
-        const auto plan = arena.make<MemoryPlan>(test.alloc);
-        plan->slots = slots_run;
-        plan->num_external = 0;
-        plan->pool_bytes = NSLOTS * 256;
+        // One frame on the arena builds the slots and the plan.
+        const DagRef<MemoryPlan const> plan =
+            ::foundation::core::with_arena_frame(arena, [alloc = test.alloc](auto& frame) noexcept {
+                auto slots_run = frame.template array<TensorSlot>(alloc, NSLOTS, TensorSlot{});
+                uint32_t i = 0;
+                for (TensorSlot& slot : slots_run.view()) {
+                    slot.offset_bytes = i * 256;
+                    slot.nbytes = 256;
+                    slot.slot_id = SlotId{i};
+                    slot.birth_op = OpIndex{0};
+                    slot.death_op = OpIndex{0};
+                    slot.dtype = ScalarType::Float;
+                    slot.is_external = false;
+                    check_cpu_slot(slot);
+                    i++;
+                }
+                const auto made = frame.template make<MemoryPlan>(alloc);
+                frame.store(made, &MemoryPlan::slots, slots_run);
+                made->num_external = 0;
+                made->pool_bytes = NSLOTS * 256;
+                return DagRef<MemoryPlan const>{made.weaken()};
+            });
         check_single_cpu_plan(*plan);
 
         PoolAllocator pool;
@@ -852,11 +850,11 @@ int main() {
                         op.shape_hash = ShapeHash{SHAPE.at(i).raw() + r * 0x100};
                     }
                     auto const made = make_region(alloc, frame, ops_run);
+                    // A plan of no slot: a new plan holds the empty run.
                     auto const plan = frame.template make<MemoryPlan>(alloc);
-                    plan->slots = ::fixy::ArenaRun<TensorSlot const, DagArena>{};
                     plan->pool_bytes = 0;
                     check_single_cpu_plan(*plan);
-                    made->plan = make_plan_link(plan.weaken());
+                    frame.store(made, &RegionNode::plan, plan);
                     return made.weaken();
                 });
             static_cast<void>(regions.append(region).expect("the list holds NR regions"));

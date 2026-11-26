@@ -1438,7 +1438,7 @@ private:
         // Every call site activates the context on the region immediately
         // before it calls here, so the context is compiled, and the region
         // has a plan.
-        const DagRef<MemoryPlan const> plan = PlanLink{region.plan}.expect("an active region has a memory plan");
+        const DagRef<MemoryPlan const> plan = region.plan.expect("an active region has a memory plan");
         static_cast<void>(replay_
                               .with_compiled([&region, &plan, resume_op](CompiledScope& scope) noexcept {
                                   scope.list_external_reads(OpIndex{resume_op});

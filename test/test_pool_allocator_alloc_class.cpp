@@ -13,6 +13,8 @@
 #include <fixy/check/Fixture.h>
 #include <foundation/effects/Effect.h>
 
+#include "plan_rig.h"
+
 #include <bit>
 #include <cstdint>
 #include <cstring>
@@ -48,14 +50,11 @@ using ::fixy::satisfies_v;
 // context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
-static MemoryPlan make_plan(::fixy::ArenaRun<TensorSlot const, DagArena> slots, uint64_t pool_bytes, uint32_t num_ext) {
-    MemoryPlan plan{};
-    plan.slots = slots;
-    plan.num_external = num_ext;
-    plan.pool_bytes = pool_bytes;
-    plan.device_type = DeviceType::CPU;
-    plan.device_idx = 0;
-    return plan;
+// A plan of a copy of the slots in the arena (test/plan_rig.h).
+static crucible::DagRef<MemoryPlan const> make_plan(::fixy::BumpArena<DagArena>& arena,
+                                                    ::fixy::View<TensorSlot const> slots, uint64_t pool_bytes,
+                                                    uint32_t num_ext) {
+    return crucible::test::manual_plan(::foundation::effects::testing::test().alloc, arena, slots, pool_bytes, num_ext);
 }
 
 static TensorSlot make_slot(uint64_t off, uint64_t nbytes, uint32_t id, bool external = false) {
@@ -77,7 +76,8 @@ static void test_slot_ptr_pinned_bit_equality() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto slots = ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena,
                                              make_slot(0, 1024, 0), make_slot(1024, 1024, 1));
-    MemoryPlan plan = make_plan(slots, 2048, 0);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_plan(arena, slots.view(), 2048, 0);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -100,7 +100,8 @@ static void test_slot_ptr_pinned_type_identity() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto slots =
         ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, 256, 0));
-    MemoryPlan plan = make_plan(slots, 256, 0);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_plan(arena, slots.view(), 256, 0);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -177,7 +178,8 @@ static void test_pool_base_pinned_small_pool() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto slots =
         ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, 1024, 0));
-    MemoryPlan plan = make_plan(slots, 1024, 0);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_plan(arena, slots.view(), 1024, 0);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -204,7 +206,8 @@ static void test_pool_base_huge_pinned() {
     // one slot, half the pool
     const auto slots =
         ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, HP / 2, 0));
-    MemoryPlan plan = make_plan(slots, HP, 0);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_plan(arena, slots.view(), HP, 0);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -227,7 +230,8 @@ static void test_pool_relax_to_weaker() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto slots =
         ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, 256, 0));
-    MemoryPlan plan = make_plan(slots, 256, 0);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_plan(arena, slots.view(), 256, 0);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -271,7 +275,8 @@ static void test_e2e_fence_checked_consumer() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto slots =
         ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, 1024, 0));
-    MemoryPlan plan = make_plan(slots, 1024, 0);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_plan(arena, slots.view(), 1024, 0);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -293,7 +298,8 @@ static void test_pool_base_pinned_with_huge_alignment() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto slots =
         ::fixy::check::run_of(kTest, ::foundation::effects::testing::test().alloc, arena, make_slot(0, HP / 2, 0));
-    MemoryPlan plan = make_plan(slots, HP, 0);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_plan(arena, slots.view(), HP, 0);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);

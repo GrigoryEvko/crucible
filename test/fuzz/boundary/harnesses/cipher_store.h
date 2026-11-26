@@ -330,9 +330,8 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
             ::fixy::unreachable();
     }
 
-    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
     ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
-    const DagRef<RegionNode> region = build_seed_region(arena, dag_arena, SeedPlan::two_slots);
+    const DagRef<RegionNode> region = build_seed_region(dag_arena, SeedPlan::two_slots);
     const SeedBytes image = region_image(*region);
     const std::uint64_t hash = region->content_hash.raw();
     const detail::HexName hex = detail::hex16(hash);

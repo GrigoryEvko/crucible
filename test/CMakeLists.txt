@@ -2382,6 +2382,9 @@ crucible_neg_compile_test(neg_dag_link_assigned_outside_a_frame
 crucible_neg_compile_test(neg_dag_run_assigned_outside_a_frame
   "neg_dag_run_assigned_outside_a_frame\\.cpp:[0-9]+:[0-9]+: error: no match for .operator=."
   "operand types are .crucible::DagRunSlot<const crucible::TraceEntry>. \\{aka .foundation::core::FrameRunSlot<const crucible::TraceEntry, crucible::DagArena>.\\} and .foundation::core::ArenaRun<crucible::TraceEntry, crucible::DagArena>.")
+crucible_neg_compile_test(neg_dag_plan_assigned_outside_a_frame
+  "neg_dag_plan_assigned_outside_a_frame\\.cpp:[0-9]+:[0-9]+: error: no match for .operator=."
+  "operand types are .crucible::PlanSlot. \\{aka .foundation::core::FrameLink<const crucible::MemoryPlan, crucible::DagArena>.\\} and .foundation::core::Option<foundation::core::Ref<const crucible::MemoryPlan, crucible::DagArena> >.")
 crucible_neg_compile_test(neg_dag_link_stored_across_frames
   "neg_dag_link_stored_across_frames\\.cpp:[0-9]+:[0-9]+: error: no matching function for call to .foundation::core::ArenaFrame<crucible::DagArena, foundation::core::<lambda\\(\\)> >::store"
   "mismatched types .foundation::core::<lambda\\(\\)>. and .foundation::core::<lambda\\(\\)>.")

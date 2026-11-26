@@ -50,7 +50,7 @@ using RegionIndex = ::fixy::Index<NUM_REGIONS>;
         auto const plan = frame.template make<MemoryPlan>(alloc);
 
         auto const region = make_region(alloc, frame, ops_run);
-        region->plan = make_plan_link(plan.weaken());
+        frame.store(region, &RegionNode::plan, plan);
         return region.weaken();
     });
 }

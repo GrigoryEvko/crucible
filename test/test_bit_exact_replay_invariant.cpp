@@ -65,6 +65,8 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
+#include "plan_rig.h"
+
 #include <bit>
 #include <cstdint>
 #include <cstdio>
@@ -226,19 +228,11 @@ struct Built {
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TensorSlot> slots = slots_run.view();
         build_slots(slots);
-        const crucible::DagRef<crucible::MemoryPlan> plan_storage =
-            frame.template make<crucible::MemoryPlan>(ctx.alloc).weaken();
-        crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
-        crucible::BackgroundThread::PlanTarget const target{};
-        sweep_scratch.arena.with_epoch(
-            [target, alloc = ctx.alloc, plan_storage, &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
-                static_cast<void>(
-                    crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
+        // The sweep plans a copy of the slots in the arena of the regions, and
+        // the head links that plan.
+        frame.store(head, &crucible::RegionNode::plan,
+                    crucible::test::plan_in_frame(ctx.alloc, frame, slots_run.view())
                         .expect("the slots of the test fit in 64 bits"));
-            });
-        // The sweep writes the plan into the arena of the regions, and the
-        // head links that plan.
-        head->plan = crucible::make_plan_link(plan_storage);
         crucible::recompute_merkle(*head);
 
         Built out;

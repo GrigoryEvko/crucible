@@ -693,12 +693,18 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
             const auto made = mint_dag_node<RegionNode>(alloc, frame);
             init_region_node(frame, made, ops, content_hash, numerics);
             if (slots.size() > 0) {
-                const DagRef<MemoryPlan> plan = frame.template make<MemoryPlan>(alloc).weaken();
-                const bool is_planned = scratch.arena.with_epoch(
-                    [target, alloc, plan, slot_run = slots.weaken()](PlanScratch::Epoch& epoch) mutable noexcept {
-                        return BackgroundThread::compute_memory_plan(alloc, target, plan, epoch, slot_run).is_ok();
-                    });
-                if (is_planned) made->plan = make_plan_link(plan);
+                const auto plan = frame.template make<MemoryPlan>(alloc);
+                const bool is_planned = scratch.arena.with_epoch([target, alloc, plan_storage = plan.weaken(),
+                                                                  slot_run = slots.weaken()](
+                                                                     PlanScratch::Epoch& epoch) mutable noexcept {
+                    return BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slot_run).is_ok();
+                });
+                // The plan, its slots and the region are of the frame, so the
+                // stores link the plan of the region in its own arena.
+                if (is_planned) {
+                    frame.store(plan, &MemoryPlan::slots, slots);
+                    frame.store(made, &RegionNode::plan, plan);
+                }
             }
             recompute_merkle(*made);
             return made.weaken();

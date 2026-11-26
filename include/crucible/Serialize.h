@@ -530,7 +530,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& r
     // The writes of the image are byte writes, and the compiler cannot prove
     // that they leave the link of the region as it is.  The copy of the link
     // keeps one test of the plan.
-    const PlanLink plan_link = region.plan;
+    const PlanLink plan_link = region.plan.option();
     w.w(plan_link.is_some());
     for (const DagRef<MemoryPlan const>& plan_ref : plan_link) {
         const MemoryPlan& plan = *plan_ref;
@@ -678,12 +678,12 @@ read_region_(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image
 
     // The plan of the region, and the count of its slots.  A region with no
     // plan binds to no slot table, and its count stays zero.
-    ::fixy::Option<DagRef<MemoryPlan>> plan{};
+    ::fixy::Option<DagFrameRef<MemoryPlan, Fresh>> plan{};
     uint32_t num_slots = 0;
     const bool has_plan = r.read_bool();
     if (has_plan) {
         const DagFrameRef<MemoryPlan, Fresh> loaded_plan = frame.template make<MemoryPlan>(a);
-        plan = ::fixy::Option<DagRef<MemoryPlan>>::some(loaded_plan.weaken());
+        plan = ::fixy::Option<DagFrameRef<MemoryPlan, Fresh>>::some(loaded_plan);
         loaded_plan->pool_bytes = r.r<uint64_t>();
         // The next three checks all guard the same thing: a loaded plan goes
         // on to initialise the replay pool, whose own preconditions are only
@@ -713,7 +713,7 @@ read_region_(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image
         }
         DagFrameRun<TensorSlot, Fresh> slots_run = frame.template array<TensorSlot>(a, num_slots, TensorSlot{});
         const ::fixy::View<TensorSlot> slots = slots_run.view();
-        loaded_plan->slots = slots_run.weaken();
+        frame.store(loaded_plan, &MemoryPlan::slots, slots_run);
         uint32_t slot_position = 0;
         for (TensorSlot& slot : slots) {
             slot = r.read_image(TensorSlot{});
@@ -901,7 +901,9 @@ read_region_(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image
     // least zero, so the advance does not go back.  A value of zero means
     // that no variant was selected when the region was written.
     node->variant_id.advance(variant_id);
-    node->plan = make_plan_link(plan);
+    // The plan of the image is a node of this frame, so frame.store links it.
+    for (DagFrameRef<MemoryPlan, Fresh> const& image_plan : plan)
+        frame.store(node, &RegionNode::plan, image_plan);
     // The node is rebuilt from Cipher bytes, and the fold above matched the
     // content hash that the image records, so it crosses the edge to Loaded.
     return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(node.weaken())

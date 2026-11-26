@@ -2,6 +2,7 @@
 #include <crucible/BackgroundThread.h>
 #include <foundation/effects/Effect.h>
 #include "entry_arrays.h"
+#include "plan_rig.h"
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
@@ -45,19 +46,32 @@ static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::
 
 // A region of count ops and a plan, which one frame on the arena builds.  The
 // frame makes the ops and gives the frame and the run of the ops to fill,
-// which fills the ops and gives the plan of the region.  The other fields of
-// the region keep their defaults, so the hashes stay zero.
+// which fills the ops and gives the plan of the region in the frame.  The
+// other fields of the region keep their defaults, so the hashes stay zero.
 template <class Fill>
 static crucible::DagRef<RegionNode> build_region(::foundation::effects::Alloc alloc, ::fixy::BumpArena<DagArena>& arena,
                                                  size_t count, Fill const& fill) {
     return ::foundation::core::with_arena_frame(arena, [alloc, count, &fill](auto& frame) noexcept {
         auto ops_run = frame.template build_array<TraceEntry>(alloc, ::fixy::ElementCount{count},
                                                               [](::fixy::RunStart) noexcept { return TraceEntry{}; });
-        const crucible::PlanLink plan = fill(frame, ops_run);
+        const auto plan = fill(frame, ops_run);
         const auto region = crucible::mint_dag_node<RegionNode>(alloc, frame);
         region->kind = TraceNodeKind::REGION;
         frame.store(region, &RegionNode::ops, ops_run);
-        region->plan = plan;
+        frame.store(region, &RegionNode::plan, plan);
+        return region.weaken();
+    });
+}
+
+// A region of count ops with each field at its default and no plan.
+static crucible::DagRef<RegionNode> build_region_with_no_plan(::foundation::effects::Alloc alloc,
+                                                              ::fixy::BumpArena<DagArena>& arena, size_t count) {
+    return ::foundation::core::with_arena_frame(arena, [alloc, count](auto& frame) noexcept {
+        auto ops_run = frame.template build_array<TraceEntry>(alloc, ::fixy::ElementCount{count},
+                                                              [](::fixy::RunStart) noexcept { return TraceEntry{}; });
+        const auto region = crucible::mint_dag_node<RegionNode>(alloc, frame);
+        region->kind = TraceNodeKind::REGION;
+        frame.store(region, &RegionNode::ops, ops_run);
         return region.weaken();
     });
 }
@@ -79,9 +93,9 @@ static void set_output_slots(TraceEntry& op, ::fixy::ArenaRun<SlotId const, DagA
 // i * 256 and no two slots overlap.  The plan and its slots are in the arena
 // of the frame.
 template <class Fresh>
-static crucible::DagRef<MemoryPlan> make_simple_plan(::foundation::effects::Alloc alloc,
-                                                     crucible::DagFrame<Fresh>& frame,
-                                                     crucible::DagFrameRun<TensorSlot, Fresh>& slots_run) {
+static crucible::DagFrameRef<MemoryPlan, Fresh> make_simple_plan(::foundation::effects::Alloc alloc,
+                                                                 crucible::DagFrame<Fresh>& frame,
+                                                                 crucible::DagFrameRun<TensorSlot, Fresh>& slots_run) {
     ::fixy::ArenaRun<TensorSlot, DagArena> slots = slots_run.weaken();
     const uint32_t n = static_cast<uint32_t>(slots.size());
     uint32_t i = 0;
@@ -100,8 +114,8 @@ static crucible::DagRef<MemoryPlan> make_simple_plan(::foundation::effects::Allo
                 .pad2 = {}};
         ++i;
     }
-    const crucible::DagRef<MemoryPlan> plan = frame.template make<MemoryPlan>(alloc).weaken();
-    plan->slots = slots;
+    const auto plan = frame.template make<MemoryPlan>(alloc);
+    frame.store(plan, &MemoryPlan::slots, slots_run);
     plan->num_external = 0;
     plan->pool_bytes = n * 256;
     plan->device_type = DeviceType::CPU;
@@ -140,7 +154,7 @@ static void test_activate() {
             set_output_slots(ops.at(::foundation::core::index<1>()), out);
 
             auto slots_run = frame.array(test.alloc, std::size_t{1}, TensorSlot{});
-            return crucible::make_plan_link(make_simple_plan(test.alloc, frame, slots_run));
+            return make_simple_plan(test.alloc, frame, slots_run);
         });
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
@@ -162,8 +176,7 @@ static void test_activate_no_plan() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
 
-    const crucible::DagRef<RegionNode> region = build_region(
-        test.alloc, arena, 1, [](auto& /*frame*/, auto& /*ops_run*/) noexcept { return crucible::PlanLink{}; });
+    const crucible::DagRef<RegionNode> region = build_region_with_no_plan(test.alloc, arena, 1);
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
@@ -193,7 +206,7 @@ static void test_full_replay() {
             set_output_slots(ops.at(::foundation::core::index<1>()), out1);
 
             auto slots_run = frame.array(test.alloc, std::size_t{2}, TensorSlot{});
-            return crucible::make_plan_link(make_simple_plan(test.alloc, frame, slots_run));
+            return make_simple_plan(test.alloc, frame, slots_run);
         });
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
@@ -248,7 +261,7 @@ static void test_divergence() {
             }
 
             auto slots_run = frame.array(test.alloc, std::size_t{1}, TensorSlot{});
-            return crucible::make_plan_link(make_simple_plan(test.alloc, frame, slots_run));
+            return make_simple_plan(test.alloc, frame, slots_run);
         });
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
@@ -287,7 +300,7 @@ static void test_reactivate() {
             set_output_slots(ops_a.at(::foundation::core::index<0>()), out);
 
             auto slots_a_run = frame.array(test.alloc, std::size_t{1}, TensorSlot{});
-            return crucible::make_plan_link(make_simple_plan(test.alloc, frame, slots_a_run));
+            return make_simple_plan(test.alloc, frame, slots_a_run);
         });
 
     // The second region shares no hash with the first, so a stale guard
@@ -307,7 +320,7 @@ static void test_reactivate() {
             set_output_slots(ops_b.at(::foundation::core::index<1>()), out_b1);
 
             auto slots_b_run = frame.array(test.alloc, std::size_t{2}, TensorSlot{});
-            return crucible::make_plan_link(make_simple_plan(test.alloc, frame, slots_b_run));
+            return make_simple_plan(test.alloc, frame, slots_b_run);
         });
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
@@ -379,13 +392,13 @@ static void test_external_slots() {
                                                         .slot_id = SlotId{1},
                                                         .pad2 = {}};
 
-            const crucible::DagRef<MemoryPlan> plan = frame.template make<MemoryPlan>(test.alloc).weaken();
-            plan->slots = slots_run.weaken();
+            const auto plan = frame.template make<MemoryPlan>(test.alloc);
+            frame.store(plan, &MemoryPlan::slots, slots_run);
             plan->num_external = 1;
             plan->pool_bytes = 256;
             plan->device_type = DeviceType::CPU;
             plan->device_idx = 0;
-            return crucible::make_plan_link(plan);
+            return plan;
         });
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
@@ -436,10 +449,10 @@ static crucible::DagRef<RegionNode> make_region_reading_slot_one(::fixy::BumpAre
         // A plain View of an arena run: the View carries no brand of its arena.
         ::fixy::View<TensorSlot, 2> const slots =
             slots_run.view().template window<2>(0).expect("the run holds two slots");
-        const crucible::DagRef<MemoryPlan> plan = make_simple_plan(g_test.alloc, frame, slots_run);
+        const auto plan = make_simple_plan(g_test.alloc, frame, slots_run);
         slots.at(::foundation::core::index<1>()).is_external = is_external;
         plan->num_external = is_external ? 1 : 0;
-        return crucible::make_plan_link(plan);
+        return plan;
     });
 }
 
@@ -651,18 +664,10 @@ static void test_integration_sweep_line() {
                                                 .slot_id = SlotId{2},
                                                 .pad2 = {}};
 
-    // The sweep writes the plan into the arena of the slots.
-    const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
-    crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
-    crucible::BackgroundThread::PlanTarget const target{};
-    sweep_scratch.arena.with_epoch([target, alloc = test.alloc, plan_storage,
-                                    &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
-        static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
-                              .expect("the slots of the test fit in 64 bits"));
-    });
-
+    // The sweep plans a copy of the slots in the frame of the region.
+    const ::fixy::View<TensorSlot const> planned_slots = slots_run.view();
     const crucible::DagRef<RegionNode> region =
-        build_region(test.alloc, arena, 2, [&test, plan_storage](auto& frame, auto& ops_run) noexcept {
+        build_region(test.alloc, arena, 2, [&test, planned_slots](auto& frame, auto& ops_run) noexcept {
             auto op0_out = ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{0}).weaken();
             auto op0_in = ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{2}).weaken();
             auto op1_out = ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{1}).weaken();
@@ -679,7 +684,8 @@ static void test_integration_sweep_line() {
             ops.at(::foundation::core::index<1>()).shape_hash = ShapeHash{0xDD};
             set_output_slots(ops.at(::foundation::core::index<1>()), op1_out);
             set_input_slots(ops.at(::foundation::core::index<1>()), op1_in);
-            return crucible::make_plan_link(plan_storage);
+            return crucible::test::plan_in_frame(test.alloc, frame, planned_slots)
+                .expect("the slots of the test fit in 64 bits");
         });
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
@@ -751,7 +757,7 @@ static void test_divergence_counter() {
             set_output_slots(ops.at(::foundation::core::index<1>()), out);
 
             auto slots_run = frame.array(test.alloc, std::size_t{1}, TensorSlot{});
-            return crucible::make_plan_link(make_simple_plan(test.alloc, frame, slots_run));
+            return make_simple_plan(test.alloc, frame, slots_run);
         });
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
@@ -871,13 +877,13 @@ static void test_slot_views() {
             // A plain View of an arena run: the View carries no brand of its arena.
             ::fixy::View<TensorSlot, 5> const slots =
                 slots_run.view().template window<5>(0).expect("the run holds five slots");
-            const crucible::DagRef<MemoryPlan> plan = make_simple_plan(test.alloc, frame, slots_run);
+            const auto plan = make_simple_plan(test.alloc, frame, slots_run);
             slots.at(::foundation::core::index<2>()).is_external = true;
             slots.at(::foundation::core::index<2>()).nbytes = 36;
             slots.at(::foundation::core::index<3>()).nbytes = 6;
             slots.at(::foundation::core::index<4>()).is_external = true;
             plan->num_external = 2;
-            return crucible::make_plan_link(plan);
+            return plan;
         });
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
@@ -1039,14 +1045,14 @@ static crucible::DagRef<RegionNode> make_region_of_two_externals(::fixy::BumpAre
         set_output_slots(op, ::fixy::check::run_of(kTest, g_test.alloc, frame, SlotId{0}).weaken());
 
         auto slots_run = frame.array(g_test.alloc, std::size_t{3}, TensorSlot{});
-        const crucible::DagRef<MemoryPlan> plan = make_simple_plan(g_test.alloc, frame, slots_run);
+        const auto plan = make_simple_plan(g_test.alloc, frame, slots_run);
         for (TensorSlot& slot : slots_run.view()) {
             if (slot.slot_id == SlotId{0}) continue;
             slot.is_external = true;
             slot.nbytes = 64;
         }
         plan->num_external = 2;
-        return crucible::make_plan_link(plan);
+        return plan;
     });
 }
 

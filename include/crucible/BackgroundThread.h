@@ -2236,8 +2236,9 @@ public:
     // plan of a DAG arena, the arrays of the sweep go into scratch, and the
     // result is plan_storage, or a PlanRefusal: a slot whose id is not its
     // position, or a span or an end of the pool that does not fit in 64
-    // bits.  The plan borrows the slots, a run of a DAG arena, and it copies
-    // the device of target.
+    // bits.  The sweep writes the offsets into the slots, and the plan copies
+    // the device of target.  The caller stores the slots in the plan with the
+    // frame of the plan (MemoryPlan::slots is a run slot of a frame).
     CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] static ::fixy::Result<DagRef<MemoryPlan>, PlanRefusal>
     compute_memory_plan(::foundation::effects::Alloc a, PlanTarget target, DagRef<MemoryPlan> plan_storage,
                         PlanScratch::Epoch& scratch, ::fixy::ArenaRun<TensorSlot, DagArena> slots) noexcept;

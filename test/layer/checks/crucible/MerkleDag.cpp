@@ -40,10 +40,18 @@ static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorSlot);
 
 static_assert(sizeof(MemoryPlan) == 48, "MemoryPlan must be 48 bytes — the on-disk format matches this layout");
-// A plan holds a View of its slots, and a View refuses a byte copy, so a plan
-// is not trivially copyable.  A plan lives in an arena, which ends no object.
+// A plan holds its slots in a run slot of a frame, and a run slot does not
+// copy or move, so a plan does not copy or move.  Only a store of a frame
+// fills the slots.  A plan lives in an arena, which ends no object.
 static_assert(std::is_trivially_destructible_v<MemoryPlan>, "an arena ends no MemoryPlan");
 static_assert(std::is_standard_layout_v<MemoryPlan>, "MemoryPlan must be standard-layout");
+static_assert(std::is_same_v<decltype(std::declval<MemoryPlan&>().slots),
+                             ::foundation::core::FrameRunSlot<TensorSlot const, DagArena>>);
+static_assert(!std::is_copy_constructible_v<MemoryPlan> && !std::is_move_constructible_v<MemoryPlan>
+              && !std::is_copy_assignable_v<MemoryPlan> && !std::is_move_assignable_v<MemoryPlan>);
+static_assert(
+    !std::is_assignable_v<decltype((std::declval<MemoryPlan&>().slots)), ::fixy::ArenaRun<TensorSlot const, DagArena>>,
+    "only a store of a frame fills the slots of a plan");
 
 // The arrays of an entry are one ArenaRunSet of six pointers and three counts,
 // so the entry takes 96 bytes.  The set refuses a byte copy, as a View does,
@@ -60,9 +68,15 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(Guard);
 static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
 static_assert(std::is_trivially_destructible_v<TraceNode>, "an arena ends no TraceNode");
 
-// The link to the plan of a region takes one pointer, so the region keeps
-// its 88 bytes.  An arena ends no region.
+// The slot of the plan of a region takes the one pointer of its link, so the
+// region keeps its 88 bytes.  Only a store of a frame fills the slot, and a
+// read gives a PlanLink.  An arena ends no region.
 static_assert(sizeof(PlanLink) == sizeof(void*), "a link to a plan takes one pointer");
+static_assert(std::is_same_v<PlanSlot, ::foundation::core::FrameLink<MemoryPlan const, DagArena>>);
+static_assert(std::is_same_v<decltype(std::declval<RegionNode&>().plan), PlanSlot>);
+static_assert(sizeof(PlanSlot) == sizeof(void*), "the slot of a plan takes the one pointer of its link");
+static_assert(!std::is_assignable_v<PlanSlot&, PlanLink>, "only a store of a frame fills the slot of a plan");
+static_assert(std::is_same_v<decltype(std::declval<RegionNode const&>().plan.option()), PlanLink>);
 static_assert(sizeof(RegionNode) == 88, "RegionNode must be 88 bytes — the persisted layout matches this");
 static_assert(std::is_trivially_destructible_v<RegionNode>, "an arena ends no RegionNode");
 

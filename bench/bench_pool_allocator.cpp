@@ -40,62 +40,72 @@ constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing
 // The block size of each arena of the slots of a plan.
 constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kSlotBlock{std::size_t{1} << 16};
 
-// N internal slots, each 256-byte aligned, offsets = i * slot_size.  The
-// function writes the slots of the run, and the plan keeps the run of the
-// const slots.
-MemoryPlan make_uniform_plan(::fixy::ArenaRun<TensorSlot, crucible::DagArena> slots, uint64_t slot_size) {
-    const uint32_t n = static_cast<uint32_t>(slots.size());
-    uint32_t i = 0;
-    for (TensorSlot& slot : slots.view()) {
-        slot.offset_bytes = static_cast<uint64_t>(i) * slot_size;
-        slot.nbytes = slot_size;
-        slot.slot_id = SlotId{i};
-        slot.birth_op = OpIndex{0};
-        slot.death_op = OpIndex{n};
-        slot.dtype = ScalarType::Float;
-        slot.device_type = DeviceType::CPU;
-        slot.device_idx = 0;
-        slot.layout = Layout::Strided;
-        slot.is_external = false;
-        i++;
-    }
-    MemoryPlan plan{};
-    plan.slots = slots;
-    plan.num_external = 0;
-    plan.pool_bytes = static_cast<uint64_t>(n) * slot_size;
-    plan.device_type = DeviceType::CPU;
-    plan.device_idx = 0;
-    return plan;
+// n internal slots, each 256-byte aligned, offsets = i * slot_size.  One
+// frame on the arena writes the slots, and the plan keeps the run of the
+// const slots.  The plan lives as long as the arena.
+MemoryPlan const& make_uniform_plan(::foundation::effects::Alloc alloc, ::fixy::BumpArena<crucible::DagArena>& arena,
+                                    uint32_t n, uint64_t slot_size) {
+    const crucible::DagRef<MemoryPlan const> made =
+        ::foundation::core::with_arena_frame(arena, [alloc, n, slot_size](auto& frame) noexcept {
+            auto slots_run = frame.array(alloc, std::size_t{n}, TensorSlot{});
+            uint32_t i = 0;
+            for (TensorSlot& slot : slots_run.view()) {
+                slot.offset_bytes = static_cast<uint64_t>(i) * slot_size;
+                slot.nbytes = slot_size;
+                slot.slot_id = SlotId{i};
+                slot.birth_op = OpIndex{0};
+                slot.death_op = OpIndex{n};
+                slot.dtype = ScalarType::Float;
+                slot.device_type = DeviceType::CPU;
+                slot.device_idx = 0;
+                slot.layout = Layout::Strided;
+                slot.is_external = false;
+                i++;
+            }
+            const auto plan = frame.template make<MemoryPlan>(alloc);
+            frame.store(plan, &MemoryPlan::slots, slots_run);
+            plan->num_external = 0;
+            plan->pool_bytes = static_cast<uint64_t>(n) * slot_size;
+            plan->device_type = DeviceType::CPU;
+            plan->device_idx = 0;
+            return crucible::DagRef<MemoryPlan const>{plan.weaken()};
+        });
+    return *made;
 }
 
 // The first n_internal slots are internal, and the n_external slots after
 // them are external.  The function writes the slots as make_uniform_plan
-// does.
-MemoryPlan make_mixed_plan(::fixy::ArenaRun<TensorSlot, crucible::DagArena> slots, uint32_t n_internal,
-                           uint32_t n_external, uint64_t slot_size) {
-    const uint32_t total = n_internal + n_external;
-    uint32_t i = 0;
-    for (TensorSlot& slot : slots.view()) {
-        const bool ext = (i >= n_internal);
-        slot.offset_bytes = ext ? 0 : (static_cast<uint64_t>(i) * slot_size);
-        slot.nbytes = slot_size;
-        slot.slot_id = SlotId{i};
-        slot.birth_op = OpIndex{0};
-        slot.death_op = OpIndex{total};
-        slot.dtype = ScalarType::Float;
-        slot.device_type = DeviceType::CPU;
-        slot.device_idx = 0;
-        slot.layout = Layout::Strided;
-        slot.is_external = ext;
-        i++;
-    }
-    MemoryPlan plan{};
-    plan.slots = slots;
-    plan.num_external = n_external;
-    plan.pool_bytes = static_cast<uint64_t>(n_internal) * slot_size;
-    plan.device_type = DeviceType::CPU;
-    plan.device_idx = 0;
-    return plan;
+// does, in one frame on the arena.
+MemoryPlan const& make_mixed_plan(::foundation::effects::Alloc alloc, ::fixy::BumpArena<crucible::DagArena>& arena,
+                                  uint32_t n_internal, uint32_t n_external, uint64_t slot_size) {
+    const crucible::DagRef<MemoryPlan const> made =
+        ::foundation::core::with_arena_frame(arena, [alloc, n_internal, n_external, slot_size](auto& frame) noexcept {
+            const uint32_t total = n_internal + n_external;
+            auto slots_run = frame.array(alloc, std::size_t{total}, TensorSlot{});
+            uint32_t i = 0;
+            for (TensorSlot& slot : slots_run.view()) {
+                const bool ext = (i >= n_internal);
+                slot.offset_bytes = ext ? 0 : (static_cast<uint64_t>(i) * slot_size);
+                slot.nbytes = slot_size;
+                slot.slot_id = SlotId{i};
+                slot.birth_op = OpIndex{0};
+                slot.death_op = OpIndex{total};
+                slot.dtype = ScalarType::Float;
+                slot.device_type = DeviceType::CPU;
+                slot.device_idx = 0;
+                slot.layout = Layout::Strided;
+                slot.is_external = ext;
+                i++;
+            }
+            const auto plan = frame.template make<MemoryPlan>(alloc);
+            frame.store(plan, &MemoryPlan::slots, slots_run);
+            plan->num_external = n_external;
+            plan->pool_bytes = static_cast<uint64_t>(n_internal) * slot_size;
+            plan->device_type = DeviceType::CPU;
+            plan->device_idx = 0;
+            return crucible::DagRef<MemoryPlan const>{plan.weaken()};
+        });
+    return *made;
 }
 
 // A count of slots of a plan.
@@ -143,7 +153,7 @@ int main() {
     // ── slot_ptr sequential access ────────────────────────────────────
     bench::add_report(reports, [&] {
         ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
-        MemoryPlan plan = make_uniform_plan(slot_arena.array(test.alloc, std::size_t{1}, TensorSlot{}), 256);
+        MemoryPlan const& plan = make_uniform_plan(test.alloc, slot_arena, 1, 256);
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -156,7 +166,7 @@ int main() {
     for (uint32_t N : kSlotCounts) {
         bench::add_report(reports, [&, N] {
             ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
-            MemoryPlan plan = make_uniform_plan(slot_arena.array(test.alloc, N, TensorSlot{}), 256);
+            MemoryPlan const& plan = make_uniform_plan(test.alloc, slot_arena, N, 256);
             PoolAllocator pool;
             pool.init(::foundation::effects::testing::test().alloc, plan);
             auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -176,7 +186,7 @@ int main() {
     for (uint32_t N : kSlotCounts) {
         bench::add_report(reports, [&, N] {
             ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
-            MemoryPlan plan = make_uniform_plan(slot_arena.array(test.alloc, N, TensorSlot{}), 256);
+            MemoryPlan const& plan = make_uniform_plan(test.alloc, slot_arena, N, 256);
             PoolAllocator pool;
             pool.init(::foundation::effects::testing::test().alloc, plan);
             auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -204,7 +214,7 @@ int main() {
     bench::add_report(reports, [&] {
         constexpr uint32_t N = 100;
         ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
-        MemoryPlan plan = make_uniform_plan(slot_arena.array(test.alloc, N, TensorSlot{}), 256);
+        MemoryPlan const& plan = make_uniform_plan(test.alloc, slot_arena, N, 256);
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -219,7 +229,7 @@ int main() {
     bench::add_report(reports, [&] {
         constexpr uint32_t N = 100;
         ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
-        MemoryPlan plan = make_uniform_plan(slot_arena.array(test.alloc, N, TensorSlot{}), 256);
+        MemoryPlan const& plan = make_uniform_plan(test.alloc, slot_arena, N, 256);
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -236,7 +246,7 @@ int main() {
     bench::add_report(reports, [&] {
         constexpr uint32_t N = 100;
         ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
-        MemoryPlan plan = make_uniform_plan(slot_arena.array(test.alloc, N, TensorSlot{}), 256);
+        MemoryPlan const& plan = make_uniform_plan(test.alloc, slot_arena, N, 256);
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -254,7 +264,7 @@ int main() {
     for (uint32_t N : kSlotCounts) {
         bench::add_report(reports, [&, N] {
             ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
-            MemoryPlan plan = make_uniform_plan(slot_arena.array(test.alloc, N, TensorSlot{}), 256);
+            MemoryPlan const& plan = make_uniform_plan(test.alloc, slot_arena, N, 256);
             return bench::run(bench::format_name("init({} slots)", N), [&] {
                 PoolAllocator pool;
                 pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -274,7 +284,7 @@ int main() {
     bench::add_report(reports, [&] {
         constexpr uint32_t N = 100;
         ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
-        MemoryPlan plan = make_uniform_plan(slot_arena.array(test.alloc, N, TensorSlot{}), 256);
+        MemoryPlan const& plan = make_uniform_plan(test.alloc, slot_arena, N, 256);
         return bench::run("init+destroy (100 slots, pair)", [&] {
             PoolAllocator pool;
             pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -287,8 +297,8 @@ int main() {
     bench::add_report(reports, [&] {
         constexpr uint32_t N = 100;
         ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
-        MemoryPlan plan_a = make_uniform_plan(slot_arena.array(test.alloc, N, TensorSlot{}), 256);
-        MemoryPlan plan_b = make_uniform_plan(slot_arena.array(test.alloc, N, TensorSlot{}), 512);
+        MemoryPlan const& plan_a = make_uniform_plan(test.alloc, slot_arena, N, 256);
+        MemoryPlan const& plan_b = make_uniform_plan(test.alloc, slot_arena, N, 512);
         return bench::run("detach+init(100 slots)", [&] {
             PoolAllocator pool;
             pool.init(::foundation::effects::testing::test().alloc, plan_a);
@@ -308,9 +318,8 @@ int main() {
     bench::add_report(reports, [&] {
         constexpr uint32_t N_INT = 80;
         constexpr uint32_t N_EXT = 20;
-        constexpr uint32_t TOTAL = N_INT + N_EXT;
         ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
-        MemoryPlan plan = make_mixed_plan(slot_arena.array(test.alloc, TOTAL, TensorSlot{}), N_INT, N_EXT, 256);
+        MemoryPlan const& plan = make_mixed_plan(test.alloc, slot_arena, N_INT, N_EXT, 256);
         const MemoryPlan& plan_read = plan;
 
         // The external buffers: one run of bytes, 256 bytes for each slot.
@@ -344,7 +353,7 @@ int main() {
         constexpr uint32_t NUM_OPS = 200;
         constexpr uint32_t NUM_SLOTS = 100;
         ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
-        MemoryPlan plan = make_uniform_plan(slot_arena.array(test.alloc, NUM_SLOTS, TensorSlot{}), 256);
+        MemoryPlan const& plan = make_uniform_plan(test.alloc, slot_arena, NUM_SLOTS, 256);
 
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, plan);

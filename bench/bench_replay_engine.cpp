@@ -36,46 +36,17 @@ struct BenchRegion {
     // ids.
     ::fixy::BumpArena<DagArena> arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
-    DagRef<MemoryPlan> plan;
     DagRef<RegionNode> region;
     uint32_t num_ops = 0;
 
-    explicit BenchRegion(uint32_t n)
-        : plan{arena.make<MemoryPlan>(::foundation::effects::testing::test().alloc)},
-          region{build_region_(arena, n)},
-          num_ops{n} {
-        auto const alloc = ::foundation::effects::testing::test().alloc;
-        auto slots_run = arena.array(alloc, n, TensorSlot{});
-        for (uint32_t i = 0; i < n; i++) {
-            *slots_run.view().get(i).expect("i is below n") = TensorSlot{.offset_bytes = i * 256ULL,
-                                                                         .nbytes = 256,
-                                                                         .birth_op = OpIndex{0},
-                                                                         .death_op = OpIndex{n},
-                                                                         .dtype = ScalarType::Float,
-                                                                         .device_type = DeviceType::CPU,
-                                                                         .device_idx = 0,
-                                                                         .layout = Layout::Strided,
-                                                                         .is_external = false,
-                                                                         .pad = {},
-                                                                         .slot_id = SlotId{i},
-                                                                         .pad2 = {}};
-        }
-
-        plan->slots = slots_run;
-        plan->num_external = 0;
-        plan->pool_bytes = static_cast<uint64_t>(n) * 256;
-        plan->device_type = DeviceType::CPU;
-        plan->device_idx = 0;
-
-        region->plan = make_plan_link(plan);
-    }
+    explicit BenchRegion(uint32_t n) : region{build_region_(arena, n)}, num_ops{n} {}
 
     BenchRegion(const BenchRegion&) = delete;
     BenchRegion& operator=(const BenchRegion&) = delete;
 
 private:
-    // A region of n ops, which one frame on the arena builds with its ops and
-    // their runs.
+    // A region of n ops, which one frame on the arena builds with its ops,
+    // their runs, the plan and its slots.
     [[nodiscard]] static DagRef<RegionNode> build_region_(::fixy::BumpArena<DagArena>& arena, uint32_t n) {
         return ::foundation::core::with_arena_frame(arena, [n](auto& frame) noexcept {
             auto const alloc = ::foundation::effects::testing::test().alloc;
@@ -105,9 +76,32 @@ private:
                               in_producers_run.window(at_op, one).expect("i is below n"), in_slot);
             }
 
+            auto slots_run = frame.array(alloc, n, TensorSlot{});
+            for (uint32_t i = 0; i < n; i++) {
+                *slots_run.view().get(i).expect("i is below n") = TensorSlot{.offset_bytes = i * 256ULL,
+                                                                             .nbytes = 256,
+                                                                             .birth_op = OpIndex{0},
+                                                                             .death_op = OpIndex{n},
+                                                                             .dtype = ScalarType::Float,
+                                                                             .device_type = DeviceType::CPU,
+                                                                             .device_idx = 0,
+                                                                             .layout = Layout::Strided,
+                                                                             .is_external = false,
+                                                                             .pad = {},
+                                                                             .slot_id = SlotId{i},
+                                                                             .pad2 = {}};
+            }
+            const auto plan = frame.template make<MemoryPlan>(alloc);
+            frame.store(plan, &MemoryPlan::slots, slots_run);
+            plan->num_external = 0;
+            plan->pool_bytes = static_cast<uint64_t>(n) * 256;
+            plan->device_type = DeviceType::CPU;
+            plan->device_idx = 0;
+
             const auto made = mint_dag_node<RegionNode>(alloc, frame);
             made->kind = TraceNodeKind::REGION;
             frame.store(made, &RegionNode::ops, ops_run);
+            frame.store(made, &RegionNode::plan, plan);
             return made.weaken();
         });
     }

@@ -49,7 +49,7 @@ int main() {
 
     const DagRef<const RegionNode> region = vigil.active_region().expect("the flush published a region");
     CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_some());
-    const DagRef<MemoryPlan const> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
+    const DagRef<MemoryPlan const> plan = region->plan.expect("the published region has a memory plan");
 
     ::fixy::report(::fixy::Sink::Out, "── Region ──\n");
     ::fixy::report(::fixy::Sink::Out, "   {} ops | pool {} bytes\n", region->num_ops(),
@@ -67,6 +67,10 @@ int main() {
                            sl.death_op.raw(), static_cast<unsigned long long>(sl.nbytes));
         s++;
     }
+    // The summary reports the pool of this plan.  The iterations after this
+    // line can publish a different region, so the summary does not read the
+    // plan again.
+    const uint64_t pool_bytes = plan->pool_bytes;
 
     align_and_complete_iteration(vigil);
     const double ns_op = run_compiled_iterations(vigil);
@@ -74,7 +78,7 @@ int main() {
 
     ::fixy::report(::fixy::Sink::Out, "\n═══ Summary ═══\n");
     ::fixy::report(::fixy::Sink::Out, "Pool: {} bytes | Compiled: {} iters | {} ns/op\n",
-                   static_cast<unsigned long long>(plan->pool_bytes), vigil.compiled_iterations(), ns_op);
+                   static_cast<unsigned long long>(pool_bytes), vigil.compiled_iterations(), ns_op);
     ::fixy::check::pass(kTest, "\ntest_vit: PASSED\n");
     return 0;
 }

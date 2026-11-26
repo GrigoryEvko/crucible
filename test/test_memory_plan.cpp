@@ -164,16 +164,18 @@ void test_plan_reuses_space(::fixy::TestRunnerCtx const& test) {
     // op 3 and slot 2 is born at op 4.  Slot 3 is external and takes no pool
     // space.
     constexpr uint32_t N = 4;
-    auto slots_run = arena.array(source.alloc, N, crucible::TensorSlot{});
+    // The slots that the test gives.  The plan holds a copy of them, which the
+    // planner plans.
+    auto given_run = arena.array(source.alloc, N, crucible::TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<crucible::TensorSlot, N> const slots = slots_run.view().window<N>(0).expect("the run holds N slots");
+    ::fixy::View<crucible::TensorSlot, N> const given = given_run.view().window<N>(0).expect("the run holds N slots");
 
     using crucible::SlotId;
     using crucible::OpIndex;
     using crucible::ScalarType;
     using crucible::DeviceType;
     using crucible::Layout;
-    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+    given.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
                                                 .nbytes = 1024,
                                                 .birth_op = OpIndex{0},
                                                 .death_op = OpIndex{5},
@@ -185,7 +187,7 @@ void test_plan_reuses_space(::fixy::TestRunnerCtx const& test) {
                                                 .pad = {},
                                                 .slot_id = SlotId{0},
                                                 .pad2 = {}};
-    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
+    given.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
                                                 .nbytes = 2048,
                                                 .birth_op = OpIndex{1},
                                                 .death_op = OpIndex{3},
@@ -197,7 +199,7 @@ void test_plan_reuses_space(::fixy::TestRunnerCtx const& test) {
                                                 .pad = {},
                                                 .slot_id = SlotId{1},
                                                 .pad2 = {}};
-    slots.at(::foundation::core::index<2>()) = {.offset_bytes = 0,
+    given.at(::foundation::core::index<2>()) = {.offset_bytes = 0,
                                                 .nbytes = 1024,
                                                 .birth_op = OpIndex{4},
                                                 .death_op = OpIndex{7},
@@ -209,7 +211,7 @@ void test_plan_reuses_space(::fixy::TestRunnerCtx const& test) {
                                                 .pad = {},
                                                 .slot_id = SlotId{2},
                                                 .pad2 = {}};
-    slots.at(::foundation::core::index<3>()) = {.offset_bytes = 0,
+    given.at(::foundation::core::index<3>()) = {.offset_bytes = 0,
                                                 .nbytes = 512,
                                                 .birth_op = OpIndex{0},
                                                 .death_op = OpIndex{7},
@@ -222,19 +224,32 @@ void test_plan_reuses_space(::fixy::TestRunnerCtx const& test) {
                                                 .slot_id = SlotId{3},
                                                 .pad2 = {}};
 
-    const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(source.alloc);
-    crucible::BackgroundThread::PlanTarget const target{};
-    scratch.arena.with_epoch(
-        [target, alloc = source.alloc, plan_storage, &slots_run, &test](crucible::PlanScratch::Epoch& epoch) noexcept {
-            const crucible::MemoryPlan& plan =
-                *crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
-                     .expect("the slots of the test fit in 64 bits");
-            // The planner writes the plan into the storage of the caller, and the
-            // result reaches that storage.
-            CRUCIBLE_TEST_ASSERT(test, ::fixy::same_object(::fixy::to(plan), plan_storage));
+    // One frame on the arena makes the copy of the slots and the plan.  The
+    // planner writes the offsets into the copy and the plan into the storage
+    // of the caller.  Then the frame stores the copy in the plan.
+    const crucible::DagRef<crucible::MemoryPlan> plan_storage = ::foundation::core::with_arena_frame(
+        arena, [alloc = source.alloc, given, &scratch, &test](auto& frame) noexcept {
+            auto slots_run = frame.template build_array<crucible::TensorSlot>(
+                alloc, ::fixy::ElementCount{N}, [given](::fixy::RunStart at) noexcept {
+                    return *given.get(at.value().raw()).expect("a position is below N");
+                });
+            const auto made = frame.template make<crucible::MemoryPlan>(alloc);
+            crucible::BackgroundThread::PlanTarget const target{};
+            scratch.arena.with_epoch([target, alloc, plan_storage = made.weaken(), slot_run = slots_run.weaken(),
+                                      &test](crucible::PlanScratch::Epoch& epoch) mutable noexcept {
+                const crucible::MemoryPlan& planned =
+                    *crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slot_run)
+                         .expect("the slots of the test fit in 64 bits");
+                // The result of the planner is the storage of the caller.
+                CRUCIBLE_TEST_ASSERT(test, ::fixy::same_object(::fixy::to(planned), plan_storage));
+            });
+            frame.store(made, &crucible::MemoryPlan::slots, slots_run);
+            return made.weaken();
         });
     const crucible::MemoryPlan& plan = *plan_storage;
     CRUCIBLE_TEST_ASSERT(test, plan.num_slots() == N);
+    const ::fixy::View<crucible::TensorSlot const, N> slots =
+        plan.slots.view().window<N>(0).expect("the plan holds N slots");
     CRUCIBLE_TEST_ASSERT(test, plan.num_external == 1);
     CRUCIBLE_TEST_ASSERT(test, plan.pool_bytes > 0);
 

@@ -4,6 +4,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
+#include "plan_rig.h"
 #include "tensor_data.h"
 #include <cstdint>
 #include <cstdio>
@@ -38,15 +39,11 @@ using crucible::test::host_ptr;
 // context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
-static MemoryPlan make_manual_plan(::fixy::ArenaRun<TensorSlot const, DagArena> slots, uint64_t pool_bytes,
-                                   uint32_t num_ext) {
-    MemoryPlan plan{};
-    plan.slots = slots;
-    plan.num_external = num_ext;
-    plan.pool_bytes = pool_bytes;
-    plan.device_type = DeviceType::CPU;
-    plan.device_idx = 0;
-    return plan;
+// A plan of a copy of the slots in the arena (test/plan_rig.h).
+static crucible::DagRef<MemoryPlan const> make_manual_plan(::fixy::BumpArena<DagArena>& arena,
+                                                           ::fixy::View<TensorSlot const> slots, uint64_t pool_bytes,
+                                                           uint32_t num_ext) {
+    return crucible::test::manual_plan(::foundation::effects::testing::test().alloc, arena, slots, pool_bytes, num_ext);
 }
 
 static void test_basic_init() {
@@ -91,7 +88,8 @@ static void test_basic_init() {
                                                          .slot_id = SlotId{2},
                                                          .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots_run, 3072, 1);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_manual_plan(arena, slots_run.view(), 3072, 1);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -161,7 +159,8 @@ static void test_external_registration() {
                                                        .slot_id = SlotId{1},
                                                        .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots_run, 1024, 1);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_manual_plan(arena, slots_run.view(), 1024, 1);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -222,7 +221,8 @@ static void test_write_read_isolation() {
                                                          .slot_id = SlotId{2},
                                                          .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots_run, 1024, 0);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_manual_plan(arena, slots_run.view(), 1024, 0);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -278,7 +278,8 @@ static void test_all_external() {
                                                        .slot_id = SlotId{1},
                                                        .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots_run, 0, 2);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_manual_plan(arena, slots_run.view(), 0, 2);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -320,7 +321,8 @@ static void test_reinit() {
                                                         .slot_id = SlotId{0},
                                                         .pad2 = {}};
 
-    MemoryPlan plan_a = make_manual_plan(slots_a_run, 512, 0);
+    const crucible::DagRef<MemoryPlan const> plan_a_ref = make_manual_plan(arena, slots_a_run.view(), 512, 0);
+    MemoryPlan const& plan_a = *plan_a_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan_a);
@@ -358,7 +360,8 @@ static void test_reinit() {
                                                          .slot_id = SlotId{1},
                                                          .pad2 = {}};
 
-    MemoryPlan plan_b = make_manual_plan(slots_b_run, 3072, 0);
+    const crucible::DagRef<MemoryPlan const> plan_b_ref = make_manual_plan(arena, slots_b_run.view(), 3072, 0);
+    MemoryPlan const& plan_b = *plan_b_ref;
     pool.init(::foundation::effects::testing::test().alloc, plan_b);
     auto pv_b = pool.mint_initialized_view(kVigilForeground);
 
@@ -385,7 +388,6 @@ static void test_integration_with_sweep_line() {
 
     constexpr uint32_t N = 4;
     ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
-    crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
     auto slots_run = slot_arena.array(test.alloc, N, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot> const slots = slots_run.view();
@@ -438,14 +440,11 @@ static void test_integration_with_sweep_line() {
                                                         .slot_id = SlotId{3},
                                                         .pad2 = {}};
 
-    const crucible::DagRef<crucible::MemoryPlan> plan_storage = slot_arena.make<crucible::MemoryPlan>(test.alloc);
-    crucible::BackgroundThread::PlanTarget const target{};
-    sweep_scratch.arena.with_epoch([target, alloc = test.alloc, plan_storage,
-                                    &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
-        static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
-                              .expect("the slots of the test fit in 64 bits"));
-    });
-    // The plan is in the arena of the slots.
+    // The plan and the planned copy of the slots are in the arena of the
+    // slots.
+    const crucible::DagRef<crucible::MemoryPlan> plan_storage =
+        crucible::test::plan_in_arena(test.alloc, slot_arena, slots_run.view())
+            .expect("the slots of the test fit in 64 bits");
     const crucible::MemoryPlan& plan = *plan_storage;
     CRUCIBLE_TEST_ASSERT(kTest, plan.pool_bytes > 0);
 
@@ -523,7 +522,8 @@ static void test_device_of_slots() {
                                                        .slot_id = SlotId{1},
                                                        .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots_run, 256, 1);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_manual_plan(arena, slots_run.view(), 256, 1);
+    MemoryPlan const& plan = *plan_ref;
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -558,7 +558,8 @@ static void expect_abort_on_init(::fixy::TestRunnerCtx const& test, const Tensor
                                  ::fixy::TextView refusal) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     auto const slots_run = arena.array(::foundation::effects::testing::test().alloc, 1, slot);
-    MemoryPlan plan = make_manual_plan(slots_run, pool_bytes, 0);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_manual_plan(arena, slots_run.view(), pool_bytes, 0);
+    MemoryPlan const& plan = *plan_ref;
     ::fixy::check::expect_dies(
         test,
         [&plan] noexcept {
@@ -650,7 +651,8 @@ static void test_slot_views() {
                                                          .pad = {},
                                                          .slot_id = SlotId{2},
                                                          .pad2 = {}};
-    MemoryPlan plan = make_manual_plan(slots_run, 1024, 1);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_manual_plan(arena, slots_run.view(), 1024, 1);
+    MemoryPlan const& plan = *plan_ref;
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -716,7 +718,8 @@ static std::size_t change_the_lent_pool(Change const& change) noexcept {
                                                   .pad = {},
                                                   .slot_id = SlotId{0},
                                                   .pad2 = {}});
-    MemoryPlan const plan = make_manual_plan(slots_run, 256, 0);
+    const crucible::DagRef<MemoryPlan const> plan_ref = make_manual_plan(arena, slots_run.view(), 256, 0);
+    MemoryPlan const& plan = *plan_ref;
     g_lent_pool.init(::foundation::effects::testing::test().alloc, plan);
     auto const pv = g_lent_pool.mint_initialized_view(kVigilForeground);
     return g_lent_pool.with_addresses(pv, [&change](crucible::AddressColumn column) noexcept {

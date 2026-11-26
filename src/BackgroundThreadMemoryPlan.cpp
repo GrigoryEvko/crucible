@@ -23,10 +23,12 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
                                       ::fixy::ArenaRun<TensorSlot, DagArena> slot_run) noexcept {
     static constexpr uint32_t ALIGNMENT = 256;
 
+    // The caller stores the slots in the plan with the frame of the plan, so
+    // the sweep reads them from the run.
     MemoryPlan& plan = *plan_storage;
-    plan.slots = slot_run;
     const ::fixy::View<TensorSlot> slots = slot_run.view();
-    const uint32_t num_slots = plan.num_slots();
+    const uint32_t num_slots =
+        ::fixy::narrow<uint32_t>(slots.size()).expect("the pool allocator takes at most kMaxNumSlots slots");
     plan.num_external = 0;
     plan.pool_bytes = 0;
 

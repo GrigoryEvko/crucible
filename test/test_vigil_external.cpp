@@ -246,8 +246,7 @@ void test_register_external_checks_the_plan() {
                                      crucible::kHostDevice};
     const crucible::DagRef<crucible::RegionNode const> region =
         vigil.context().active_region().expect("the Vigil replays a region");
-    const crucible::DagRef<crucible::MemoryPlan const> plan =
-        crucible::PlanLink{region->plan}.expect("the region has a plan");
+    const crucible::DagRef<crucible::MemoryPlan const> plan = region->plan.expect("the region has a plan");
     auto pv = vigil.context().pool().mint_initialized_view(fg);
     uint32_t position = 0;
     uint32_t num_external = 0;
