@@ -156,19 +156,14 @@ inline void add_region_regressions(SeedList& seeds) noexcept {
 
     // The header states a content hash that is not the hash of the ops.
     SeedBytes wrong_hash = region_image(*build_seed_region(dag_arena, SeedPlan::none));
-    wrong_hash.with_element(
-        kImageContentHashOffset,
-        [](std::byte& hash_byte) noexcept {
-            hash_byte = static_cast<std::byte>(static_cast<unsigned>(hash_byte) ^ 0x01U);
-        },
-        [] noexcept { ::fixy::fatal("the image holds its header"); });
+    wrong_hash.update(kImageContentHashOffset, [](std::byte& hash_byte) noexcept {
+        hash_byte = static_cast<std::byte>(static_cast<unsigned>(hash_byte) ^ 0x01U);
+    });
     add_seed(seeds, std::move(wrong_hash));
 
     // The plan flag holds a byte that is no value of a bool.
     SeedBytes bad_bool = region_image(*build_seed_region(dag_arena, SeedPlan::none));
-    bad_bool.with_element(
-        kImageHasPlanOffset, [](std::byte& flag) noexcept { flag = std::byte{0x02}; },
-        [] noexcept { ::fixy::fatal("the image holds its plan flag"); });
+    bad_bool.set(kImageHasPlanOffset, std::byte{0x02});
     add_seed(seeds, std::move(bad_bool));
 
     // A slot reaches past the pool, and a slot starts off the alignment.

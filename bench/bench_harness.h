@@ -3096,12 +3096,10 @@ public:
                 const uint64_t d = (raw > ovh) ? (raw - ovh) : 0;
                 // After the reading of the end, so the check of the position
                 // is outside the timed region.  The windows share S samples.
-                // The element door takes the value alone, so no closure holds
+                // The value door set takes the value alone, so no closure holds
                 // the body of the bench.
                 const double sample_ns = (static_cast<double>(d) * nspc) / static_cast<double>(batch);
-                ns_samples.with_element(
-                    filled, [sample_ns](double& sample) noexcept { sample = sample_ns; },
-                    [] noexcept { ::fixy::fatal("the windows take at most S samples"); });
+                ns_samples.set(filled, sample_ns);
                 ++filled;
                 // The reading of the end of the sample is the clock of the
                 // part of the time of the window, so the check costs no read.

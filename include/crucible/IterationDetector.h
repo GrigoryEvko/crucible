@@ -324,13 +324,10 @@ private:
         auto prefix_sums = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
         auto earlier_links = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
         for (uint64_t position = held_from_(); position < pos_; ++position) {
-            keys.with_masked(position, [held = keys_.at_masked(position)](uint64_t& slot) noexcept { slot = held; });
-            prefix_polys.with_masked(
-                position, [held = prefix_polys_.at_masked(position)](uint64_t& slot) noexcept { slot = held; });
-            prefix_sums.with_masked(
-                position, [held = prefix_sums_.at_masked(position)](uint64_t& slot) noexcept { slot = held; });
-            earlier_links.with_masked(
-                position, [held = earlier_links_.at_masked(position)](uint64_t& slot) noexcept { slot = held; });
+            keys.set_masked(position, keys_.at_masked(position));
+            prefix_polys.set_masked(position, prefix_polys_.at_masked(position));
+            prefix_sums.set_masked(position, prefix_sums_.at_masked(position));
+            earlier_links.set_masked(position, earlier_links_.at_masked(position));
         }
         keys_ = std::move(keys);
         prefix_polys_ = std::move(prefix_polys);
@@ -346,12 +343,10 @@ private:
         make_room_(alloc);
         const uint64_t poly_before = prefix_poly_before_(pos_);
         const uint64_t sum_before = prefix_sum_before_(pos_);
-        keys_.with_masked(pos_, [key](uint64_t& slot) noexcept { slot = key; });
-        prefix_polys_.with_masked(pos_,
-                                  [poly = poly_before * POLY_BASE + key](uint64_t& slot) noexcept { slot = poly; });
-        prefix_sums_.with_masked(pos_, [sum = sum_before + ::foundation::reflect::fmix64(key ^ SUM_SALT)](
-                                           uint64_t& slot) noexcept { slot = sum; });
-        earlier_links_.with_masked(pos_, [](uint64_t& slot) noexcept { slot = 0; });
+        keys_.set_masked(pos_, key);
+        prefix_polys_.set_masked(pos_, poly_before * POLY_BASE + key);
+        prefix_sums_.set_masked(pos_, sum_before + ::foundation::reflect::fmix64(key ^ SUM_SALT));
+        earlier_links_.set_masked(pos_, uint64_t{0});
     }
 
     // The fingerprint of the keys before index, for an index from base_ up
@@ -378,7 +373,7 @@ private:
     // none.
     [[nodiscard]] uint64_t link_window_(uint64_t start) {
         const uint64_t earlier_link = table_exchange_(window_fingerprint_(start), start);
-        earlier_links_.with_masked(start, [earlier_link](uint64_t& slot) noexcept { slot = earlier_link; });
+        earlier_links_.set_masked(start, earlier_link);
         return earlier_link;
     }
 
@@ -397,26 +392,20 @@ private:
     // slot value that it replaces: the earlier start plus one, or zero.
     [[nodiscard]] uint64_t table_exchange_(uint64_t fingerprint, uint64_t start) {
         // The load stays at most one half, so the probe meets an empty slot.
-        // The element door of each probe claims an empty slot or takes the
-        // slot of the fingerprint, and the walk stops there.
-        uint64_t earlier = 0;
-        bool is_claimed = false;
+        // Each probe reads its slot, and the walk stops at an empty slot,
+        // which it claims, or at the slot of the fingerprint, which it takes.
         for (uint64_t index = home_slot_(fingerprint);; ++index) {
-            const bool is_found = table_.with_masked(index, [&](TableSlot& slot) noexcept {
-                if (slot.start_plus_one == 0) {
-                    slot = TableSlot{.start_plus_one = start + 1, .fingerprint = fingerprint};
-                    is_claimed = true;
-                    return true;
-                }
-                if (slot.fingerprint != fingerprint) return false;
-                earlier = slot.start_plus_one;
-                slot.start_plus_one = start + 1;
-                return true;
-            });
-            if (is_found) break;
+            const TableSlot slot = table_.at_masked(index);
+            if (slot.start_plus_one == 0) {
+                table_.set_masked(index, TableSlot{.start_plus_one = start + 1, .fingerprint = fingerprint});
+                ++table_used_;
+                return 0;
+            }
+            if (slot.fingerprint == fingerprint) {
+                table_.set_masked(index, TableSlot{.start_plus_one = start + 1, .fingerprint = fingerprint});
+                return slot.start_plus_one;
+            }
         }
-        if (is_claimed) ++table_used_;
-        return earlier;
     }
 
     // Removes the slot of the fingerprint when start is its newest window.
@@ -438,10 +427,11 @@ private:
             const uint64_t home = home_slot_(table_.at_masked(next).fingerprint);
             const bool home_after_hole = ((home - hole - 1) & mask) < ((next - hole) & mask);
             if (home_after_hole) continue;
-            table_.with_masked(hole, [moved = table_.at_masked(next)](TableSlot& slot) noexcept { slot = moved; });
+            const TableSlot moved = table_.at_masked(next);
+            table_.set_masked(hole, moved);
             hole = next;
         }
-        table_.with_masked(hole, [](TableSlot& slot) noexcept { slot = TableSlot{}; });
+        table_.set_masked(hole, TableSlot{});
         --table_used_;
     }
 
@@ -454,7 +444,7 @@ private:
         table_used_ = 0;
         for (uint64_t start = base_; start < end_start; ++start) {
             const uint64_t earlier_link = table_exchange_(window_fingerprint_(start), start);
-            earlier_links_.with_masked(start, [earlier_link](uint64_t& slot) noexcept { slot = earlier_link; });
+            earlier_links_.set_masked(start, earlier_link);
         }
     }
 

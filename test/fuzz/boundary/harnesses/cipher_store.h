@@ -369,9 +369,7 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
     }
     chunk(::fixy::View<std::byte const>{});
     SeedBytes bytes = seed.finish();
-    bytes.with_element(
-        first_record + patch_offset, [patch_byte](std::byte& patched) noexcept { patched = patch_byte; },
-        [] noexcept { ::fixy::fatal("the patch is inside the first record"); });
+    bytes.set(first_record + patch_offset, patch_byte);
     return bytes;
 }
 

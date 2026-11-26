@@ -182,9 +182,7 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
             ::fixy::report(::fixy::Sink::Err, "{}: corrupt byte equals original — no mutation\n", c.name);
             return 4;
         }
-        corrupt.with_element(
-            c.off, [&c](std::byte& target) noexcept { target = std::byte{c.bad}; },
-            [] noexcept { ::fixy::fatal("the offset is inside the image"); });
+        corrupt.set(c.off, std::byte{c.bad});
         if (!is_rejected(bg, corrupt.view())) {
             ::fixy::report(::fixy::Sink::Err,
                            "{}: malformed byte {} at offset {} NOT rejected "

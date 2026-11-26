@@ -80,8 +80,8 @@ struct MiniSwissTable {
             auto group = load_group(ctrl.view(), base);
             if (auto empties = group.match_empty(); empties) {
                 const size_t idx = base + empties.lowest();
-                ctrl.with_masked(idx, [tag](int8_t& slot) noexcept { slot = tag; });
-                hashes.with_masked(idx, [h](uint64_t& slot) noexcept { slot = h; });
+                ctrl.set_masked(idx, tag);
+                hashes.set_masked(idx, h);
                 ++count;
                 return idx;
             }

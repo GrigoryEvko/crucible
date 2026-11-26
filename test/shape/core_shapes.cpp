@@ -407,6 +407,21 @@ fixed_array_with_element(::foundation::core::FixedArray<std::uint64_t, 128, Shap
     array.with_masked(key, [bit](std::uint32_t& element) noexcept { element |= bit; });
 }
 
+// The or of a bit into one element of a HeapArray through the update door.
+// A position at or past the count takes the fatal exit.
+[[gnu::used]] void heap_array_update(::foundation::core::HeapArray<std::uint32_t>& array, std::size_t position,
+                                     std::uint32_t bit) noexcept {
+    array.update(position, [bit](std::uint32_t& element) noexcept { element |= bit; });
+}
+
+// The or of a bit into the element of a masked key of a MaskedArray through
+// the update door.  An array that holds no storage takes the fatal exit, as
+// a read through at_masked does.
+[[gnu::used]] void masked_array_update_masked(::foundation::core::MaskedArray<std::uint32_t>& array, std::uint64_t key,
+                                              std::uint32_t bit) noexcept {
+    array.update_masked(key, [bit](std::uint32_t& element) noexcept { element |= bit; });
+}
+
 // Two arrays of a batch, as the batch of the drain stage holds them.
 struct ShapeBatch final {
     ::foundation::core::FixedArray<std::uint64_t, 64> words{};
@@ -2081,6 +2096,14 @@ struct RawCycle {
 }
 
 [[gnu::used]] void masked_array_with_masked_raw(RawMasked& array, std::uint64_t key, std::uint32_t bit) noexcept {
+    array.first[key & array.mask] |= bit;
+}
+
+[[gnu::used]] void heap_array_update_raw(RawHeap& array, std::size_t position, std::uint32_t bit) noexcept {
+    array.first[position] |= bit;
+}
+
+[[gnu::used]] void masked_array_update_masked_raw(RawMasked& array, std::uint64_t key, std::uint32_t bit) noexcept {
     array.first[key & array.mask] |= bit;
 }
 

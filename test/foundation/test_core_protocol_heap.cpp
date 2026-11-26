@@ -91,11 +91,7 @@ constexpr Budget kWideBudget{std::size_t{1} << 20};
 using ByteOffset = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>;
 
 // Writes byte at an offset of an image.
-void put_byte(Bytes& image, ByteOffset offset, std::byte byte) noexcept {
-    image.with_element(
-        offset.raw(), [byte](std::byte& held) noexcept { held = byte; },
-        [] noexcept { ::foundation::core::fatal("the offset is inside the image"); });
-}
+void put_byte(Bytes& image, ByteOffset offset, std::byte byte) noexcept { image.set(offset.raw(), byte); }
 
 // The image of a value, by encode, in storage of exactly its size.
 template <HeapEncodable T>

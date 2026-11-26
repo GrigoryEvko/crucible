@@ -63,9 +63,7 @@ inline constexpr std::size_t kImageGuardKindOffset = 32;
     // kind reaches the replay switch.
     add_seed(seeds, branch_image(unsorted.view()));
     SeedBytes bad_kind = branch_image(zero.view());
-    bad_kind.with_element(
-        kImageGuardKindOffset, [](std::byte& kind) noexcept { kind = std::byte{0x7F}; },
-        [] noexcept { ::fixy::fatal("the image holds the guard kind"); });
+    bad_kind.set(kImageGuardKindOffset, std::byte{0x7F});
     add_seed(seeds, std::move(bad_kind));
     return seeds;
 }

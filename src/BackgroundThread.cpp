@@ -539,12 +539,12 @@ void PendingOps::grow_(::foundation::effects::Alloc alloc) {
     ::fixy::MaskedArray<CallsiteHash> callsite_hashes = ::fixy::mint_masked_array<CallsiteHash>(alloc, new_capacity);
     ::fixy::MaskedArray<OpDepth> depths = ::fixy::mint_masked_array<OpDepth>(alloc, new_capacity);
     for (uint64_t index = 0; index < count_; ++index) {
-        entries.with_masked(index, [held = entry(index)](TraceRing::Entry& slot) noexcept { slot = held; });
-        meta_starts.with_masked(index, [held = meta_start(index)](MetaIndex& slot) noexcept { slot = held; });
-        record_starts.with_masked(index, [held = record_start(index)](MetaIndex& slot) noexcept { slot = held; });
-        scope_hashes.with_masked(index, [held = scope_hash(index)](ScopeHash& slot) noexcept { slot = held; });
-        callsite_hashes.with_masked(index, [held = callsite_hash(index)](CallsiteHash& slot) noexcept { slot = held; });
-        depths.with_masked(index, [held = depth(index)](OpDepth& slot) noexcept { slot = held; });
+        entries.set_masked(index, entry(index));
+        meta_starts.set_masked(index, meta_start(index));
+        record_starts.set_masked(index, record_start(index));
+        scope_hashes.set_masked(index, scope_hash(index));
+        callsite_hashes.set_masked(index, callsite_hash(index));
+        depths.set_masked(index, depth(index));
     }
     entries_ = std::move(entries);
     meta_starts_ = std::move(meta_starts);
@@ -561,12 +561,12 @@ void PendingOps::push(::foundation::effects::Alloc alloc, TraceRing::Entry const
     if (mask_ == 0 || count_ == mask_ + 1) [[unlikely]]
         grow_(alloc);
     const uint64_t slot = head_ + count_;
-    entries_.with_masked(slot, [&entry](TraceRing::Entry& held) noexcept { held = entry; });
-    meta_starts_.with_masked(slot, [positions](MetaIndex& held) noexcept { held = positions.meta_start; });
-    record_starts_.with_masked(slot, [positions](MetaIndex& held) noexcept { held = positions.record_start; });
-    scope_hashes_.with_masked(slot, [scope_hash](ScopeHash& held) noexcept { held = scope_hash; });
-    callsite_hashes_.with_masked(slot, [callsite_hash](CallsiteHash& held) noexcept { held = callsite_hash; });
-    depths_.with_masked(slot, [depth](OpDepth& held) noexcept { held = depth; });
+    entries_.set_masked(slot, entry);
+    meta_starts_.set_masked(slot, positions.meta_start);
+    record_starts_.set_masked(slot, positions.record_start);
+    scope_hashes_.set_masked(slot, scope_hash);
+    callsite_hashes_.set_masked(slot, callsite_hash);
+    depths_.set_masked(slot, depth);
     ++count_;
 }
 

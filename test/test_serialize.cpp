@@ -204,9 +204,7 @@ static void check_op_past_the_ring_is_refused() {
 [[nodiscard]] static ::fixy::HeapArray<std::byte>
 with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> image, size_t at, std::byte value) {
     ::fixy::HeapArray<std::byte> copy = ::fixy::mint_heap_array_copy<std::byte>(alloc, image);
-    copy.with_element(
-        at, [value](std::byte& element) noexcept { element = value; },
-        [] noexcept { ::fixy::fatal("the byte is inside the image"); });
+    copy.set(at, value);
     return copy;
 }
 
@@ -746,9 +744,7 @@ static void check_descriptor_images_agree() {
 
         const auto refuses_with_byte_set_at = [&](size_t at) {
             ::fixy::HeapArray<std::byte> corrupt = ::fixy::mint_heap_array_copy<std::byte>(test.alloc, image);
-            corrupt.with_element(
-                at, [](std::byte& element) noexcept { element = std::byte{1}; },
-                [] noexcept { ::fixy::fatal("the pad is inside the image"); });
+            corrupt.set(at, std::byte{1});
             ::fixy::BumpArena<DagArena> corrupt_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
             return reason_of(crucible::deserialize_region(test.alloc, corrupt.view(), corrupt_arena))
                 == crucible::LoadError::field_out_of_range;

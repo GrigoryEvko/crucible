@@ -901,9 +901,7 @@ int main() {
         write_object_file(root_of(cipher), crucible::ContentHash{0x3333333333333333ULL},
                           sound.window(0, 16).expect("the image holds sixteen bytes"));
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x3333333333333333ULL)) == LoadError::truncated);
-        image.with_element(
-            0, [](std::byte& element) noexcept { element = std::byte{0}; },
-            [] noexcept { ::fixy::fatal("the image holds its magic"); });
+        image.set(0, std::byte{0});
         write_object_file(root_of(cipher), crucible::ContentHash{0x4444444444444444ULL},
                           image.view().window(0, image_bytes).expect("the image holds its bytes"));
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x4444444444444444ULL)) == LoadError::bad_magic);

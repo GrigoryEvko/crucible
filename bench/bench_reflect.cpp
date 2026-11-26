@@ -624,10 +624,7 @@ int main() {
                    }),
         bench::run("hash<HeapRecord>     (64 words, 264 bytes)",
                    [&] {
-                       heap_record.words.with_element(
-                           0,
-                           [&vword](std::uint32_t& element) noexcept { element = static_cast<std::uint32_t>(vword); },
-                           [] noexcept { ::fixy::fatal("the array holds a word"); });
+                       heap_record.words.set(0, static_cast<std::uint32_t>(vword));
                        auto h = ::fixy::hash(heap_record).raw();
                        bench::do_not_optimize(h);
                    }),

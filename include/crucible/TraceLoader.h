@@ -391,11 +391,7 @@ decode_trace_op_(::fixy::View<std::byte const, RecordBytes> op_record, uint32_t 
         meta_cursor += total_tensors;
     }
 
-    const auto write_at_op = [i](auto& column, auto const& value) noexcept {
-        column.with_element(
-            i, [&value](auto& slot) noexcept -> void { slot = value; },
-            [] noexcept { ::fixy::fatal("an op index is below the op count"); });
-    };
+    const auto write_at_op = [i](auto& column, auto const& value) noexcept { column.set(i, value); };
     write_at_op(trace.entries, entry);
     write_at_op(trace.meta_starts, meta_start);
     write_at_op(trace.scope_hashes,
@@ -905,9 +901,7 @@ template <std::size_t OpBytes, std::size_t MetaBytes>
             return ::fixy::err(TraceLoadError::MetaCorrupt);
         }
         for (const TensorMeta& decoded : meta) {
-            trace.metas.with_element(
-                index, [&decoded](TensorMeta& slot) noexcept { slot = decoded; },
-                [] noexcept { ::fixy::fatal("a metadata index is below the metadata count"); });
+            trace.metas.set(index, decoded);
         }
         ++index;
     }

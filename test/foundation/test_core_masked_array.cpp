@@ -105,7 +105,7 @@ void test_counts_and_wrapping_keys() {
             CRUCIBLE_FATAL_INVARIANT(element == 0);
         }
         for (std::uint64_t position = 0; position < count; ++position) {
-            array.with_masked(position, [position](std::uint64_t& element) noexcept { element = position + 1; });
+            array.set_masked(position, position + 1);
         }
         for (std::uint64_t position = 0; position < count; ++position) {
             CRUCIBLE_FATAL_INVARIANT(array.at_masked(position + count) == position + 1);
@@ -131,6 +131,25 @@ void test_element_door_writes_in_place() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     MaskedArray<std::uint64_t> words = mint_masked_array<std::uint64_t>(alloc, 8);
     int const steps = words.with_masked(2 + 8 * 7, [](std::uint64_t& word) noexcept {
+        word |= 16;
+        return 1;
+    });
+    CRUCIBLE_FATAL_INVARIANT(steps == 1);
+    CRUCIBLE_FATAL_INVARIANT(words.at_masked(2) == 16 && words.at_masked(10) == 16);
+    std::uint64_t total = 0;
+    for (std::uint64_t const word : words.view()) {
+        total += word;
+    }
+    CRUCIBLE_FATAL_INVARIANT(total == 16);
+}
+
+// The update door writes one plain element at a masked key, and a key with the
+// same low bits names the same element.  The door gives the result of the
+// body, which writes a copy that the door puts back.
+void test_update_door_writes_one_element() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    MaskedArray<std::uint64_t> words = mint_masked_array<std::uint64_t>(alloc, 8);
+    int const steps = words.update_masked(2 + 8 * 7, [](std::uint64_t& word) noexcept {
         word |= 16;
         return 1;
     });
@@ -189,7 +208,15 @@ void test_move_and_destruction_counts() {
     {
         MaskedArray<Counted> first = mint_masked_array<Counted>(alloc, 8);
         CRUCIBLE_FATAL_INVARIANT(live_elements == 8);
-        first.with_masked(3, [](Counted& element) noexcept { element.label = 30; });
+        // A Counted neither copies nor moves, so the frame door of the run
+        // writes its label.
+        first = ::foundation::core::with_mut(std::move(first), [](auto run) noexcept {
+            std::size_t position = 0;
+            for (Counted& element : run) {
+                if (position == 3) element.label = 30;
+                ++position;
+            }
+        });
 
         // A move gives the storage to the target and leaves the source empty.
         MaskedArray<Counted> second{std::move(first)};
@@ -245,7 +272,7 @@ void test_agrees_with_plain_model() {
             for (int step = 0; step < 64; ++step) {
                 std::uint64_t const key = stream.next_wide();
                 std::uint64_t const value = stream.next_wide();
-                array.with_masked(key, [value](std::uint64_t& element) noexcept { element = value; });
+                array.set_masked(key, value);
                 auto cell = cells.get_mut(key % count).expect("a key modulo the count is below the count");
                 *cell = value;
             }
@@ -383,6 +410,7 @@ int main() {
     test_element_of_an_empty_array_aborts(test);
     test_counts_and_wrapping_keys();
     test_element_door_writes_in_place();
+    test_update_door_writes_one_element();
     test_each_alignment();
     test_pinned_slots();
     test_move_and_destruction_counts();

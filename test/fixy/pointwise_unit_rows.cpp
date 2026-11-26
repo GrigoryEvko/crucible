@@ -51,15 +51,12 @@ using Sizes = ::fixy::FixedArray<std::size_t, 3>;
         auto const body = [&](auto const& row, auto sums, auto const& left, auto const& right) noexcept {
             std::size_t const offset = row.offset(sums).value();
             std::size_t const number = offset / length;
-            next.with_element(
-                number,
-                [&](std::size_t& start) noexcept {
-                    is_ordered = is_ordered && row.index().value() == number && offset % length == start
-                              && (row.count().value() <= ::foundation::core::row_tile_extent
-                                  || row.count().value() == length);
-                    start += row.count().value();
-                },
-                [] noexcept { ::fixy::fatal("a row of the plan"); });
+            next.update(number, [&](std::size_t& start) noexcept {
+                is_ordered =
+                    is_ordered && row.index().value() == number && offset % length == start
+                    && (row.count().value() <= ::foundation::core::row_tile_extent || row.count().value() == length);
+                start += row.count().value();
+            });
             ++parts;
             for (auto const step : row.steps()) {
                 sums.at(row.offset(sums), step) = left.at(row.offset(left), step) + right.at(row.offset(right), step);

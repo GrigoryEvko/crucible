@@ -83,9 +83,7 @@ void test_fill_and_reads() {
     // get gives the element below the count, and no value at the count.
     CRUCIBLE_FATAL_INVARIANT(*numbers.get(999).expect("the position is below the count") == 3);
     CRUCIBLE_FATAL_INVARIANT(!numbers.get(1000).is_some());
-    numbers.with_element(
-        10, [](std::uint32_t& element) noexcept { element = 11; },
-        [] noexcept { ::foundation::core::fatal("the position is below the count"); });
+    numbers.set(10, std::uint32_t{11});
     HeapArray<std::uint32_t> const& fixed = numbers;
     CRUCIBLE_FATAL_INVARIANT(*fixed.get(10).expect("the position is below the count") == 11);
 
@@ -98,8 +96,8 @@ void test_fill_and_reads() {
 
 // The element door writes one element in place below the count and gives the
 // result of on_some.  At the count and past it, on_none runs, and no element
-// changes.  The door of a const array reads, and an empty array runs on_none
-// for each position.
+// changes.  An element of atomic cells takes a write in place too.  The door
+// of a const array reads, and an empty array runs on_none for each position.
 void test_element_door_writes_in_place() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     HeapArray<std::uint64_t> words = mint_heap_array(alloc, 4, std::uint64_t{1});
@@ -126,6 +124,19 @@ void test_element_door_writes_in_place() {
         total += word;
     }
     CRUCIBLE_FATAL_INVARIANT(total == 1 + 1 + 17 + 1);
+
+    HeapArray<::foundation::core::Atomic<std::uint64_t>> cells =
+        mint_heap_array_with<::foundation::core::Atomic<std::uint64_t>>(
+            alloc, 2, [](std::size_t) noexcept { return ::foundation::core::Atomic<std::uint64_t>{}; });
+    bool const is_written = cells.with_element(
+        1,
+        [](::foundation::core::Atomic<std::uint64_t>& cell) noexcept {
+            cell.store_release(9);
+            return true;
+        },
+        [] noexcept { return false; });
+    CRUCIBLE_FATAL_INVARIANT(is_written);
+    CRUCIBLE_FATAL_INVARIANT(cells.view().get(1).expect("the array holds two cells")->load_acquire() == 9);
 
     HeapArray<std::uint64_t> empty{};
     bool const is_none =
@@ -216,9 +227,7 @@ void test_equality() {
     HeapArray<int> const shorter = mint_heap_array(alloc, 3, 2);
     CRUCIBLE_FATAL_INVARIANT(left == right);
     CRUCIBLE_FATAL_INVARIANT(!(left == shorter));
-    right.with_element(
-        3, [](int& element) noexcept { element = 5; },
-        [] noexcept { ::foundation::core::fatal("the position is below the count"); });
+    right.set(3, 5);
     CRUCIBLE_FATAL_INVARIANT(!(left == right));
 }
 
@@ -231,9 +240,7 @@ void test_order() {
     HeapArray<int> longer = mint_heap_array(alloc, 4, 2);
     CRUCIBLE_FATAL_INVARIANT(prefix < longer);
     CRUCIBLE_FATAL_INVARIANT(longer > prefix);
-    longer.with_element(
-        0, [](int& element) noexcept { element = 1; },
-        [] noexcept { ::foundation::core::fatal("the position is below the count"); });
+    longer.set(0, 1);
     CRUCIBLE_FATAL_INVARIANT(longer < prefix);
     HeapArray<double> const negative_zero = mint_heap_array(alloc, 2, -0.0);
     HeapArray<double> const positive_zero = mint_heap_array(alloc, 2, 0.0);
@@ -275,9 +282,7 @@ void test_agrees_with_plain_model() {
         std::uint64_t model_sum = static_cast<std::uint64_t>(fill) * count;
         if (count != 0) {
             std::size_t const position = stream.below(count);
-            array.with_element(
-                position, [fill](std::uint32_t& element) noexcept { element = fill + 1; },
-                [] noexcept { ::foundation::core::fatal("the position is below the count"); });
+            array.set(position, fill + 1);
             model_sum += 1;
         }
         std::uint64_t sum = 0;
@@ -364,14 +369,10 @@ void test_with_builds_in_place() {
 void test_copy_of_view() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     HeapArray<std::uint32_t> source = mint_heap_array(alloc, 9, std::uint32_t{4});
-    source.with_element(
-        8, [](std::uint32_t& element) noexcept { element = 11; },
-        [] noexcept { ::foundation::core::fatal("the position is below the count"); });
+    source.set(8, std::uint32_t{11});
     HeapArray<std::uint32_t> copied = mint_heap_array_copy<std::uint32_t>(alloc, source.view());
     CRUCIBLE_FATAL_INVARIANT(copied == source);
-    copied.with_element(
-        0, [](std::uint32_t& element) noexcept { element = 2; },
-        [] noexcept { ::foundation::core::fatal("the position is below the count"); });
+    copied.set(0, std::uint32_t{2});
     CRUCIBLE_FATAL_INVARIANT(*source.get(0).expect("the position is below the count") == 4);
 
     HeapArray<std::uint32_t, 64> const window =

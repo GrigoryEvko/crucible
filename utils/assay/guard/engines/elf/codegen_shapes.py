@@ -595,6 +595,20 @@ PROBES: tuple[Probe, ...] = (
         checks=("fatal",),
     ),
     Probe(
+        "heap_array_update",
+        "update of a HeapArray adds one compare of the position with the count and one branch to the fatal exit to "
+        "the or of the raw subscript, with no call of the body: the copy of the element and its put-back fold into "
+        "the or",
+        checks=("fatal",),
+    ),
+    Probe(
+        "masked_array_update_masked",
+        "update_masked of a MaskedArray adds the test of the storage and one branch to the fatal exit to the or of "
+        "the raw masked subscript, with no call of the body: the copy of the element and its put-back fold into the "
+        "or",
+        checks=("fatal",),
+    ),
+    Probe(
         "fixed_array_copy_from",
         "copy_from of two FixedArrays is the two copies of the raw form",
         calls=("memmove",),

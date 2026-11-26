@@ -112,11 +112,12 @@ public:
     }
 
 private:
-    // Gives the byte at a position below size() to edit, in place.
+    // Gives a copy of the byte at a position below size() to edit, and puts
+    // the edited byte back.
     template <class Edit>
     void edit_byte_at_(ByteCount at, Edit edit) noexcept {
         if (at.raw() >= count_) ::fixy::fatal("an edit of a byte is at a position of the input");
-        front_.with_element(at.raw(), edit, [] noexcept { ::fixy::fatal("a position of the input is in the buffer"); });
+        front_.update(at.raw(), edit);
     }
 
     void swap_() noexcept {
