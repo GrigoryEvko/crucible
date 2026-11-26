@@ -23,9 +23,8 @@ namespace {
 // The path of an entry under the root of the store, with no leading slash,
 // because each file call reads it relative to the descriptor of the root.
 // The longest is the directory of the events of a session: "session_events/"
-// (15) and 16 digits, 31 characters.  The longest temporary name is the one
-// of a batch in its session directory: 16 digits, ".cfed" (5), ".tmp-" (5)
-// and 2 digits, 28 characters.
+// (15) and 16 digits, 31 characters.  The durable replace of fixy/os/Fs.h
+// makes the temporary name of a write.
 using EntryPath = ::foundation::os::PathText<64>;
 
 // The name of the shard directory of the object of hash under objects: the
@@ -119,142 +118,28 @@ template <class Ctx>
             [](::foundation::os::Errno) { return false; });
 }
 
-// How a write of an entry treats an entry that is at its name.
-enum class EntryCommit : std::uint8_t {
-    // The rename replaces the entry.  HEAD takes it, because its content
-    // changes from commit to commit.
-    replace,
-    // The rename keeps the entry, and the write gives EntryWrite::exists.  An
-    // object and a session-event batch take it, because their content names
-    // them, so a sound entry must not change.
-    keep_existing,
-};
-
-// The result of a write of an entry.
-enum class EntryWrite : std::uint8_t {
-    // The entry holds the bytes of the write, and they are durable.
-    written,
-    // Another writer made the entry first, and the write removed its own
-    // temporary file.  The caller checks the entry that is at the name.
-    exists,
-    failed,
-};
-
-// The count of the temporary names <name>.tmp-<two digits> that a write
-// tries.  A name that an entry holds belongs to another writer that writes
-// the same entry, or to a writer that a crash ended, so the write tries the
-// next name.
-inline constexpr std::uint64_t kTemporaryNameTries = 64;
-
-// Renames temporary onto target under dir and syncs dir.  keep_existing
-// renames with RENAME_NOREPLACE: an entry at target gives exists.  A file
-// system with no RENAME_NOREPLACE gives einval, and the rename then replaces
-// the entry, so the last full file of the name wins.  Each failure removes
-// the temporary file.
-template <class Ctx>
-[[nodiscard]] EntryWrite commit_temporary_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& dir,
-                                           EntryPath const& temporary, EntryPath const& target,
-                                           EntryCommit commit) noexcept {
-    using ::foundation::os::Errno;
-    const auto replace = [&] {
-        return ::fixy::fs::commit_atomic_at<::fixy::fs::atomicity::Rename>(ctx, dir.ref(), temporary.c_text(),
-                                                                           target.c_text());
-    };
-    const auto is_error = [](::fixy::Result<::fixy::Unit, Errno> const& renamed, Errno error) noexcept {
-        return renamed.is_err_and([error](Errno const& given) noexcept { return given == error; });
-    };
-    ::fixy::Result<::fixy::Unit, Errno> renamed =
-        commit == EntryCommit::replace ? replace()
-                                       : ::fixy::fs::commit_atomic_at<::fixy::fs::atomicity::RenameAt2NoReplace>(
-                                             ctx, dir.ref(), temporary.c_text(), target.c_text());
-    if (is_error(renamed, Errno::einval)) renamed = replace();
-    if (renamed.is_err()) {
-        static_cast<void>(::fixy::fs::unlink_at(ctx, dir.ref(), temporary.c_text()).is_ok());
-        return is_error(renamed, Errno::eexist) ? EntryWrite::exists : EntryWrite::failed;
-    }
-    // dir is owned by the caller and outlives this call, so the fsync needs
-    // no re-open of the parent path.
-    return ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, dir.ref()).is_ok() ? EntryWrite::written
-                                                                                         : EntryWrite::failed;
-}
-
-// Atomic write of an entry: write the bytes to a temporary file of this
-// writer under dir, fdatasync them, rename the file onto path, then fsync
-// dir.
+// Puts bytes at the entry name under dir, and keeps an entry that is at the
+// name (the keep commit of the durable replace of fixy/os/Fs.h).  An object
+// and a session-event batch take it, because their content names them, so a
+// sound entry does not change.  A kept entry gives
+// ReplaceOutcome::kept_entry, and the caller checks the entry at the name.
+// Bytes is a View of bytes or a TextView, the buffers that write_full takes.
 //
-// A plain truncate-and-write is the alternative and it loses.  The file
-// is observably empty between the truncate and the first write, and
-// partial between successive writes, so a crash in either window leaves
-// it corrupt.  Under the rename, the reader sees either the whole old
-// content or the whole new content.
-//
-// Each writer has its own temporary file.  The open of a temporary name is
-// exclusive (O_EXCL), so a name that another writer holds gives eexist, and
-// the write tries the next name.  Two writers of one entry with one shared
-// temporary name could truncate each other: one renames the file, and the
-// other cuts it to nothing before its own write reaches the disk.  A crash
-// before the rename leaves the temporary file of the crashed writer, and the
-// next writer takes the next name.
-//
-// The parent dirfd fsync is not optional.  renameat returns before the
-// directory entry necessarily reaches storage, and POSIX permits a crash
-// in between.  The rename would be lost, the old content would stand,
-// and the new bytes would be orphaned in the tmp file.  The fsync reaches
-// the directory of the rename only when path is one name in dir, so a path
-// with a slash ends the process.
-//
-// The doors retry EINTR on write, fdatasync, renameat and fsync.  If any
-// step fails after the tmp file exists, it is unlinked so a later run does
-// not trip over a partial-write artifact.  Bytes is a TextView, a span of
-// bytes or a View of bytes, the buffers that write_full takes.  Complexity:
-// one open for each temporary name that another writer holds, at most
-// kTemporaryNameTries.
+// A file system with no RENAME_NOREPLACE gives einval, and the write then
+// replaces the entry.  The replace is sound for the store: the name of an
+// object is its content hash, so the replace puts an image of the same
+// content hash at the name.  The name of a batch is the hash of its bytes,
+// and the last whole file of the name wins.  Complexity: the steps of one
+// durable replace, and of a second one after einval.
 template <class Ctx, class Bytes>
-[[nodiscard]] EntryWrite write_entry_at_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& dir, ::fixy::TextView path,
-                                         Bytes bytes, EntryCommit commit) noexcept {
-    CRUCIBLE_PRE(::fixy::find(path, '/').is_none());
-    EntryPath target{};
-    if (target.append(path).is_err()) return EntryWrite::failed;
-    using WriteExclusive = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteExclusive>;
-    using TemporaryFile = ::fixy::fs::FileOf<WriteExclusive>;
-    for (std::uint64_t attempt = 0; attempt < kTemporaryNameTries; ++attempt) {
-        EntryPath temporary{};
-        const bool is_named = temporary.append(path).is_ok() && temporary.append(::fixy::TextView{".tmp-"}).is_ok()
-                           && temporary.append_hex<2>(attempt).is_ok();
-        if (!is_named) return EntryWrite::failed;
-        // No value: another writer holds the name, and the write tries the
-        // next one.
-        const ::fixy::Option<EntryWrite> result =
-            ::fixy::fs::mint_file_at<WriteExclusive>(ctx, dir.ref(), temporary.c_text())
-                .match(
-                    [&](::fixy::Linear<TemporaryFile> opened) -> ::fixy::Option<EntryWrite> {
-                        // The nested scope closes the writer before the
-                        // rename, which is what POSIX recommends for
-                        // atomic-rename writes and keeps no extra descriptor
-                        // open across the rename window.
-                        bool is_durable = false;
-                        {
-                            const TemporaryFile file = std::move(opened).consume();
-                            is_durable = ::fixy::fs::write_full(ctx, file.ref(), bytes).is_ok()
-                                      && ::fixy::fs::sync<::fixy::fs::sync_op::Fdatasync>(ctx, file.ref()).is_ok();
-                        }
-                        if (!is_durable) {
-                            static_cast<void>(::fixy::fs::unlink_at(ctx, dir.ref(), temporary.c_text()).is_ok());
-                            return ::fixy::some(EntryWrite::failed);
-                        }
-                        // Anchoring both sides of the rename at the same dirfd
-                        // makes the swap immune to a concurrent rename of the
-                        // parent directory.
-                        return ::fixy::some(commit_temporary_(ctx, dir, temporary, target, commit));
-                    },
-                    [](::foundation::os::Errno error) -> ::fixy::Option<EntryWrite> {
-                        if (error == ::foundation::os::Errno::eexist) return ::fixy::none;
-                        return ::fixy::some(EntryWrite::failed);
-                    });
-        for (const EntryWrite written : result)
-            return written;
-    }
-    return EntryWrite::failed;
+[[nodiscard]] ::fixy::Result<::fixy::fs::ReplaceOutcome, ::foundation::os::Errno>
+place_entry_at_(Ctx const& ctx, ::fixy::fs::DirectoryHandle const& dir, ::fixy::CText name, Bytes bytes) noexcept {
+    using ::foundation::os::Errno;
+    ::fixy::Result<::fixy::fs::ReplaceOutcome, Errno> placed =
+        ::fixy::fs::replace_file_at<::fixy::fs::atomicity::RenameAt2NoReplace>(ctx, dir.ref(), name, bytes);
+    if (!placed.is_err_and([](Errno const& error) noexcept { return error == Errno::einval; })) return placed;
+    return ::fixy::fs::replace_file_at<::fixy::fs::atomicity::Rename>(ctx, dir.ref(), name, bytes)
+        .map([](::fixy::Unit) noexcept { return ::fixy::fs::ReplaceOutcome::written; });
 }
 
 // The bytes of one read of the scan of whole_lines_size_.  A torn record is
@@ -836,22 +721,32 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
 
     // The write puts the image in a temporary file of this writer in the
     // shard, flushes its bytes, renames it onto the object, and syncs the
-    // shard.  A reader then sees the whole object or no object, and a hash
-    // that this function returns is loadable after a crash.  A new object
-    // keeps an object that another writer made in the meantime: a sound one
-    // counts as durable, and a damaged one takes the image of this writer.  A
-    // damaged object that was there before takes it at once.
-    const auto write_object = [&](EntryCommit commit) {
-        return with_file_ctx_(file_ctx, [&](auto const& ctx) {
-            return write_entry_at_(ctx, shard_dir, leaf.c_text().view(), written, commit);
+    // shard (the durable replace of fixy/os/Fs.h).  A reader then sees the
+    // whole object or no object, and a hash that this function returns is
+    // loadable after a crash.  A new object keeps an object that another
+    // writer made in the meantime: a sound one counts as durable, and a
+    // damaged one takes the image of this writer.  A damaged object that was
+    // there before takes it at once.
+    using Placed = ::fixy::Result<::fixy::fs::ReplaceOutcome, ::foundation::os::Errno>;
+    const auto replace_object = [&]() -> Placed {
+        return with_file_ctx_(file_ctx, [&](auto const& ctx) -> Placed {
+            return ::fixy::fs::replace_file_at<::fixy::fs::atomicity::Rename>(ctx, shard_dir.ref(), leaf.c_text(),
+                                                                              written)
+                .map([](::fixy::Unit) noexcept { return ::fixy::fs::ReplaceOutcome::written; });
         });
     };
-    EntryWrite stored = write_object(is_present ? EntryCommit::replace : EntryCommit::keep_existing);
-    if (stored == EntryWrite::exists) {
-        if (with_file_ctx_(file_ctx, is_sound_and_flushed)) return hash;
-        stored = write_object(EntryCommit::replace);
-    }
-    if (stored != EntryWrite::written) {
+    const auto place_object = [&]() -> Placed {
+        return with_file_ctx_(file_ctx, [&](auto const& ctx) -> Placed {
+            return place_entry_at_(ctx, shard_dir, leaf.c_text(), written);
+        });
+    };
+    const Placed placed = is_present ? replace_object() : place_object();
+    const bool is_kept = placed.is_ok_and([](::fixy::fs::ReplaceOutcome const& place) noexcept {
+        return place == ::fixy::fs::ReplaceOutcome::kept_entry;
+    });
+    if (is_kept && with_file_ctx_(file_ctx, is_sound_and_flushed)) return hash;
+    const bool is_stored = is_kept ? replace_object().is_ok() : placed.is_ok();
+    if (!is_stored) {
         return ContentHash{};
     }
 
@@ -1014,13 +909,15 @@ Cipher::PersistResult Cipher::persist_session_events_(FileCtx const& file_ctx, O
         if (is_batch_present) {
             CRUCIBLE_TRY(_, check_stored_batch());
         } else {
-            const EntryWrite written =
-                write_entry_at_(ctx, session_dir, batch.c_text().view(), ::fixy::View<std::byte const>{encoded.view()},
-                                EntryCommit::keep_existing);
-            if (written == EntryWrite::exists) {
+            using Placed = ::fixy::Result<::fixy::fs::ReplaceOutcome, ::foundation::os::Errno>;
+            const Placed placed =
+                place_entry_at_(ctx, session_dir, batch.c_text(), ::fixy::View<std::byte const>{encoded.view()});
+            if (placed.is_err()) return ::fixy::err(PersistRefusal::batch_write_failed);
+            const bool is_kept = placed.is_ok_and([](::fixy::fs::ReplaceOutcome const& place) noexcept {
+                return place == ::fixy::fs::ReplaceOutcome::kept_entry;
+            });
+            if (is_kept) {
                 CRUCIBLE_TRY(_, check_stored_batch());
-            } else if (written != EntryWrite::written) {
-                return ::fixy::err(PersistRefusal::batch_write_failed);
             }
         }
         if (!append_entry_at_(ctx, session_dir, "index", index_line)) {
@@ -1296,14 +1193,17 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
                                            ::fixy::session::StateHash{content_hash.raw()}, order));
     head_ = content_hash;
 
-    // HEAD is a copy of the last commit of the log.  A failed write leaves
-    // HEAD at an earlier commit, and the open takes the head from the log.
+    // HEAD is a copy of the last commit of the log.  The durable replace of
+    // fixy/os/Fs.h puts the new HEAD in place, so a reader sees the whole old
+    // HEAD or the whole new one.  A failed write leaves HEAD at an earlier
+    // commit, and the open takes the head from the log.
     ::fixy::FixedText<17> head_line{};
     head_line.append(hash_digits.view()).expect("sixteen digits fit the HEAD line");
     head_line.append('\n').expect("the newline fits the HEAD line");
     const bool is_head_written = with_file_ctx_(file_ctx, [&](auto ctx) {
-        return write_entry_at_(ctx, root_directory_, "HEAD", head_line.view(), EntryCommit::replace)
-            == EntryWrite::written;
+        return ::fixy::fs::replace_file_at<::fixy::fs::atomicity::Rename>(ctx, root_directory_.ref(), "HEAD",
+                                                                          head_line.view())
+            .is_ok();
     });
 
     CRUCIBLE_POST(0, head_ == content_hash);

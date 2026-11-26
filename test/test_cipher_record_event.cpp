@@ -864,6 +864,38 @@ static void test_failed_log_append_cuts_back(::fixy::fs::TemporaryDirectory cons
     ::fixy::check::pass(kTest, "  failed_log_append_cuts_back:            PASSED\n");
 }
 
+// A commit whose write of the new HEAD fails after a part of its bytes keeps
+// the old HEAD whole, and the durable replace removes its temporary file.  The
+// log append comes first and passes, so the commit stands: the head moves, and
+// a reopen takes it from the log.  The write fault of the test lets the log
+// line pass whole and cuts the new HEAD after five bytes.
+
+static void test_failed_head_write_keeps_the_old_head(::fixy::fs::TemporaryDirectory const& scratch) {
+    constexpr ::fixy::TextView kSecondLine{"2,000000000000b002,2\n"};
+    {
+        auto cipher = open_store(scratch, "head_fault");
+        auto view = cipher.mint_open_view(store_ctx());
+        record(cipher, store_ctx(), view, ContentHash{0xB001u}, 1u);
+        {
+            const ::fixy::fs::WriteFaultScope fault = ::fixy::fs::WriteFaultScope::arm(
+                kTest, ::foundation::core::ByteCount{kSecondLine.size() + 5}, ::fixy::fs::WriteFailure::no_space);
+            CRUCIBLE_TEST_ASSERT(kTest, failure_of(cipher.record_event(store_ctx(), view, ContentHash{0xB002u}, 2u))
+                                            == Cipher::CommitError::head_write);
+        }
+        CRUCIBLE_TEST_ASSERT(kTest, holds_text(scratch, "head_fault/HEAD", "000000000000b001\n")
+                                        && "the failed write keeps the old HEAD whole");
+        CRUCIBLE_TEST_ASSERT(
+            kTest, !::fixy::fs::has_entry_at(store_ctx(), scratch.ref(), "head_fault/HEAD.tmp-00").value_or(true)
+                       && "the failed write removes its temporary file");
+        CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0xB002u});
+    }
+
+    auto reopened = open_store(scratch, "head_fault");
+    CRUCIBLE_TEST_ASSERT(kTest, reopened.head() == ContentHash{0xB002u});
+
+    ::fixy::check::pass(kTest, "  failed_head_write_keeps_the_old_head:   PASSED\n");
+}
+
 // A failed HEAD write comes after a durable log append.  The commit
 // reports the failure, and the commit stands: the head moves in memory,
 // and a reopen takes the same head from the log, while HEAD names no
@@ -952,6 +984,7 @@ int main() {
     test_pre_clause_orthogonal(scratch);
     test_failed_log_append_moves_no_head(scratch);
     test_failed_log_append_cuts_back(scratch);
+    test_failed_head_write_keeps_the_old_head(scratch);
     test_failed_head_write_keeps_the_logged_commit(scratch);
     test_head_without_logged_commit(scratch);
 
