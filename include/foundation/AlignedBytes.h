@@ -397,10 +397,12 @@ public:
     // a byte past the last one, ends the process, and the AlignedBytes then
     // never exists.  The writer holds no linear value by value
     // (HoldsNoLinearValue of foundation/Linear.h): the door calls it and ends
-    // it, and a call is no consume.  Complexity: the writes of the writer.
+    // it, and a call is no consume.  The lease is a local of the door, so the
+    // writer stores no borrow outside the call (StoresNoBorrowOutside of
+    // foundation/core/CaptureStore.h).  Complexity: the writes of the writer.
     template <class Writer>
         requires std::is_nothrow_invocable_v<Writer&, core::WriteLease<std::uint8_t>&>
-              && ::foundation::linear::HoldsNoLinearValue<Writer>
+              && ::foundation::linear::HoldsNoLinearValue<Writer> && core::StoresNoBorrowOutside<Writer>
     [[nodiscard]] AlignedBytes write(Writer writer) && noexcept {
         State given = take_state_();
         core::View<std::uint8_t> const run = written_run_(given);
@@ -419,6 +421,13 @@ public:
         requires std::is_invocable_v<Writer&, core::WriteLease<std::uint8_t>&>
                   && (!::foundation::linear::HoldsNoLinearValue<Writer>)
     void write(Writer writer) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+    // A writer that can store a borrow outside the call binds to this
+    // overload, so the refusal gives its reason.
+    template <class Writer>
+        requires std::is_invocable_v<Writer&, core::WriteLease<std::uint8_t>&>
+                  && ::foundation::linear::HoldsNoLinearValue<Writer> && (!core::StoresNoBorrowOutside<Writer>)
+    void write(Writer writer) && = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // A named block stays with the caller, so a door that gives it away
     // takes an rvalue.  A read of the bytes before a write has no door.

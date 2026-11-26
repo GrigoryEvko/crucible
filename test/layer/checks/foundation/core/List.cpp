@@ -234,6 +234,26 @@ static_assert(!std::is_trivially_default_constructible_v<Owner>);
 }
 static_assert(append_after_the_empty_member() == 5 + 6 + 6);
 
+// The drain ends the list that it holds, so its gate (LentArmStoresNoBorrow of
+// foundation/core/Choice.h) refuses a body that takes an element by reference
+// and can store a borrow outside the call, such as a body with a reference to
+// an Option of a View.  It admits the same body with a reference to a count,
+// and a body that takes the element by value gets a copy.  The fixture
+// neg_core_fixed_list_drain_keeps_an_element shows the refusal of the door.
+template <class Kept>
+struct KeepsElementByReference final {
+    Kept& kept;
+    void operator()(Owner const& /*element*/) const noexcept {}
+};
+template <class Kept>
+struct KeepsElementByValue final {
+    Kept& kept;
+    void operator()(Owner /*element*/) const noexcept {}
+};
+static_assert(!LentArmStoresNoBorrow<KeepsElementByReference<Option<View<int const>>>, Owner>);
+static_assert(LentArmStoresNoBorrow<KeepsElementByReference<int>, Owner>
+              && LentArmStoresNoBorrow<KeepsElementByValue<Option<View<int const>>>, Owner>);
+
 }  // namespace detail::list_checks
 
 }  // namespace foundation::core

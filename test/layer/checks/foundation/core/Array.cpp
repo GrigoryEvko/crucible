@@ -575,6 +575,17 @@ static_assert(!CanMintHeapArrayWritten<int, alignof(int), OtherTag, WritesNothin
 static_assert(!CanMintHeapArrayWritten<::foundation::lifetime::detail::HoldsProof,
                                        alignof(::foundation::lifetime::detail::HoldsProof), Alloc, WritesNothing>);
 static_assert(!CanMintHeapArrayWritten<Anchored, alignof(Anchored), Alloc, WritesNothing>);
+// The lease is a local of the mint, so the mint refuses a writer that can store
+// a borrow outside the call, such as a writer with a reference to an Option of
+// a View, and admits the same writer with a reference to a count
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
+template <class Kept>
+struct WritesAndKeeps final {
+    Kept& kept;
+    void operator()(WriteLease<int>& lease) const noexcept { static_cast<void>(lease.remaining()); }
+};
+static_assert(!CanMintHeapArrayWritten<int, alignof(int), Alloc, WritesAndKeeps<Option<View<int const>>>>);
+static_assert(CanMintHeapArrayWritten<int, alignof(int), Alloc, WritesAndKeeps<int>>);
 template <class Lease>
 concept ReadsLease = requires(Lease& lease) { lease.view(); } || requires(Lease& lease) { lease.get(0); }
                   || requires(Lease& lease) { lease[0]; } || requires(Lease& lease) { lease.data(); };

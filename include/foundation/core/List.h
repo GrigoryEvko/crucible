@@ -698,10 +698,13 @@ public:
     // the list.  The list moves into the frame of the door, so no other name
     // has an element while body runs.  Only an element that a holder can drop
     // has drain(): a body that takes the element by reference would drop a
-    // linear value.  Complexity: O(size()) moves and calls of body.
+    // linear value.  The list of the frame ends each element, so a body that
+    // takes it by reference stores no borrow outside the call
+    // (LentArmStoresNoBorrow of foundation/core/Choice.h).  Complexity:
+    // O(size()) moves and calls of body.
     template <class Body>
         requires DroppablePayload<T> && std::is_nothrow_invocable_r_v<void, Body&, T>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && LentArmStoresNoBorrow<Body, T>
     constexpr void drain(Body&& body) && noexcept {
         FixedList held{static_cast<FixedList&&>(*this)};
         for (std::size_t position = 0; position != held.count_; ++position) {
@@ -711,6 +714,10 @@ public:
     template <class Body>
         requires(!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&, T>
     void drain(Body&& body) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires DroppablePayload<T> && std::is_nothrow_invocable_r_v<void, Body&, T>
+                  && ::foundation::linear::HoldsNoLinearValue<Body> && (!LentArmStoresNoBorrow<Body, T>)
+    void drain(Body&& body) && = delete(CRUCIBLE_STORING_BODY_REFUSAL);
     template <class Body>
     void drain(Body&& body) & = delete("drain gives each element away and ends the list: drain std::move(list)");
 

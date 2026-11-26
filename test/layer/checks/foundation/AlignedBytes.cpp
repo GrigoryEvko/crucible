@@ -2,6 +2,9 @@
 
 #include <foundation/AlignedBytes.h>
 
+#include <foundation/core/Choice.h>
+#include <foundation/core/Region.h>
+
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -68,6 +71,22 @@ static_assert(!std::is_copy_constructible_v<UnwrittenBytes> && !std::is_copy_ass
 static_assert(std::is_nothrow_move_constructible_v<UnwrittenBytes>);
 static_assert(!lends_view<UnwrittenBytes> && !lends_view<UnwrittenBytes const> && lends_view<AlignedBytes>);
 static_assert(!fills_named<UnwrittenBytes> && fills_moved<UnwrittenBytes>);
+
+// The lease of a write is a local of the door, so the door refuses a writer
+// that can store a borrow outside the call, such as a writer with a reference
+// to an Option of a View, and admits the same writer with a reference to a
+// count (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
+template <class Kept>
+struct WritesAndKeeps final {
+    Kept& kept;
+    void operator()(core::WriteLease<std::uint8_t>& lease) const noexcept { static_cast<void>(lease.remaining()); }
+};
+template <class Writer>
+concept writes_moved = requires(UnwrittenBytes& block, Writer writer) {
+    { static_cast<UnwrittenBytes&&>(block).write(writer) } -> std::same_as<AlignedBytes>;
+};
+static_assert(!writes_moved<WritesAndKeeps<core::Option<core::View<int const>>>>);
+static_assert(writes_moved<WritesAndKeeps<int>>);
 
 // A constant evaluation builds an empty block and destroys it, so a class
 // with an empty block member is a literal type.

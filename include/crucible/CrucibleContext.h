@@ -507,12 +507,15 @@ private:
         next_external_read_ = count;
         // The lease writes each read once, in order, so a read needs no
         // default value.  The second pass gives the reads that the first
-        // pass counted.
+        // pass counted.  The writer captures only the parts that it reads and
+        // writes, so it reaches no other member of the context.
+        uint32_t& next_read = next_external_read_;
         external_reads_ = ::fixy::mint_heap_array_written<ExternalRead>(
-            allocation_, count, [&](::fixy::WriteLease<ExternalRead>& lease) noexcept {
+            allocation_, count,
+            [&each_read, &next_read, &filled, count, resume_op](::fixy::WriteLease<ExternalRead>& lease) noexcept {
                 each_read([&](const ExternalRead& read) noexcept {
                     lease.put(read);
-                    if (next_external_read_ == count && read.op.raw() >= resume_op.raw()) next_external_read_ = filled;
+                    if (next_read == count && read.op.raw() >= resume_op.raw()) next_read = filled;
                     ++filled;
                 });
             });

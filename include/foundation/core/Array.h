@@ -1646,12 +1646,14 @@ public:
 // over its bytes, and that a move of bytes writes (RegionCopyElement).  The
 // writer takes the WriteLease with no throw, and holds no linear value by
 // value (HoldsNoLinearValue of foundation/Linear.h): the mint calls it and
-// ends it, and a call is no consume.
+// ends it, and a call is no consume.  The lease is a local of the mint, so
+// the writer stores no borrow outside the call (StoresNoBorrowOutside of
+// foundation/core/CaptureStore.h).
 template <class T, std::size_t Align, class Marker, class Writer>
-concept CanMintHeapArrayWritten =
-    OwnedElement<T> && detail::HeapArrayAlignment<T, Align> && AllocationCapability<Marker>
-    && ::foundation::lifetime::ImplicitLifetimeThroughout<T> && RegionCopyElement<T>
-    && std::is_nothrow_invocable_v<Writer&, WriteLease<T>&> && ::foundation::linear::HoldsNoLinearValue<Writer>;
+concept CanMintHeapArrayWritten = OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
+                               && AllocationCapability<Marker> && ::foundation::lifetime::ImplicitLifetimeThroughout<T>
+                               && RegionCopyElement<T> && std::is_nothrow_invocable_v<Writer&, WriteLease<T>&>
+                               && ::foundation::linear::HoldsNoLinearValue<Writer> && StoresNoBorrowOutside<Writer>;
 
 // A HeapArray owns its elements alone, so it moves between threads as its
 // element does (foundation/Transfer.h).
@@ -2047,6 +2049,14 @@ template <class T, std::size_t Align = alignof(T), class Marker, class Writer>
               && (!::foundation::linear::HoldsNoLinearValue<Writer>)
 void mint_heap_array_written(Marker allocation, std::size_t count,
                              Writer writer) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A writer that can store a borrow outside the call binds to this overload,
+// so the refusal gives its reason.
+template <class T, std::size_t Align = alignof(T), class Marker, class Writer>
+    requires AllocationCapability<Marker> && std::is_nothrow_invocable_v<Writer&, WriteLease<T>&>
+              && ::foundation::linear::HoldsNoLinearValue<Writer> && (!StoresNoBorrowOutside<Writer>)
+void mint_heap_array_written(Marker allocation, std::size_t count,
+                             Writer writer) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 // ── MaskedArray ────────────────────────────────────────────────────────────
 

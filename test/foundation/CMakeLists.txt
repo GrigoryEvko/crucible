@@ -2410,6 +2410,12 @@ foundation_neg_compile_test(neg_aligned_bytes_zeroed_without_allocation_marker
 foundation_neg_compile_test(neg_aligned_bytes_unwritten_view
   "use of deleted function .void foundation::UnwrittenBytes::view\\(\\) const."
   "the bytes of an UnwrittenBytes hold no value: fill or write them first")
+# The lease of a write is a local of the door, so the door refuses a writer
+# that captures by reference an Option of a View, and the store twin gives the
+# reason.
+foundation_neg_compile_test(neg_aligned_bytes_write_keeps_a_view
+  "use of deleted function .void foundation::UnwrittenBytes::write\\(Writer\\) &&"
+  "a body of a frame door stores no borrow outside the frame")
 
 # ── The thread-local cell ─────────────────────────────────────────────
 #
@@ -6007,6 +6013,12 @@ foundation_neg_compile_test(neg_core_fixed_list_set_linear
 foundation_neg_compile_test(neg_core_fixed_list_update_move_only
   "use of deleted function .void foundation::core::FixedList<T, N>::update\\(foundation::core::Index<Count>, Body&&\\) &"
   "update gives the body a copy of the element and assigns the copy back")
+# The drain gives each element from the list that the door holds and ends.  It
+# refuses a body that takes the element by reference and captures by reference
+# an Option of a View, and the store twin gives the reason.
+foundation_neg_compile_test(neg_core_fixed_list_drain_keeps_an_element
+  "use of deleted function .void foundation::core::FixedList<T, N>::drain\\(Body&&\\) &&"
+  "a body of a frame door stores no borrow outside the frame")
 foundation_neg_compile_test(neg_core_fixed_list_update_without_assignment
   "use of deleted function .void foundation::core::FixedList<T, N>::update\\(foundation::core::Index<Count>, Body&&\\) &"
   "update gives the body a copy of the element and assigns the copy back")
@@ -6161,6 +6173,12 @@ foundation_neg_compile_test(neg_core_heap_array_written_proof_element
 foundation_neg_compile_test(neg_core_heap_array_written_read_before_write
   "neg_core_heap_array_written_read_before_write\\.cpp:14:[0-9]+: error: .class foundation::core::WriteLease<unsigned int>. has no member named .get."
   "has no member named .get.")
+# The lease of the mint is a local of the mint, so the mint refuses a writer
+# that captures by reference an Option of a View, and the store twin gives the
+# reason.
+foundation_neg_compile_test(neg_core_heap_array_written_keeps_a_view
+  "use of deleted function .void foundation::core::mint_heap_array_written\\(Marker, std::size_t, Writer\\)"
+  "a body of a frame door stores no borrow outside the frame")
 foundation_neg_compile_test(neg_core_masked_array_copied
   "use of deleted function .foundation::core::MaskedArray<T, Align>::MaskedArray\\(const foundation::core::MaskedArray<T, Align>&\\) \\[with T = int; long unsigned int Align = 4\\]."
   "a MaskedArray owns its storage alone: a copy would free the storage two times")
