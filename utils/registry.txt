@@ -107,6 +107,7 @@ path utils/registry.txt | the registry of the rules and the permitted paths
 path utils/rule-table.txt | the rule table of the base layers and of the quarantine, which the quarantine plugin and assay.core.ruletable read
 path utils/toolchain/gcc/patches/*.patch | the GCC patches
 path utils/tools/*.cpp | dump_row_hashes, a C++ tool
+path utils/tools/fp_tables.py | the generator of the tables and the coefficients of include/fixy/fp/, which a person runs with the pinned mpmath and copies into the headers.  It is outside the package
 path utils/tools/lsp_code_action_plugin/* | the LSP plugin, a C++ tool
 path utils/tools/quarantine/* | the quarantine plugin and its build: one source for each rule family, the reader rows.h of the rows grammar, and the host program rows_reader.cpp of the rule rows-readers
 path utils/tools/row_hash_golden.txt | the golden of dump_row_hashes, which `loop derive row-hashes` writes and the rule derived-files compares
