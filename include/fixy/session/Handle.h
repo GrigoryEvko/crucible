@@ -1714,11 +1714,13 @@ public:
     // the call, so a body that names the handle through a capture finds it
     // consumed.  A body that returns nothing gives the handle back, and a
     // body that returns a value gives a Record of that value and the handle.
+    // The body stores no borrow outside the call (HoldFactory::read_slot of
+    // fixy/session/Flow.h).
     template <typename Tag, typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Body>
         requires(detail::holds_loan_of(^^PS, ^^Tag))
              && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<PS, Tag>>
-             && ::foundation::linear::HoldsNoLinearValue<Body>
+             && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>
     [[nodiscard]] static constexpr auto read(SessionHandle<Proto, Resource, LoopCtx, Policy, PS>&& handle,
                                              Body&& body) {
         core_(handle).require_live_();
@@ -1959,7 +1961,7 @@ public:
     template <typename Tag, typename Self, typename Body>
         requires(!std::is_reference_v<Self>) && (detail::holds_loan_of(^^PS, ^^Tag))
              && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<PS, Tag>>
-             && ::foundation::linear::HoldsNoLinearValue<Body>
+             && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>
     [[nodiscard]] constexpr auto read(this Self&& self, Body&& body) {
         return HandleFactory::template read<Tag>(std::move(self), std::forward<Body>(body));
     }

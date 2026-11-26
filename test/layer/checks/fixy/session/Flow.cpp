@@ -151,6 +151,34 @@ static_assert(
     std::is_same_v<decltype(std::declval<FlowReader>().read([](SharedView const&) noexcept { return FlowCount{}; })),
                    ::foundation::core::Record<FlowCount, FlowReader>>);
 
+// Each read door asks StoresNoBorrowOutside of its body
+// (foundation/core/CaptureStore.h).  A body that captures by reference an
+// Option of a View can keep a View past the read, so the door refuses it, and
+// a requires-expression on the door answers no.  The same body with no such
+// capture reads.
+struct KeepsAView {
+    ::foundation::core::Option<::foundation::core::View<int const>>& kept;
+    template <class View>
+    void operator()(View const& /*view*/) const noexcept {}
+};
+struct ReadsOnly {
+    template <class View>
+    void operator()(View const& /*view*/) const noexcept {}
+};
+template <class Body>
+inline constexpr bool share_reads_v =
+    requires(FlowReader reader, Body body) { std::move(reader).read(std::move(body)); };
+template <class Body>
+inline constexpr bool hold_reads_v =
+    requires(Borrowing hold, Body body) { std::move(hold).template read<FlowRegion>(std::move(body)); };
+template <class Body>
+inline constexpr bool slot_reads_v = requires(HoldSlots<Borrowing::perm_set>& slots, Body body) {
+    HoldFactory::read_slot<FlowRegion>(slots, std::move(body));
+};
+static_assert(!share_reads_v<KeepsAView> && share_reads_v<ReadsOnly>);
+static_assert(!hold_reads_v<KeepsAView> && hold_reads_v<ReadsOnly>);
+static_assert(!slot_reads_v<KeepsAView> && slot_reads_v<ReadsOnly>);
+
 // A pack, a lend and a release give the message and the hold of the next set
 // in a Record.  The move of each marker is noexcept, so a payload whose move
 // can throw gives a Record too.

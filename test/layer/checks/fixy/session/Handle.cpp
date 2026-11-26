@@ -132,4 +132,41 @@ static_assert(::foundation::core::StoresNoBorrowOutside<decltype(PinStage{}.body
 
 }  // namespace detail::pin_body_self_test
 
+namespace detail::read_body_self_test {
+
+// The read of a handle and the read of the factory ask StoresNoBorrowOutside
+// of the body (HoldFactory::read_slot of fixy/session/Flow.h).  A body that
+// captures by reference an Option of a View can keep a View past the read, so
+// each door refuses it, and a requires-expression on the door answers no.  The
+// same body with no such capture reads.
+struct ReadRegion {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct ReadBrand {};
+struct ReadWire {
+    int sent = 0;
+};
+using Borrows = ::foundation::permissions::PermSet<BorrowedIn<ReadRegion, ReadBrand>>;
+using ReadHead =
+    SessionHandle<Send<Released<int, ReadRegion, ReadBrand>, End>, ReadWire, void, check::Enforced, Borrows>;
+struct KeepsAView {
+    ::fixy::Option<::fixy::View<int const>>& kept;
+    template <class View>
+    void operator()(View const& /*view*/) const noexcept {}
+};
+struct ReadsOnly {
+    template <class View>
+    void operator()(View const& /*view*/) const noexcept {}
+};
+template <class Body>
+inline constexpr bool handle_reads_v =
+    requires(ReadHead head, Body body) { std::move(head).template read<ReadRegion>(std::move(body)); };
+template <class Body>
+inline constexpr bool factory_reads_v =
+    requires(ReadHead head, Body body) { HandleFactory::read<ReadRegion>(std::move(head), std::move(body)); };
+static_assert(!handle_reads_v<KeepsAView> && handle_reads_v<ReadsOnly>);
+static_assert(!factory_reads_v<KeepsAView> && factory_reads_v<ReadsOnly>);
+
+}  // namespace detail::read_body_self_test
+
 }  // namespace fixy::session

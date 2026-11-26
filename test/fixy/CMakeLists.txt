@@ -3531,6 +3531,12 @@ fixy_neg_compile_test(neg_sess_pin_body_holds_linear
 fixy_neg_compile_test(neg_sess_pin_body_keeps_a_view_of_the_resource
   "no matching function for call to .fixy::session::HandleFactory::pin\\("
   "required for the satisfaction of .StoresNoBorrowOutside<Body>.")
+# A read of a hold lends a view of a borrowed region to its body, so a body
+# that keeps a View in an Option that it captures by reference keeps a borrow
+# past the read.  The read of the hold refuses it at its own call.
+fixy_neg_compile_test(neg_sess_hold_read_body_keeps_a_view
+  "no matching function for call to .fixy::session::PermHold<"
+  "required for the satisfaction of .StoresNoBorrowOutside<Body>.")
 fixy_neg_compile_test(neg_sess_transport_holds_linear
   "no matching function for call to .fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>"
   "required for the satisfaction of .HoldsNoLinearValue<F>.")

@@ -81,6 +81,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Record.h>
 #include <foundation/permissions/PermSet.h>
@@ -290,10 +291,13 @@ public:
     // back.  The reader is consumed for the call, so the body cannot end
     // the share through a capture while the view lives.  A body that
     // returns nothing gives the reader back, and a body that returns a
-    // value gives a Record of that value and the reader.
+    // value gives a Record of that value and the reader.  The body stores
+    // no borrow outside the call (StoresNoBorrowOutside of
+    // foundation/core/CaptureStore.h), so a borrow that it keeps does not
+    // outlive the share.
     template <class Body>
         requires ::foundation::permissions::ReadViewBody<Body, Tag, Brand>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>
     [[nodiscard]] auto
     read(Body&& body) && noexcept(::foundation::permissions::detail::read_view_door_nothrow_v<
                                   ::foundation::permissions::SharedPermissionGuard<Tag, Brand>, Body>) {
@@ -1439,11 +1443,13 @@ public:
 
     // Runs the body with a read view of a region that the slots borrow, and
     // puts the loan back.  The view has the brand of the loan.  A body that
-    // returns nothing gives nothing back.
+    // returns nothing gives nothing back.  The body stores no borrow outside
+    // the call (StoresNoBorrowOutside of foundation/core/CaptureStore.h), so
+    // a borrow that it keeps does not outlive the loan.
     template <class Tag, class Set, class Body>
         requires(detail::holds_loan_of(^^Set, ^^Tag))
              && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<Set, Tag>>
-             && ::foundation::linear::HoldsNoLinearValue<Body>
+             && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>
     [[nodiscard]] static constexpr auto read_slot(HoldSlots<Set>& slots, Body&& body) noexcept(
         ::foundation::permissions::detail::read_view_door_nothrow_v<detail::hold_slot_t<detail::element_of_t<Set, Tag>>,
                                                                     Body>) {
@@ -1676,11 +1682,12 @@ public:
     // body that names the hold through a capture finds it spent, and a
     // transition on it aborts.  A body that returns nothing gives the
     // hold back, and a body that returns a value gives a Record of that
-    // value and the hold.
+    // value and the hold.  The body stores no borrow outside the call
+    // (HoldFactory::read_slot).
     template <class Tag, class Body>
         requires(detail::holds_loan_of(^^Set, ^^Tag))
              && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<Set, Tag>>
-             && ::foundation::linear::HoldsNoLinearValue<Body>
+             && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>
     [[nodiscard]] constexpr auto read(Body&& body) && noexcept(
         ::foundation::permissions::detail::read_view_door_nothrow_v<detail::hold_slot_t<detail::element_of_t<Set, Tag>>,
                                                                     Body>) {
