@@ -330,6 +330,8 @@ constexpr long kNoCall = -1;
             return __NR_statx;
         case Syscall::socketpair:
             return __NR_socketpair;
+        case Syscall::shutdown:
+            return __NR_shutdown;
         default:
             return kNoCall;
     }
@@ -622,6 +624,7 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::setsockopt:
         case Syscall::getsockopt:
         case Syscall::socket:
+        case Syscall::shutdown:
         case Syscall::bind:
         case Syscall::sendto:
         case Syscall::recvfrom:

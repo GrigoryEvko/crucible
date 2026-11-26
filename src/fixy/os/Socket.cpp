@@ -104,6 +104,13 @@ core::Result<int, os::Errno> open_socket_(int domain, int type, int protocol) no
         .map([](std::uint64_t descriptor) noexcept { return static_cast<int>(descriptor); });
 }
 
+UnitResult shut_down_writes_(int socket) noexcept {
+    if (is_closed(socket)) {
+        return core::err(os::Errno::ebadf);
+    }
+    return unit_of(os::raw_syscall(os::Syscall::shutdown, socket, shut_down_write_direction));
+}
+
 core::Result<SocketPairNumbers, os::Errno> open_socket_pair_(int domain, int type, int protocol) noexcept {
     SocketPairNumbers numbers{};
     return os::result_of(os::raw_syscall(os::Syscall::socketpair, domain, type | socket_close_on_exec_flag, protocol,

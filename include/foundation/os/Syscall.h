@@ -171,6 +171,10 @@ enum class Syscall : std::uint8_t {
     // The two connected ends of a stream socket of the local domain, which the
     // pair door of fixy/os/Socket.h opens.
     socketpair,
+    // The end of the write direction of a stream socket, which the write half
+    // of fixy/os/Socket.h makes before its close, so the peer sees the end of
+    // the stream while the read half lives.
+    shutdown,
 };
 
 // True when the call can wait for a long time: for another thread or process

@@ -106,6 +106,10 @@ inline constexpr int no_wait_flag = 0x40;
 // flags of each send, because the default action of SIGPIPE ends the process.
 inline constexpr int send_no_signal_flag = 0x4000;
 
+// SHUT_WR: the end of the write direction of a socket.  The peer of a stream
+// socket reads the end of the stream after it.
+inline constexpr int shut_down_write_direction = 1;
+
 // SOCK_CLOEXEC: the descriptor of a socket closes at execve.  The open door
 // adds it to the type of each socket, because a descriptor that survives
 // execve leaks into each child process.
@@ -257,6 +261,12 @@ struct SocketPairNumbers final {
 // kernel answers socketpair(2) at once, so the call does not wait.
 [[nodiscard]] ::foundation::core::Result<SocketPairNumbers, ::foundation::os::Errno>
 open_socket_pair_(int domain, int type, int protocol) noexcept;
+
+// Ends the write direction of socket (shutdown with SHUT_WR), so the peer
+// reads the end of the stream.  The kernel answers at once.  A socket with no
+// connection gives ENOTCONN.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+shut_down_writes_(int socket) noexcept;
 
 // Sets the TCP option option of socket to the size bytes at value.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
