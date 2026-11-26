@@ -21,9 +21,11 @@ rule artifacts
 @build/benches | needed | 1 | libatomic.so.1 | a reference of a bench: bench_wide_atomic measures the cell of 128 bits beside libatomic of GCC 16, which each std::atomic of 16 bytes calls
 @build/benches | needed | 1 | libbpf.so.1 | a new build kind or target
 @build/benches | needed | 1 | libc.so.6 | a new build kind or target
+@build/benches | needed | 1 | libcrucible_vessel.so | bench_dispatch links libcrucible_vessel.so for its row of crucible_dispatch_op_ex, the C entry of crucible_mode.py, and finds it through the run path of the build
 @build/benches | needed | 1 | libgcc_s.so.1 | a new build kind or target
 @build/benches | needed | 1 | libm.so.6 | a new build kind or target
 @build/benches | needed | 1 | libstdc++.so.6 | a new build kind or target
+@build/benches | runpath | 1 | {build}/lib | bench_dispatch links libcrucible_vessel.so for its row of crucible_dispatch_op_ex, the C entry of crucible_mode.py, and finds it through the run path of the build
 @build/benches | runpath | 1 | {toolchain}/usr/lib64 | a new build kind or target
 @build/benches | static-member | 1 | libc_nonshared.a(at_quick_exit.oS) | a new build kind or target
 @build/benches | static-member | 1 | libc_nonshared.a(atexit.oS) | a new build kind or target
