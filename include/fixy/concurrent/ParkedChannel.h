@@ -339,7 +339,7 @@ public:
                                __LINE__);
             auto attempt = [this, &item]() noexcept { return inner_.try_push(item); };
             PushRefusal why = PushRefusal::Full;
-            if (push_once_(ctx, attempt, why)) [[likely]]
+            if (push_once_(*channel_, ctx, attempt, why)) [[likely]]
                 return ::foundation::core::Unit{};
             return ::foundation::core::err(why);
         }
@@ -370,7 +370,7 @@ public:
                                __LINE__);
             auto attempt = [this, &item]() noexcept { return inner_.try_push(item); };
             PushRefusal why = PushRefusal::Full;
-            if (push_waiting_<Policy>(ctx, attempt, why)) [[likely]]
+            if (push_waiting_<Policy>(*channel_, room_(), ctx, attempt, why)) [[likely]]
                 return ::foundation::core::Unit{};
             return ::foundation::core::err(why);
         }
@@ -401,7 +401,7 @@ public:
                                __LINE__);
             auto attempt = [this, &item]() noexcept { return inner_.try_push(item); };
             PushRefusal why = PushRefusal::Full;
-            if (push_waiting_<Policy>(ctx, attempt, why, deadline)) [[likely]]
+            if (push_waiting_<Policy>(*channel_, room_(), ctx, attempt, why, deadline)) [[likely]]
                 return ::foundation::core::Unit{};
             return ::foundation::core::err(why);
         }
@@ -483,35 +483,39 @@ public:
         // instructions to that path.
 
         // The push of a value with no wait: attempt pushes one time, and a push
-        // that the ring took notifies items.  A refusal writes Full, or
-        // ConsumerGone when the consumer closed.
+        // that the ring took notifies items of channel.  A refusal writes Full,
+        // or ConsumerGone when the consumer closed.  The body is static, so the
+        // end reaches it only through attempt, and no argument names the end
+        // a second time.
         template <class Ctx, class Attempt>
-        [[nodiscard]] bool push_once_(Ctx const& ctx, Attempt& attempt, PushRefusal& why) noexcept {
+        [[nodiscard]] static bool push_once_(ParkedChannel& channel, Ctx const& ctx, Attempt& attempt,
+                                             PushRefusal& why) noexcept {
             if (attempt()) [[likely]] {
-                channel_->items_.notify_one(ctx);
+                channel.items_.notify_one(ctx);
                 return true;
             }
-            why = channel_->refusal_of_full_();
+            why = channel.refusal_of_full_();
             return false;
         }
 
         // The wait of each door that waits: attempt pushes, by Policy, until
         // the ring takes the item, the consumer closes, or the deadline in
-        // bound passes.  A push that the ring took notifies items.  A refusal
-        // writes ConsumerGone at a close, and Full at the deadline.
+        // bound passes.  The wait parks on room, the count of room of the end.
+        // A push that the ring took notifies items of channel.  A refusal
+        // writes ConsumerGone at a close, and Full at the deadline.  The body
+        // is static, as push_once_ is.
         template <WaitPolicy Policy, class Ctx, class Attempt, class... Bound>
-        [[nodiscard]] bool push_waiting_(Ctx const& ctx, Attempt& attempt, PushRefusal& why,
-                                         Bound const&... bound) noexcept {
+        [[nodiscard]] static bool push_waiting_(ParkedChannel& channel, EventCount& room, Ctx const& ctx,
+                                                Attempt& attempt, PushRefusal& why, Bound const&... bound) noexcept {
             bool is_pushed = false;
-            ParkedChannel& channel = *channel_;
             auto condition = [&attempt, &is_pushed, &channel]() noexcept {
                 is_pushed = attempt();
                 return is_pushed || channel.is_consumer_gone_();
             };
             PushRefusal refusal = PushRefusal::ConsumerGone;
             if constexpr (sizeof...(Bound) == 0) {
-                wait_for<Policy>(ctx, room_(), condition);
-            } else if (wait_for<Policy>(ctx, room_(), condition, bound...) == EventWaitEnd::deadline_passed) {
+                wait_for<Policy>(ctx, room, condition);
+            } else if (wait_for<Policy>(ctx, room, condition, bound...) == EventWaitEnd::deadline_passed) {
                 refusal = PushRefusal::Full;
             }
             if (!is_pushed) {
@@ -532,7 +536,9 @@ public:
                                                               Bound const&... bound) noexcept {
             auto attempt = [this, &pending]() noexcept { return push_pending_(pending); };
             PushRefusal why = PushRefusal::Full;
-            if (push_waiting_<Policy>(ctx, attempt, why, bound...)) return ::foundation::core::Unit{};
+            if (push_waiting_<Policy>(*channel_, room_(), ctx, attempt, why, bound...)) {
+                return ::foundation::core::Unit{};
+            }
             return refuse_owner_(pending, why);
         }
 
