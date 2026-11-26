@@ -292,6 +292,40 @@ public:
     return equal.load_acquire() == kCount;
 }
 
+// A region of owners passes when the loop reads no compared input: each shard
+// writes the objects of its own Boxes, and an input that is a region of another
+// tag names none of them.
+[[nodiscard]] bool admits_a_region_of_boxes() {
+    auto const alloc = test_alloc();
+    HeapArray<::fixy::Box<Word>> boxes = ::fixy::mint_heap_array_with<::fixy::Box<Word>>(
+        alloc, kCount, [alloc](std::size_t) noexcept { return ::fixy::mint_box<Word>(alloc, Word{0}); });
+    HeapArray<Word> apart = count_from(3);
+    auto const over_boxes = [&boxes](auto const& read) noexcept {
+        boxes = ::fixy::with_region<Written>(std::move(boxes), [&read](auto region) noexcept {
+            return loop_over(
+                std::move(region),
+                [](auto shard, auto place, auto run) noexcept {
+                    std::size_t position = place.first();
+                    for (::fixy::Box<Word>& box : shard) {
+                        *box = element_of(run, position);
+                        ++position;
+                    }
+                },
+                read);
+        });
+    };
+    apart = ::fixy::with_region<Apart>(std::move(apart), [&over_boxes](auto read) noexcept {
+        over_boxes(read);
+        return read;
+    });
+    Word expected = 3;
+    for (::fixy::Box<Word> const& box : boxes) {
+        if (*box != expected) return false;
+        ++expected;
+    }
+    return true;
+}
+
 // ── The inputs that share a byte with the region ────────────────────────
 
 // The body reads each element of the input and writes each element of its
@@ -441,6 +475,7 @@ int main() {
     CRUCIBLE_TEST_ASSERT(kTest, lends_each_strided_input());
     CRUCIBLE_TEST_ASSERT(kTest, admits_an_input_that_touches_the_region());
     CRUCIBLE_TEST_ASSERT(kTest, admits_the_run_of_a_region_of_const_elements());
+    CRUCIBLE_TEST_ASSERT(kTest, admits_a_region_of_boxes());
     ::fixy::check::pass(kTest, "test_concurrent_parallel_reads: all tests passed\n");
     return 0;
 }

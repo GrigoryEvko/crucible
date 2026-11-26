@@ -174,7 +174,7 @@ that the axis does not apply to the row.
 | `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 13 |
 | `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_band` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 11 |
-| `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 3 |
+| `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 6 |
 | `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_fn(T0_0)` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 9 |
@@ -227,7 +227,7 @@ that the axis does not apply to the row.
 | `mint_chase_lev_ends` | `include/fixy/concurrent/ChaseLevDeque.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_held_spsc_split` | `include/fixy/concurrent/SpscEnds.h` | Y | - | Y | Y | token | · | HS14: 13 |
 | `mint_mpmc_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_parallel_for` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 7 |
+| `mint_parallel_for` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 9 |
 | `mint_parallel_for_with_thread_options` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_permission_fork` | `include/fixy/concurrent/PermissionFork.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 | `mint_pipeline` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 12 |
@@ -330,9 +330,9 @@ that the axis does not apply to the row.
 |---|---|---|---|---|---|---|---|---|
 | `mint_address_key` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 3 |
 | `mint_bit_set_from_bits` | `include/foundation/core/BitSet.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_box` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 31 |
-| `mint_box(T0_1, T0_2&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 31 |
-| `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 31 |
+| `mint_box` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 32 |
+| `mint_box(T0_1, T0_2&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 32 |
+| `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 32 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 17 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
@@ -344,16 +344,16 @@ that the axis does not apply to the row.
 | `mint_foreign_text(foundation::core::View<const std::byte, 18446744073709551615>)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_grow_text` | `include/foundation/core/Grow.h` | Y | Y | Y | · | token | · | HS14: 5 |
-| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 30 |
+| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 31 |
 | `mint_heap_array_copy` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
-| `mint_heap_array_with` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 3 |
+| `mint_heap_array_with` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_heap_array_written` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 3 |
 | `mint_heap_array_zeroed` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_heap_bit_set` | `include/foundation/core/BitSet.h` | Y | - | Y | Y | token | · | HS14: 5 |
 | `mint_hole(T0_2)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 14 |
 | `mint_hole(foundation::core::Box<T0_0>&&)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 14 |
 | `mint_identity` | `include/foundation/core/Identity.h` | Y | - | Y | · | token | · | HS14: 4 |
-| `mint_keyed_owner` | `include/foundation/core/KeyedMint.h` | Y | Y | Y | Y | token | · | HS14: 107 |
+| `mint_keyed_owner` | `include/foundation/core/KeyedMint.h` | Y | Y | Y | Y | token | · | HS14: 108 |
 | `mint_masked_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 5 |
 | `mint_member_slot_map` | `include/foundation/core/SlotMap.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_run_address(const foundation::core::ViewMut<T0_0, T0_1, T0_2>&, std::size_t)` | `include/foundation/core/DataAddress.h` | Y | Y | Y | Y | token | · | HS14: 3 |
@@ -367,7 +367,7 @@ that the axis does not apply to the row.
 | `mint_strided_rows` | `include/foundation/core/StridedRows.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_strided_scope(foundation::core::StridedView<T0_1, T0_2>, T0_3&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 13 |
 | `mint_strided_scope(foundation::core::StridedViewMut<T0_1, T0_2, T0_3>&, T0_4&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 13 |
-| `mint_strided_view` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 20 |
+| `mint_strided_view` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 21 |
 | `mint_strided_view_mut` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 15 |
 
 ## include/foundation/diag/

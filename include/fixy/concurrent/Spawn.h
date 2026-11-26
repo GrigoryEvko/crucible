@@ -120,6 +120,15 @@
 //     with its statement: its author proves that a second shard writes none
 //     of the objects that the element names.
 //
+//     The elements of a shard go to the thread of the shard while a second
+//     shard runs, so an element that holds a writing View, or a reference to
+//     a plain object, lets two shards write one object with no capture.  So an
+//     element of a region is SendableBeside, or the region is const and its
+//     element is Shareable.  The parts of a form that cuts one output with a
+//     proof of its own state sendable{} with that proof (ScanPart of
+//     fixy/concurrent/ParallelTree.h, PointwiseRows of
+//     fixy/concurrent/ParallelPointwise.h).
+//
 //     Reads holds a reference to each input, and the runner reads the inputs
 //     when the loop starts.  So an owner or a region that a door consumed in
 //     the mean time gives an empty run.  A Reads does not copy and does not
@@ -505,6 +514,14 @@ namespace detail {
         && holds_its_objects_(element);
 }
 
+// True for an element whose shards can run on threads of their own (design
+// note 6).  A shard of a region of const elements only reads them.
+[[nodiscard]] consteval bool is_shard_element_(std::meta::info element) {
+    using ::foundation::transfer::Property;
+    return ::foundation::transfer::holds(std::meta::remove_cv(element),
+                                         std::meta::is_const_type(element) ? Property::Share : Property::SendBeside);
+}
+
 // True for a region of the tag.
 [[nodiscard]] consteval bool is_region_of_(std::meta::info input, std::meta::info tag) {
     std::meta::info const type = ::foundation::reflect::bare_type(input);
@@ -735,6 +752,17 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
         std::size_t threads = 1;
     };
 
+    // Refuses a region whose elements two shards could share (design note 6).
+    template <typename T>
+    static void check_elements_() noexcept {
+        static_assert(detail::is_shard_element_(^^T),
+                      "mint_parallel_for: the elements of a shard go to the thread of the shard, and a second shard "
+                      "runs at the same time.  The element of the region is not SendableBeside, or the element of a "
+                      "region of const elements is not Shareable: it holds a borrow of a plain object or a part of "
+                      "one thread, so two shards could write one object.  Give the loop a region of values that own "
+                      "their parts");
+    }
+
     // Refuses a body that the policy of the loop refuses, with the message of
     // the verdict.  The assertion stands in a function of its own, so a refused
     // body gives no second error in the function that splits the region.
@@ -882,6 +910,7 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     [[nodiscard]] static ::fixy::OwnedRegion<T, Whole, Brand>
     run_(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
          Reads<Inputs...> const& inputs, Body& body, ::fixy::thread::ThreadOptions const& options) noexcept {
+        check_elements_<T>();
         check_body_<T, Body>();
         auto const runs = open_inputs_(inputs, std::index_sequence_for<Inputs...>{});
         check_inputs_apart_<T, Inputs...>(runs, ::fixy::mint_borrowed(region), std::index_sequence_for<Inputs...>{});

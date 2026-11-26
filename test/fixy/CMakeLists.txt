@@ -7626,6 +7626,17 @@ fixy_neg_compile_test(neg_spawn_parallel_for_input_not_in_reads
 fixy_neg_compile_test(neg_parallel_reduce_combine_holds_a_view
   "static assertion failed: mint_parallel_for: the body captures .combine. \\(field __combine, type \\{anonymous\\}::AddsTheFirstPartial\\)"
   "The first part that refuses it: foundation::core::View<const long unsigned int>")
+# The element of a region of a parallel loop is SendableBeside, and a class of
+# parts that holds a borrow states its proof.
+fixy_neg_compile_test(neg_spawn_parallel_for_region_of_writing_views
+  "static assertion failed: mint_parallel_for: the elements of a shard go to the thread of the shard"
+  "so two shards could write one object")
+fixy_neg_compile_test(neg_spawn_parallel_for_unstated_part
+  "static assertion failed: mint_parallel_for: the elements of a shard go to the thread of the shard"
+  "so two shards could write one object")
+fixy_neg_compile_test(neg_spawn_parallel_for_unstated_rows
+  "static assertion failed: mint_parallel_for: the elements of a shard go to the thread of the shard"
+  "so two shards could write one object")
 
 # The parallel tree tests run the parallel tree sum and segmented sum, the
 # sum scans, and the reduce on 1, 2, 4, 8 and 64 threads, and compare each
