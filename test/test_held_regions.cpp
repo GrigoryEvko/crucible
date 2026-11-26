@@ -65,8 +65,10 @@ static_assert(!OpensWrite<Holders>);
 class Regions final {
 public:
     [[nodiscard]] ConstRegionLink make() noexcept {
-        return ConstRegionLink::some(
-            crucible::mint_dag_node<crucible::RegionNode>(::foundation::effects::testing::test().alloc, arena_));
+        return ConstRegionLink::some(::foundation::core::with_arena_frame(arena_, [](auto& frame) noexcept {
+            return crucible::mint_dag_node<crucible::RegionNode>(::foundation::effects::testing::test().alloc, frame)
+                .weaken();
+        }));
     }
 
 private:

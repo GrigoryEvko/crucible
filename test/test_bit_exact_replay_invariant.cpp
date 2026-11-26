@@ -203,53 +203,59 @@ struct Built {
     ::fixy::BumpArena<crucible::DagArena> dag_arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 20});
 
-    auto ops_run = dag_arena.array<TraceEntry>(ctx.alloc, kNumOps, TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<TraceEntry> ops = ops_run.view();
-    build_ops(ctx, arena, ops, data_ptr_base);
+    // One frame on the arena of the regions builds the ops, the two regions
+    // and the plan.
+    return ::foundation::core::with_arena_frame(dag_arena, [ctx, &arena, data_ptr_base](auto& frame) noexcept {
+        auto ops_run = frame.template array<TraceEntry>(ctx.alloc, kNumOps, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TraceEntry> ops = ops_run.view();
+        build_ops(ctx, arena, ops, data_ptr_base);
 
-    constexpr uint32_t kSplit = kNumOps / 2;
-    const crucible::DagRef<crucible::RegionNode> head =
-        crucible::make_region(ctx.alloc, dag_arena,
-                              ops_run.window(::fixy::RunStart{::fixy::ElementCount{0}}, ::fixy::ElementCount{kSplit})
-                                  .expect("the head is in the ops"));
-    const crucible::DagRef<crucible::RegionNode> tail = crucible::make_region(
-        ctx.alloc, dag_arena,
-        ops_run.window(::fixy::RunStart{::fixy::ElementCount{kSplit}}, ::fixy::ElementCount{kNumOps - kSplit})
-            .expect("the tail is in the ops"));
-    head->next = crucible::make_link(*tail);
+        constexpr uint32_t kSplit = kNumOps / 2;
+        const auto head = crucible::make_region(
+            ctx.alloc, frame,
+            ops_run.window(::fixy::RunStart{::fixy::ElementCount{0}}, ::fixy::ElementCount{kSplit})
+                .expect("the head is in the ops"));
+        const auto tail = crucible::make_region(
+            ctx.alloc, frame,
+            ops_run.window(::fixy::RunStart{::fixy::ElementCount{kSplit}}, ::fixy::ElementCount{kNumOps - kSplit})
+                .expect("the tail is in the ops"));
+        head->next = crucible::make_link(*tail);
 
-    auto slots_run = arena.array<TensorSlot>(ctx.alloc, kNumSlots, TensorSlot{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<TensorSlot> slots = slots_run.view();
-    build_slots(slots);
-    const crucible::DagRef<crucible::MemoryPlan> plan_storage = dag_arena.make<crucible::MemoryPlan>(ctx.alloc);
-    crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
-    crucible::BackgroundThread::PlanTarget const target{};
-    sweep_scratch.arena.with_epoch([target, alloc = ctx.alloc, plan_storage,
-                                    &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
-        static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
-                              .expect("the slots of the test fit in 64 bits"));
-    });
-    // The sweep writes the plan into the arena of the regions, and the head
-    // links that plan.
-    head->plan = crucible::make_plan_link(plan_storage);
-    crucible::recompute_merkle(*head);
+        auto slots_run = arena.array<TensorSlot>(ctx.alloc, kNumSlots, TensorSlot{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TensorSlot> slots = slots_run.view();
+        build_slots(slots);
+        const crucible::DagRef<crucible::MemoryPlan> plan_storage =
+            frame.template make<crucible::MemoryPlan>(ctx.alloc).weaken();
+        crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
+        crucible::BackgroundThread::PlanTarget const target{};
+        sweep_scratch.arena.with_epoch(
+            [target, alloc = ctx.alloc, plan_storage, &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+                static_cast<void>(
+                    crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
+                        .expect("the slots of the test fit in 64 bits"));
+            });
+        // The sweep writes the plan into the arena of the regions, and the
+        // head links that plan.
+        head->plan = crucible::make_plan_link(plan_storage);
+        crucible::recompute_merkle(*head);
 
-    Built out;
-    out.head_content_hash = head->content_hash.raw();
-    out.tail_content_hash = tail->content_hash.raw();
-    out.merkle_hash = head->merkle_hash.raw();
-    for (const crucible::DagRef<MemoryPlan const>& plan : head->plan) {
-        out.pool_bytes = plan->pool_bytes;
-        out.num_slots = plan->num_slots();
-        out.num_external = plan->num_external;
-        for (uint32_t slot_index = 0; slot_index < out.num_slots && slot_index < kNumSlots; slot_index++) {
-            out.offsets[slot_index] =
-                plan->slots.view().get(slot_index).expect("the plan holds this slot")->offset_bytes;
+        Built out;
+        out.head_content_hash = head->content_hash.raw();
+        out.tail_content_hash = tail->content_hash.raw();
+        out.merkle_hash = head->merkle_hash.raw();
+        for (const crucible::DagRef<MemoryPlan const>& plan : head->plan) {
+            out.pool_bytes = plan->pool_bytes;
+            out.num_slots = plan->num_slots();
+            out.num_external = plan->num_external;
+            for (uint32_t slot_index = 0; slot_index < out.num_slots && slot_index < kNumSlots; slot_index++) {
+                out.offsets[slot_index] =
+                    plan->slots.view().get(slot_index).expect("the plan holds this slot")->offset_bytes;
+            }
         }
-    }
-    return out;
+        return out;
+    });
 }
 
 // The committed reference.  Printed by this test when it disagrees, so a

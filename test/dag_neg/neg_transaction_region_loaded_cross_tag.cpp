@@ -33,7 +33,10 @@ int main() {
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
         ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{4096}});
     const crucible::DagRef<crucible::RegionNode> region =
-        crucible::mint_dag_node<crucible::RegionNode>(::foundation::effects::testing::test().alloc, arena);
+        ::foundation::core::with_arena_frame(arena, [](auto& frame) noexcept {
+            return crucible::mint_dag_node<crucible::RegionNode>(::foundation::effects::testing::test().alloc, frame)
+                .weaken();
+        });
     const auto loaded =
         ::fixy::mint_tagged<::fixy::tags::source::Replayed>(crucible::DagRef<crucible::RegionNode const>{region})
             .retag<::fixy::tags::source::Loaded>();

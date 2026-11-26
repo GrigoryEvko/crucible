@@ -309,30 +309,34 @@ private:
     [[nodiscard]] DagRef<RegionNode> make_ops_region_(::fixy::View<const SchemaHash> schemas,
                                                       ::fixy::View<const ShapeHash> shapes) {
         CRUCIBLE_BENCH_CHECK(schemas.size() == shapes.size());
-        const auto n_ops = static_cast<uint32_t>(schemas.size());
-        auto ops_run = dag_arena.array<TraceEntry>(test.alloc, n_ops, TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TraceEntry> ops = ops_run.view();
-        for (uint32_t i = 0; i < n_ops; i++) {
-            TraceEntry& op = *ops.get(i).expect("i is below n_ops");
-            op.schema_hash = *schemas.get(i).expect("i is below the count of the schema hashes");
-            op.shape_hash = *shapes.get(i).expect("i is below the count of the shape hashes");
-            TensorMeta meta{};
-            meta.ndim = 1;
-            meta.sizes[0] = tensor_dim(1024);
-            meta.strides[0] = tensor_dim(1);
-            meta.dtype = ScalarType::Float;
-            if (i > 0) {
-                const auto input_metas_run = dag_arena.array(test.alloc, 1, meta);
-                const auto producers_run = dag_arena.array(test.alloc, 1, OpIndex{});
-                const auto input_slots_run = dag_arena.array(test.alloc, 1, SlotId{i - 1});
-                op.set_inputs(input_metas_run, producers_run, input_slots_run);
-            }
-            const auto output_metas_run = dag_arena.array(test.alloc, 1, meta);
-            const auto output_slots_run = dag_arena.array(test.alloc, 1, SlotId{i});
-            op.set_outputs(output_metas_run, output_slots_run);
-        }
-        return make_region(test.alloc, dag_arena, ops_run);
+        // One frame on dag_arena builds the ops, their arrays and the region.
+        return ::foundation::core::with_arena_frame(
+            dag_arena, [alloc = test.alloc, schemas, shapes](auto& frame) noexcept {
+                const auto n_ops = static_cast<uint32_t>(schemas.size());
+                auto ops_run = frame.template array<TraceEntry>(alloc, n_ops, TraceEntry{});
+                // A plain View of an arena run: the View carries no brand of its arena.
+                const ::fixy::View<TraceEntry> ops = ops_run.view();
+                for (uint32_t i = 0; i < n_ops; i++) {
+                    TraceEntry& op = *ops.get(i).expect("i is below n_ops");
+                    op.schema_hash = *schemas.get(i).expect("i is below the count of the schema hashes");
+                    op.shape_hash = *shapes.get(i).expect("i is below the count of the shape hashes");
+                    TensorMeta meta{};
+                    meta.ndim = 1;
+                    meta.sizes[0] = tensor_dim(1024);
+                    meta.strides[0] = tensor_dim(1);
+                    meta.dtype = ScalarType::Float;
+                    if (i > 0) {
+                        const auto input_metas_run = frame.array(alloc, 1, meta);
+                        const auto producers_run = frame.array(alloc, 1, OpIndex{});
+                        const auto input_slots_run = frame.array(alloc, 1, SlotId{i - 1});
+                        op.set_inputs(input_metas_run.weaken(), producers_run.weaken(), input_slots_run.weaken());
+                    }
+                    const auto output_metas_run = frame.array(alloc, 1, meta);
+                    const auto output_slots_run = frame.array(alloc, 1, SlotId{i});
+                    op.set_outputs(output_metas_run.weaken(), output_slots_run.weaken());
+                }
+                return make_region(alloc, frame, ops_run).weaken();
+            });
     }
 };
 
@@ -777,20 +781,25 @@ int main() {
         constexpr uint32_t NR = 4;
         ::fixy::FixedList<DagRef<RegionNode>, NR> regions{};
         for (uint32_t r = 0; r < NR; r++) {
-            auto ops_run = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
-            // A plain View of an arena run: the View carries no brand of its arena.
-            const ::fixy::View<TraceEntry> ops = ops_run.view();
-            for (OpSlot const i : ::fixy::IndexRange<NUM_OPS>{}) {
-                TraceEntry& op = *ops.get(i.raw()).expect("i is below NUM_OPS");
-                op.schema_hash = SCHEMA.at(i);
-                op.shape_hash = ShapeHash{SHAPE.at(i).raw() + r * 0x100};
-            }
-            const DagRef<RegionNode> region = make_region(test.alloc, arena, ops_run);
-            const auto plan = arena.make<MemoryPlan>(test.alloc);
-            plan->slots = ::fixy::ArenaRun<TensorSlot const, DagArena>{};
-            plan->pool_bytes = 0;
-            check_single_cpu_plan(*plan);
-            region->plan = make_plan_link(plan);
+            // One frame on the arena builds the ops, the region and its plan.
+            const DagRef<RegionNode> region =
+                ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, r](auto& frame) noexcept {
+                    auto ops_run = frame.template array<TraceEntry>(alloc, NUM_OPS, TraceEntry{});
+                    // A plain View of an arena run: the View carries no brand of its arena.
+                    const ::fixy::View<TraceEntry> ops = ops_run.view();
+                    for (OpSlot const i : ::fixy::IndexRange<NUM_OPS>{}) {
+                        TraceEntry& op = *ops.get(i.raw()).expect("i is below NUM_OPS");
+                        op.schema_hash = SCHEMA.at(i);
+                        op.shape_hash = ShapeHash{SHAPE.at(i).raw() + r * 0x100};
+                    }
+                    auto const made = make_region(alloc, frame, ops_run);
+                    auto const plan = frame.template make<MemoryPlan>(alloc);
+                    plan->slots = ::fixy::ArenaRun<TensorSlot const, DagArena>{};
+                    plan->pool_bytes = 0;
+                    check_single_cpu_plan(*plan);
+                    made->plan = make_plan_link(plan.weaken());
+                    return made.weaken();
+                });
             static_cast<void>(regions.append(region).expect("the list holds NR regions"));
         }
         RegionCache cache;

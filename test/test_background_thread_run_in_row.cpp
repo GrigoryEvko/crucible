@@ -54,6 +54,16 @@ namespace test_background_thread_run_in_row {
 
 namespace {
 
+// A region node with each field at its default, in the arena, which one frame
+// on the arena builds.  A queue of the publish stage takes it as a stand-in
+// for a published region.
+[[nodiscard]] crucible::DagRef<crucible::RegionNode> mint_region_node(eff::Alloc alloc,
+                                                                      ::fixy::BumpArena<crucible::DagArena>& arena) {
+    return ::foundation::core::with_arena_frame(arena, [alloc](auto& frame) noexcept {
+        return crucible::mint_dag_node<crucible::RegionNode>(alloc, frame).weaken();
+    });
+}
+
 void test_t01_required_row_pinned() {
     static_assert(std::is_same_v<BackgroundThread::run_required_row,
                                  eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block,
@@ -179,7 +189,7 @@ void test_uncompiled_queue_is_bounded() {
         auto links = arena.array(alloc, OVERRUN, crucible::RegionLink{});
         const ::fixy::View<crucible::RegionLink> regions = links.view();
         for (crucible::RegionLink& link : regions)
-            link = ::fixy::some(crucible::mint_dag_node<crucible::RegionNode>(alloc, arena));
+            link = ::fixy::some(mint_region_node(alloc, arena));
         auto region_at = [regions](uint64_t i) {
             return *regions.get(i).expect("a test reads an element at or past the count of its array");
         };
@@ -231,7 +241,7 @@ void test_uncompiled_queue_refuses_past_its_capacity() {
         auto links = arena.array(alloc, 8, crucible::RegionLink{});
         const ::fixy::View<crucible::RegionLink> regions = links.view();
         for (crucible::RegionLink& link : regions)
-            link = ::fixy::some(crucible::mint_dag_node<crucible::RegionNode>(alloc, arena));
+            link = ::fixy::some(mint_region_node(alloc, arena));
         BackgroundThread::UncompiledRegions three{alloc, Count{3}};
         BackgroundThread::UncompiledRegions none{alloc, Count{0}};
         CRUCIBLE_TEST_ASSERT(kTest, three.capacity() == 3 && none.capacity() == 0);
@@ -280,7 +290,7 @@ void check_queue_against_its_walk(BackgroundThread::PublishStage const& stage,
     ::fixy::FixedArray<crucible::QueuedRegion, PUSHES> pushes{};
     for (const ::fixy::Index<PUSHES> position : pushes.indices()) {
         CRUCIBLE_TEST_ASSERT(kTest, !queue.holds(stage, pushes.at(position)) && "no queue holds the region of no push");
-        crucible::QueuePush pushed = queue.push(stage, crucible::mint_dag_node<crucible::RegionNode>(alloc, arena),
+        crucible::QueuePush pushed = queue.push(stage, mint_region_node(alloc, arena),
                                                 crucible::RegionSlot{static_cast<uint32_t>(position.raw())});
         // The push takes out the region of the push capacity pushes before it.
         const bool takes_out = capacity.raw() != 0 && position.raw() >= capacity.raw();
@@ -332,9 +342,7 @@ void test_moved_push_leaves_no_push_in_its_source() {
             ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
         BackgroundThread::UncompiledRegions queue{alloc, Count{4}};
         auto push_new = [&queue, &stage, &arena, alloc](uint32_t slot) {
-            return queue
-                .push(stage, crucible::mint_dag_node<crucible::RegionNode>(alloc, arena), crucible::RegionSlot{slot})
-                .queued;
+            return queue.push(stage, mint_region_node(alloc, arena), crucible::RegionSlot{slot}).queued;
         };
 
         ::fixy::HeapArray<crucible::QueuedRegion> slots = ::fixy::mint_heap_array_with<crucible::QueuedRegion>(

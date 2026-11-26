@@ -113,33 +113,38 @@ namespace {
         CRUCIBLE_TEST_ASSERT(kTest, agrees(m));
     }
 
-    auto ops_run = arena.array(test.alloc, 3, crucible::TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<crucible::TraceEntry> const ops = ops_run.view();
-    ops.get(0).expect("the run holds three ops")->schema_hash = SchemaHash{0xAABB};
-    ops.get(1).expect("the run holds three ops")->schema_hash = SchemaHash{0xCCDD};
-    ops.get(2).expect("the run holds three ops")->schema_hash = SchemaHash{0xEEFF};
-    // The nodes are held as references: a Ref local in this large function
-    // costs the Debug compile far more than a reference.
-    crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops_run);
-    CRUCIBLE_TEST_ASSERT(kTest, region.kind == crucible::TraceNodeKind::REGION);
-    CRUCIBLE_TEST_ASSERT(kTest, region.num_ops() == 3);
-    CRUCIBLE_TEST_ASSERT(kTest, region.op_at(0).schema_hash == SchemaHash{0xAABB});
-    CRUCIBLE_TEST_ASSERT(kTest, region.op_at(2).schema_hash == SchemaHash{0xEEFF});
-    CRUCIBLE_TEST_ASSERT(kTest, region.first_op_schema == SchemaHash{0xAABB});
-    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(region.content_hash));
+    ::foundation::core::with_arena_frame(arena, [alloc = test.alloc](auto& frame) noexcept {
+        auto ops_run = frame.array(alloc, std::size_t{3}, crucible::TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<crucible::TraceEntry> const ops = ops_run.view();
+        ops.get(0).expect("the run holds three ops")->schema_hash = SchemaHash{0xAABB};
+        ops.get(1).expect("the run holds three ops")->schema_hash = SchemaHash{0xCCDD};
+        ops.get(2).expect("the run holds three ops")->schema_hash = SchemaHash{0xEEFF};
+        // The nodes are held as references, and only a node of a store
+        // keeps its FrameRef: a Ref local in this large function costs the
+        // Debug compile far more than a reference.
+        auto const region_node = crucible::make_region(alloc, frame, ops_run);
+        crucible::RegionNode& region = *region_node;
+        CRUCIBLE_TEST_ASSERT(kTest, region.kind == crucible::TraceNodeKind::REGION);
+        CRUCIBLE_TEST_ASSERT(kTest, region.num_ops() == 3);
+        CRUCIBLE_TEST_ASSERT(kTest, region.op_at(0).schema_hash == SchemaHash{0xAABB});
+        CRUCIBLE_TEST_ASSERT(kTest, region.op_at(2).schema_hash == SchemaHash{0xEEFF});
+        CRUCIBLE_TEST_ASSERT(kTest, region.first_op_schema == SchemaHash{0xAABB});
+        CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(region.content_hash));
 
-    ContentHash h1 = region.content_hash;
-    const crucible::RegionNode& region2 = *crucible::make_region(test.alloc, arena, ops_run);
-    CRUCIBLE_TEST_ASSERT(kTest, region2.content_hash == h1);
+        ContentHash h1 = region.content_hash;
+        const crucible::RegionNode& region2 = *crucible::make_region(alloc, frame, ops_run);
+        CRUCIBLE_TEST_ASSERT(kTest, region2.content_hash == h1);
 
-    crucible::TraceNode& terminal = *crucible::make_terminal(test.alloc, arena);
-    CRUCIBLE_TEST_ASSERT(kTest, terminal.kind == crucible::TraceNodeKind::TERMINAL);
-    CRUCIBLE_TEST_ASSERT(kTest, terminal.next.is_none());
+        auto const terminal_node = crucible::make_terminal(alloc, frame);
+        crucible::TraceNode& terminal = *terminal_node;
+        CRUCIBLE_TEST_ASSERT(kTest, terminal.kind == crucible::TraceNodeKind::TERMINAL);
+        CRUCIBLE_TEST_ASSERT(kTest, terminal.next.is_none());
 
-    region.next = crucible::make_link(terminal);
-    crucible::recompute_merkle(region);
-    CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(region.merkle_hash));
+        region_node->next = crucible::make_link(terminal);
+        crucible::recompute_merkle(region);
+        CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(region.merkle_hash));
+    });
 
     // RowHash{0} is the row identity of a bare, unwrapped type, so it is
     // the row every untyped call site keys on.
@@ -349,35 +354,38 @@ namespace {
         const ContentHash h_alt_tc = crucible::compute_content_hash(alt_ops_span, recipe_tc);
         CRUCIBLE_TEST_ASSERT(kTest, h_alt_tc != h_tc);
 
-        auto rops_a_run = arena.array(test.alloc, 2, crucible::TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::TraceEntry> const rops_a = rops_a_run.view();
-        rops_a.get(0).expect("the run holds two ops")->schema_hash = SchemaHash{0x0A0A};
-        rops_a.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x0B0B};
-        auto rops_b_run = arena.array(test.alloc, 2, crucible::TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::TraceEntry> const rops_b = rops_b_run.view();
-        rops_b.get(0).expect("the run holds two ops")->schema_hash = SchemaHash{0x0A0A};
-        rops_b.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x0B0B};
+        ::foundation::core::with_arena_frame(arena, [&test, &kernels, &recipe_tc,
+                                                     &recipe_strict](auto& frame) noexcept {
+            auto rops_a_run = frame.array(test.alloc, std::size_t{2}, crucible::TraceEntry{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            ::fixy::View<crucible::TraceEntry> const rops_a = rops_a_run.view();
+            rops_a.get(0).expect("the run holds two ops")->schema_hash = SchemaHash{0x0A0A};
+            rops_a.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x0B0B};
+            auto rops_b_run = frame.array(test.alloc, std::size_t{2}, crucible::TraceEntry{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            ::fixy::View<crucible::TraceEntry> const rops_b = rops_b_run.view();
+            rops_b.get(0).expect("the run holds two ops")->schema_hash = SchemaHash{0x0A0A};
+            rops_b.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x0B0B};
 
-        const crucible::RegionNode& r_tc = *crucible::make_region(test.alloc, arena, rops_a_run, recipe_tc);
-        const crucible::RegionNode& r_strict = *crucible::make_region(test.alloc, arena, rops_b_run, recipe_strict);
-        const crucible::RegionNode& r_none = *crucible::make_region(test.alloc, arena, rops_a_run);
+            const crucible::RegionNode& r_tc = *crucible::make_region(test.alloc, frame, rops_a_run, recipe_tc);
+            const crucible::RegionNode& r_strict = *crucible::make_region(test.alloc, frame, rops_b_run, recipe_strict);
+            const crucible::RegionNode& r_none = *crucible::make_region(test.alloc, frame, rops_a_run);
 
-        CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash != r_strict.content_hash);
-        CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash != r_none.content_hash);
-        CRUCIBLE_TEST_ASSERT(kTest, r_strict.content_hash != r_none.content_hash);
+            CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash != r_strict.content_hash);
+            CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash != r_none.content_hash);
+            CRUCIBLE_TEST_ASSERT(kTest, r_strict.content_hash != r_none.content_hash);
 
-        const ContentHash direct_tc = crucible::compute_content_hash(rops_a, recipe_tc);
-        CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash == direct_tc);
+            const ContentHash direct_tc = crucible::compute_content_hash(rops_a, recipe_tc);
+            CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash == direct_tc);
 
-        crucible::KernelCache rcache{test.alloc};
-        auto const tc_kernel = make_kernel(kernels);
-        using crucible::RowHash;
-        CRUCIBLE_FATAL_INVARIANT(rcache.insert(test.nondet, r_tc.content_hash, RowHash{0}, tc_kernel).is_ok());
-        CRUCIBLE_FATAL_INVARIANT(is_found(rcache.lookup(test.nondet, r_tc.content_hash, RowHash{0}), tc_kernel));
-        CRUCIBLE_FATAL_INVARIANT(rcache.lookup(test.nondet, r_strict.content_hash, RowHash{0}).is_none());
-        CRUCIBLE_FATAL_INVARIANT(rcache.lookup(test.nondet, r_none.content_hash, RowHash{0}).is_none());
+            crucible::KernelCache rcache{test.alloc};
+            auto const tc_kernel = make_kernel(kernels);
+            using crucible::RowHash;
+            CRUCIBLE_FATAL_INVARIANT(rcache.insert(test.nondet, r_tc.content_hash, RowHash{0}, tc_kernel).is_ok());
+            CRUCIBLE_FATAL_INVARIANT(is_found(rcache.lookup(test.nondet, r_tc.content_hash, RowHash{0}), tc_kernel));
+            CRUCIBLE_FATAL_INVARIANT(rcache.lookup(test.nondet, r_strict.content_hash, RowHash{0}).is_none());
+            CRUCIBLE_FATAL_INVARIANT(rcache.lookup(test.nondet, r_none.content_hash, RowHash{0}).is_none());
+        });
     }
 
     // A fold that stops at five scalar arguments, or that ignores the
@@ -787,10 +795,17 @@ namespace {
     {
         ::fixy::TestRunnerCtx const runner{::foundation::effects::testing::test()};
 
-        auto guard_body_ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::TraceEntry> const guard_body_ops = guard_body_ops_run.view();
-        guard_body_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x6AA6};
+        // A body of one op and its end, in the arena of the frame.
+        auto make_body = [&test](auto& frame) noexcept {
+            auto body_ops_run = frame.array(test.alloc, std::size_t{1}, crucible::TraceEntry{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            ::fixy::View<crucible::TraceEntry> const body_ops = body_ops_run.view();
+            body_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x6AA6};
+            auto const body = crucible::make_region(test.alloc, frame, body_ops_run);
+            auto const body_end = crucible::make_terminal(test.alloc, frame);
+            body->next = crucible::make_link(*body_end);
+            return body;
+        };
 
         // Each child builds its own arena: the parent's arena must not carry
         // a bump from a child that was about to abort.
@@ -798,14 +813,16 @@ namespace {
             return [&, kind, count, epsilon] {
                 ::fixy::BumpArena<crucible::DagArena> child_arena = ::fixy::mint_bump_arena<crucible::DagArena>(
                     ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
-                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops_run);
-                body.next = crucible::make_link(*crucible::make_terminal(test.alloc, child_arena));
-                crucible::LoopNode& node = *crucible::make_loop(
-                    test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
-                    ::fixy::ArenaRun<crucible::FeedbackEdge const, crucible::DagArena>{}, kind, count, epsilon);
-                // Keeps the optimizer from deciding the call had no effect
-                // and eliding the clause along with it.
-                asm volatile("" ::"r"(&node) : "memory");
+                ::foundation::core::with_arena_frame(child_arena, [&](auto& frame) noexcept {
+                    auto const body = make_body(frame);
+                    auto no_edges = frame.array(test.alloc, std::size_t{0}, crucible::FeedbackEdge{});
+                    crucible::LoopNode& node =
+                        *crucible::make_loop(test.alloc, frame, body, crucible::compute_body_content_hash(*body),
+                                             no_edges, kind, count, epsilon);
+                    // Keeps the optimizer from deciding the call had no
+                    // effect and eliding the clause along with it.
+                    asm volatile("" ::"r"(&node) : "memory");
+                });
             };
         };
 
@@ -844,14 +861,18 @@ namespace {
         auto hash_unresolved_branch = [&] {
             ::fixy::BumpArena<crucible::DagArena> child_arena = ::fixy::mint_bump_arena<crucible::DagArena>(
                 ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
-            crucible::BranchNode& branch = *crucible::mint_dag_node<crucible::BranchNode>(test.alloc, child_arena);
-            branch.kind = crucible::TraceNodeKind::BRANCH;
-            branch.set_arms(child_arena.build_array<crucible::BranchNode::Arm>(
-                test.alloc, ::fixy::ElementCount{1},
-                [](::fixy::RunStart) noexcept { return crucible::BranchNode::Arm{1, crucible::TraceLink{}}; }));
-            crucible::recompute_merkle(branch);
-            // The child prints the hash only when the hash returns.
-            ::fixy::report(::fixy::Sink::Out, "  the hash of the unresolved branch: {}\n", branch.merkle_hash.raw());
+            ::foundation::core::with_arena_frame(child_arena, [&test](auto& frame) noexcept {
+                auto const branch = crucible::mint_dag_node<crucible::BranchNode>(test.alloc, frame);
+                branch->kind = crucible::TraceNodeKind::BRANCH;
+                auto arms = frame.template build_array<crucible::BranchNode::Arm>(
+                    test.alloc, ::fixy::ElementCount{1},
+                    [](::fixy::RunStart) noexcept { return crucible::BranchNode::Arm{1, crucible::TraceLink{}}; });
+                branch->set_arms(arms.weaken());
+                crucible::recompute_merkle(*branch);
+                // The child prints the hash only when the hash returns.
+                ::fixy::report(::fixy::Sink::Out, "  the hash of the unresolved branch: {}\n",
+                               branch->merkle_hash.raw());
+            });
         };
         ::fixy::check::expect_dies(runner, hash_unresolved_branch,
                                    ::fixy::TextView{"an arm of the branch has no target"});
@@ -870,28 +891,29 @@ namespace {
             return [&, node_kind, door] {
                 ::fixy::BumpArena<crucible::DagArena> child_arena = ::fixy::mint_bump_arena<crucible::DagArena>(
                     ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
-                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops_run);
-                body.next = crucible::make_link(*crucible::make_terminal(test.alloc, child_arena));
-                crucible::TraceNode& loop_node =
-                    *crucible::make_loop(test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
-                                         ::fixy::ArenaRun<crucible::FeedbackEdge const, crucible::DagArena>{},
-                                         crucible::LoopTermKind::REPEAT, 1);
-                crucible::TraceNode& node = node_kind == crucible::TraceNodeKind::LOOP ? loop_node : body;
-                uint32_t field = 0;
-                switch (door) {
-                    case Door::REGION:
-                        field = node.expect_region()->num_ops();
-                        break;
-                    case Door::BRANCH:
-                        field = node.expect_branch()->num_arms();
-                        break;
-                    case Door::LOOP:
-                        field = node.expect_loop()->repeat_count;
-                        break;
-                    default:
-                        ::fixy::unreachable();
-                }
-                ::fixy::report(::fixy::Sink::Out, "  the door gave a node with the field {}\n", field);
+                ::foundation::core::with_arena_frame(child_arena, [&](auto& frame) noexcept {
+                    auto const body = make_body(frame);
+                    auto no_edges = frame.array(test.alloc, std::size_t{0}, crucible::FeedbackEdge{});
+                    crucible::TraceNode& loop_node =
+                        *crucible::make_loop(test.alloc, frame, body, crucible::compute_body_content_hash(*body),
+                                             no_edges, crucible::LoopTermKind::REPEAT, 1);
+                    crucible::TraceNode& node = node_kind == crucible::TraceNodeKind::LOOP ? loop_node : *body;
+                    uint32_t field = 0;
+                    switch (door) {
+                        case Door::REGION:
+                            field = node.expect_region()->num_ops();
+                            break;
+                        case Door::BRANCH:
+                            field = node.expect_branch()->num_arms();
+                            break;
+                        case Door::LOOP:
+                            field = node.expect_loop()->repeat_count;
+                            break;
+                        default:
+                            ::fixy::unreachable();
+                    }
+                    ::fixy::report(::fixy::Sink::Out, "  the door gave a node with the field {}\n", field);
+                });
             };
         };
         // The door of a region opens a region, and the door of a loop opens a

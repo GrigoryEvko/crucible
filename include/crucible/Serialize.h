@@ -648,14 +648,13 @@ template <class Region, ::foundation::brand::IsBrand Brand, class ImageBrand, st
     return detail_ser::write_region_image(*node, std::move(image));
 }
 
-// Gives the region of the image, or the reason that refused the image: a
-// parse error, a version mismatch, a count or a plan past its bound, or a
-// content hash that the operations do not fold to.  The reason is the first
-// fault of the image.  Every structure it builds lives in the arena.
-CRUCIBLE_COLD [[nodiscard]] inline ::fixy::Result<LoadedRegionNode, LoadError>
-deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
-                   ::fixy::BumpArena<DagArena>& arena) {
-    using namespace detail_ser;
+namespace detail_ser {
+
+// The load of deserialize_region below, in one frame on its arena: the node,
+// the plan and each run of the region are objects of the frame.
+template <class Fresh>
+[[nodiscard]] ::fixy::Result<LoadedRegionNode, LoadError>
+read_region_(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image, DagFrame<Fresh>& frame) {
     Reader r{.image = image};
 
     const Header hdr = read_header(r);
@@ -683,8 +682,8 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     uint32_t num_slots = 0;
     const bool has_plan = r.read_bool();
     if (has_plan) {
-        const DagRef<MemoryPlan> loaded_plan = arena.make<MemoryPlan>(a);
-        plan = ::fixy::Option<DagRef<MemoryPlan>>::some(loaded_plan);
+        const DagFrameRef<MemoryPlan, Fresh> loaded_plan = frame.template make<MemoryPlan>(a);
+        plan = ::fixy::Option<DagRef<MemoryPlan>>::some(loaded_plan.weaken());
         loaded_plan->pool_bytes = r.r<uint64_t>();
         // The next three checks all guard the same thing: a loaded plan goes
         // on to initialise the replay pool, whose own preconditions are only
@@ -712,9 +711,9 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         if (!r.has_remaining(num_slots, kTensorSlotWireBytes)) {
             return ::fixy::err(r.reason_or(LoadError::truncated));
         }
-        ::fixy::ArenaRun<TensorSlot, DagArena> slots_run = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
+        DagFrameRun<TensorSlot, Fresh> slots_run = frame.template array<TensorSlot>(a, num_slots, TensorSlot{});
         const ::fixy::View<TensorSlot> slots = slots_run.view();
-        loaded_plan->slots = slots_run;
+        loaded_plan->slots = slots_run.weaken();
         uint32_t slot_position = 0;
         for (TensorSlot& slot : slots) {
             slot = r.read_image(TensorSlot{});
@@ -743,7 +742,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     if (!r.has_remaining(num_ops, kTraceEntryMinWireBytes)) {
         return ::fixy::err(r.reason_or(LoadError::truncated));
     }
-    ::fixy::ArenaRun<TraceEntry, DagArena> ops_run = arena.array<TraceEntry>(a, num_ops, TraceEntry{});
+    DagFrameRun<TraceEntry, Fresh> ops_run = frame.template array<TraceEntry>(a, num_ops, TraceEntry{});
     const ::fixy::View<TraceEntry> ops = ops_run.view();
 
     for (TraceEntry& te : ops) {
@@ -808,28 +807,29 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
             }
         }
 
-        ::fixy::ArenaRun<TensorMeta, DagArena> input_metas_run = arena.array<TensorMeta>(a, num_inputs, TensorMeta{});
+        DagFrameRun<TensorMeta, Fresh> input_metas_run = frame.template array<TensorMeta>(a, num_inputs, TensorMeta{});
         for (TensorMeta& meta : input_metas_run.view()) {
             meta = read_meta(r);
         }
 
-        ::fixy::ArenaRun<TensorMeta, DagArena> output_metas_run = arena.array<TensorMeta>(a, num_outputs, TensorMeta{});
+        DagFrameRun<TensorMeta, Fresh> output_metas_run =
+            frame.template array<TensorMeta>(a, num_outputs, TensorMeta{});
         for (TensorMeta& meta : output_metas_run.view()) {
             meta = read_meta(r);
         }
 
-        ::fixy::ArenaRun<int64_t, DagArena> scalar_args_run = arena.array<int64_t>(a, num_scalar_args, int64_t{0});
+        DagFrameRun<int64_t, Fresh> scalar_args_run = frame.template array<int64_t>(a, num_scalar_args, int64_t{0});
         for (int64_t& value : scalar_args_run.view()) {
             value = r.r<int64_t>();
         }
-        te.set_scalar_args(scalar_args_run);
+        te.set_scalar_args(scalar_args_run.weaken());
 
-        ::fixy::ArenaRun<OpIndex, DagArena> producers_run = arena.array<OpIndex>(a, num_inputs, OpIndex{});
+        DagFrameRun<OpIndex, Fresh> producers_run = frame.template array<OpIndex>(a, num_inputs, OpIndex{});
         for (OpIndex& producer : producers_run.view()) {
             producer = OpIndex{r.r<uint32_t>()};
         }
 
-        ::fixy::ArenaRun<SlotId, DagArena> input_slot_ids_run = arena.array<SlotId>(a, num_inputs, SlotId{});
+        DagFrameRun<SlotId, Fresh> input_slot_ids_run = frame.template array<SlotId>(a, num_inputs, SlotId{});
         for (SlotId& slot_id : input_slot_ids_run.view()) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // A slot id indexes the replay slot table, and replay checks only
@@ -845,9 +845,9 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
             }
             slot_id = sid;
         }
-        te.set_inputs(input_metas_run, producers_run, input_slot_ids_run);
+        te.set_inputs(input_metas_run.weaken(), producers_run.weaken(), input_slot_ids_run.weaken());
 
-        ::fixy::ArenaRun<SlotId, DagArena> output_slot_ids_run = arena.array<SlotId>(a, num_outputs, SlotId{});
+        DagFrameRun<SlotId, Fresh> output_slot_ids_run = frame.template array<SlotId>(a, num_outputs, SlotId{});
         for (SlotId& slot_id : output_slot_ids_run.view()) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // The same bound as for the input slot ids above.
@@ -856,7 +856,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
             }
             slot_id = sid;
         }
-        te.set_outputs(output_metas_run, output_slot_ids_run);
+        te.set_outputs(output_metas_run.weaken(), output_slot_ids_run.weaken());
     }
 
     for (const LoadError refusal : r.refusal)
@@ -888,13 +888,13 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     for (const LoadError fault : checksum_fault(image, r.pos))
         return ::fixy::err(fault);
 
-    const DagRef<RegionNode> node = mint_dag_node<RegionNode>(a, arena);
+    const DagFrameRef<RegionNode, Fresh> node = mint_dag_node<RegionNode>(a, frame);
     node->kind = TraceNodeKind::REGION;
     node->merkle_hash = hdr.merkle_hash;
     node->content_hash = hdr.content_hash;
     node->numerics = numerics;
     node->next = ::fixy::none;
-    node->ops = ops_run;
+    node->ops = ops_run.weaken();
     node->first_op_schema = first_op_schema;
     node->measured_ms = measured_ms;
     // A new node holds the counter at zero, and each value on disk is at
@@ -904,7 +904,23 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     node->plan = make_plan_link(plan);
     // The node is rebuilt from Cipher bytes, and the fold above matched the
     // content hash that the image records, so it crosses the edge to Loaded.
-    return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(node).retag<::fixy::tags::source::Loaded>();
+    return ::fixy::mint_tagged<::fixy::tags::source::Replayed>(node.weaken())
+        .template retag<::fixy::tags::source::Loaded>();
+}
+
+}  // namespace detail_ser
+
+// Gives the region of the image, or the reason that refused the image: a
+// parse error, a version mismatch, a count or a plan past its bound, or a
+// content hash that the operations do not fold to.  The reason is the first
+// fault of the image.  The load opens one frame on the arena, and it builds
+// each structure of the region in that frame.  The result is a family Ref, so
+// no slot of another frame takes the loaded node.
+CRUCIBLE_COLD [[nodiscard]] inline ::fixy::Result<LoadedRegionNode, LoadError>
+deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
+                   ::fixy::BumpArena<DagArena>& arena) {
+    return ::foundation::core::with_arena_frame(
+        arena, [a, image](auto& frame) noexcept { return detail_ser::read_region_(a, image, frame); });
 }
 
 // The fault of a stored image of the region of hash, or none, with no parse of
@@ -936,15 +952,16 @@ template <class Branch, ::foundation::brand::IsBrand Brand, class ImageBrand, st
     return detail_ser::write_branch_image(*node, std::move(image));
 }
 
-// The resolver turns each persisted merkle hash back into a link to a node,
-// or into an empty link.  Gives the branch, or the reason that refused the
-// image: a parse error, a version mismatch, a count past its bound, or arms
-// out of the order of their values.
-template <typename Resolve>
-    requires std::is_invocable_r_v<TraceLink, Resolve&, MerkleHash>
-[[nodiscard]] inline ::fixy::Result<DagRef<BranchNode>, LoadError>
-deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
-                   ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND, Resolve&& resolve) {
+// The resolver turns each persisted merkle hash back into a node of the frame,
+// or into no node.  Gives the branch, or the reason that refused the image: a
+// parse error, a version mismatch, a count past its bound, or arms out of the
+// order of their values.  The branch and the target of each arm are in the
+// arena of the frame.
+template <class Fresh, typename Resolve>
+    requires std::is_invocable_r_v<::fixy::Option<DagFrameRef<TraceNode, Fresh>>, Resolve&, MerkleHash>
+[[nodiscard]] ::fixy::Result<DagFrameRef<BranchNode, Fresh>, LoadError>
+deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image, DagFrame<Fresh>& frame,
+                   Resolve&& resolve) {
     Resolve resolver = std::forward<Resolve>(resolve);
     using namespace detail_ser;
     Reader r{.image = image};
@@ -968,17 +985,21 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         return ::fixy::err(r.reason_or(LoadError::truncated));
     }
 
-    const DagRef<BranchNode> node = mint_dag_node<BranchNode>(a, arena);
+    const DagFrameRef<BranchNode, Fresh> node = mint_dag_node<BranchNode>(a, frame);
     node->kind = TraceNodeKind::BRANCH;
     node->merkle_hash = hdr.merkle_hash;
     node->next = ::fixy::none;  // the caller resolves the continuation separately
     node->guard = guard;
-    node->set_arms(arena.build_array<BranchNode::Arm>(a, ::fixy::ElementCount{num_arms},
-                                                      [](::fixy::RunStart) noexcept { return BranchNode::Arm{}; }));
+    DagFrameRun<BranchNode::Arm, Fresh> arms = frame.template build_array<BranchNode::Arm>(
+        a, ::fixy::ElementCount{num_arms}, [](::fixy::RunStart) noexcept { return BranchNode::Arm{}; });
+    node->set_arms(arms.weaken());
     for (BranchNode::Arm& arm : node->arms()) {
         arm.value = r.r<int64_t>();
         const MerkleHash target_h = MerkleHash{r.r<uint64_t>()};
-        arm.set_target(resolver(target_h));
+        const ::fixy::Option<DagFrameRef<TraceNode, Fresh>> target = resolver(target_h);
+        arm.set_target(target.match(
+            [](DagFrameRef<TraceNode, Fresh> const& resolved) noexcept { return TraceLink::some(resolved.weaken()); },
+            []() noexcept { return TraceLink{}; }));
     }
 
     // Replay finds an arm by binary search on the value, so an image with
@@ -991,18 +1012,11 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
 
 // The branch with no resolver: the target of each arm stays empty, and the
 // caller resolves the targets later.
-[[nodiscard]] inline ::fixy::Result<DagRef<BranchNode>, LoadError>
-deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
-                   ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND) {
-    return deserialize_branch(a, image, arena, [](MerkleHash) noexcept { return TraceLink{}; });
+template <class Fresh>
+[[nodiscard]] ::fixy::Result<DagFrameRef<BranchNode, Fresh>, LoadError>
+deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image, DagFrame<Fresh>& frame) {
+    return deserialize_branch(a, image, frame,
+                              [](MerkleHash) noexcept { return ::fixy::Option<DagFrameRef<TraceNode, Fresh>>{}; });
 }
-
-// The twin of the two deserialize_branch overloads above.  The node is in
-// the arena, and a temporary arena releases it at the end of the statement.
-// The deduced parameters hold the other arguments, and no parameter of the
-// twin has a type of the standard library.
-template <class Buffer, class... Rest>
-void deserialize_branch(::foundation::effects::Alloc, Buffer&&, ::fixy::BumpArena<DagArena>&&, Rest&&...) =
-    delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
 }  // namespace crucible

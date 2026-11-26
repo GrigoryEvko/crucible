@@ -12,7 +12,10 @@ int main() {
     ::fixy::BumpArena<crucible::DagArena> arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{4096});
     const crucible::DagRef<crucible::TraceNode> node =
-        crucible::mint_dag_node<crucible::TraceNode>(::foundation::effects::testing::test().alloc, arena);
+        ::foundation::core::with_arena_frame(arena, [](auto& frame) noexcept {
+            return crucible::mint_dag_node<crucible::TraceNode>(::foundation::effects::testing::test().alloc, frame)
+                .weaken();
+        });
     crucible::TraceNode copy{*node};
     return static_cast<int>(copy.kind);
 }

@@ -2166,7 +2166,7 @@ crucible_neg_compile_test(neg_transaction_region_raw_pointer
   "neg_transaction_region_raw_pointer.cpp:34:21: error: no matching function for call to .crucible::TransactionLog<16, Owner>::commit"
   "no known conversion for argument 3 from .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion. \\{aka .fixy::Tagged<foundation::core::Ref<const crucible::RegionNode, crucible::DagArena>, fixy::tags::source::Arena>.\\}")
 crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
-  "neg_transaction_region_loaded_cross_tag.cpp:40:21: error: no matching function for call to .crucible::TransactionLog<16, Owner>::commit"
+  "neg_transaction_region_loaded_cross_tag.cpp:43:21: error: no matching function for call to .crucible::TransactionLog<16, Owner>::commit"
   "no known conversion for argument 3 from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
 # begin_tx takes the step of a transaction as a StepId, so a raw integer of
 # another kind cannot stand for the step.
@@ -2364,8 +2364,8 @@ crucible_neg_compile_test(neg_dag_node_mint_of_a_plan
   "no matching function for call to .mint_dag_node<crucible::MemoryPlan>"
   "required for the satisfaction of .DagNodeType<Node>. \\[with Node = crucible::MemoryPlan\\]")
 crucible_neg_compile_test(neg_dag_node_mint_in_another_family
-  "no matching function for call to .mint_dag_node<crucible::RegionNode>"
-  "foundation::core::BumpArena<.anonymous.::OtherFamily>")
+  "no matching function for call to .mint_dag_node<crucible::RegionNode>.*foundation::core::ArenaFrame<.anonymous.::OtherFamily, "
+  "mismatched types .crucible::DagArena. and .\\{anonymous\\}::OtherFamily.")
 
 # A slot of the kernel cache gives its one writer only with the claim that won
 # the slot.
@@ -4004,7 +4004,7 @@ crucible_neg_compile_test(neg_replay_engine_built_alone
   "neg_replay_engine_built_alone\\.cpp:10:")
 crucible_neg_compile_test(neg_replay_engine_bound_outside_its_context
   "void crucible::ReplayEngine::init_\\(const crucible::RegionNode&, const crucible::PoolAllocator&\\). is private within this context"
-  "neg_replay_engine_bound_outside_its_context\\.cpp:17:")
+  "neg_replay_engine_bound_outside_its_context\\.cpp:19:")
 
 # Production-call-site fence: a hot-path consumer that requires the
 # Pool allocation class refuses a Heap band.  This is the rejection that

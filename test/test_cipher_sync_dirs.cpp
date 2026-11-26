@@ -264,12 +264,15 @@ TraceLog g_trace_log{};
     const auto view = cipher.mint_open_view(ctx);
     fixy::BumpArena<crucible::DagArena> arena =
         fixy::mint_bump_arena<crucible::DagArena>(fixy::Quantity<fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
-    auto ops_run = arena.array<crucible::TraceEntry>(ctx.cap().alloc, 1, crucible::TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const fixy::View<crucible::TraceEntry> ops = ops_run.view();
-    ops.get(0).expect("the region holds one op")->schema_hash = crucible::SchemaHash{0x5EC0};
-    const crucible::ContentHash stored = cipher.store(
-        ctx, view, crucible::Cipher::content_addressed(crucible::make_region(ctx.cap().alloc, arena, ops_run)));
+    const crucible::DagRef<crucible::RegionNode> region =
+        foundation::core::with_arena_frame(arena, [alloc = ctx.cap().alloc](auto& frame) noexcept {
+            auto ops_run = frame.template array<crucible::TraceEntry>(alloc, 1, crucible::TraceEntry{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const fixy::View<crucible::TraceEntry> ops = ops_run.view();
+            ops.get(0).expect("the region holds one op")->schema_hash = crucible::SchemaHash{0x5EC0};
+            return crucible::make_region(alloc, frame, ops_run).weaken();
+        });
+    const crucible::ContentHash stored = cipher.store(ctx, view, crucible::Cipher::content_addressed(region));
     const fixy::HeapArray<crucible::Cipher::SessionEvent> events =
         fixy::mint_heap_array(ctx.cap().alloc, 1,
                               crucible::Cipher::SessionEvent::cipher_event(

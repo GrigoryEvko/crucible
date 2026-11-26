@@ -152,16 +152,29 @@ template <class LogType>
     return count;
 }
 
+// A region of one op of the schema, with its merkle hash.  One frame on the
+// arena builds the op and the region.
+[[nodiscard]] crucible::DagRef<crucible::RegionNode>
+region_of_schema(::foundation::effects::Alloc alloc, ::fixy::BumpArena<DagArena>& arena, crucible::SchemaHash schema) {
+    const crucible::DagRef<crucible::RegionNode> region =
+        ::foundation::core::with_arena_frame(arena, [alloc, schema](auto& frame) noexcept {
+            auto ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            ::fixy::View<crucible::TraceEntry> const ops = ops_run.view();
+            ops.get(0).expect("the run holds one op")->schema_hash = schema;
+            return crucible::make_region(alloc, frame, ops_run).weaken();
+        });
+    // A commit requires a non-zero merkle root, so the hash is recomputed
+    // first.  The production path does the same thing in the same order.
+    crucible::recompute_merkle(*region);
+    return region;
+}
+
 // One region for each step, so that each transaction holds a region that no
-// other transaction holds.  The region and a copy of its op are in the arena.
+// other transaction holds.  The region and its op are in the arena.
 [[nodiscard]] crucible::RegionNode* region_of_step(::foundation::effects::Alloc alloc,
                                                    ::fixy::BumpArena<DagArena>& arena, uint32_t step) {
-    crucible::TraceEntry entry{};
-    entry.schema_hash = crucible::SchemaHash{0x5000u + step};
-    const auto ops_run = arena.array<crucible::TraceEntry>(alloc, 1, entry);
-    const crucible::DagRef<crucible::RegionNode> region = crucible::make_region(alloc, arena, ops_run);
-    crucible::recompute_merkle(*region);
-    return &*region;
+    return &*region_of_schema(alloc, arena, crucible::SchemaHash{0x5000u + step});
 }
 
 // Begins and commits the transaction of one step.
@@ -723,23 +736,14 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     Log log{};
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
 
-    auto ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<crucible::TraceEntry> const ops = ops_run.view();
-    ops.get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xFEED};
-    const crucible::DagRef<crucible::RegionNode> region1 = crucible::make_region(test.alloc, arena, ops_run);
-    // A commit requires a non-zero merkle root, so the hash is recomputed
-    // first. The production path does the same thing in the same order.
+    // region_of_schema recomputes the merkle hash before a commit.
     // Synthesizing a hash instead would take the test off that path.
-    crucible::recompute_merkle(*region1);
+    const crucible::DagRef<crucible::RegionNode> region1 =
+        region_of_schema(test.alloc, arena, crucible::SchemaHash{0xFEED});
     CRUCIBLE_TEST_ASSERT(kTest, region1->merkle_hash.raw() != 0);
 
-    auto ops2_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<crucible::TraceEntry> const ops2 = ops2_run.view();
-    ops2.get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xBEEF};
-    const crucible::DagRef<crucible::RegionNode> region2 = crucible::make_region(test.alloc, arena, ops2_run);
-    crucible::recompute_merkle(*region2);
+    const crucible::DagRef<crucible::RegionNode> region2 =
+        region_of_schema(test.alloc, arena, crucible::SchemaHash{0xBEEF});
     CRUCIBLE_TEST_ASSERT(kTest, region2->merkle_hash.raw() != 0);
 
     CRUCIBLE_TEST_ASSERT(kTest, log.size(owner) == 0);
@@ -808,12 +812,9 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
 
     // More entries than the ring holds, so it wraps at least once.
     for (uint32_t i = 3; i <= 32; i++) {
-        crucible::TraceEntry e{};
-        e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
-        const auto entry_run = arena.array<crucible::TraceEntry>(test.alloc, 1, e);
-        const crucible::DagRef<crucible::RegionNode> r = crucible::make_region(test.alloc, arena, entry_run);
         // Recomputed before the commit, for the reason given above.
-        crucible::recompute_merkle(*r);
+        const crucible::DagRef<crucible::RegionNode> r =
+            region_of_schema(test.alloc, arena, crucible::SchemaHash{static_cast<uint64_t>(i)});
         static_cast<void>(publish(log, owner, i, &*r));
     }
     // The loop ends at 32, so the last transaction is the active one.

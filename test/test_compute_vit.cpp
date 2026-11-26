@@ -184,10 +184,14 @@ int main() {
         crucible::test::set_output_slots(test.alloc, runs, *op, def->out);
     }
 
-    const DagRef<RegionNode> region = mint_dag_node<RegionNode>(test.alloc, runs);
-    region->kind = TraceNodeKind::REGION;
-    region->ops = ops_run;
-    region->plan = make_plan_link(plan_storage);
+    const DagRef<RegionNode> region =
+        ::foundation::core::with_arena_frame(runs, [alloc = test.alloc, &ops_run, &plan_storage](auto& frame) noexcept {
+            const auto made = mint_dag_node<RegionNode>(alloc, frame);
+            made->kind = TraceNodeKind::REGION;
+            made->ops = ops_run;
+            made->plan = make_plan_link(plan_storage);
+            return made.weaken();
+        });
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());

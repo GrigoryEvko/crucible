@@ -11,7 +11,9 @@ int main() {
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
         ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{4096}});
     const crucible::DagRef<crucible::RegionNode> region =
-        crucible::mint_dag_node<crucible::RegionNode>(test.alloc, arena);
+        ::foundation::core::with_arena_frame(arena, [alloc = test.alloc](auto& frame) noexcept {
+            return crucible::mint_dag_node<crucible::RegionNode>(alloc, frame).weaken();
+        });
     crucible::CrucibleContext ctx{test.alloc};
     crucible::PoolAllocator pool;
     ctx.engine(test).init_(*region, pool);

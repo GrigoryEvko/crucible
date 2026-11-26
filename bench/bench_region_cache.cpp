@@ -37,20 +37,22 @@ using RegionIndex = ::fixy::Index<NUM_REGIONS>;
 // The arena builds each op and each plan with its member initializers.
 [[nodiscard]] DagRef<RegionNode> make_fixture_region(::foundation::effects::Test const& test,
                                                      ::fixy::BumpArena<DagArena>& arena, RegionIndex r) {
-    auto ops_run = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<TraceEntry> ops = ops_run.view();
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
-        op.schema_hash = SchemaHash{0x1000 + r.raw() * 0x100 + i};
-        op.shape_hash = ShapeHash{0x2000 + r.raw() * 0x100 + i};
-    }
+    return ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, r](auto& frame) noexcept {
+        auto ops_run = frame.template array<TraceEntry>(alloc, NUM_OPS, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TraceEntry> ops = ops_run.view();
+        for (uint32_t i = 0; i < NUM_OPS; i++) {
+            TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
+            op.schema_hash = SchemaHash{0x1000 + r.raw() * 0x100 + i};
+            op.shape_hash = ShapeHash{0x2000 + r.raw() * 0x100 + i};
+        }
 
-    auto const plan = arena.make<MemoryPlan>(test.alloc);
+        auto const plan = frame.template make<MemoryPlan>(alloc);
 
-    DagRef<RegionNode> const region = make_region(test.alloc, arena, ops_run);
-    region->plan = make_plan_link(plan);
-    return region;
+        auto const region = make_region(alloc, frame, ops_run);
+        region->plan = make_plan_link(plan.weaken());
+        return region.weaken();
+    });
 }
 
 // The regions of the fixture, from region 0.  A braced list runs its

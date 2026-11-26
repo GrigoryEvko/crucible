@@ -110,12 +110,14 @@ static StoreRoot tmp_root_for(::fixy::TextView tag) {
 // distinct content hashes, so each test writes its own object file
 // instead of colliding with a sibling's.
 static crucible::DagRef<RegionNode> mint_region(::fixy::BumpArena<DagArena>& arena, uint64_t hash_seed) {
-    auto ops_run = arena.array<crucible::TraceEntry>(g_test.alloc, 1, crucible::TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
-    crucible::TraceEntry& op = *ops.get(0).expect("the region holds one op");
-    op.schema_hash = crucible::SchemaHash{hash_seed * 0x9E3779B97F4A7C15ULL};
-    return crucible::make_region(g_test.alloc, arena, ops_run);
+    return ::foundation::core::with_arena_frame(arena, [hash_seed](auto& frame) noexcept {
+        auto ops_run = frame.template array<crucible::TraceEntry>(g_test.alloc, 1, crucible::TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
+        crucible::TraceEntry& op = *ops.get(0).expect("the region holds one op");
+        op.schema_hash = crucible::SchemaHash{hash_seed * 0x9E3779B97F4A7C15ULL};
+        return crucible::make_region(g_test.alloc, frame, ops_run).weaken();
+    });
 }
 
 static void test_commit_per_fleet_type_identity() {

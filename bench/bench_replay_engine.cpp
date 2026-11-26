@@ -42,7 +42,7 @@ struct BenchRegion {
 
     explicit BenchRegion(uint32_t n)
         : plan{arena.make<MemoryPlan>(::foundation::effects::testing::test().alloc)},
-          region{mint_dag_node<RegionNode>(::foundation::effects::testing::test().alloc, arena)},
+          region{mint_region_(arena)},
           num_ops{n} {
         auto const alloc = ::foundation::effects::testing::test().alloc;
         auto out_slots_run = arena.array(alloc, n, SlotId{});
@@ -97,6 +97,15 @@ struct BenchRegion {
 
     BenchRegion(const BenchRegion&) = delete;
     BenchRegion& operator=(const BenchRegion&) = delete;
+
+private:
+    // A region node with each field at its default, which one frame on the
+    // arena builds.
+    [[nodiscard]] static DagRef<RegionNode> mint_region_(::fixy::BumpArena<DagArena>& arena) {
+        return ::foundation::core::with_arena_frame(arena, [](auto& frame) noexcept {
+            return mint_dag_node<RegionNode>(::foundation::effects::testing::test().alloc, frame).weaken();
+        });
+    }
 };
 
 // Walks — each calls engine.reset() at top so repeated invocation

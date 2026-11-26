@@ -78,56 +78,58 @@ enum class SeedSlotFault : std::uint8_t {
 inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaBlock{std::size_t{1} << 20};
 
 // The ops, their arrays, the region and the slots of the plan are in
-// dag_arena.  The plan is in arena.
+// dag_arena, and one frame on it builds them.  The plan is in arena.
 [[nodiscard]] inline DagRef<RegionNode> build_seed_region(::fixy::BumpArena<DagArena>& arena,
                                                           ::fixy::BumpArena<DagArena>& dag_arena, SeedPlan seed_plan,
                                                           SeedSlotFault fault = SeedSlotFault::none) noexcept {
-    const auto alloc = test_alloc();
-    constexpr std::uint32_t kOps = 2;
-    const bool has_plan = seed_plan == SeedPlan::two_slots;
-    auto ops_run = dag_arena.array<TraceEntry>(alloc, kOps, TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<TraceEntry> ops = ops_run.view();
-    for (std::uint32_t i = 0; i < kOps; ++i) {
-        TraceEntry& op = *ops.get(i).expect("i is below kOps");
-        op.schema_hash = SchemaHash{0xCAFE0000u + i};
-        TensorMeta meta{};
-        meta.ndim = 1;
-        meta.sizes[0] = tensor_dim(16);
-        meta.strides[0] = tensor_dim(1);
-        meta.dtype = ScalarType::Float;
-        const auto input_metas_run = dag_arena.array(alloc, 1, meta);
-        const auto producers_run = dag_arena.array(alloc, 1, OpIndex{});
-        const auto input_slots_run = dag_arena.array(alloc, 1, has_plan ? SlotId{0} : SlotId{});
-        op.set_inputs(input_metas_run, producers_run, input_slots_run);
-        const auto output_metas_run = dag_arena.array(alloc, 1, meta);
-        const auto output_slots_run = dag_arena.array(alloc, 1, SlotId{i});
-        op.set_outputs(output_metas_run, output_slots_run);
-    }
-    const DagRef<RegionNode> region = make_region(alloc, dag_arena, ops_run);
-    if (has_plan) {
-        const auto plan = arena.make<MemoryPlan>(alloc);
-        plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
-        plan->num_external = 0;
-        plan->device_type = DeviceType::CPU;
-        auto slots_run = dag_arena.array<TensorSlot>(alloc, 2, TensorSlot{});
+    return ::foundation::core::with_arena_frame(dag_arena, [&arena, seed_plan, fault](auto& frame) noexcept {
+        const auto alloc = test_alloc();
+        constexpr std::uint32_t kOps = 2;
+        const bool has_plan = seed_plan == SeedPlan::two_slots;
+        auto ops_run = frame.template array<TraceEntry>(alloc, kOps, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TensorSlot> slots = slots_run.view();
-        std::uint32_t slot_index = 0;
-        for (TensorSlot& slot : slots) {
-            slot.offset_bytes = slot_index * PoolAllocator::ALIGNMENT;
-            slot.nbytes = 64;
-            slot.dtype = ScalarType::Float;
-            slot.slot_id = SlotId{slot_index};
-            ++slot_index;
+        const ::fixy::View<TraceEntry> ops = ops_run.view();
+        for (std::uint32_t i = 0; i < kOps; ++i) {
+            TraceEntry& op = *ops.get(i).expect("i is below kOps");
+            op.schema_hash = SchemaHash{0xCAFE0000u + i};
+            TensorMeta meta{};
+            meta.ndim = 1;
+            meta.sizes[0] = tensor_dim(16);
+            meta.strides[0] = tensor_dim(1);
+            meta.dtype = ScalarType::Float;
+            const auto input_metas_run = frame.array(alloc, 1, meta);
+            const auto producers_run = frame.array(alloc, 1, OpIndex{});
+            const auto input_slots_run = frame.array(alloc, 1, has_plan ? SlotId{0} : SlotId{});
+            op.set_inputs(input_metas_run.weaken(), producers_run.weaken(), input_slots_run.weaken());
+            const auto output_metas_run = frame.array(alloc, 1, meta);
+            const auto output_slots_run = frame.array(alloc, 1, SlotId{i});
+            op.set_outputs(output_metas_run.weaken(), output_slots_run.weaken());
         }
-        TensorSlot& second = *slots.get(1).expect("the seed plan holds two slots");
-        if (fault == SeedSlotFault::past_pool) second.nbytes = std::uint64_t{1} << 40;
-        if (fault == SeedSlotFault::misaligned) second.offset_bytes += 8;
-        plan->slots = slots_run;
-        region->plan = make_plan_link(plan);
-    }
-    return region;
+        const auto region = make_region(alloc, frame, ops_run);
+        if (has_plan) {
+            const auto plan = arena.make<MemoryPlan>(alloc);
+            plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
+            plan->num_external = 0;
+            plan->device_type = DeviceType::CPU;
+            auto slots_run = frame.template array<TensorSlot>(alloc, 2, TensorSlot{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<TensorSlot> slots = slots_run.view();
+            std::uint32_t slot_index = 0;
+            for (TensorSlot& slot : slots) {
+                slot.offset_bytes = slot_index * PoolAllocator::ALIGNMENT;
+                slot.nbytes = 64;
+                slot.dtype = ScalarType::Float;
+                slot.slot_id = SlotId{slot_index};
+                ++slot_index;
+            }
+            TensorSlot& second = *slots.get(1).expect("the seed plan holds two slots");
+            if (fault == SeedSlotFault::past_pool) second.nbytes = std::uint64_t{1} << 40;
+            if (fault == SeedSlotFault::misaligned) second.offset_bytes += 8;
+            plan->slots = slots_run.weaken();
+            region->plan = make_plan_link(plan);
+        }
+        return region.weaken();
+    });
 }
 
 // The image of a region, as the writer writes it.

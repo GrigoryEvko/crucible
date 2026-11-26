@@ -60,25 +60,28 @@ using ::fixy::WaitStrategy_v;
 
 static auto g_test = ::foundation::effects::testing::test();
 
-// The ops, their arrays and the region are in dag_arena.
+// The ops, their arrays and the region are in dag_arena, and one frame on it
+// builds them.
 static crucible::DagRef<RegionNode> make_test_region(::fixy::BumpArena<crucible::DagArena>& dag_arena, uint32_t seed) {
-    constexpr uint32_t NUM_OPS = 1;
-    auto ops_run = dag_arena.array<TraceEntry>(g_test.alloc, NUM_OPS, TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<TraceEntry> ops = ops_run.view();
-    TraceEntry& op = *ops.get(0).expect("the region holds one op");
-    op.schema_hash = SchemaHash{0xDEADBEEF00000000ULL + seed};
-    TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = ::crucible::tensor_dim(16);
-    meta.strides[0] = ::crucible::tensor_dim(1);
-    meta.dtype = ScalarType::Float;
-    op.set_inputs(::fixy::check::run_of(kTest, g_test.alloc, dag_arena, meta),
-                  ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, OpIndex{}),
-                  ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, SlotId{}));
-    op.set_outputs(::fixy::check::run_of(kTest, g_test.alloc, dag_arena, meta),
-                   ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, SlotId{seed}));
-    return crucible::make_region(g_test.alloc, dag_arena, ops_run);
+    return ::foundation::core::with_arena_frame(dag_arena, [seed](auto& frame) noexcept {
+        constexpr uint32_t NUM_OPS = 1;
+        auto ops_run = frame.template array<TraceEntry>(g_test.alloc, NUM_OPS, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<TraceEntry> ops = ops_run.view();
+        TraceEntry& op = *ops.get(0).expect("the region holds one op");
+        op.schema_hash = SchemaHash{0xDEADBEEF00000000ULL + seed};
+        TensorMeta meta{};
+        meta.ndim = 1;
+        meta.sizes[0] = ::crucible::tensor_dim(16);
+        meta.strides[0] = ::crucible::tensor_dim(1);
+        meta.dtype = ScalarType::Float;
+        op.set_inputs(::fixy::check::run_of(kTest, g_test.alloc, frame, meta).weaken(),
+                      ::fixy::check::run_of(kTest, g_test.alloc, frame, OpIndex{}).weaken(),
+                      ::fixy::check::run_of(kTest, g_test.alloc, frame, SlotId{}).weaken());
+        op.set_outputs(::fixy::check::run_of(kTest, g_test.alloc, frame, meta).weaken(),
+                       ::fixy::check::run_of(kTest, g_test.alloc, frame, SlotId{seed}).weaken());
+        return crucible::make_region(g_test.alloc, frame, ops_run).weaken();
+    });
 }
 
 static void test_store_pinned_bit_equality(const char* dir) {

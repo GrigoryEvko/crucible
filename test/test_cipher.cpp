@@ -50,31 +50,33 @@ static auto g_test = ::foundation::effects::testing::test();
 
 // The salt goes into the schema hashes, so two salts give two regions with
 // two content hashes.  The ops, their arrays and the region are in
-// dag_arena.
+// dag_arena, and one frame on it builds them.
 static crucible::DagRef<crucible::RegionNode> make_test_region(::fixy::BumpArena<DagArena>& dag_arena,
                                                                std::uint64_t salt = 0) {
-    constexpr uint32_t NUM_OPS = 2;
-    auto ops_run = dag_arena.array<crucible::TraceEntry>(g_test.alloc, NUM_OPS, crucible::TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
+    return ::foundation::core::with_arena_frame(dag_arena, [salt](auto& frame) noexcept {
+        constexpr uint32_t NUM_OPS = 2;
+        auto ops_run = frame.template array<crucible::TraceEntry>(g_test.alloc, NUM_OPS, crucible::TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
 
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        crucible::TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
-        op.schema_hash = crucible::SchemaHash{0xCAFE0000 + i + (salt << 8)};
+        for (uint32_t i = 0; i < NUM_OPS; i++) {
+            crucible::TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
+            op.schema_hash = crucible::SchemaHash{0xCAFE0000 + i + (salt << 8)};
 
-        crucible::TensorMeta meta{};
-        meta.ndim = 1;
-        meta.sizes[0] = ::crucible::tensor_dim(16);
-        meta.strides[0] = ::crucible::tensor_dim(1);
-        meta.dtype = crucible::ScalarType::Float;
-        op.set_inputs(::fixy::check::run_of(kTest, g_test.alloc, dag_arena, meta),
-                      ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, crucible::OpIndex{}),
-                      ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, crucible::SlotId{}));
-        op.set_outputs(::fixy::check::run_of(kTest, g_test.alloc, dag_arena, meta),
-                       ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, crucible::SlotId{i}));
-    }
+            crucible::TensorMeta meta{};
+            meta.ndim = 1;
+            meta.sizes[0] = ::crucible::tensor_dim(16);
+            meta.strides[0] = ::crucible::tensor_dim(1);
+            meta.dtype = crucible::ScalarType::Float;
+            op.set_inputs(::fixy::check::run_of(kTest, g_test.alloc, frame, meta).weaken(),
+                          ::fixy::check::run_of(kTest, g_test.alloc, frame, crucible::OpIndex{}).weaken(),
+                          ::fixy::check::run_of(kTest, g_test.alloc, frame, crucible::SlotId{}).weaken());
+            op.set_outputs(::fixy::check::run_of(kTest, g_test.alloc, frame, meta).weaken(),
+                           ::fixy::check::run_of(kTest, g_test.alloc, frame, crucible::SlotId{i}).weaken());
+        }
 
-    return crucible::make_region(g_test.alloc, dag_arena, ops_run);
+        return crucible::make_region(g_test.alloc, frame, ops_run).weaken();
+    });
 }
 
 // Commits a head and requires that the commit happened.

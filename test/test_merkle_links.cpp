@@ -1,5 +1,7 @@
-// The links of the Merkle DAG and the kind-checked doors of its nodes.
+// The links of the Merkle DAG, the kind-checked doors of its nodes, and the
+// branch that add_branch builds at a point of divergence.
 
+#include <crucible/KernelCache.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
 #include <fixy/Protocol.h>
@@ -7,50 +9,58 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/core/ArenaFrame.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace {
 
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
-}  // namespace
-
-namespace {
-
-// A branch of two arms, of the values 1 and 2, in the arena.
-[[nodiscard]] crucible::BranchNode& make_two_arm_branch(::foundation::effects::Alloc alloc,
-                                                        ::fixy::BumpArena<crucible::DagArena>& arena,
-                                                        crucible::TraceLink first,
-                                                        crucible::TraceLink second) noexcept {
-    crucible::BranchNode& branch = *crucible::mint_dag_node<crucible::BranchNode>(alloc, arena);
-    branch.kind = crucible::TraceNodeKind::BRANCH;
-    branch.set_arms(arena.build_array<crucible::BranchNode::Arm>(
+// A branch of two arms, of the values 1 and 2, in the arena of the frame.
+template <class Fresh>
+[[nodiscard]] crucible::DagFrameRef<crucible::BranchNode, Fresh>
+make_two_arm_branch(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& frame, crucible::TraceLink first,
+                    crucible::TraceLink second) noexcept {
+    auto const branch = crucible::mint_dag_node<crucible::BranchNode>(alloc, frame);
+    branch->kind = crucible::TraceNodeKind::BRANCH;
+    auto arms = frame.template build_array<crucible::BranchNode::Arm>(
         alloc, ::fixy::ElementCount{2}, [first, second](::fixy::RunStart at) noexcept {
             return at.value().raw() == 0 ? crucible::BranchNode::Arm{1, first} : crucible::BranchNode::Arm{2, second};
-        }));
+        });
+    branch->set_arms(arms.weaken());
     return branch;
 }
 
-}  // namespace
-
-[[gnu::cold]] int main() {
-    auto test = ::foundation::effects::testing::test();
-    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
-        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
-
-    auto ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+// The checks of the links, the doors, the arms, the walks and the image of a
+// branch, each node in the arena of the frame.
+template <class Fresh>
+void check_links(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& frame) noexcept {
+    auto ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<crucible::TraceEntry, 1> const ops = ops_run.view().window<1>(0).expect("the run holds one op");
+    ::fixy::View<crucible::TraceEntry, 1> const ops =
+        ops_run.view().template window<1>(0).expect("the run holds one op");
     ops.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0x1111};
-    crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops_run);
-    crucible::TraceNode& terminal = *crucible::make_terminal(test.alloc, arena);
-    crucible::LoopNode& loop = *crucible::make_loop(
-        test.alloc, arena, region, crucible::ContentHash{0x5EED},
-        ::fixy::ArenaRun<crucible::FeedbackEdge const, crucible::DagArena>{}, crucible::LoopTermKind::REPEAT, 2);
+    auto const region_node = crucible::make_region(alloc, frame, ops_run);
+    crucible::RegionNode& region = *region_node;
+    auto const terminal_node = crucible::make_terminal(alloc, frame);
+    crucible::TraceNode& terminal = *terminal_node;
+    auto no_edges_run = frame.array(alloc, std::size_t{0}, crucible::FeedbackEdge{});
+    auto const loop_node = crucible::make_loop(alloc, frame, region_node, crucible::ContentHash{0x5EED}, no_edges_run,
+                                               crucible::LoopTermKind::REPEAT, 2);
+    crucible::LoopNode& loop = *loop_node;
+
+    // A FrameRef of a node of the frame, and the upcast of a region to it,
+    // which names the same object.
+    using TraceRef = std::remove_const_t<decltype(terminal_node)>;
+    TraceRef const region_as_trace = region_node;
+    crucible::TraceNode& region_base = region;
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(region_as_trace.weaken(), ::fixy::to(region_base)));
+    CRUCIBLE_TEST_ASSERT(kTest, &*region_as_trace == &region_base);
 
     // A link takes one pointer, and a link with no value is the default.
     static_assert(sizeof(crucible::TraceLink) == sizeof(void*));
@@ -82,21 +92,29 @@ namespace {
     CRUCIBLE_TEST_ASSERT(kTest, terminal.as_loop().is_none());
 
     // ── The arms of a branch ──────────────────────────────────────────
-    auto ops_a_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto ops_a_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<crucible::TraceEntry, 1> const ops_a = ops_a_run.view().window<1>(0).expect("the run holds one op");
+    ::fixy::View<crucible::TraceEntry, 1> const ops_a =
+        ops_a_run.view().template window<1>(0).expect("the run holds one op");
     ops_a.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xA1};
-    auto ops_b_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto ops_b_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<crucible::TraceEntry, 1> const ops_b = ops_b_run.view().window<1>(0).expect("the run holds one op");
+    ::fixy::View<crucible::TraceEntry, 1> const ops_b =
+        ops_b_run.view().template window<1>(0).expect("the run holds one op");
     ops_b.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xB2};
-    crucible::RegionNode& region_a = *crucible::make_region(test.alloc, arena, ops_a_run);
-    crucible::RegionNode& region_b = *crucible::make_region(test.alloc, arena, ops_b_run);
-    region_a.next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
-    region_b.next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
-    crucible::BranchNode& branch =
-        make_two_arm_branch(test.alloc, arena, crucible::make_link(region_a), crucible::make_link(region_b));
-    branch.next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
+    auto const region_a_node = crucible::make_region(alloc, frame, ops_a_run);
+    crucible::RegionNode& region_a = *region_a_node;
+    auto const region_b_node = crucible::make_region(alloc, frame, ops_b_run);
+    crucible::RegionNode& region_b = *region_b_node;
+    auto const region_a_end = crucible::make_terminal(alloc, frame);
+    region_a_node->next = crucible::make_link(*region_a_end);
+    auto const region_b_end = crucible::make_terminal(alloc, frame);
+    region_b_node->next = crucible::make_link(*region_b_end);
+    auto const branch_node =
+        make_two_arm_branch(alloc, frame, crucible::make_link(region_a), crucible::make_link(region_b));
+    crucible::BranchNode& branch = *branch_node;
+    auto const branch_end = crucible::make_terminal(alloc, frame);
+    branch_node->next = crucible::make_link(*branch_end);
 
     // The doors of a region and of a branch give the node itself, and no
     // value for each other kind.
@@ -149,17 +167,21 @@ namespace {
     // target, and the image of the loaded branch writes zero for it.
     auto const& branch_read = branch;
     auto [written, image] =
-        ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&branch_read](auto run) noexcept {
+        ::fixy::with_mut(::fixy::mint_heap_array(alloc, 4096, std::byte{0}), [&branch_read](auto run) noexcept {
             return crucible::serialize_branch(::fixy::to(branch_read), std::move(run));
         });
     CRUCIBLE_TEST_ASSERT(kTest, written > 0);
-    crucible::BranchNode& loaded =
-        *crucible::deserialize_branch(
-             test.alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena,
-             [&region_a](crucible::MerkleHash hash) noexcept {
-                 return hash == region_a.merkle_hash ? crucible::make_link(region_a) : crucible::TraceLink{};
-             })
-             .expect("the image of a branch loads");
+    TraceRef const region_a_as_trace = region_a_node;
+    crucible::MerkleHash const region_a_hash = region_a.merkle_hash;
+    auto const loaded_node =
+        crucible::deserialize_branch(
+            alloc, image.view().window(0, written).expect("the writer writes inside its image"), frame,
+            [region_a_as_trace, region_a_hash](crucible::MerkleHash hash) noexcept {
+                return hash == region_a_hash ? ::fixy::Option<TraceRef>::some(region_a_as_trace)
+                                             : ::fixy::Option<TraceRef>{};
+            })
+            .expect("the image of a branch loads");
+    crucible::BranchNode& loaded = *loaded_node;
     const crucible::BranchNode::Arm& loaded_first = *loaded.arms().get(0).expect("the image holds two arms");
     const crucible::BranchNode::Arm& loaded_second = *loaded.arms().get(1).expect("the image holds two arms");
     CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(loaded_first.target(), region_a));
@@ -167,7 +189,7 @@ namespace {
 
     auto const& loaded_read = loaded;
     auto [written_again, image_again] =
-        ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&loaded_read](auto run) noexcept {
+        ::fixy::with_mut(::fixy::mint_heap_array(alloc, 4096, std::byte{0}), [&loaded_read](auto run) noexcept {
             return crucible::serialize_branch(::fixy::to(loaded_read), std::move(run));
         });
     CRUCIBLE_TEST_ASSERT(kTest, written_again == written);
@@ -178,11 +200,11 @@ namespace {
     }
 
     // The loader with no resolver gives each arm no target.
-    crucible::BranchNode& unresolved =
-        *crucible::deserialize_branch(
-             test.alloc, image.view().window(0, written).expect("the writer writes inside its image"), arena)
-             .expect("the image of a branch loads");
-    for (const crucible::BranchNode::Arm& arm : unresolved.arms()) {
+    auto const unresolved_node =
+        crucible::deserialize_branch(
+            alloc, image.view().window(0, written).expect("the writer writes inside its image"), frame)
+            .expect("the image of a branch loads");
+    for (const crucible::BranchNode::Arm& arm : unresolved_node->arms()) {
         CRUCIBLE_TEST_ASSERT(kTest, arm.target().is_none());
     }
 
@@ -239,6 +261,73 @@ namespace {
     CRUCIBLE_TEST_ASSERT(kTest,
                          crucible::find_merge_point(tail_ops, crucible::make_link(region_a), ::fixy::none).is_none());
     CRUCIBLE_TEST_ASSERT(kTest, crucible::find_merge_point(tail_ops, crucible::TraceLink{}, ::fixy::none).is_none());
+}
+
+// add_branch makes a region of the new ops, and a branch of two arms at the
+// point of divergence: the old node at the lower guard value and the new
+// region at the higher one.  The new region and the branch continue at the
+// first region of the suffix whose ops are the tail of the new ops.  With no
+// suffix, the two continue nowhere.
+template <class Fresh>
+void check_add_branch(::foundation::effects::Alloc alloc, ::foundation::effects::cap::Nondet nondet,
+                      crucible::DagFrame<Fresh>& frame) noexcept {
+    crucible::KernelCache cache{alloc};
+    auto const divergence = crucible::make_terminal(alloc, frame);
+    using TraceRef = std::remove_const_t<decltype(divergence)>;
+
+    // The suffix: one region of the op 0xB2, then the end.
+    auto suffix_ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    suffix_ops_run.view().get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xB2};
+    auto const suffix_region = crucible::make_region(alloc, frame, suffix_ops_run);
+    auto const suffix_end = crucible::make_terminal(alloc, frame);
+    suffix_region->next = crucible::make_link(*suffix_end);
+    TraceRef const suffix = suffix_region;
+
+    // The new ops end with the op of the suffix.
+    auto new_ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    new_ops_run.view().get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xB2};
+    auto const branch = crucible::add_branch(alloc, nondet, frame, cache, divergence, new_ops_run, 7, 3,
+                                             crucible::Guard{}, ::fixy::Option<TraceRef>::some(suffix), ::fixy::none);
+    CRUCIBLE_TEST_ASSERT(kTest, branch->kind == crucible::TraceNodeKind::BRANCH);
+    CRUCIBLE_TEST_ASSERT(kTest, branch->num_arms() == 2u);
+    CRUCIBLE_TEST_ASSERT(kTest, branch->are_arms_sorted_by_value());
+    crucible::BranchNode::Arm const& low = *branch->arms().get(0).expect("the branch holds two arms");
+    crucible::BranchNode::Arm const& high = *branch->arms().get(1).expect("the branch holds two arms");
+    CRUCIBLE_TEST_ASSERT(kTest, low.value == 3 && high.value == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(high.target(), *divergence));
+    crucible::TraceNode const& new_node = low.resolved_target();
+    CRUCIBLE_TEST_ASSERT(kTest, new_node.kind == crucible::TraceNodeKind::REGION);
+    CRUCIBLE_TEST_ASSERT(kTest, new_node.expect_region()->content_hash == suffix_region->content_hash);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(new_node.next.option(), *suffix_region));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(branch->next.option(), *suffix_region));
+    CRUCIBLE_TEST_ASSERT(kTest, branch->merkle_hash.raw() != 0);
+
+    // A suffix that shares no tail with the new ops gives no merge point.
+    auto other_ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    other_ops_run.view().get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xC3};
+    auto const apart = crucible::add_branch(alloc, nondet, frame, cache, divergence, other_ops_run, 1, 2,
+                                            crucible::Guard{}, ::fixy::Option<TraceRef>::some(suffix), ::fixy::none);
+    CRUCIBLE_TEST_ASSERT(kTest, apart->next.is_none());
+    CRUCIBLE_TEST_ASSERT(
+        kTest, crucible::is_link_to(apart->arms().get(0).expect("the branch holds two arms")->target(), *divergence));
+
+    // No suffix: the branch continues nowhere.
+    auto const alone = crucible::add_branch(alloc, nondet, frame, cache, divergence, new_ops_run, 1, 2,
+                                            crucible::Guard{}, ::fixy::none, ::fixy::none);
+    CRUCIBLE_TEST_ASSERT(kTest, alone->next.is_none());
+}
+
+}  // namespace
+
+[[gnu::cold]] int main() {
+    auto test = ::foundation::effects::testing::test();
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
+    ::foundation::core::with_arena_frame(arena,
+                                         [alloc = test.alloc](auto& frame) noexcept { check_links(alloc, frame); });
+    ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, nondet = test.nondet](auto& frame) noexcept {
+        check_add_branch(alloc, nondet, frame);
+    });
 
     ::fixy::check::pass(kTest, "test_merkle_links: all tests passed\n");
     return 0;

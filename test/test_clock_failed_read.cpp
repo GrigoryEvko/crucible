@@ -304,8 +304,11 @@ private:
 // The copy and the region are in the arena.
 [[nodiscard]] crucible::RegionNode*
 committed_region(eff::Test const& test, ::fixy::BumpArena<crucible::DagArena>& arena, crucible::TraceEntry& op) {
-    const auto ops_run = arena.array<crucible::TraceEntry>(test.alloc, 1, op);
-    const crucible::DagRef<crucible::RegionNode> region = crucible::make_region(test.alloc, arena, ops_run);
+    const crucible::DagRef<crucible::RegionNode> region =
+        ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, &op](auto& frame) noexcept {
+            const auto ops_run = frame.template array<crucible::TraceEntry>(alloc, 1, op);
+            return crucible::make_region(alloc, frame, ops_run).weaken();
+        });
     crucible::recompute_merkle(*region);
     return &*region;
 }

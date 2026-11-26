@@ -85,15 +85,18 @@ make_slots_in_place(::foundation::effects::Alloc alloc, ::fixy::BumpArena<DagAre
 [[nodiscard]] static ::fixy::Result<::fixy::Unit, crucible::LoadError>
 load_one_op(::foundation::effects::Alloc alloc, crucible::SchemaHash schema, ::fixy::ElementCount inputs) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
-    auto ops_run = arena.array<crucible::TraceEntry>(alloc, 1, crucible::TraceEntry{});
-    crucible::TraceEntry& op = *ops_run.view().get(0).expect("the run holds one op");
-    op.schema_hash = schema;
-    op.set_inputs(arena.array<crucible::TensorMeta>(alloc, inputs.raw(), make_meta(4, 8)),
-                  arena.array<crucible::OpIndex>(alloc, inputs.raw(), crucible::OpIndex{}),
-                  arena.array<crucible::SlotId>(alloc, inputs.raw(), crucible::SlotId{}));
-    op.set_outputs(::fixy::check::run_of(kTest, alloc, arena, make_meta(4, 8)),
-                   ::fixy::check::run_of(kTest, alloc, arena, crucible::SlotId{}));
-    const crucible::DagRef<crucible::RegionNode const> reader = crucible::make_region(alloc, arena, ops_run);
+    const crucible::DagRef<crucible::RegionNode const> reader =
+        ::foundation::core::with_arena_frame(arena, [alloc, schema, inputs](auto& frame) noexcept {
+            auto ops_run = frame.template array<crucible::TraceEntry>(alloc, 1, crucible::TraceEntry{});
+            crucible::TraceEntry& op = *ops_run.view().get(0).expect("the run holds one op");
+            op.schema_hash = schema;
+            op.set_inputs(frame.template array<crucible::TensorMeta>(alloc, inputs.raw(), make_meta(4, 8)).weaken(),
+                          frame.template array<crucible::OpIndex>(alloc, inputs.raw(), crucible::OpIndex{}).weaken(),
+                          frame.template array<crucible::SlotId>(alloc, inputs.raw(), crucible::SlotId{}).weaken());
+            op.set_outputs(::fixy::check::run_of(kTest, alloc, frame, make_meta(4, 8)).weaken(),
+                           ::fixy::check::run_of(kTest, alloc, frame, crucible::SlotId{}).weaken());
+            return crucible::make_region(alloc, frame, ops_run).weaken();
+        });
     auto [n, buf] =
         ::fixy::with_mut(::fixy::mint_heap_array(alloc, size_t{1} << 20, std::byte{0}), [&reader](auto run) noexcept {
             return crucible::serialize_region(::fixy::to(*reader), std::move(run));
@@ -207,45 +210,53 @@ static void check_descriptor_images_agree() {
     constexpr uint32_t NUM_OPS = 3;
     // A storage of more than 4 GiB, which a size of 32 bits cannot hold.
     constexpr uint64_t kLargeStorageBytes = 98000000000ULL;
-    auto ops_run = dag_arena.array<crucible::TraceEntry>(test.alloc, NUM_OPS, crucible::TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
+    // One frame on the arena builds the ops, their arrays and the region.
+    const crucible::DagRef<crucible::RegionNode> region =
+        ::foundation::core::with_arena_frame(dag_arena, [alloc = test.alloc](auto& frame) noexcept {
+            auto ops_run = frame.template array<crucible::TraceEntry>(alloc, NUM_OPS, crucible::TraceEntry{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<crucible::TraceEntry> built = ops_run.view();
 
-    for (uint32_t i = 0; i < NUM_OPS; i++) {
-        crucible::TraceEntry& op = *ops.get(i).expect("i is below NUM_OPS");
-        op.schema_hash = crucible::SchemaHash{0xAA + i * 0x11};
-        op.shape_hash = crucible::ShapeHash{0x100 + i};
-        op.scope_hash = crucible::ScopeHash{0x200 + i};
-        op.callsite_hash = crucible::CallsiteHash{0x300 + i};
-        op.grad_enabled = (i % 2 == 0);
-        // Vary op_flags across ops to exercise bit-packing round-trip.
-        op.inference_mode = (i == 0);
-        op.is_mutable = (i == 1);
-        op.training_phase = static_cast<crucible::TrainingPhase>(i % 4);
-        op.torch_function = (i == 2);
-        // Ops 0 and 1 run inside op 2, and op 0 inside op 1.
-        op.depth = crucible::OpDepth{static_cast<uint16_t>(NUM_OPS - 1 - i)};
-        // The one scalar of op i has the tag i: an integer, a double, a bool.
-        // The double of op 1 is a data scalar.
-        const crucible::DataSlots data =
-            crucible::DataSlots{}.with(crucible::ScalarSlot{::fixy::index<0>()},
-                                       i == 1 ? crucible::ScalarRole::DATA : crucible::ScalarRole::STRUCTURAL);
-        op.scalar_kinds = crucible::ScalarSlotKinds::of(static_cast<uint16_t>(i), data);
+            for (uint32_t i = 0; i < NUM_OPS; i++) {
+                crucible::TraceEntry& op = *built.get(i).expect("i is below NUM_OPS");
+                op.schema_hash = crucible::SchemaHash{0xAA + i * 0x11};
+                op.shape_hash = crucible::ShapeHash{0x100 + i};
+                op.scope_hash = crucible::ScopeHash{0x200 + i};
+                op.callsite_hash = crucible::CallsiteHash{0x300 + i};
+                op.grad_enabled = (i % 2 == 0);
+                // Vary op_flags across ops to exercise bit-packing round-trip.
+                op.inference_mode = (i == 0);
+                op.is_mutable = (i == 1);
+                op.training_phase = static_cast<crucible::TrainingPhase>(i % 4);
+                op.torch_function = (i == 2);
+                // Ops 0 and 1 run inside op 2, and op 0 inside op 1.
+                op.depth = crucible::OpDepth{static_cast<uint16_t>(NUM_OPS - 1 - i)};
+                // The one scalar of op i has the tag i: an integer, a double, a
+                // bool.  The double of op 1 is a data scalar.
+                const crucible::DataSlots data =
+                    crucible::DataSlots{}.with(crucible::ScalarSlot{::fixy::index<0>()},
+                                               i == 1 ? crucible::ScalarRole::DATA : crucible::ScalarRole::STRUCTURAL);
+                op.scalar_kinds = crucible::ScalarSlotKinds::of(static_cast<uint16_t>(i), data);
 
-        crucible::TensorMeta large_input = make_meta(4, 8);
-        large_input.storage_nbytes = kLargeStorageBytes;
-        op.set_inputs(
-            ::fixy::check::run_of(kTest, test.alloc, dag_arena, large_input, make_meta(4, 8)),
-            ::fixy::check::run_of(kTest, test.alloc, dag_arena,
-                                  (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{}, crucible::OpIndex{}),
-            ::fixy::check::run_of(kTest, test.alloc, dag_arena,
-                                  (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{}, crucible::SlotId{}));
-        op.set_outputs(::fixy::check::run_of(kTest, test.alloc, dag_arena, make_meta(4, 8)),
-                       ::fixy::check::run_of(kTest, test.alloc, dag_arena, crucible::SlotId{i * 10}));
-        op.set_scalar_args(::fixy::check::run_of(kTest, test.alloc, dag_arena, static_cast<int64_t>(i * 42)));
-    }
-
-    const crucible::DagRef<crucible::RegionNode> region = crucible::make_region(test.alloc, dag_arena, ops_run);
+                crucible::TensorMeta large_input = make_meta(4, 8);
+                large_input.storage_nbytes = kLargeStorageBytes;
+                op.set_inputs(::fixy::check::run_of(kTest, alloc, frame, large_input, make_meta(4, 8)).weaken(),
+                              ::fixy::check::run_of(kTest, alloc, frame,
+                                                    (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{},
+                                                    crucible::OpIndex{})
+                                  .weaken(),
+                              ::fixy::check::run_of(kTest, alloc, frame,
+                                                    (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{},
+                                                    crucible::SlotId{})
+                                  .weaken());
+                op.set_outputs(::fixy::check::run_of(kTest, alloc, frame, make_meta(4, 8)).weaken(),
+                               ::fixy::check::run_of(kTest, alloc, frame, crucible::SlotId{i * 10}).weaken());
+                op.set_scalar_args(::fixy::check::run_of(kTest, alloc, frame, static_cast<int64_t>(i * 42)).weaken());
+            }
+            return crucible::make_region(alloc, frame, ops_run).weaken();
+        });
+    // The ops of the region, for the compare with the loaded ops.
+    const ::fixy::View<const crucible::TraceEntry> ops = region->ops.view();
     CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == NUM_OPS);
     // The bodies of the writer read the region through a Ref of const, so a
     // body reaches no part of the region that it can write.
@@ -476,8 +487,11 @@ static void check_descriptor_images_agree() {
                                         == LoadError::bad_magic);
 
         // The loader of a branch refuses the image of a region by its kind.
-        CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_branch(test.alloc, wire, reason_arena))
-                                        == LoadError::wrong_kind);
+        const LoadError branch_reason =
+            ::foundation::core::with_arena_frame(reason_arena, [alloc = test.alloc, &wire](auto& frame) noexcept {
+                return reason_of(crucible::deserialize_branch(alloc, wire, frame));
+            });
+        CRUCIBLE_TEST_ASSERT(kTest, branch_reason == LoadError::wrong_kind);
     }
 
     // The image of a branch whose arms are out of the order of their values,
@@ -485,29 +499,35 @@ static void check_descriptor_images_agree() {
     // is at 44..47, after the header and the 12 bytes of the guard.
     {
         ::fixy::BumpArena<DagArena> branch_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
-        crucible::BranchNode& branch = *crucible::mint_dag_node<crucible::BranchNode>(test.alloc, branch_arena);
-        branch.kind = crucible::TraceNodeKind::BRANCH;
-        // The arm at position 0 holds the value 2, and the arm at position 1
-        // the value 1.
-        branch.set_arms(branch_arena.build_array<crucible::BranchNode::Arm>(
-            test.alloc, ::fixy::ElementCount{2}, [](::fixy::RunStart at) noexcept {
-                return crucible::BranchNode::Arm{at.value().raw() == 0 ? 2 : 1, crucible::TraceLink{}};
-            }));
-        auto const& branch_read = branch;
-        auto [branch_bytes, branch_buf] =
-            ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 256, std::byte{0}), [&branch_read](auto run) noexcept {
-                return crucible::serialize_branch(::fixy::to(branch_read), std::move(run));
-            });
-        CRUCIBLE_TEST_ASSERT(kTest, branch_bytes > 0);
-        const ::fixy::View<const std::byte> branch_image =
-            branch_buf.view().window(0, branch_bytes).expect("the writer writes inside its image");
-        CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_branch(test.alloc, branch_image, branch_arena))
-                                        == crucible::LoadError::arms_unsorted);
-        const ::fixy::HeapArray<std::byte> many_arms = with_byte(test.alloc, branch_image, 47, std::byte{0xFF});
-        CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_branch(test.alloc, many_arms.view(), branch_arena))
-                                        == crucible::LoadError::count_above_limit);
-        CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_region(test.alloc, branch_image, branch_arena))
-                                        == crucible::LoadError::wrong_kind);
+        ::foundation::core::with_arena_frame(branch_arena, [alloc = test.alloc](auto& frame) noexcept {
+            auto const branch = crucible::mint_dag_node<crucible::BranchNode>(alloc, frame);
+            branch->kind = crucible::TraceNodeKind::BRANCH;
+            // The arm at position 0 holds the value 2, and the arm at
+            // position 1 the value 1.
+            auto arms = frame.template build_array<crucible::BranchNode::Arm>(
+                alloc, ::fixy::ElementCount{2}, [](::fixy::RunStart at) noexcept {
+                    return crucible::BranchNode::Arm{at.value().raw() == 0 ? 2 : 1, crucible::TraceLink{}};
+                });
+            branch->set_arms(arms.weaken());
+            crucible::BranchNode const& branch_read = *branch;
+            auto [branch_bytes, branch_buf] =
+                ::fixy::with_mut(::fixy::mint_heap_array(alloc, 256, std::byte{0}), [&branch_read](auto run) noexcept {
+                    return crucible::serialize_branch(::fixy::to(branch_read), std::move(run));
+                });
+            CRUCIBLE_TEST_ASSERT(kTest, branch_bytes > 0);
+            const ::fixy::View<const std::byte> branch_image =
+                branch_buf.view().window(0, branch_bytes).expect("the writer writes inside its image");
+            CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_branch(alloc, branch_image, frame))
+                                            == crucible::LoadError::arms_unsorted);
+            const ::fixy::HeapArray<std::byte> many_arms = with_byte(alloc, branch_image, 47, std::byte{0xFF});
+            CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_branch(alloc, many_arms.view(), frame))
+                                            == crucible::LoadError::count_above_limit);
+            // The loader of a region refuses the image of a branch by its
+            // kind, in an arena of its own.
+            ::fixy::BumpArena<DagArena> region_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
+            CRUCIBLE_TEST_ASSERT(kTest, reason_of(crucible::deserialize_region(alloc, branch_image, region_arena))
+                                            == crucible::LoadError::wrong_kind);
+        });
     }
 
     // A header claiming 0xFFFFFFFF ops would otherwise drive an
@@ -731,13 +751,18 @@ static void check_descriptor_images_agree() {
     // loaded op holds the same scalars.
     {
         ::fixy::BumpArena<DagArena> scalar_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
-        auto scalar_ops_run = scalar_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<crucible::TraceEntry> scalar_ops = scalar_ops_run.view();
-        crucible::TraceEntry& scalar_op = *scalar_ops.get(0).expect("the region holds one op");
-        scalar_op.schema_hash = crucible::SchemaHash{0x77};
-        scalar_op.set_scalar_args(::fixy::check::run_of(kTest, test.alloc, scalar_arena, int64_t{5}, int64_t{6}));
-        const crucible::RegionNode& scalar_region = *crucible::make_region(test.alloc, scalar_arena, scalar_ops_run);
+        const crucible::DagRef<crucible::RegionNode> scalar_node =
+            ::foundation::core::with_arena_frame(scalar_arena, [alloc = test.alloc](auto& frame) noexcept {
+                auto scalar_ops_run = frame.template array<crucible::TraceEntry>(alloc, 1, crucible::TraceEntry{});
+                // A plain View of an arena run: the View carries no brand of its arena.
+                const ::fixy::View<crucible::TraceEntry> scalar_ops = scalar_ops_run.view();
+                crucible::TraceEntry& op = *scalar_ops.get(0).expect("the region holds one op");
+                op.schema_hash = crucible::SchemaHash{0x77};
+                op.set_scalar_args(::fixy::check::run_of(kTest, alloc, frame, int64_t{5}, int64_t{6}).weaken());
+                return crucible::make_region(alloc, frame, scalar_ops_run).weaken();
+            });
+        const crucible::RegionNode& scalar_region = *scalar_node;
+        const crucible::TraceEntry& scalar_op = scalar_region.op_at(0);
 
         auto [scalar_bytes, scalar_buf] = ::fixy::with_mut(
             ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&scalar_region](auto run) noexcept {
@@ -762,18 +787,23 @@ static void check_descriptor_images_agree() {
     // under it, and an image whose hash names a different policy is refused.
     {
         ::fixy::BumpArena<DagArena> policy_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
-        auto policy_ops_run = policy_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<crucible::TraceEntry> policy_ops = policy_ops_run.view();
-        crucible::TraceEntry& policy_op = *policy_ops.get(0).expect("the region holds one op");
-        policy_op.schema_hash = crucible::SchemaHash{0x78};
-        policy_op.set_scalar_args(::fixy::check::run_of(kTest, test.alloc, policy_arena, int64_t{7}));
         crucible::NumericsPolicy strict{};
         strict.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
         const crucible::NumericsHash numerics = crucible::compute_numerics_hash(strict, crucible::EagerNumerics{});
-        crucible::RegionNode& policy_region = *crucible::mint_dag_node<crucible::RegionNode>(test.alloc, policy_arena);
-        crucible::init_region_node(policy_region, policy_ops_run, crucible::compute_content_hash(policy_ops, numerics),
-                                   numerics);
+        const crucible::DagRef<crucible::RegionNode> policy_node =
+            ::foundation::core::with_arena_frame(policy_arena, [alloc = test.alloc, numerics](auto& frame) noexcept {
+                auto policy_ops_run = frame.template array<crucible::TraceEntry>(alloc, 1, crucible::TraceEntry{});
+                // A plain View of an arena run: the View carries no brand of its arena.
+                const ::fixy::View<crucible::TraceEntry> policy_ops = policy_ops_run.view();
+                crucible::TraceEntry& policy_op = *policy_ops.get(0).expect("the region holds one op");
+                policy_op.schema_hash = crucible::SchemaHash{0x78};
+                policy_op.set_scalar_args(::fixy::check::run_of(kTest, alloc, frame, int64_t{7}).weaken());
+                auto const made = crucible::mint_dag_node<crucible::RegionNode>(alloc, frame);
+                crucible::init_region_node(*made, policy_ops_run.weaken(),
+                                           crucible::compute_content_hash(policy_ops, numerics), numerics);
+                return made.weaken();
+            });
+        crucible::RegionNode& policy_region = *policy_node;
 
         auto const& policy_reader = policy_region;
         auto [policy_bytes, policy_buf] = ::fixy::with_mut(
@@ -824,32 +854,37 @@ static void check_descriptor_images_agree() {
     // two tensors on wrong or overlapping memory.
     {
         ::fixy::BumpArena<DagArena> flip_dag = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
-        auto flip_ops_run = flip_dag.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<crucible::TraceEntry> flip_ops = flip_ops_run.view();
-        crucible::TraceEntry& flip_op = *flip_ops.get(0).expect("the region holds one op");
-        flip_op.schema_hash = crucible::SchemaHash{0x79};
-        flip_op.set_inputs(::fixy::check::run_of(kTest, test.alloc, flip_dag, make_meta(16)),
-                           ::fixy::check::run_of(kTest, test.alloc, flip_dag, crucible::OpIndex{}),
-                           ::fixy::check::run_of(kTest, test.alloc, flip_dag, crucible::SlotId{0}));
-        flip_op.set_outputs(::fixy::check::run_of(kTest, test.alloc, flip_dag, make_meta(16)),
-                            ::fixy::check::run_of(kTest, test.alloc, flip_dag, crucible::SlotId{1}));
-        crucible::RegionNode& flip_region = *crucible::make_region(test.alloc, flip_dag, flip_ops_run);
-        const crucible::DagRef<crucible::MemoryPlan> flip_plan = flip_dag.make<crucible::MemoryPlan>(test.alloc);
-        flip_plan->pool_bytes = 2 * crucible::PoolAllocator::ALIGNMENT;
-        auto flip_slots_run = flip_dag.array<crucible::TensorSlot>(test.alloc, 2, crucible::TensorSlot{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<crucible::TensorSlot> flip_slots = flip_slots_run.view();
-        std::uint32_t slot_index = 0;
-        for (crucible::TensorSlot& slot : flip_slots) {
-            slot.offset_bytes = slot_index * crucible::PoolAllocator::ALIGNMENT;
-            slot.nbytes = 64;
-            slot.dtype = crucible::ScalarType::Float;
-            slot.slot_id = crucible::SlotId{slot_index};
-            ++slot_index;
-        }
-        flip_plan->slots = flip_slots_run;
-        flip_region.plan = crucible::make_plan_link(flip_plan);
+        const crucible::DagRef<crucible::RegionNode> flip_node =
+            ::foundation::core::with_arena_frame(flip_dag, [alloc = test.alloc](auto& frame) noexcept {
+                auto flip_ops_run = frame.template array<crucible::TraceEntry>(alloc, 1, crucible::TraceEntry{});
+                // A plain View of an arena run: the View carries no brand of its arena.
+                const ::fixy::View<crucible::TraceEntry> flip_ops = flip_ops_run.view();
+                crucible::TraceEntry& flip_op = *flip_ops.get(0).expect("the region holds one op");
+                flip_op.schema_hash = crucible::SchemaHash{0x79};
+                flip_op.set_inputs(::fixy::check::run_of(kTest, alloc, frame, make_meta(16)).weaken(),
+                                   ::fixy::check::run_of(kTest, alloc, frame, crucible::OpIndex{}).weaken(),
+                                   ::fixy::check::run_of(kTest, alloc, frame, crucible::SlotId{0}).weaken());
+                flip_op.set_outputs(::fixy::check::run_of(kTest, alloc, frame, make_meta(16)).weaken(),
+                                    ::fixy::check::run_of(kTest, alloc, frame, crucible::SlotId{1}).weaken());
+                auto const made = crucible::make_region(alloc, frame, flip_ops_run);
+                auto const flip_plan = frame.template make<crucible::MemoryPlan>(alloc);
+                flip_plan->pool_bytes = 2 * crucible::PoolAllocator::ALIGNMENT;
+                auto flip_slots_run = frame.template array<crucible::TensorSlot>(alloc, 2, crucible::TensorSlot{});
+                // A plain View of an arena run: the View carries no brand of its arena.
+                const ::fixy::View<crucible::TensorSlot> flip_slots = flip_slots_run.view();
+                std::uint32_t slot_index = 0;
+                for (crucible::TensorSlot& slot : flip_slots) {
+                    slot.offset_bytes = slot_index * crucible::PoolAllocator::ALIGNMENT;
+                    slot.nbytes = 64;
+                    slot.dtype = crucible::ScalarType::Float;
+                    slot.slot_id = crucible::SlotId{slot_index};
+                    ++slot_index;
+                }
+                flip_plan->slots = flip_slots_run.weaken();
+                made->plan = crucible::make_plan_link(flip_plan.weaken());
+                return made.weaken();
+            });
+        crucible::RegionNode& flip_region = *flip_node;
 
         auto const& flip_reader = flip_region;
         auto [flip_bytes, flip_buf] = ::fixy::with_mut(

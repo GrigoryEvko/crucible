@@ -25,7 +25,10 @@ int main() {
     using RegionRef = ::crucible::DagRef<const ::crucible::RegionNode>;
     ::fixy::BumpArena<::crucible::DagArena> arena = ::fixy::mint_bump_arena<::crucible::DagArena>(
         ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{4096}});
-    const RegionRef region = ::crucible::mint_dag_node<::crucible::RegionNode>(store_ctx.cap().alloc, arena);
+    const RegionRef region =
+        ::foundation::core::with_arena_frame(arena, [alloc = store_ctx.cap().alloc](auto& frame) noexcept {
+            return ::crucible::mint_dag_node<::crucible::RegionNode>(alloc, frame).weaken();
+        });
     auto request_scoped = ::fixy::mint_band<::fixy::opaque_lifetime::PerRequest<RegionRef>>(region);
     auto result = cipher.commit_per_program(store_ctx, view, std::move(request_scoped));
     return static_cast<int>(static_cast<bool>(std::move(result).consume()));

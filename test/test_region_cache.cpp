@@ -115,6 +115,18 @@ void align_and_activate(Vigil& vigil, const ShapeHash* shapes, uint32_t variant,
 
 namespace {
 
+// A region of no ops with the content hash, which a frame on the arena builds.
+[[nodiscard]] DagRef<RegionNode> make_hashed_region(::foundation::effects::Alloc alloc,
+                                                    ::fixy::BumpArena<DagArena>& arena, ContentHash hash) {
+    return ::foundation::core::with_arena_frame(arena, [alloc, hash](auto& frame) noexcept {
+        auto no_ops = frame.template build_array<TraceEntry>(alloc, ::fixy::ElementCount{0},
+                                                             [](::fixy::RunStart) noexcept { return TraceEntry{}; });
+        const auto region = make_region(alloc, frame, no_ops);
+        region->content_hash = hash;
+        return region.weaken();
+    });
+}
+
 void test_cache_dedup_and_cap() {
     auto test = ::foundation::effects::testing::test();
     RegionCache cache;
@@ -124,8 +136,7 @@ void test_cache_dedup_and_cap() {
 
     ::fixy::BumpArena<DagArena> arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
-    const auto region = make_region(test.alloc, arena, ::fixy::ArenaRun<TraceEntry const, DagArena>{});
-    region->content_hash = ContentHash{0x1234};
+    const DagRef<RegionNode> region = make_hashed_region(test.alloc, arena, ContentHash{0x1234});
 
     cache.insert(*region);
     CRUCIBLE_TEST_ASSERT(kTest, cache.size() == 1);
@@ -135,16 +146,14 @@ void test_cache_dedup_and_cap() {
     CRUCIBLE_TEST_ASSERT(kTest, cache.size() == 1);
 
     for (uint32_t i = 1; i < RegionCache::CAP; i++) {
-        const auto r = make_region(test.alloc, arena, ::fixy::ArenaRun<TraceEntry const, DagArena>{});
-        r->content_hash = ContentHash{0x1234 + i};
+        const DagRef<RegionNode> r = make_hashed_region(test.alloc, arena, ContentHash{0x1234 + i});
         cache.insert(*r);
     }
     CRUCIBLE_TEST_ASSERT(kTest, cache.size() == RegionCache::CAP);
 
     // Insertion past the capacity evicts the oldest entry instead of
     // growing.
-    const auto overflow = make_region(test.alloc, arena, ::fixy::ArenaRun<TraceEntry const, DagArena>{});
-    overflow->content_hash = ContentHash{0xFFFF};
+    const DagRef<RegionNode> overflow = make_hashed_region(test.alloc, arena, ContentHash{0xFFFF});
     cache.insert(*overflow);
     CRUCIBLE_TEST_ASSERT(kTest, cache.size() == RegionCache::CAP);
 
@@ -177,59 +186,65 @@ void test_find_alternate_tracks_live_plan() {
     ::fixy::BumpArena<DagArena> arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 14});
 
-    auto ops_run = arena.array(test.alloc, 2, TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<TraceEntry, 2> const ops = ops_run.view().window<2>(0).expect("the run holds two ops");
-    TraceEntry& op0 = ops.at(::foundation::core::index<0>());
-    TraceEntry& op1 = ops.at(::foundation::core::index<1>());
-    op0.schema_hash = SchemaHash{0x900};
-    op0.shape_hash = ShapeHash{0x901};
-    op1.schema_hash = SchemaHash{0x902};
-    op1.shape_hash = ShapeHash{0x903};
+    // One frame on the arena builds the region and, after the insert, its
+    // plan.
+    ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, &cache](auto& frame) noexcept {
+        auto ops_run = frame.array(alloc, std::size_t{2}, TraceEntry{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<TraceEntry, 2> const ops = ops_run.view().template window<2>(0).expect("the run holds two ops");
+        TraceEntry& op0 = ops.at(::foundation::core::index<0>());
+        TraceEntry& op1 = ops.at(::foundation::core::index<1>());
+        op0.schema_hash = SchemaHash{0x900};
+        op0.shape_hash = ShapeHash{0x901};
+        op1.schema_hash = SchemaHash{0x902};
+        op1.shape_hash = ShapeHash{0x903};
 
-    const auto region = make_region(test.alloc, arena, ops_run);
-    CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_none());
+        const auto made = make_region(alloc, frame, ops_run);
+        const DagRef<RegionNode> region = made.weaken();
+        CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_none());
 
-    cache.insert(*region);
-    CRUCIBLE_TEST_ASSERT(kTest, cache.size() == 1);
-    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(cache.find(region->content_hash), ::fixy::some(region))
-                                    && "a planless region is still cached and still findable by hash");
+        cache.insert(*region);
+        CRUCIBLE_TEST_ASSERT(kTest, cache.size() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(cache.find(region->content_hash), ::fixy::some(region))
+                                        && "a planless region is still cached and still findable by hash");
 
-    // Not eligible to switch to: without a plan the context cannot enter
-    // compiled mode, so offering it would strand the caller.
-    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(0, op0.schema_hash, op0.shape_hash).is_none());
-    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(1, op1.schema_hash, op1.shape_hash).is_none());
+        // Not eligible to switch to: without a plan the context cannot enter
+        // compiled mode, so offering it would strand the caller.
+        CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(0, op0.schema_hash, op0.shape_hash).is_none());
+        CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(1, op1.schema_hash, op1.shape_hash).is_none());
 
-    // The plan arrives after the insert. No second call into the cache.
-    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<TensorSlot, 1> const slots = slots_run.view().window<1>(0).expect("the run holds one slot");
-    TensorSlot& slot = slots.at(::foundation::core::index<0>());
-    slot.nbytes = 4096;
-    slot.birth_op = OpIndex{0};
-    slot.death_op = OpIndex{1};
-    slot.slot_id = SlotId{0};
-    const auto plan = arena.make<MemoryPlan>(test.alloc);
-    plan->slots = slots_run;
-    plan->pool_bytes = 4096;
-    region->plan = make_plan_link(plan);
+        // The plan arrives after the insert. No second call into the cache.
+        auto slots_run = frame.array(alloc, std::size_t{1}, TensorSlot{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        ::fixy::View<TensorSlot, 1> const slots =
+            slots_run.view().template window<1>(0).expect("the run holds one slot");
+        TensorSlot& slot = slots.at(::foundation::core::index<0>());
+        slot.nbytes = 4096;
+        slot.birth_op = OpIndex{0};
+        slot.death_op = OpIndex{1};
+        slot.slot_id = SlotId{0};
+        const auto plan = frame.template make<MemoryPlan>(alloc);
+        plan->slots = slots_run.weaken();
+        plan->pool_bytes = 4096;
+        made->plan = make_plan_link(plan.weaken());
 
-    CRUCIBLE_TEST_ASSERT(
-        kTest, ::fixy::same_target(cache.find_alternate(0, op0.schema_hash, op0.shape_hash), ::fixy::some(region))
-                   && "a region cached before its plan existed stayed unfindable after the plan "
-                      "arrived: find_alternate is reading an insert-time snapshot again, and the "
-                      "repair path for it has no caller");
-    CRUCIBLE_TEST_ASSERT(
-        kTest, ::fixy::same_target(cache.find_alternate(1, op1.schema_hash, op1.shape_hash), ::fixy::some(region)));
+        CRUCIBLE_TEST_ASSERT(
+            kTest, ::fixy::same_target(cache.find_alternate(0, op0.schema_hash, op0.shape_hash), ::fixy::some(region))
+                       && "a region cached before its plan existed stayed unfindable after the plan "
+                          "arrived: find_alternate is reading an insert-time snapshot again, and the "
+                          "repair path for it has no caller");
+        CRUCIBLE_TEST_ASSERT(
+            kTest, ::fixy::same_target(cache.find_alternate(1, op1.schema_hash, op1.shape_hash), ::fixy::some(region)));
 
-    // The position bound now means one thing: how many ops the region has.
-    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(2, op1.schema_hash, op1.shape_hash).is_none());
-    // A matching position with the wrong shape is still a miss.
-    CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(0, op0.schema_hash, ShapeHash{0xDEAD}).is_none());
-    // And exclude still excludes.
-    CRUCIBLE_TEST_ASSERT(
-        kTest,
-        cache.find_alternate(0, op0.schema_hash, op0.shape_hash, ConstRegionLink::some(::fixy::to(*region))).is_none());
+        // The position bound now means one thing: how many ops the region has.
+        CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(2, op1.schema_hash, op1.shape_hash).is_none());
+        // A matching position with the wrong shape is still a miss.
+        CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(0, op0.schema_hash, ShapeHash{0xDEAD}).is_none());
+        // And exclude still excludes.
+        CRUCIBLE_TEST_ASSERT(
+            kTest, cache.find_alternate(0, op0.schema_hash, op0.shape_hash, ConstRegionLink::some(::fixy::to(*region)))
+                       .is_none());
+    });
 
     ::fixy::check::pass(kTest, "  test_find_alternate_tracks_live_plan: PASSED\n");
 }

@@ -490,7 +490,9 @@ int main() {
     ::fixy::BumpArena<crucible::DagArena> loop_arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{4096});
     const crucible::DagRef<crucible::LoopNode> loop_node =
-        crucible::mint_dag_node<crucible::LoopNode>(kAlloc, loop_arena);
+        ::foundation::core::with_arena_frame(loop_arena, [](auto& frame) noexcept {
+            return crucible::mint_dag_node<crucible::LoopNode>(kAlloc, frame).weaken();
+        });
 
     ::fixy::FixedArray<bench::Report, 9> refactor_reports{
         bench::run("feedback_signature  (family, 8 edges)",

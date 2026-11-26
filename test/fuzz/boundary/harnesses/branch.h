@@ -20,24 +20,30 @@ namespace crucible::fuzz::boundary {
 [[nodiscard]] inline SeedBytes branch_image(::fixy::View<std::int64_t const> values) noexcept {
     ::fixy::BumpArena<DagArena> arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 20});
-    const auto alloc = test_alloc();
-    const auto arms = static_cast<std::uint32_t>(values.size());
-    const auto branch = mint_dag_node<BranchNode>(alloc, arena);
-    branch->kind = TraceNodeKind::BRANCH;
-    branch->merkle_hash = MerkleHash{0x5eed0000u + arms};
-    branch->set_arms(
-        arena.build_array<BranchNode::Arm>(alloc, ::fixy::ElementCount{arms}, [values](::fixy::RunStart at) noexcept {
-            return BranchNode::Arm{*values.get(at.value().raw()).expect("a position is below the count of values"),
-                                   TraceLink{}};
-        }));
-    ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});
-    // The body takes the node by reference, and the serializer reads it as
-    // const.
-    auto const& node = *branch;
-    const auto [written, image] = ::fixy::with_mut(
-        std::move(blank), [&node](auto run) noexcept { return serialize_branch(::fixy::to(node), std::move(run)); });
-    return copy_seed(
-        ::fixy::View<std::byte const>{image.view()}.window(0, written).expect("the writer writes inside its image"));
+    // One frame on the arena builds the branch and its arms.
+    return ::foundation::core::with_arena_frame(arena, [values](auto& frame) noexcept {
+        const auto alloc = test_alloc();
+        const auto arms = static_cast<std::uint32_t>(values.size());
+        const auto branch = mint_dag_node<BranchNode>(alloc, frame);
+        branch->kind = TraceNodeKind::BRANCH;
+        branch->merkle_hash = MerkleHash{0x5eed0000u + arms};
+        auto arm_run = frame.template build_array<BranchNode::Arm>(
+            alloc, ::fixy::ElementCount{arms}, [values](::fixy::RunStart at) noexcept {
+                return BranchNode::Arm{*values.get(at.value().raw()).expect("a position is below the count of values"),
+                                       TraceLink{}};
+            });
+        branch->set_arms(arm_run.weaken());
+        ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});
+        // The body takes the node by reference, and the serializer reads it
+        // as const.
+        auto const& node = *branch;
+        const auto [written, image] = ::fixy::with_mut(std::move(blank), [&node](auto run) noexcept {
+            return serialize_branch(::fixy::to(node), std::move(run));
+        });
+        return copy_seed(::fixy::View<std::byte const>{image.view()}
+                             .window(0, written)
+                             .expect("the writer writes inside its image"));
+    });
 }
 
 // The guard kind is the first byte after the 32-byte header.
@@ -72,35 +78,39 @@ inline void run_branch(::fixy::View<std::byte const> bytes) noexcept {
 
     ::fixy::BumpArena<DagArena> arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 20});
-    const auto alloc = test_alloc();
-    const ::fixy::Option<DagRef<BranchNode>> loaded = deserialize_branch(alloc, input, arena).ok();
-    // The writer reads each branch through a Ref of const, so its body
-    // reaches no part of the branch that it can write.
-    for (const DagRef<BranchNode const> branch : loaded) {
-        CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms() <= CDAG_MAX_BRANCH_ARMS);
-        CRUCIBLE_FUZZ_CLAIM("branch", branch->are_arms_sorted_by_value());
+    // One frame on the arena loads the branch and its copy.
+    ::foundation::core::with_arena_frame(arena, [input](auto& frame) noexcept {
+        const auto alloc = test_alloc();
+        const auto loaded = deserialize_branch(alloc, input, frame).ok();
+        for (auto const& loaded_branch : loaded) {
+            // The writer reads each branch through a Ref of const, so its
+            // body reaches no part of the branch that it can write.
+            const DagRef<BranchNode const> branch = loaded_branch.weaken();
+            CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms() <= CDAG_MAX_BRANCH_ARMS);
+            CRUCIBLE_FUZZ_CLAIM("branch", branch->are_arms_sorted_by_value());
 
-        ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, input.size() + 256, std::byte{0});
-        const auto [written, image] = ::fixy::with_mut(std::move(blank), [&branch](auto run) noexcept {
-            return serialize_branch(::fixy::to(*branch), std::move(run));
-        });
-        CRUCIBLE_FUZZ_CLAIM("branch", written > 0);
-        const ::fixy::Option<DagRef<BranchNode>> reloaded =
-            deserialize_branch(alloc, image.view().window(0, written).expect("the writer writes inside its image"),
-                               arena)
-                .ok();
-        CRUCIBLE_FUZZ_CLAIM("branch", reloaded.is_some());
-        for (const DagRef<BranchNode> again : reloaded) {
-            CRUCIBLE_FUZZ_CLAIM("branch", again->num_arms() == branch->num_arms());
-            CRUCIBLE_FUZZ_CLAIM("branch", again->merkle_hash == branch->merkle_hash);
-            for (std::uint32_t i = 0; i < branch->num_arms(); ++i) {
-                const BranchNode::Arm& arm = *branch->arms().get(i).expect("i is below the count of arms");
-                const BranchNode::Arm& again_arm =
-                    *again->arms().get(i).expect("the two branches hold one count of arms");
-                CRUCIBLE_FUZZ_CLAIM("branch", again_arm.value == arm.value);
+            ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, input.size() + 256, std::byte{0});
+            const auto [written, image] = ::fixy::with_mut(std::move(blank), [&branch](auto run) noexcept {
+                return serialize_branch(::fixy::to(*branch), std::move(run));
+            });
+            CRUCIBLE_FUZZ_CLAIM("branch", written > 0);
+            const auto reloaded =
+                deserialize_branch(alloc, image.view().window(0, written).expect("the writer writes inside its image"),
+                                   frame)
+                    .ok();
+            CRUCIBLE_FUZZ_CLAIM("branch", reloaded.is_some());
+            for (auto const& again : reloaded) {
+                CRUCIBLE_FUZZ_CLAIM("branch", again->num_arms() == branch->num_arms());
+                CRUCIBLE_FUZZ_CLAIM("branch", again->merkle_hash == branch->merkle_hash);
+                for (std::uint32_t i = 0; i < branch->num_arms(); ++i) {
+                    const BranchNode::Arm& arm = *branch->arms().get(i).expect("i is below the count of arms");
+                    const BranchNode::Arm& again_arm =
+                        *again->arms().get(i).expect("the two branches hold one count of arms");
+                    CRUCIBLE_FUZZ_CLAIM("branch", again_arm.value == arm.value);
+                }
             }
         }
-    }
+    });
 }
 
 }  // namespace crucible::fuzz::boundary

@@ -21,12 +21,9 @@ static constexpr auto A = BG.alloc;
 
 // Avoids collision with crucible::make_region — this one builds a region
 // populated with realistic (schema/shape/scope/callsite, 2-input GEMM)
-// op rows.  The ops, their arrays and the region are in dag_arena.
+// op rows.  The ops, their arrays and the region are in dag_arena, and one
+// frame on it builds them.
 static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t num_ops) {
-    auto ops_run = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<TraceEntry> ops = ops_run.view();
-
     // Each input and the output of each op have one metadata.
     TensorMeta meta{};
     meta.ndim = 2;
@@ -36,30 +33,36 @@ static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, u
     meta.strides[1] = tensor_dim(1);
     meta.dtype = ScalarType::Float;
 
-    for (uint32_t i = 0; i < num_ops; i++) {
-        auto& te = *ops.get(i).expect("i is below num_ops");
-        te.schema_hash = SchemaHash{0xAAAA000000000000ULL + i};
-        te.shape_hash = ShapeHash{0xBBBB000000000000ULL + i};
-        te.scope_hash = ScopeHash{0xCCCC000000000000ULL + i};
-        te.callsite_hash = CallsiteHash{0xDDDD000000000000ULL + i};
-        te.kernel_id = CKernelId::GEMM_MM;
-
-        auto producers_run = dag_arena.array(A, 2, OpIndex::none());
+    return ::foundation::core::with_arena_frame(dag_arena, [num_ops, &meta](auto& frame) noexcept {
+        auto ops_run = frame.template array<TraceEntry>(A, num_ops, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<OpIndex> producers = producers_run.view();
-        if (i >= 1) *producers.get(0).expect("the op has two inputs") = OpIndex{i - 1};
-        auto input_slots_run = dag_arena.array(A, 2, SlotId{i});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<SlotId> input_slots = input_slots_run.view();
-        *input_slots.get(1).expect("the op has two inputs") = SlotId{100 + i};
-        const auto input_metas_run = dag_arena.array(A, 2, meta);
-        te.set_inputs(input_metas_run, producers_run, input_slots_run);
-        const auto output_metas_run = dag_arena.array(A, 1, meta);
-        const auto output_slots_run = dag_arena.array(A, 1, SlotId{200 + i});
-        te.set_outputs(output_metas_run, output_slots_run);
-    }
+        const ::fixy::View<TraceEntry> ops = ops_run.view();
 
-    return make_region(A, dag_arena, ops_run);
+        for (uint32_t i = 0; i < num_ops; i++) {
+            auto& te = *ops.get(i).expect("i is below num_ops");
+            te.schema_hash = SchemaHash{0xAAAA000000000000ULL + i};
+            te.shape_hash = ShapeHash{0xBBBB000000000000ULL + i};
+            te.scope_hash = ScopeHash{0xCCCC000000000000ULL + i};
+            te.callsite_hash = CallsiteHash{0xDDDD000000000000ULL + i};
+            te.kernel_id = CKernelId::GEMM_MM;
+
+            auto producers_run = frame.array(A, 2, OpIndex::none());
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<OpIndex> producers = producers_run.view();
+            if (i >= 1) *producers.get(0).expect("the op has two inputs") = OpIndex{i - 1};
+            auto input_slots_run = frame.array(A, 2, SlotId{i});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<SlotId> input_slots = input_slots_run.view();
+            *input_slots.get(1).expect("the op has two inputs") = SlotId{100 + i};
+            const auto input_metas_run = frame.array(A, 2, meta);
+            te.set_inputs(input_metas_run.weaken(), producers_run.weaken(), input_slots_run.weaken());
+            const auto output_metas_run = frame.array(A, 1, meta);
+            const auto output_slots_run = frame.array(A, 1, SlotId{200 + i});
+            te.set_outputs(output_metas_run.weaken(), output_slots_run.weaken());
+        }
+
+        return make_region(A, frame, ops_run).weaken();
+    });
 }
 
 // The serialize of a region through a call that GCC cannot see into.  The

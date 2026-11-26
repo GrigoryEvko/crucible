@@ -17,6 +17,7 @@
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/ArenaFrame.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
@@ -324,6 +325,18 @@ struct LoopNode;
 // A Ref of a node or a plan of the DAG, with the brand of the DAG arenas.
 template <class T>
 using DagRef = ::fixy::Ref<T, DagArena>;
+
+// The frame of one DAG arena, and an object and a run that it makes, with the
+// scope brand Fresh of the call site of its door (foundation/core/ArenaFrame.h).
+// Each builder below takes the frame, so each node that it makes is in the
+// arena of the frame.  weaken() of an object or a run gives its DagRef or its
+// run of the arena family.
+template <class Fresh>
+using DagFrame = ::foundation::core::ArenaFrame<DagArena, Fresh>;
+template <class T, class Fresh>
+using DagFrameRef = ::foundation::core::FrameRef<T, DagArena, Fresh>;
+template <class T, class Fresh>
+using DagFrameRun = ::foundation::core::FrameRun<T, DagArena, Fresh>;
 
 // A link to one node of the DAG, or no node.  The node is in a DAG arena, and
 // the link only borrows it with the brand of the arena.  The empty link is
@@ -1106,13 +1119,14 @@ using RecipeChoice = ::fixy::Option<RecipeRef>;
 }
 
 // Builds a node of the DAG: a Node with each field at its default, in the
-// arena, with the brand of the arena.  The arena gives the build key to the
-// constructor of the node, so each node lives in a DAG arena.
-template <DagNodeType Node, class... Refused>
+// arena of the frame, as a FrameRef of the frame.  The arena gives the build
+// key to the constructor of the node, so each node lives in a DAG arena.  The
+// pack refuses each explicit argument after the node, so no caller names the
+// brand of the frame.
+template <DagNodeType Node, class... Refused, class Fresh>
     requires(sizeof...(Refused) == 0)
-[[nodiscard]] DagRef<Node> mint_dag_node(::foundation::effects::Alloc a,
-                                         ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return arena.make<Node>(a);
+[[nodiscard]] DagFrameRef<Node, Fresh> mint_dag_node(::foundation::effects::Alloc a, DagFrame<Fresh>& frame) noexcept {
+    return frame.template make<Node>(a);
 }
 
 // mint_dag_node in the arena of a Box, such as the arena that a published
@@ -1125,11 +1139,8 @@ template <DagNodeType Node, class... Refused>
     return arena->make<Node>(a);
 }
 
-// The twins of mint_dag_node.  A temporary arena releases the node at the end
-// of the statement.
-template <class Node, class... Rest>
-void mint_dag_node(::foundation::effects::Alloc, ::fixy::BumpArena<DagArena>&&, Rest&&...) =
-    delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
+// The twin of mint_dag_node in the arena of a Box.  A temporary Box releases
+// its arena at the end of the statement.
 template <class Node, class... Rest>
 void mint_dag_node(::foundation::effects::Alloc, ::fixy::Box<::fixy::BumpArena<DagArena>>&&, Rest&&...) =
     delete("a temporary Box releases its arena and the node at the end of the statement. Use a Box that has a name");
@@ -1143,12 +1154,16 @@ void mint_dag_node(::foundation::effects::Alloc, ::fixy::Box<::fixy::BumpArena<D
 // out: a region hashed under the wrong numerics shares a kernel-cache slot
 // with one hashed under the right ones, and the runtime would serve either
 // kernel to either caller.
-[[nodiscard]] inline DagRef<RegionNode> make_region(::foundation::effects::Alloc a,
-                                                    ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND,
-                                                    ::fixy::ArenaRun<TraceEntry const, DagArena> ops) noexcept {
-    const DagRef<RegionNode> node = mint_dag_node<RegionNode>(a, arena);
+//
+// The node and the ops are in the arena of the frame.  The run of the ops is
+// a run of the frame, and a run of elements that are not const converts to it.
+template <class Fresh>
+[[nodiscard]] DagFrameRef<RegionNode, Fresh>
+make_region(::foundation::effects::Alloc a, DagFrame<Fresh>& frame,
+            std::type_identity_t<DagFrameRun<TraceEntry const, Fresh>> ops) noexcept {
+    const DagFrameRef<RegionNode, Fresh> node = mint_dag_node<RegionNode>(a, frame);
     node->kind = TraceNodeKind::REGION;
-    node->ops = ops;
+    node->ops = ops.weaken();
     node->content_hash = compute_content_hash(ops.view());
     node->first_op_schema = first_op_schema_of(ops.view());
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
@@ -1177,16 +1192,17 @@ inline void init_region_node(RegionNode& node, ::fixy::ArenaRun<TraceEntry const
 // The recipe is borrowed, and the node does not keep it: it participates in
 // the content hash and is then dropped, so a caller that needs to recover the
 // recipe later must track it separately.  The overload above covers a region
-// with no recipe.
-[[nodiscard]] inline DagRef<RegionNode> make_region(::foundation::effects::Alloc a,
-                                                    ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND,
-                                                    ::fixy::ArenaRun<TraceEntry const, DagArena> ops,
-                                                    const NumericalRecipe& recipe) noexcept {
+// with no recipe.  The node and the ops are in the arena of the frame, as for
+// the overload above.
+template <class Fresh>
+[[nodiscard]] DagFrameRef<RegionNode, Fresh> make_region(::foundation::effects::Alloc a, DagFrame<Fresh>& frame,
+                                                         std::type_identity_t<DagFrameRun<TraceEntry const, Fresh>> ops,
+                                                         const NumericalRecipe& recipe) noexcept {
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe.hash));
     CRUCIBLE_PRE(!recipe.hash.is_sentinel());
-    const DagRef<RegionNode> node = mint_dag_node<RegionNode>(a, arena);
+    const DagFrameRef<RegionNode, Fresh> node = mint_dag_node<RegionNode>(a, frame);
     node->kind = TraceNodeKind::REGION;
-    node->ops = ops;
+    node->ops = ops.weaken();
     node->content_hash = compute_content_hash(ops.view(), recipe);
     node->first_op_schema = first_op_schema_of(ops.view());
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
@@ -1195,33 +1211,25 @@ inline void init_region_node(RegionNode& node, ::fixy::ArenaRun<TraceEntry const
     return node;
 }
 
-// The twin of the two make_region overloads above.  The node is in the
-// arena, and a temporary arena releases it at the end of the statement.  The
-// pack holds the other arguments, and the twin declares no raw pointer
-// parameter.
-template <class... Rest>
-DagRef<RegionNode> make_region(::foundation::effects::Alloc, ::fixy::BumpArena<DagArena>&&, Rest&&...) =
-    delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
-
-[[nodiscard]] inline DagRef<TraceNode> make_terminal(::foundation::effects::Alloc a, ::fixy::BumpArena<DagArena>& arena
-                                                     CRUCIBLE_LIFETIMEBOUND) noexcept {
-    const DagRef<TraceNode> node = mint_dag_node<TraceNode>(a, arena);
+// The terminal node, in the arena of the frame.
+template <class Fresh>
+[[nodiscard]] DagFrameRef<TraceNode, Fresh> make_terminal(::foundation::effects::Alloc a,
+                                                          DagFrame<Fresh>& frame) noexcept {
+    const DagFrameRef<TraceNode, Fresh> node = mint_dag_node<TraceNode>(a, frame);
     node->kind = TraceNodeKind::TERMINAL;
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::TERMINAL);
     return node;
 }
 
-// The twin of make_terminal.  A temporary arena releases the node at the end
-// of the statement.
-void make_terminal(::foundation::effects::Alloc, ::fixy::BumpArena<DagArena>&&) =
-    delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
-
 // The body must be a complete sub-DAG ending in TERMINAL, and
 // body_content_hash must already be folded from that body's region chain.
-[[nodiscard]] inline DagRef<LoopNode>
-make_loop(::foundation::effects::Alloc a, ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND, TraceNode& body,
-          ContentHash body_content_hash, ::fixy::ArenaRun<FeedbackEdge const, DagArena> feedback,
-          LoopTermKind term_kind, uint32_t repeat_count, float epsilon = 0.0f) noexcept {
+// The loop, its body and its edges are in the arena of the frame.
+template <class Fresh>
+[[nodiscard]] DagFrameRef<LoopNode, Fresh>
+make_loop(::foundation::effects::Alloc a, DagFrame<Fresh>& frame,
+          std::type_identity_t<DagFrameRef<TraceNode, Fresh>> body, ContentHash body_content_hash,
+          std::type_identity_t<DagFrameRun<FeedbackEdge const, Fresh>> feedback, LoopTermKind term_kind,
+          uint32_t repeat_count, float epsilon = 0.0f) noexcept {
     CRUCIBLE_PRE(feedback.size() <= ::fixy::max_of<uint16_t>);
     // A convergence distance is a finite number that cannot be negative, and
     // every bit of epsilon reaches the termination hash through a bit_cast,
@@ -1259,28 +1267,21 @@ make_loop(::foundation::effects::Alloc a, ::fixy::BumpArena<DagArena>& arena CRU
     // REPEAT keeps zero, where it means what it says: run the body no times
     // and continue.
     CRUCIBLE_PRE(term_kind != LoopTermKind::UNTIL || repeat_count > 0u);
-    const DagRef<LoopNode> node = mint_dag_node<LoopNode>(a, arena);
+    const DagFrameRef<LoopNode, Fresh> node = mint_dag_node<LoopNode>(a, frame);
     node->kind = TraceNodeKind::LOOP;
-    node->body = make_link(body);
+    node->body = make_link(*body);
     node->body_content_hash = body_content_hash;
-    node->feedback_edges = feedback;
+    node->feedback_edges = feedback.weaken();
     node->term_kind = term_kind;
     node->repeat_count = repeat_count;
     node->epsilon = epsilon;
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::LOOP);
-    CRUCIBLE_POST(node, is_link_to(node->body.option(), body));
+    CRUCIBLE_POST(node, is_link_to(node->body.option(), *body));
     CRUCIBLE_POST(node, node->feedback_edges.size() == feedback.size());
     CRUCIBLE_POST(node, node->term_kind == term_kind);
     CRUCIBLE_POST(node, node->repeat_count == repeat_count);
     return node;
 }
-
-// The twin of make_loop above.  The node is in the arena, and a temporary
-// arena releases it at the end of the statement.  The pack holds the other
-// arguments, and the twin declares no raw pointer parameter.
-template <class... Rest>
-DagRef<LoopNode> make_loop(::foundation::effects::Alloc, ::fixy::BumpArena<DagArena>&&, Rest&&...) =
-    delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
 // Children are recomputed first, because a node's hash folds in the hashes of
 // its arms, its body and its continuation.

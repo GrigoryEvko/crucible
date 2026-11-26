@@ -182,16 +182,19 @@ int run_bench(::fixy::os::Args const& arguments) {
         ::fixy::BumpArena<DagArena> data_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         ::fixy::BumpArena<DagArena> ops_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 481;
-        auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TraceEntry> ops = ops_run.view();
-        bench_rng_state = 0x12345678ABCDEF01ULL;
-        for (uint32_t i = 0; i < N; i++)
-            *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, data_arena, 2, 1, 1, 4);
-        return bench::run("make_region (481 ops)", [&] {
-            ::fixy::BumpArena<DagArena> region_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
-            const DagRef<RegionNode> r = make_region(test.alloc, region_arena, ops_run);
-            bench::do_not_optimize(r);
+        // One frame on the arena of the ops builds each region of the row, so
+        // each region takes the ops of its own arena.
+        return ::foundation::core::with_arena_frame(ops_arena, [&test, &data_arena](auto& frame) noexcept {
+            auto ops_run = frame.template array<TraceEntry>(test.alloc, N, TraceEntry{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<TraceEntry> ops = ops_run.view();
+            bench_rng_state = 0x12345678ABCDEF01ULL;
+            for (uint32_t i = 0; i < N; i++)
+                *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, data_arena, 2, 1, 1, 4);
+            return bench::run("make_region (481 ops)", [&] {
+                const DagRef<RegionNode> r = make_region(test.alloc, frame, ops_run).weaken();
+                bench::do_not_optimize(r);
+            });
         });
     }());
 
@@ -201,13 +204,16 @@ int run_bench(::fixy::os::Args const& arguments) {
         ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 481;
-        auto ops_run = dag_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TraceEntry> ops = ops_run.view();
-        bench_rng_state = 0xAAAABBBBCCCCDDDDULL;
-        for (uint32_t i = 0; i < N; i++)
-            *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4);
-        const DagRef<RegionNode> region = make_region(test.alloc, dag_arena, ops_run);
+        const DagRef<RegionNode> region =
+            ::foundation::core::with_arena_frame(dag_arena, [&test, &arena](auto& frame) noexcept {
+                auto ops_run = frame.template array<TraceEntry>(test.alloc, N, TraceEntry{});
+                // A plain View of an arena run: the View carries no brand of its arena.
+                const ::fixy::View<TraceEntry> ops = ops_run.view();
+                bench_rng_state = 0xAAAABBBBCCCCDDDDULL;
+                for (uint32_t i = 0; i < N; i++)
+                    *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4);
+                return make_region(test.alloc, frame, ops_run).weaken();
+            });
         return bench::run("compute_merkle_hash (RegionNode)", [&] {
             auto h = compute_merkle_hash(*region);
             bench::do_not_optimize(h);

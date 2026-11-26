@@ -11,7 +11,12 @@
 int main() {
     ::fixy::BumpArena<crucible::DagArena> arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{4096});
-    const auto plan =
-        crucible::mint_dag_node<crucible::MemoryPlan>(::foundation::effects::testing::test().alloc, arena);
-    return static_cast<int>(plan->pool_bytes);
+    // The body states its result, so the door reads no line of the body, and
+    // the mint is the one refused line.
+    ::foundation::core::with_arena_frame(arena, [](auto& frame) noexcept -> void {
+        const auto plan =
+            crucible::mint_dag_node<crucible::MemoryPlan>(::foundation::effects::testing::test().alloc, frame);
+        static_cast<void>(plan->pool_bytes);
+    });
+    return 0;
 }

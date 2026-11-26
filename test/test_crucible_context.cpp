@@ -43,16 +43,19 @@ using crucible::ShapeHash;
 // so they take that context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
-// A region of the ops and the plan in the arena.  The other fields of the
-// region keep their defaults, so the hashes stay zero.
+// A region of the ops and the plan in the arena, which a frame on the arena
+// builds.  The other fields of the region keep their defaults, so the hashes
+// stay zero.
 static crucible::DagRef<RegionNode> build_region(::foundation::effects::Alloc alloc, ::fixy::BumpArena<DagArena>& arena,
                                                  ::fixy::ArenaRun<TraceEntry const, DagArena> ops,
                                                  crucible::PlanLink plan) {
-    const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(alloc, arena);
-    region->kind = TraceNodeKind::REGION;
-    region->ops = ops;
-    region->plan = plan;
-    return region;
+    return ::foundation::core::with_arena_frame(arena, [alloc, &ops, &plan](auto& frame) noexcept {
+        const auto region = crucible::mint_dag_node<RegionNode>(alloc, frame);
+        region->kind = TraceNodeKind::REGION;
+        region->ops = ops;
+        region->plan = plan;
+        return region.weaken();
+    });
 }
 
 // The zero metadata and the producers of the test ops are arrays of this
