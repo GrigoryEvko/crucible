@@ -1423,6 +1423,22 @@ inline constexpr FixedArrayOwner<T, N> fixed_array_owner{};
 
 namespace detail {
 
+// The fatal exit of a count of elements that is longer than the largest View.
+[[noreturn]] CRUCIBLE_COLD inline void refuse_heap_array_count_(std::size_t count, std::size_t element_bytes) noexcept {
+    fatal("a HeapArray of {} elements of {} bytes is longer than the largest View", count, element_bytes);
+}
+
+// Ends the process when count elements of T are longer than the largest View.
+// The check always inlines, so the code after it knows the bound: the loop
+// that fills the storage then writes at most the bytes of the largest View.
+// Complexity: O(1).
+template <class T>
+CRUCIBLE_INLINE constexpr void require_heap_array_count_(std::size_t count) noexcept {
+    if (count > max_view_count(sizeof(T))) [[unlikely]] {
+        refuse_heap_array_count_(count, sizeof(T));
+    }
+}
+
 // The layout of the storage of count elements of T: their bytes rounded up
 // to the alignment, at the alignment.  count is above zero.  A count past the
 // largest count of a View, or with bytes that do not fit in size_t, ends the
@@ -1430,9 +1446,7 @@ namespace detail {
 // that does not fit.  Complexity: O(1).
 template <class T, std::size_t Align>
 [[nodiscard]] constexpr ::foundation::alloc::Layout heap_array_layout_(std::size_t count) noexcept {
-    if (count > max_view_count(sizeof(T))) [[unlikely]] {
-        fatal("a HeapArray of {} elements of {} bytes is longer than the largest View", count, sizeof(T));
-    }
+    require_heap_array_count_<T>(count);
     std::size_t const bytes = strict_align_up(strict_mul(count, sizeof(T)), Align);
     return ::foundation::alloc::mint_layout(ByteCount{bytes}, ::foundation::alloc::Alignment{Align})
         .expect("the storage of at least one element of a HeapArray is a layout");
@@ -1530,9 +1544,13 @@ struct WriteTag final {};
 
 // The storage of count elements of T at the alignment Align, from the
 // allocation door.  count is above zero, and a count whose bytes do not fit
-// ends the process before the allocation.  The bytes hold no value.
+// ends the process before the allocation.  The bytes hold no value.  The check
+// of the count inlines into each constructor, so GCC bounds the loop of the
+// constructor that writes the storage also when the layout is a call.  A
+// constant count past the largest View then reaches no write of the loop.
 template <class T, std::size_t Align>
-[[nodiscard]] void* allocate_heap_elements_(std::size_t count) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE void* allocate_heap_elements_(std::size_t count) noexcept {
+    require_heap_array_count_<T>(count);
     return heap_allocate_(heap_array_layout_<T, Align>(count));
 }
 
