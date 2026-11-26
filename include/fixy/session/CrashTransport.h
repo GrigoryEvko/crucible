@@ -838,12 +838,16 @@ struct session_frame {
 // crashed receiver it writes nothing and reports the word taken, so the
 // inner handle steps on.  `receiver_cell` is null for a reliable third
 // role, whose crash this endpoint does not watch.  `is_written` says
-// whether the transport took the word.
+// whether the transport took the word.  The transport moves into the
+// result, so the gate of the inner handle reads each capture of the
+// transport as its own, as the gate of the crash door read it.
 template <typename Resource, typename Transport>
-[[nodiscard]] constexpr auto watched_word_write(const CrashCellCore* receiver_cell, Transport& transport,
+[[nodiscard]] constexpr auto watched_word_write(const CrashCellCore* receiver_cell, Transport transport,
                                                 bool& is_written) noexcept {
-    return [receiver_cell, &transport, &is_written](Resource& resource, std::size_t& word) noexcept(
-               std::is_nothrow_invocable_v<Transport&, Resource&, std::size_t&>) -> bool {
+    return [receiver_cell, transport = std::move(transport), &is_written](
+               Resource& resource,
+               std::size_t& word) mutable noexcept(std::is_nothrow_invocable_v<Transport&, Resource&, std::size_t&>)
+               -> bool {
         if (receiver_cell != nullptr && receiver_cell->has_crashed()) return true;
         is_written = std::invoke(transport, resource, word);
         return is_written;
@@ -1042,7 +1046,7 @@ public:
         bool is_written = false;
         auto next = std::move(watched.inner_)
                         .send(detail::crash_transport::watched_word_write<typename Handle::resource_type>(
-                            receiver_cell_<Receiver>(watched), transport, is_written));
+                            receiver_cell_<Receiver>(watched), std::move(transport), is_written));
         // A word with a value is half of its message, and the send of the
         // value counts the message.  A word with no value is the whole
         // message, and it counts in the cell of the pair of this endpoint and
@@ -1080,7 +1084,7 @@ public:
         bool is_written = false;
         auto next = std::move(watched.inner_)
                         .template select<I>(detail::crash_transport::watched_word_write<typename Handle::resource_type>(
-                            receiver_cell_<Receiver>(watched), transport, is_written));
+                            receiver_cell_<Receiver>(watched), std::move(transport), is_written));
         using Next = decltype(next);
         constexpr bool is_inside_message = [] {
             if constexpr (is_keyed_choice_v<P>) {

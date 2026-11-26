@@ -314,10 +314,12 @@ read_through(Transport& transport, Resource& resource,
 
 // A read of the same shape as `read` that gives each value it reads to
 // `seen` first.  A decorator uses it to learn what its inner handle read.
+// The read moves into the result, so the gate of the inner handle reads each
+// capture of the read as its own, as the gate of the decorator read it.
 template <typename T, typename Resource, typename Read, typename Seen>
-[[nodiscard]] constexpr auto observed_read(Read& read, Seen seen) noexcept {
+[[nodiscard]] constexpr auto observed_read(Read read, Seen seen) noexcept {
     if constexpr (PollRead<Read, Resource, T>) {
-        return [&read,
+        return [read = std::move(read),
                 seen](Resource& resource) mutable noexcept(read_is_nothrow<Read, Resource, T>()) -> ::fixy::Option<T> {
             ::fixy::Option<T> got = std::invoke(read, resource);
             for (T const& value : got)
@@ -325,8 +327,8 @@ template <typename T, typename Resource, typename Read, typename Seen>
             return got;
         };
     } else {
-        return [&read, seen](Resource& resource,
-                             watch::wait_scope& wait) mutable noexcept(read_is_nothrow<Read, Resource, T>()) -> T {
+        return [read = std::move(read), seen](Resource& resource, watch::wait_scope& wait) mutable noexcept(
+                   read_is_nothrow<Read, Resource, T>()) -> T {
             T got = std::invoke(read, resource, wait);
             seen(got);
             return got;
@@ -335,29 +337,31 @@ template <typename T, typename Resource, typename Read, typename Seen>
 }
 
 // A write of the same shape as `write` that calls `taken` once the
-// transport took the value.
+// transport took the value.  The write moves into the result, as the read
+// of observed_read does.
 template <typename T, typename Resource, typename Write, typename Taken>
-[[nodiscard]] constexpr auto observed_write(Write& write, Taken taken) noexcept {
+[[nodiscard]] constexpr auto observed_write(Write write, Taken taken) noexcept {
     if constexpr (TryWrite<Write, Resource, T> && ::foundation::linear::LinearValue<T>) {
-        return [&write, taken](Resource& resource, T&& value) mutable noexcept(
+        return [write = std::move(write), taken](Resource& resource, T&& value) mutable noexcept(
                    write_is_nothrow<Write, Resource, T>()) -> ::fixy::Option<T> {
             ::fixy::Option<T> back = write(resource, std::move(value));
             if (back.is_none()) taken();
             return back;
         };
     } else if constexpr (TryWrite<Write, Resource, T>) {
-        return [&write, taken](Resource& resource,
-                               T& value) mutable noexcept(write_is_nothrow<Write, Resource, T>()) -> bool {
+        return [write = std::move(write),
+                taken](Resource& resource, T& value) mutable noexcept(write_is_nothrow<Write, Resource, T>()) -> bool {
             const bool is_taken = std::invoke(write, resource, value);
             if (is_taken) taken();
             return is_taken;
         };
     } else {
-        return [&write, taken](Resource& resource, T&& value,
-                               watch::wait_scope& wait) mutable noexcept(write_is_nothrow<Write, Resource, T>()) {
-            std::invoke(write, resource, std::move(value), wait);
-            taken();
-        };
+        return
+            [write = std::move(write), taken](Resource& resource, T&& value, watch::wait_scope& wait) mutable noexcept(
+                write_is_nothrow<Write, Resource, T>()) {
+                std::invoke(write, resource, std::move(value), wait);
+                taken();
+            };
     }
 }
 

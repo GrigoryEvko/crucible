@@ -365,8 +365,8 @@ public:
         using Message = typename Inner::protocol::message_type;
         bool is_delivered = false;
         auto marked = detail::observed_write<Message, typename Inner::resource_type>(
-            transport, [&is_delivered]() noexcept { is_delivered = true; });
-        auto result = std::move(recorder.inner_).send(std::forward<T>(value), marked);
+            std::move(transport), [&is_delivered]() noexcept { is_delivered = true; });
+        auto result = std::move(recorder.inner_).send(std::forward<T>(value), std::move(marked));
         record_(recorder, detail::recording::event_for_send<Message>(recorder.self_, recorder.peer_,
                                                                      is_delivered ? DeliveryFate::Delivered
                                                                                   : DeliveryFate::LostToCrashedPeer));
@@ -424,8 +424,8 @@ public:
         using Message = typename Inner::protocol::message_type;
         bool is_delivered = false;
         auto marked = detail::observed_write<std::size_t, typename Inner::resource_type>(
-            transport, [&is_delivered]() noexcept { is_delivered = true; });
-        auto result = std::move(recorder.inner_).send(marked);
+            std::move(transport), [&is_delivered]() noexcept { is_delivered = true; });
+        auto result = std::move(recorder.inner_).send(std::move(marked));
         record_(recorder, detail::recording::event_for_send<Message>(recorder.self_, recorder.peer_,
                                                                      is_delivered ? DeliveryFate::Delivered
                                                                                   : DeliveryFate::LostToCrashedPeer));
@@ -482,8 +482,8 @@ public:
         } else {
             bool is_delivered = false;
             auto marked = detail::observed_write<std::size_t, typename Inner::resource_type>(
-                transport, [&is_delivered]() noexcept { is_delivered = true; });
-            auto next = std::move(recorder.inner_).template select<I>(marked);
+                std::move(transport), [&is_delivered]() noexcept { is_delivered = true; });
+            auto next = std::move(recorder.inner_).template select<I>(std::move(marked));
             return selected_<I, Inner>(recorder, std::move(next),
                                        is_delivered ? DeliveryFate::Delivered : DeliveryFate::LostToCrashedPeer);
         }
@@ -507,15 +507,15 @@ public:
                       "index in one byte, and this Offer has more than 256 branches.");
         std::optional<std::uint64_t> word;
         auto marked = detail::observed_read<std::size_t, typename Inner::resource_type>(
-            reader, [&word](std::size_t read) noexcept { word = read; });
+            std::move(reader), [&word](std::size_t read) noexcept { word = read; });
         // The closure owns the handler, the writer and the roles, so the step
         // holds no reference to the recorder.  The inner handle calls the
         // closure one time through the once door, and the closure calls the
         // handler one time through it, so the handler can hold a linear value
         // by move.
         return std::move(recorder.inner_)
-            .branch(marked, [held = seat{std::move(recorder.writer_), recorder.self_, recorder.peer_},
-                             handler = std::move(handler), &word](auto next) mutable {
+            .branch(std::move(marked), [held = seat{std::move(recorder.writer_), recorder.self_, recorder.peer_},
+                                        handler = std::move(handler), &word](auto next) mutable {
                 using Next = decltype(next);
                 // No word was read only when a crash-watched handle took the
                 // crash branch.
