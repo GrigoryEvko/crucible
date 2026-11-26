@@ -15,7 +15,6 @@ int main() {
                                                      built.num_inputs = 1;
                                                      return built;
                                                  }};
-    const crucible::ValidatedOp op{::fixy::erase_brand(::fixy::to(entry)),
-                                   crucible::mint_checked_meta_run(::fixy::View<const crucible::TensorMeta>{})};
+    const crucible::ValidatedOp op{::fixy::erase_brand(::fixy::to(entry)), ::fixy::View<const crucible::TensorMeta>{}};
     return static_cast<int>(op.entry().num_inputs);
 }

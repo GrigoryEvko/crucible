@@ -83,9 +83,10 @@ template <std::size_t Extent>
 // A run of records that one append of the metadata log takes: a View of at
 // most kMetaLogCapacity records.  The constructor is private, and three doors
 // make a run:
-//   - the door of an op, ValidatedOpDoor of crucible/ValidatedOp.h, which
-//     gives a run only when its count is the input count plus the output
-//     count of the entry, two counts of 16 bits, so at most 131070 records
+//   - records of a ValidatedOp, through the door of an op (ValidatedOpDoor of
+//     crucible/ValidatedOp.h).  The door gives an op only when the count of
+//     its records is the input count plus the output count of the entry, two
+//     counts of 16 bits, so at most 131070 records
 //   - mint_meta_run, for a View of a fixed extent of at most the capacity,
 //     with no check at run time
 //   - mint_checked_meta_run, for a View of the dynamic extent, whose

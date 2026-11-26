@@ -1,8 +1,10 @@
 // The compile-time checks of crucible/MetaLog.h.
 
 #include <crucible/MetaLog.h>
+#include <foundation/reflect/Members.h>
 
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 
 namespace crucible {
@@ -18,6 +20,24 @@ static_assert(!std::is_copy_assignable_v<MetaRun> && !std::is_move_assignable_v<
 static_assert(!std::is_assignable_v<MetaRun&, ::fixy::View<const TensorMeta>>);
 static_assert(std::is_trivially_copy_constructible_v<MetaRun>);
 static_assert(sizeof(MetaRun) == sizeof(::fixy::View<const TensorMeta>));
+
+// The one public constructor of a run is its copy, so no public constructor
+// takes records.  So only the friends of MetaRun make a run: the door of an op
+// (ValidatedOpDoor, for records of a ValidatedOp), mint_meta_run and
+// mint_checked_meta_run.  The check file of crucible/ValidatedOp.h pins the
+// door of an op.  The second search is the control of the first: the same
+// search finds the copy.
+static_assert(::foundation::reflect::find_member(^^MetaRun, std::meta::access_context::current(),
+                                                 [](std::meta::info member) {
+                                                   return std::meta::is_constructor(member)
+                                                       && !std::meta::is_copy_constructor(member);
+                                                 })
+              == std::meta::info{});
+static_assert(::foundation::reflect::find_member(^^MetaRun, std::meta::access_context::current(),
+                                                 [](std::meta::info member) {
+                                                   return std::meta::is_copy_constructor(member);
+                                                 })
+              != std::meta::info{});
 
 // The count of the records of an op is the sum of two counts of 16 bits, so
 // the run of an op fits the log (the door of an op, ValidatedOpDoor).

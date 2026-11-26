@@ -4322,7 +4322,7 @@ crucible_neg_compile_test(neg_vigil_dispatch_op_pure_no_ctx
 # checks of the trust ladder change.
 crucible_neg_compile_test(neg_validated_op_built_outside_mint
   "is private within this context"
-  "crucible::ValidatedOp::ValidatedOp\\(foundation::core::Ref<const foundation::core::Sealed<crucible::TraceRing::Entry> >, crucible::MetaRun\\)")
+  "crucible::ValidatedOp::ValidatedOp\\(foundation::core::Ref<const foundation::core::Sealed<crucible::TraceRing::Entry> >, foundation::core::View<const crucible::TensorMeta(, 18446744073709551615)?>\\)")
 crucible_neg_compile_test(neg_validated_op_unchecked_entry
   "no matching function for call to .mint_validated_op\\(crucible::TraceRing::FromPytorchEntry\\)."
   "no known conversion for argument 1 from .Tagged<.....,fixy::tags::vessel_trust::FromPytorch>. to .Tagged<.....,fixy::tags::vessel_trust::Validated>")
