@@ -5781,6 +5781,12 @@ foundation_neg_compile_test(neg_core_find_if_keeps_an_element
 foundation_neg_compile_test(neg_core_store_mark_outside_the_base
   "use of deleted function .void foundation::core::find_if\\(View<T, Extent>, Predicate\\)"
   "a body of a frame door stores no borrow outside the frame")
+# A guard of a share holds the address of its pool, which it does not own, so
+# the store check reads it as a borrow, and find_if refuses a body that
+# captures by reference an Option of a guard.
+foundation_neg_compile_test(neg_shared_permission_guard_kept_by_a_body
+  "use of deleted function .void foundation::core::find_if\\(View<T, Extent>, Predicate\\)"
+  "a body of a frame door stores no borrow outside the frame")
 # Each door that lends a borrow to a body for the time of a call refuses a body
 # that captures by reference an Option of a View, a slot that the caller reads
 # after the call, and the store twin of the door gives the reason.

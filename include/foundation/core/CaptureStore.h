@@ -63,7 +63,10 @@
 //     * an owner holds its storage through pointers that no caller sets: a
 //       class on OwnerCore (foundation/core/Owner.h), a class that states
 //       by_arguments{}, synchronized{} or payload_cell{}, or owns_its_storage{}.
-//       The walk reads its type arguments in its own region and no member
+//       The walk reads its type arguments in its own region and no member.  A
+//       core whose state releases nothing, such as the run of a region, and a
+//       share of a pool that states shares{} own no storage, so the walk reads
+//       their members
 //     * a handle of the base that states keeps_own_borrows{}
 //       (foundation/core/TypeParts.h), such as an Epoch, is no borrow slot,
 //       and the walk reads no part of it.  Each door of it that stores an

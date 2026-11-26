@@ -592,6 +592,13 @@ template <class... Refused, class T, class Tag, class Brand, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && ::foundation::core::LinearFrameBody<Body, T, Fresh>
 void with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+// A body that can store a borrow outside the frame binds to this overload, the
+// store twin (StoringFrameBody of foundation/core/Region.h), so the refusal
+// gives its reason and not the reason of a const region.
+template <class... Refused, class T, class Tag, class Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ::foundation::core::StoringFrameBody<Body, T, Fresh>
+void with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 // A named region stays with the caller while the body runs, so the body could
 // write it beside the ViewMut through a capture.  These twins refuse a named

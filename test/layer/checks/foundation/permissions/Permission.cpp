@@ -10,6 +10,9 @@
 #include <foundation/Transfer.h>
 #include <foundation/permissions/SharedPermission.h>
 
+#include <foundation/core/Choice.h>
+#include <foundation/core/TypeParts.h>
+
 #include <optional>
 
 namespace foundation::permissions {
@@ -309,6 +312,17 @@ static_assert(!detail::seplog_roster::heap_new_reaches_v<
               "a new-expression must not put a SharedPermissionGuard on the heap");
 static_assert(detail::seplog_roster::heap_new_reaches_v<detail::seplog_roster::brand_a>,
               "the heap check must admit a plain movable class, or its refusals prove nothing");
+
+// A guard holds the address of its pool, which it does not own, so the walk of
+// foundation/core/TypeParts.h reads it as a share and as no owner of storage,
+// although its mark by_arguments<0>{} states how it moves.  So the guard holds a
+// borrow, and a body that captures one by reference stores no borrow into it.
+// The guard still moves between threads as its tag does.
+using PinnedGuard = SharedPermissionGuard<detail::seplog_test_tag, detail::seplog_roster::brand_a>;
+static_assert(::foundation::core::detail::type_parts_v<PinnedGuard>.is_share);
+static_assert(!::foundation::core::detail::type_parts_v<PinnedGuard>.is_storage_owner);
+static_assert(!::foundation::core::HoldsNoBorrow<PinnedGuard>);
+static_assert(::foundation::transfer::Sendable<PinnedGuard>);
 
 static_assert(!std::is_copy_constructible_v<SharedPermissionPool<detail::seplog_test_tag>>,
               "SharedPermissionPool<Tag> must be Pinned (non-copyable)");

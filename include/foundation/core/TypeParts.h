@@ -174,9 +174,15 @@ struct TypeParts {
     // of a const target.
     bool gives_const_access = false;
     // An owner: a class of the base that states an owner mark or derives from
-    // OwnerCore in public.  No rule keeps the marks in the base, so a walk
-    // reads the members of a marked class outside the base.
+    // OwnerCore in public, with a state that owns its storage.  No rule keeps
+    // the marks in the base, so a walk reads the members of a marked class
+    // outside the base.
     bool is_storage_owner = false;
+    // A share of a pool: a class that states shares{} of foundation/Transfer.h,
+    // such as the guard of a share.  It holds the address of its pool, which it
+    // does not own, so it is no owner of storage, whatever its other marks
+    // state.  Its mark by_arguments<0>{} states how it moves between threads.
+    bool is_share = false;
     // A handle of the base that states keeps_own_borrows{}.  The store check
     // reads it as no borrow slot.
     bool keeps_own_borrows = false;
@@ -452,7 +458,7 @@ consteval void list_arguments_(TypeParts& parts, PartList<Room>& list, std::meta
 
 // Reads the marks of the class that a walk reads: is_borrow and
 // gives_const_access, is_storage_owner and the marks of an owner, the key
-// mark, and keeps_own_borrows.
+// mark, keeps_own_borrows, and is_share.
 consteval void read_marks_(TypeParts& parts, std::meta::info type) {
     namespace tr = ::foundation::transfer;
     bool states_owner = false;
@@ -481,23 +487,44 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
             parts.is_key_marked = true;
         } else if (mark == ^^keeps_own_borrows) {
             keeps_own = true;
+        } else if (mark == ^^tr::shares) {
+            parts.is_share = true;
         }
     }
     if (!states_owner && !refers_deep && !keeps_own) return;
     bool const is_of_the_base = ::foundation::reflect::is_class_of_the_base_(type);
-    parts.is_storage_owner = states_owner && is_of_the_base;
+    parts.is_storage_owner = states_owner && is_of_the_base && !parts.is_share;
     parts.states_by_arguments = owns_arguments && is_of_the_base;
     parts.gives_const_access = refers_deep && is_of_the_base;
     parts.keeps_own_borrows = keeps_own && is_of_the_base;
 }
 
-// True when one of the bases is a public OwnerCore.  Each owner of the base
-// derives from OwnerCore in public.
-[[nodiscard]] consteval bool derives_from_owner_core_(std::vector<std::meta::info> const& bases) {
+// True when the state of a core states releases_nothing as true
+// (ReleasesNothing of foundation/core/Owner.h).  The read takes the public
+// static member itself, so it reads no template that a unit can specialize and
+// no private state.
+[[nodiscard]] consteval bool releases_nothing_(std::meta::info state) {
+    std::meta::access_context const in_public = std::meta::access_context::unprivileged();
+    std::vector<std::meta::info> const members = std::meta::static_data_members_of(state, in_public);
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member = members[index];
+        if (::foundation::reflect::has_identifier_named(member, "releases_nothing")) {
+            return std::meta::extract<bool>(member);
+        }
+    }
+    return false;
+}
+
+// True when one of the bases is a public OwnerCore whose state owns its
+// storage.  Each owner of the base derives from OwnerCore in public.  A state
+// that releases nothing, such as the run of a region, names storage of another
+// owner, so its core owns no storage, and a walk reads its members.
+[[nodiscard]] consteval bool derives_from_storage_core_(std::vector<std::meta::info> const& bases) {
     for (std::size_t index = 0; index < bases.size(); ++index) {
         std::meta::info const base = std::meta::dealias(std::meta::type_of(bases[index]));
         bool const is_core = std::meta::has_template_arguments(base) && std::meta::template_of(base) == ^^OwnerCore;
-        if (is_core && std::meta::is_public(bases[index])) return true;
+        if (!is_core || !std::meta::is_public(bases[index])) continue;
+        return !releases_nothing_(std::meta::template_arguments_of(base)[0]);
     }
     return false;
 }
@@ -594,7 +621,7 @@ consteval void list_parts_(TypeParts& parts, PartList<Room>& list, std::meta::in
     parts.hides_members = is_any_borrow;
     if (is_specialization && is_any_borrow && !lists_held_alone) return;
     std::vector<std::meta::info> const bases = std::meta::bases_of(type, unchecked);
-    if (!parts.is_storage_owner && derives_from_owner_core_(bases)) {
+    if (!parts.is_storage_owner && !parts.is_share && derives_from_storage_core_(bases)) {
         parts.is_storage_owner = ::foundation::reflect::is_class_of_the_base_(type);
     }
     parts.hides_members = is_any_borrow || parts.is_storage_owner;

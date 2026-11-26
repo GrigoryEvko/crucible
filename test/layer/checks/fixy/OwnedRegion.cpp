@@ -12,6 +12,19 @@ static_assert(sizeof(OwnedRegion<int, detail::owned_region_test_tag>) == sizeof(
               "OwnedRegion<T, Tag> must be exactly (T*, size_t); Permission EBO-collapses");
 
 static_assert(!std::is_copy_constructible_v<OwnedRegion<int, detail::owned_region_test_tag>>);
+
+// The run of a region names storage of another owner, an arena or the run of a
+// frame, and its state releases nothing.  So the walk of
+// foundation/core/TypeParts.h reads the region as no owner of storage, the
+// region holds a borrow, and a body that captures one by reference stores no
+// borrow into it.  A HeapArray owns its storage, and it is an owner.
+namespace detail {
+struct owned_region_pin_brand final {};
+}  // namespace detail
+using PinnedRegion = OwnedRegion<int, detail::owned_region_test_tag, detail::owned_region_pin_brand>;
+static_assert(!::foundation::core::detail::type_parts_v<PinnedRegion>.is_storage_owner);
+static_assert(::foundation::core::detail::type_parts_v<::foundation::core::HeapArray<int>>.is_storage_owner);
+static_assert(!::foundation::core::HoldsNoBorrow<PinnedRegion>);
 static_assert(std::is_move_constructible_v<OwnedRegion<int, detail::owned_region_test_tag>>);
 static_assert(std::is_nothrow_move_constructible_v<OwnedRegion<int, detail::owned_region_test_tag>>);
 

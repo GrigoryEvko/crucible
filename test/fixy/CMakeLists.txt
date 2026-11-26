@@ -8788,6 +8788,9 @@ fixy_neg_compile_test(neg_owned_region_two_mutable_views
 # The frame door takes a region by move, so a body that opens the door of
 # the same named region gets the deleted twin of a named region.
 fixy_neg_compile_test(neg_owned_region_nested_frame_door
+  "use of deleted function .void fixy::with_mut\\(OwnedRegion<T, Tag, Brand>&&, Body&&\\)"
+  "a body of a frame door stores no borrow outside the frame")
+fixy_neg_compile_test(neg_owned_region_with_mut_of_named
   "use of deleted function .void fixy::with_mut\\(OwnedRegion<T, Tag, Brand>&, Body&&\\)"
   "with_mut takes the region into its frame and gives it back: pass std::move\\(region\\)")
 
@@ -8796,6 +8799,11 @@ fixy_neg_compile_test(neg_owned_region_nested_frame_door
 fixy_neg_compile_test(neg_owned_region_two_regions_over_one_buffer
   "no matching function for call to .mint_owned_region\\(uint64_t \\[4\\], std::size_t"
   "candidate expects 4 arguments, 3 provided")
+# A region owns no storage, so the store check reads its run as a borrow, and
+# find_if refuses a body that captures by reference an Option of a region.
+fixy_neg_compile_test(neg_owned_region_kept_by_a_body
+  "use of deleted function .void foundation::core::find_if\\(View<T, Extent>, Predicate\\)"
+  "a body of a frame door stores no borrow outside the frame")
 # The foreign door takes a run of objects, and the token by move.
 fixy_neg_compile_test(neg_foreign_owned_region_of_functions
   "no matching function for call to .mint_foreign_owned_region\\(void \\(\\*\\)\\(\\) noexcept"
