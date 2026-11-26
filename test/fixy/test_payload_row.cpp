@@ -40,17 +40,17 @@ int g_failures = 0;
 
 // The rosters, pinned.  A new family is one roster line plus one pin
 // here, which is what puts it in front of a reviewer.  The three rosters
-// hold twenty-two entries, because one Graded entry stands for every band
+// hold twenty-three entries, because one Graded entry stands for every band
 // spelling.
 static_assert(std::size(c::detail::row_carrying_payload_families) == 2,
               "Two families carry a row of their own: a Computation carries the row it was produced under, "
               "and a Capability conveys the effect it authorizes.  A third means a new kind of payload "
               "whose rule has to be written beside its roster entry.");
-static_assert(sizeof(c::detail::transparent_payload_families) == 17 * sizeof(std::meta::info),
-              "Seventeen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
-              "The seven containers (WriteOnce, FixedArray, HeapArray, RunSet, ArenaRunSet, ArenaRun, std::vector) "
-              "hide their elements, a Box hides its object, and an Option hides its payload.  A new wrapper that "
-              "unwraps is one line here.");
+static_assert(sizeof(c::detail::transparent_payload_families) == 18 * sizeof(std::meta::info),
+              "Eighteen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
+              "The eight containers (WriteOnce, FixedArray, HeapArray, RunSet, ArenaRunSet, ArenaRun, ArenaParcel, "
+              "std::vector) hide their elements, a Box hides its object, and an Option hides its payload.  A new "
+              "wrapper that unwraps is one line here.");
 static_assert(std::size(c::detail::leaf_payload_families) == 3,
               "Three families are admitted as leaves: a Saturated value, a PackedWord and a BumpArena.  Every "
               "entry is a claim that the template hides no effect row, which is why a leaf needs a line rather "

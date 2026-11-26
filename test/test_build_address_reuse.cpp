@@ -249,15 +249,15 @@ private:
     return rig.build();
 }
 
-// True when each run of a region is empty: the region holds no arena and no
-// run, as the default region does.
+// True when each run of a region is empty: the region holds no parcel, as the
+// default region does.
 [[nodiscard]] bool has_no_run(const BuiltRegion& region) {
     return region.ops().size() == 0 && region.metas().size() == 0 && region.scalars().size() == 0
         && region.producers().size() == 0 && region.slot_ids().size() == 0 && region.slots().size() == 0;
 }
 
-// A move takes the arena and the runs of a region, and a move assignment
-// does the same, so each View of the source is empty after it.  The target
+// A move takes the parcel of a region, and a move assignment does the same,
+// so each View of the source is empty after it.  The target
 // holds the runs of the build, with the same hash.
 void test_moved_from_region_has_no_run() {
     BuiltRegion region = build_three_ops(kZ);

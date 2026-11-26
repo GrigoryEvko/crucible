@@ -799,8 +799,8 @@ static void check_descriptor_images_agree() {
                 policy_op.schema_hash = crucible::SchemaHash{0x78};
                 policy_op.set_scalar_args(::fixy::check::run_of(kTest, alloc, frame, int64_t{7}).weaken());
                 auto const made = crucible::mint_dag_node<crucible::RegionNode>(alloc, frame);
-                crucible::init_region_node(*made, policy_ops_run.weaken(),
-                                           crucible::compute_content_hash(policy_ops, numerics), numerics);
+                crucible::init_region_node(made, policy_ops_run, crucible::compute_content_hash(policy_ops, numerics),
+                                           numerics);
                 return made.weaken();
             });
         crucible::RegionNode& policy_region = *policy_node;

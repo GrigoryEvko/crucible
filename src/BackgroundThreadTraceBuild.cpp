@@ -167,13 +167,71 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
     ::fixy::Box<::fixy::BumpArena<DagArena>> region_arena = ::fixy::mint_box<::fixy::BumpArena<DagArena>>(
         a, kRegionFixedBytes.plus(::fixy::Quantity<::fixy::unit::Byte, size_t>{run_bytes}));
 
+    // The edges of the build are a run of the scratch arena, which ends with
+    // its epoch.  Each input and each output adds at most one edge, and
+    // num_edges bounds every read of the edges.
+    auto local_edges_run = scratch.array(a, total_inputs + total_outputs, Edge{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::View<Edge> local_edges = local_edges_run.view();
+
+    // A frame on the arena of the region makes each run of the region, and
+    // seals the runs with the arena into the parcel of the region.  The Box
+    // moves into the parcel, and a move of a Box moves no byte of the arena.
+    const RegionTotals totals{.count = count,
+                              .first_meta = first_meta,
+                              .total_metas = total_metas,
+                              .total_scalars = total_scalars,
+                              .total_inputs = total_inputs,
+                              .total_outputs = total_outputs,
+                              .slot_cap = slot_cap,
+                              .numerics = numerics};
+    RegionFill fill{};
+    BuiltRegion::Parcel parcel = ::foundation::core::mint_arena_parcel(
+        std::move(region_arena), [&state, &meta_log, a, &scratch, trace_data, meta_data, scope_data, callsite_data,
+                                  depth_data, totals, local_edges, &fill](auto& frame) noexcept {
+            return fill_region_runs_(frame, state, meta_log, a, scratch, trace_data, meta_data, scope_data,
+                                     callsite_data, depth_data, totals, local_edges, fill);
+        });
+
+    const TraceGraphRef graph = build_trace_graph(
+        a, scratch, TraceGraphShape{.num_ops = count, .num_slots = fill.num_slots, .max_meta_end = max_meta_end},
+        local_edges.window(0, fill.num_edges).expect("the edge scratch holds each edge of the build"));
+    graph->content_hash = fill.content_hash;
+
+    return BuiltTrace{
+        .graph = graph,
+        .region = BuiltRegion{BuiltRegion::Parts{.parcel = ::fixy::Option<BuiltRegion::Parcel>::some(std::move(parcel)),
+                                                 .content_hash = graph->content_hash,
+                                                 .numerics = numerics}}};
+}
+
+template <class Fresh, class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn, class DepthColumn>
+BuiltRegion::Seal<Fresh>
+BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& state, MetaLog const& meta_log,
+                                    ::foundation::effects::Alloc a, TraceScratch::Epoch& scratch,
+                                    TraceColumn trace_data, MetaColumn meta_data, ScopeColumn scope_data,
+                                    CallsiteColumn callsite_data, DepthColumn depth_data, RegionTotals totals,
+                                    ::fixy::View<Edge> local_edges, RegionFill& fill) noexcept {
+    const uint32_t count = totals.count;
+    const MetaIndex first_meta = totals.first_meta;
+    const uint32_t total_metas = totals.total_metas;
+    const uint32_t total_scalars = totals.total_scalars;
+    const uint32_t total_inputs = totals.total_inputs;
+    const uint32_t total_outputs = totals.total_outputs;
+    const uint32_t slot_cap = totals.slot_cap;
+    const NumericsHash numerics = totals.numerics;
+
     // The ops of the region, one for each entry of the trace.  The column of
     // the ops takes the brand of the scope, so one index of an op reads it
-    // with no check.
-    ::fixy::ArenaRun<TraceEntry, DagArena> op_arena_run = region_arena->array(a, count, TraceEntry{});
+    // with no check.  Each run of the region is a run of the frame, which
+    // the seal at the end takes.  The fill below writes through the family
+    // form of each run.
+    auto op_frame_run = frame.array(a, count, TraceEntry{});
+    ::fixy::ArenaRun<TraceEntry, DagArena> op_arena_run = op_frame_run.weaken();
     const auto op_data = trace_data.parallel(op_arena_run.view()).expect("the op run holds one op for each entry");
 
-    ::fixy::ArenaRun<TensorMeta, DagArena> meta_arena_run = region_arena->array(a, total_metas, TensorMeta{});
+    auto meta_frame_run = frame.array(a, total_metas, TensorMeta{});
+    ::fixy::ArenaRun<TensorMeta, DagArena> meta_arena_run = meta_frame_run.weaken();
     const ::fixy::View<TensorMeta> meta_run = meta_arena_run.view();
     if (first_meta.is_valid()) {
         meta_log.copy_run(first_meta.raw(), meta_run);
@@ -184,9 +242,12 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
     // op takes its windows in order, so a cursor for each run gives the
     // start of the next window.  Each window is a run of the region arena,
     // which the entry of the op takes.
-    ::fixy::ArenaRun<int64_t, DagArena> scalar_arena_run = region_arena->array(a, total_scalars, int64_t{0});
-    ::fixy::ArenaRun<OpIndex, DagArena> producer_arena_run = region_arena->array(a, total_inputs, OpIndex{});
-    ::fixy::ArenaRun<SlotId, DagArena> slot_arena_run = region_arena->array(a, total_inputs + total_outputs, SlotId{});
+    auto scalar_frame_run = frame.array(a, total_scalars, int64_t{0});
+    auto producer_frame_run = frame.array(a, total_inputs, OpIndex{});
+    auto slot_frame_run = frame.array(a, total_inputs + total_outputs, SlotId{});
+    ::fixy::ArenaRun<int64_t, DagArena> scalar_arena_run = scalar_frame_run.weaken();
+    ::fixy::ArenaRun<OpIndex, DagArena> producer_arena_run = producer_frame_run.weaken();
+    ::fixy::ArenaRun<SlotId, DagArena> slot_arena_run = slot_frame_run.weaken();
     size_t scalar_cursor = 0;
     size_t producer_cursor = 0;
     size_t slot_cursor = 0;
@@ -202,18 +263,14 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
         state.map_gen_ = 1;
     }
 
-    // The slots and the edges of the build are runs of the scratch arena,
-    // which end with its epoch.  The run of the slots is exactly the
-    // slot_cap slots of this call, so a slot id below slot_cap reads its slot
-    // with the one compare of the run.  Each input and each output adds at
-    // most one edge, and num_edges bounds every read of the edges.
+    // The slots of the build are a run of the scratch arena, which ends with
+    // its epoch.  The run of the slots is exactly the slot_cap slots of this
+    // call, so a slot id below slot_cap reads its slot with the one compare
+    // of the run.  The edges of the build go into local_edges.
     auto local_slots_run = scratch.array(a, slot_cap, SlotInfo{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<SlotInfo> local_slots = local_slots_run.view();
     uint32_t next_slot_raw = 0;
-    auto local_edges_run = scratch.array(a, total_inputs + total_outputs, Edge{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<Edge> local_edges = local_edges_run.view();
     uint32_t num_edges = 0;
 
     // Hoisted into a local because the compiler cannot prove the writes
@@ -571,7 +628,8 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
     const uint32_t num_slots = ::fixy::min(next_slot_raw, slot_cap);
     const ::fixy::View<SlotInfo const> built_slots =
         local_slots.window(0, num_slots).expect("the slots of the build are below slot_cap");
-    ::fixy::ArenaRun<TensorSlot, DagArena> tensor_slots_run = region_arena->array(a, num_slots, TensorSlot{});
+    auto tensor_slots_frame_run = frame.array(a, num_slots, TensorSlot{});
+    ::fixy::ArenaRun<TensorSlot, DagArena> tensor_slots_run = tensor_slots_frame_run.weaken();
     const ::fixy::View<TensorSlot> tensor_slots = tensor_slots_run.view();
     uint32_t slot_idx = 0;
     for (const auto [info, slot] :
@@ -591,26 +649,11 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
         ++slot_idx;
     }
 
-    const TraceGraphRef graph = build_trace_graph(
-        a, scratch, TraceGraphShape{.num_ops = count, .num_slots = num_slots, .max_meta_end = max_meta_end},
-        local_edges.window(0, num_edges).expect("the edge scratch holds each edge of the build"));
-    graph->content_hash = content_fold.finish();
-
-    // The arena moves into the region with its runs.  A move of a Box moves
-    // no byte of the arena.
-    BuiltRegion::Runs runs{.ops = op_arena_run,
-                           .metas = meta_arena_run,
-                           .scalars = scalar_arena_run,
-                           .producers = producer_arena_run,
-                           .slot_ids = slot_arena_run,
-                           .slots = tensor_slots_run};
-    return BuiltTrace{
-        .graph = graph,
-        .region = BuiltRegion{BuiltRegion::Parts{
-            .arena = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>::some(std::move(region_arena)),
-            .runs = runs,
-            .content_hash = graph->content_hash,
-            .numerics = numerics}}};
+    fill.num_edges = num_edges;
+    fill.num_slots = num_slots;
+    fill.content_hash = content_fold.finish();
+    return frame.seal(op_frame_run, meta_frame_run, scalar_frame_run, producer_frame_run, slot_frame_run,
+                      tensor_slots_frame_run);
 }
 
 }  // namespace crucible

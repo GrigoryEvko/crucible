@@ -238,40 +238,49 @@ private:
 // when it discards the region.  The payload walk of the pipeline channels
 // reads each member (fixy/concurrent/PayloadRow.h).
 //
+// The runs are the runs of a parcel (foundation/core/ArenaFrame.h).  A frame
+// on the arena of the region made them and sealed them with the arena, so
+// each run is in that arena.  The ops point into the other runs: the tensor
+// metadata, the scalars, the producer of each input, and the slot ids of the
+// inputs and the outputs.  The slots are the slots of the memory plan.  The
+// node of the region and its plan take the runs of the ops and of the slots.
+//
 // A region moves between threads (foundation/Transfer.h).  Each op points into
 // the runs of its own region, which move with it, and no object outside the
-// region points into them, so the region states the property that the pointers
-// of its ops hide.
+// region points into them.  So the region states the property that the
+// pointers of its ops hide.  The walk of the transfer properties reads a Link,
+// a Ref or an ArenaRun of the DAG family in an element of the parcel as a
+// borrow, also when its target is in the arena of the parcel.  A walk that
+// reads such a slot of a frame as a part of the parcel replaces this mark.
 //
-// The arena owns each run, and each run came out of the arena one time.  The
-// arena is on the heap, so a move of the region moves no run.  The runs are
-// private, because an assignment to one run would lose the storage that the
-// ops still name.  The region gives Views of const of its runs, and it moves
-// only as a whole.  Only BackgroundThread builds a region with parts, and only
-// the publish stage writes the ops and the slots of a region.  The default
-// region holds no arena and no run, as in a commit message, and so does a
-// region that a move took the parts of.
+// The arena is on the heap, so a move of the region moves no run.  The parcel
+// is private, because an assignment to it would free the storage that the ops
+// still name.  The region gives Views of const of its runs, and it moves only
+// as a whole.  Only BackgroundThread builds a region with parts, and only the
+// publish stage writes the ops and the slots of a region, in a frame on the
+// parcel.  The default region holds no parcel, as in a commit message, and so
+// does a region that a move took the parts of.
 class[[= ::foundation::transfer::sendable{}]] BuiltRegion {
 public:
+    // The arena of the region and its runs: the ops, the tensor metadata, the
+    // scalars, the producers, the slot ids and the slots, in this order.
+    using Parcel =
+        ::foundation::core::ArenaParcel<DagArena, TraceEntry, TensorMeta, int64_t, OpIndex, SlotId, TensorSlot>;
+    // The seal of the runs of a parcel, which a frame of the brand Fresh gives.
+    template <class Fresh>
+    using Seal =
+        ::foundation::core::ArenaSeal<DagArena, Fresh, TraceEntry, TensorMeta, int64_t, OpIndex, SlotId, TensorSlot>;
+
     BuiltRegion() noexcept = default;
 
-    // A move takes the arena and the runs, and leaves the source with no arena
-    // and no run, so each View of a moved-from region is empty.
+    // A move takes the parcel, and leaves the source with no parcel, so each
+    // View of a moved-from region is empty.
     BuiltRegion(BuiltRegion&& other) noexcept
-        : arena_{std::move(other.arena_)},
-          runs_{other.runs_},
-          content_hash_{other.content_hash_},
-          numerics_{other.numerics_} {
-        other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>{::fixy::none};
-        other.runs_ = Runs{};
-    }
+        : parcel_{other.parcel_.take()}, content_hash_{other.content_hash_}, numerics_{other.numerics_} {}
     BuiltRegion& operator=(BuiltRegion&& other) noexcept {
-        arena_ = std::move(other.arena_);
-        runs_ = other.runs_;
+        parcel_ = other.parcel_.take();
         content_hash_ = other.content_hash_;
         numerics_ = other.numerics_;
-        other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>{::fixy::none};
-        other.runs_ = Runs{};
         return *this;
     }
     BuiltRegion(BuiltRegion const&) = delete("a region owns its arena alone: a copy would free the runs two times");
@@ -279,21 +288,21 @@ public:
     operator=(BuiltRegion const&) = delete("a region owns its arena alone: a copy would free the runs two times");
     ~BuiltRegion() = default;
 
-    [[nodiscard]] ::fixy::View<TraceEntry const> ops() const noexcept { return runs_.ops.view(); }
-    [[nodiscard]] ::fixy::View<TensorMeta const> metas() const noexcept { return runs_.metas.view(); }
-    [[nodiscard]] ::fixy::View<int64_t const> scalars() const noexcept { return runs_.scalars.view(); }
-    [[nodiscard]] ::fixy::View<OpIndex const> producers() const noexcept { return runs_.producers.view(); }
-    [[nodiscard]] ::fixy::View<SlotId const> slot_ids() const noexcept { return runs_.slot_ids.view(); }
-    [[nodiscard]] ::fixy::View<TensorSlot const> slots() const noexcept { return runs_.slots.view(); }
+    [[nodiscard]] ::fixy::View<TraceEntry const> ops() const noexcept { return run_view_<kOps, TraceEntry>(); }
+    [[nodiscard]] ::fixy::View<TensorMeta const> metas() const noexcept { return run_view_<kMetas, TensorMeta>(); }
+    [[nodiscard]] ::fixy::View<int64_t const> scalars() const noexcept { return run_view_<kScalars, int64_t>(); }
+    [[nodiscard]] ::fixy::View<OpIndex const> producers() const noexcept { return run_view_<kProducers, OpIndex>(); }
+    [[nodiscard]] ::fixy::View<SlotId const> slot_ids() const noexcept { return run_view_<kSlotIds, SlotId>(); }
+    [[nodiscard]] ::fixy::View<TensorSlot const> slots() const noexcept { return run_view_<kSlots, TensorSlot>(); }
     [[nodiscard]] ContentHash content_hash() const noexcept { return content_hash_; }
     [[nodiscard]] NumericsHash numerics() const noexcept { return numerics_; }
 
     // The bytes of each block of the arena of the region, or zero bytes for a
-    // region with no arena.
+    // region with no parcel.
     [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t> arena_bytes() const noexcept {
-        return arena_.match(
-            [](::fixy::Box<::fixy::BumpArena<DagArena>> const& arena) noexcept {
-                return ::fixy::Quantity<::fixy::unit::Byte, size_t>{arena->retained_bytes()};
+        return parcel_.match(
+            [](Parcel const& parcel) noexcept {
+                return ::fixy::Quantity<::fixy::unit::Byte, size_t>{parcel.retained_bytes()};
             },
             []() noexcept { return ::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{0}}; });
     }
@@ -301,39 +310,36 @@ public:
 private:
     friend struct BackgroundThread;
 
-    // The runs of one region, each a run of the arena of the region.  The ops
-    // point into the other runs: the tensor metadata, the scalars, the
-    // producer of each input, and the slot ids of the inputs and the outputs.
-    // The slots are the slots of the memory plan.  The node of the region and
-    // its plan take the runs of the ops and of the slots.
-    struct Runs {
-        ::fixy::ArenaRun<TraceEntry, DagArena> ops{};
-        ::fixy::ArenaRun<TensorMeta, DagArena> metas{};
-        ::fixy::ArenaRun<int64_t, DagArena> scalars{};
-        ::fixy::ArenaRun<OpIndex, DagArena> producers{};
-        ::fixy::ArenaRun<SlotId, DagArena> slot_ids{};
-        ::fixy::ArenaRun<TensorSlot, DagArena> slots{};
-    };
+    // The position of each run in the parcel.
+    static constexpr size_t kOps = 0;
+    static constexpr size_t kMetas = 1;
+    static constexpr size_t kScalars = 2;
+    static constexpr size_t kProducers = 3;
+    static constexpr size_t kSlotIds = 4;
+    static constexpr size_t kSlots = 5;
 
-    // The parts of one build: the arena of the region, and the runs that the
-    // arena gave.
+    // The parts of one build: the parcel of the region, and the hashes of its
+    // ops.
     struct Parts {
-        ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>> arena{};
-        Runs runs{};
+        ::fixy::Option<Parcel> parcel{};
         ContentHash content_hash{};
         NumericsHash numerics{};
     };
 
     explicit BuiltRegion(Parts&& parts) noexcept
-        : arena_{std::move(parts.arena)},
-          runs_{parts.runs},
-          content_hash_{parts.content_hash},
-          numerics_{parts.numerics} {}
+        : parcel_{parts.parcel.take()}, content_hash_{parts.content_hash}, numerics_{parts.numerics} {}
 
-    // The arena that owns each run below: a Box in the region of a build, and
-    // none in the default region.
-    ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>> arena_{};
-    Runs runs_{};
+    // The elements of run Run of the parcel, or no element for a region with
+    // no parcel.
+    template <size_t Run, class Element>
+    [[nodiscard]] ::fixy::View<Element const> run_view_() const noexcept {
+        return parcel_.match([](Parcel const& parcel) noexcept { return parcel.template view<Run>(); },
+                             []() noexcept { return ::fixy::View<Element const>{}; });
+    }
+
+    // The parcel of the runs: one in the region of a build, and none in the
+    // default region.
+    ::fixy::Option<Parcel> parcel_{};
     ContentHash content_hash_{};
     // The numerics hash that the content hash folds.
     NumericsHash numerics_{};
@@ -2147,6 +2153,41 @@ private:
                          TraceScratch::Epoch& scratch, TraceColumn trace_data, MetaColumn meta_data,
                          ScopeColumn scope_data, CallsiteColumn callsite_data, DepthColumn depth_data,
                          NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+
+    // The totals of the scan of one build, which give the count of each run
+    // of its region, and the numerics that the content hash folds.
+    struct RegionTotals {
+        uint32_t count = 0;
+        MetaIndex first_meta = MetaIndex::none();
+        uint32_t total_metas = 0;
+        uint32_t total_scalars = 0;
+        uint32_t total_inputs = 0;
+        uint32_t total_outputs = 0;
+        uint32_t slot_cap = 0;
+        NumericsHash numerics{};
+    };
+
+    // What the fill of the runs of a region gives to the graph of the build:
+    // the number of edges that it wrote, the number of slots, and the content
+    // hash of the ops.
+    struct RegionFill {
+        uint32_t num_edges = 0;
+        uint32_t num_slots = 0;
+        ContentHash content_hash{};
+    };
+
+    // The second half of build_trace_columns_, in a frame on the arena of the
+    // region.  It makes each run of the region in the frame, fills the runs
+    // from the columns of the ops, writes the edges of the build into
+    // local_edges, and gives the seal of the six runs.
+    template <class Fresh, class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn,
+              class DepthColumn>
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] static BuiltRegion::Seal<Fresh>
+    fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& state, MetaLog const& meta_log,
+                      ::foundation::effects::Alloc a, TraceScratch::Epoch& scratch, TraceColumn trace_data,
+                      MetaColumn meta_data, ScopeColumn scope_data, CallsiteColumn callsite_data,
+                      DepthColumn depth_data, RegionTotals totals, ::fixy::View<Edge> local_edges,
+                      RegionFill& fill) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
 public:
     // Why a memory plan refuses the slots of a region.  The region then has

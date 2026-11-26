@@ -35,6 +35,9 @@
 //                                   with each run of the parcel as a FrameRun
 //                                   of the new frame.  The door gives the parcel
 //                                   back
+//   parcel.view<I>()                the elements of run I of a parcel, as const
+//   parcel.retained_bytes()         the bytes of each block of the arena of a
+//                                   parcel
 //
 // Family
 //   Two arenas of one family tag share the tag (foundation/core/BumpArena.h).
@@ -636,6 +639,9 @@ public:
     }
     template <std::size_t I>
     void view() const&& = delete("a View of a temporary parcel outlives its arena: name the parcel first");
+
+    // The bytes of each block of the arena of the parcel.
+    [[nodiscard]] constexpr std::size_t retained_bytes() const noexcept { return arena_->retained_bytes(); }
 
 private:
     friend class ArenaFrameDoor;

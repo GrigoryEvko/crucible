@@ -52,8 +52,7 @@ that the axis does not apply to the row.
 | `SchemaTableOf::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | HS14: 2 |
 | `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 3 |
 | `mint_context_key` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | token | · | HS14: 16 |
-| `mint_dag_node(foundation::effects::Alloc, foundation::core::Box<foundation::core::BumpArena<crucible::DagArena> >&)` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 11 |
-| `mint_dag_node(foundation::effects::Alloc, foundation::core::BumpArena<crucible::DagArena>&)` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 11 |
+| `mint_dag_node` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 11 |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | HS14: 8 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
@@ -336,7 +335,7 @@ that the axis does not apply to the row.
 | `mint_box(T0_1, T0_2&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 37 |
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 37 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 10 |
-| `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 27 |
+| `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 33 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_epoch_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 19 |
 | `mint_erased_address` | `include/foundation/core/CallRef.h` | Y | Y | Y | Y | token | · | HS14: 2 |
@@ -428,5 +427,5 @@ that the axis does not apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 80 | 46 | 26 | 8 | 0 | 7 |
+| crucible (`include/crucible/`) | 79 | 46 | 25 | 8 | 0 | 7 |
 | substrate (`include/foundation/`, `include/fixy/`) | 190 | 72 | 114 | 4 | 0 | 2 |

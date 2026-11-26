@@ -1129,22 +1129,6 @@ template <DagNodeType Node, class... Refused, class Fresh>
     return frame.template make<Node>(a);
 }
 
-// mint_dag_node in the arena of a Box, such as the arena that a published
-// region keeps beside its node.  The Box holds the arena on the heap, so a
-// move of the Box moves no node.
-template <DagNodeType Node, class... Refused>
-    requires(sizeof...(Refused) == 0)
-[[nodiscard]] DagRef<Node> mint_dag_node(::foundation::effects::Alloc a, ::fixy::Box<::fixy::BumpArena<DagArena>>& arena
-                                         CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return arena->make<Node>(a);
-}
-
-// The twin of mint_dag_node in the arena of a Box.  A temporary Box releases
-// its arena at the end of the statement.
-template <class Node, class... Rest>
-void mint_dag_node(::foundation::effects::Alloc, ::fixy::Box<::fixy::BumpArena<DagArena>>&&, Rest&&...) =
-    delete("a temporary Box releases its arena and the node at the end of the statement. Use a Box that has a name");
-
 // The ops are stored, not copied: they are a run of a DAG arena, which lives
 // as long as the node.
 //
@@ -1173,20 +1157,23 @@ make_region(::foundation::effects::Alloc a, DagFrame<Fresh>& frame,
 }
 
 // For a caller that has already folded the hash while streaming the ops under
-// the numerics hash.  The node must come fresh from mint_dag_node.
-inline void init_region_node(RegionNode& node, ::fixy::ArenaRun<TraceEntry const, DagArena> ops,
-                             ContentHash precomputed_hash, NumericsHash numerics) noexcept {
+// the numerics hash.  The node must come fresh from mint_dag_node.  The node
+// and the ops are in the arena of one frame, as for make_region.
+template <class Fresh>
+void init_region_node(DagFrameRef<RegionNode, Fresh> node,
+                      std::type_identity_t<DagFrameRun<TraceEntry const, Fresh>> ops, ContentHash precomputed_hash,
+                      NumericsHash numerics) noexcept {
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(precomputed_hash) || ops.size() == 0);
     // A non-zero hash here means a second construction over a live node.
-    CRUCIBLE_PRE(node.content_hash.raw() == 0);
-    node.kind = TraceNodeKind::REGION;
-    node.ops = ops;
-    node.content_hash = precomputed_hash;
-    node.numerics = numerics;
-    node.first_op_schema = first_op_schema_of(ops.view());
-    CRUCIBLE_POST(0, node.kind == TraceNodeKind::REGION);
-    CRUCIBLE_POST(0, node.ops.size() == ops.size());
-    CRUCIBLE_POST(0, node.content_hash == precomputed_hash);
+    CRUCIBLE_PRE(node->content_hash.raw() == 0);
+    node->kind = TraceNodeKind::REGION;
+    node->ops = ops.weaken();
+    node->content_hash = precomputed_hash;
+    node->numerics = numerics;
+    node->first_op_schema = first_op_schema_of(ops.view());
+    CRUCIBLE_POST(0, node->kind == TraceNodeKind::REGION);
+    CRUCIBLE_POST(0, node->ops.size() == ops.size());
+    CRUCIBLE_POST(0, node->content_hash == precomputed_hash);
 }
 
 // The recipe is borrowed, and the node does not keep it: it participates in

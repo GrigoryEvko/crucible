@@ -138,6 +138,26 @@ struct HoldsRunOfBorrows {
 static_assert(!payload_row_is_classified<HoldsRunOfBorrows>(),
               "a class that holds a run of Refs holds borrows of objects that no part of the payload owns");
 
+// ── a parcel of an arena hides the elements of its runs ─────────────
+//
+// A parcel reports the row of each element type, and the walk refuses an
+// element that it refuses alone.  A holder of an Option of a parcel, as a
+// BuiltRegion holds its parcel, answers the same.  The walk opens no door
+// that Sendable shuts: a parcel of an element that is not Sendable stays no
+// payload of a Box channel (neg_box_channel_of_parcel_with_unsendable_second_element).
+struct[[= ::foundation::brand::arena_family_brand{}]] parcel_family final {};
+using RowParcel = ::foundation::core::ArenaParcel<parcel_family, BgComp, int>;
+static_assert(std::is_same_v<payload_row_t<RowParcel>, eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<::foundation::core::ArenaParcel<parcel_family, int, double>>, eff::Row<>>);
+struct HoldsParcel {
+    ::foundation::core::Option<RowParcel> parcel{};
+};
+static_assert(std::is_same_v<payload_row_t<HoldsParcel>, eff::Row<eff::Effect::Bg>>);
+using ParcelOfBorrows =
+    ::foundation::core::ArenaParcel<parcel_family, int, ::foundation::core::Ref<int, parcel_family>>;
+static_assert(!payload_row_is_classified<ParcelOfBorrows>(),
+              "a parcel of Refs holds borrows of objects that no part of the payload owns");
+
 // ── a rostered leaf reports nothing, and says so deliberately ───────
 static_assert(std::is_same_v<payload_row_t<::fixy::Saturated<unsigned>>, eff::Row<>>);
 

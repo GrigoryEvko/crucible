@@ -346,6 +346,9 @@ void test_parcel_carries_its_runs_to_a_second_frame() {
         return frame.seal(items, marks);
     });
     CRUCIBLE_FATAL_INVARIANT(parcel.template view<0>().size() == 4 && parcel.template view<1>().size() == 2);
+    // The two runs fit in the first block of the arena, so the parcel holds
+    // one block.
+    CRUCIBLE_FATAL_INVARIANT(parcel.retained_bytes() == 4096);
     // A holder with an empty state, such as a built region, keeps the parcel in
     // an Option.
     fc::Option<decltype(parcel)> held = fc::Option<decltype(parcel)>::some(std::move(parcel));
@@ -362,6 +365,8 @@ void test_parcel_carries_its_runs_to_a_second_frame() {
     });
     CRUCIBLE_FATAL_INVARIANT(back.at(fc::index<0>()) == 22);
     CRUCIBLE_FATAL_INVARIANT(back.at(fc::index<1>()).template view<0>().size() == 4);
+    // The node of the second frame fits in the same block.
+    CRUCIBLE_FATAL_INVARIANT(back.at(fc::index<1>()).retained_bytes() == 4096);
 }
 
 }  // namespace

@@ -2232,11 +2232,11 @@ crucible_neg_compile_test(neg_ring_side_with_the_publish_proof
 crucible_neg_compile_test(neg_log_side_with_the_drain_proof
   "cannot convert .stage. \\(type .const crucible::BackgroundThread::DrainStage.\\)"
   "to type .const crucible::BackgroundThread::PublishStage&.")
-# The ops of a built region point into the runs of its arena, so no code
-# outside the background thread assigns the arena, which would free the runs
+# The ops of a built region point into the runs of its parcel, so no code
+# outside the background thread assigns the parcel, which would free the runs
 # that the ops name.
 crucible_neg_compile_test(neg_built_region_buffer_assignment
-  "crucible::BuiltRegion::arena_. is private within this context"
+  "crucible::BuiltRegion::parcel_. is private within this context"
   "neg_built_region_buffer_assignment\\.cpp:14:[0-9]+: error:")
 crucible_neg_compile_test(neg_publish_job_captures_this
   "static assertion failed: run_on_publish_stage: the body captures .this. \\(field __this, type \\{anonymous\\}::Owner\\*\\)"

@@ -654,9 +654,11 @@ void BackgroundThread::release_meta_log(PublishStage const& stage, MetaIndex met
 // sweep frees no slot, the publish discards the region, as a reset discards a
 // stale region, and counts it in regions_dropped_full_.
 //
-// The arena moves out of the parts for the build of the node and the plan,
-// and back in before the parts move to the store.  The Box holds the arena on
-// the heap, so neither move moves a node.  The push into the uncompiled queue
+// The parcel moves out of the parts into a frame for the build of the node
+// and the plan, and back in before the parts move to the store.  The Box of
+// the parcel holds the arena on the heap, so neither move moves a node.  The
+// frame gives each run of the parcel as a run of the frame, so the node and
+// the plan link only runs of their own arena.  The push into the uncompiled queue
 // gives the QueuedRegion of the region.  Then one exchange of the store moves
 // the region memory into the slot, and the region becomes visible after it.
 // Only the publish stage reads the queue, so no reader of the queue finds the
@@ -676,27 +678,33 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     }
     const RegionSlot slot = std::move(free_slot).expect("the test above found a free slot");
 
-    // Each caller gives a region of a build, which holds its arena.  A sum type of the publish message will prove it.
-    ::fixy::Box<::fixy::BumpArena<DagArena>> arena =
-        std::move(parts.arena_).expect("a built region holds the arena of its runs");
-    const DagRef<RegionNode> region = mint_dag_node<RegionNode>(bg.alloc, arena);
-    init_region_node(*region, parts.runs_.ops, parts.content_hash(), parts.numerics());
+    // Each caller gives a region of a build, which holds its parcel.  A sum type of the publish message will prove it.
+    BuiltRegion::Parcel parcel = parts.parcel_.take().expect("a built region holds the parcel of its runs");
     // The plan lives in the arena of the region, outside the epoch.  The body
     // of the epoch captures the device of the plan, the plan and the slots by
     // value, and not the owner, so it reaches no arena of an epoch.  A refused
     // plan leaves the region with no plan, so the region stays on eager.  A
     // region with no slot has no plan.
-    if (parts.runs_.slots.size() > 0) {
-        const DagRef<MemoryPlan> plan = arena->make<MemoryPlan>(bg.alloc);
-        const bool is_planned =
-            publish_scratch_.arena.with_epoch([target = plan_target_(), alloc = bg.alloc, plan,
-                                               slots = parts.runs_.slots](PlanScratch::Epoch& epoch) mutable noexcept {
-                return BackgroundThread::compute_memory_plan(alloc, target, plan, epoch, slots).is_ok();
-            });
-        if (is_planned) region->plan = make_plan_link(plan);
-    }
-    recompute_merkle(*region);
-    parts.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>::some(std::move(arena));
+    auto built = ::foundation::core::with_arena_frame(
+        std::move(parcel),
+        [alloc = bg.alloc, &scratch = publish_scratch_, target = plan_target_(), content_hash = parts.content_hash(),
+         numerics = parts.numerics()](auto& frame, auto& ops, auto& /*metas*/, auto& /*scalars*/, auto& /*producers*/,
+                                      auto& /*slot_ids*/, auto& slots) noexcept {
+            const auto made = mint_dag_node<RegionNode>(alloc, frame);
+            init_region_node(made, ops, content_hash, numerics);
+            if (slots.size() > 0) {
+                const DagRef<MemoryPlan> plan = frame.template make<MemoryPlan>(alloc).weaken();
+                const bool is_planned = scratch.arena.with_epoch(
+                    [target, alloc, plan, slot_run = slots.weaken()](PlanScratch::Epoch& epoch) mutable noexcept {
+                        return BackgroundThread::compute_memory_plan(alloc, target, plan, epoch, slot_run).is_ok();
+                    });
+                if (is_planned) made->plan = make_plan_link(plan);
+            }
+            recompute_merkle(*made);
+            return made.weaken();
+        });
+    const DagRef<RegionNode> region = built.at(::fixy::index<0>());
+    parts.parcel_ = ::fixy::Option<BuiltRegion::Parcel>::some(std::move(built.at(::fixy::index<1>())));
     const ConstRegionLink const_published = ConstRegionLink::some(region);
 
     // The sweep reads the new region, and the region that its push took out of

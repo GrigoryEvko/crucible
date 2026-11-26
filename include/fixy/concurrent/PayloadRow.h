@@ -76,6 +76,7 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <foundation/algebra/Graded.h>
+#include <foundation/core/ArenaFrame.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/BumpArena.h>
 #include <foundation/core/PackedWord.h>
@@ -144,6 +145,7 @@ inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::foundation::core::RunSet,  // the element of each run; the counts hold no row
     ^^::foundation::core::ArenaRunSet,  // as a RunSet; the brand holds no row
     ^^::foundation::core::ArenaRun,  // the elements of one run of an arena; the brand holds no row
+    ^^::foundation::core::ArenaParcel,  // the elements of each run; the arena and the family hold no row
     ^^::foundation::core::Box,  // the one object that the Box owns
     ^^::foundation::core::Option,  // the payload, held by value; an Option of an address is refused
     ^^std::vector,  // the elements; the allocator holds no row
@@ -253,6 +255,17 @@ struct hidden_payload<::foundation::core::ArenaRun<T, Brand>> {
 template <::foundation::core::ChoicePayload T>
 struct hidden_payload<::foundation::core::Option<T>> {
     using type = T;
+};
+
+// A parcel hides the elements of each of its runs, as a RunSet does.  It owns
+// the arena of the runs and an object of each element type (its owner mark
+// by_arguments{}, foundation/Transfer.h), so what it carries is what its
+// elements carry.  The walk refuses an element that it refuses alone, such as
+// a borrow.  The arena holds storage and no effect row, and so does the
+// family tag.
+template <class Family, class... Ts>
+struct hidden_payload<::foundation::core::ArenaParcel<Family, Ts...>> {
+    using type = void(Ts*...);
 };
 
 // True when the type is an address: a pointer, a pointer to a member or a
