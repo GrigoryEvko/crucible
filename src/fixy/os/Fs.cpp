@@ -500,6 +500,85 @@ UnitResult write_full_(int descriptor, void const* first, std::size_t count) noe
     return written;
 }
 
+namespace {
+
+// The errno of a write under the write fault of a test.
+[[nodiscard]] constexpr os::Errno errno_of_(WriteFailure failure) noexcept {
+    switch (failure) {
+        case WriteFailure::no_space:
+            return os::Errno::enospc;
+        case WriteFailure::device_error:
+            return os::Errno::eio;
+        default:
+            core::unreachable();
+    }
+}
+
+}  // namespace
+
+// The write fault of a thread (the write fault of a test of fixy/os/Fs.h).
+struct WriteFaultCell {
+    // The bytes that the writes of the thread can still take.
+    std::size_t budget = 0;
+    // The error of each write after the budget.
+    os::Errno failure = os::Errno::eio;
+    // True from the arm of the fault to its end.
+    bool is_armed = false;
+};
+
+// The write fault of the calling thread.  Only the test source reaches the
+// cell.  write_full_test_ reads it, and only the write of write_full for a
+// context of the test source calls write_full_test_.  Only
+// WriteFaultScope::arm, which takes a context that owns Test, starts a fault.
+// The cell is one for each thread of the process, also across shared
+// libraries.  The initial-exec model makes each access one load or store
+// relative to the thread pointer.
+CRUCIBLE_PROCESS_WIDE [[gnu::tls_model("initial-exec")]] inline constinit thread_local WriteFaultCell write_fault{};
+
+void arm_write_fault_(core::ByteCount budget, WriteFailure failure) noexcept {
+    WriteFaultCell& cell = write_fault;
+    if (cell.is_armed) [[unlikely]] {
+        core::fatal("the write fault of a test: the thread holds a fault, so a second arm would hide the first");
+    }
+    cell = WriteFaultCell{.budget = budget.raw(), .failure = errno_of_(failure), .is_armed = true};
+}
+
+void end_write_fault_() noexcept { write_fault = WriteFaultCell{}; }
+
+UnitResult write_full_test_(int descriptor, void const* first, std::size_t count) noexcept {
+    if (is_closed(descriptor)) {
+        return core::err(os::Errno::ebadf);
+    }
+    char const* const bytes = static_cast<char const*>(first);
+    // The loop is the loop of write_full_, with its block of SIGPIPE.  It is a
+    // copy, and it does not call write_full_, so the code of write_full_ for a
+    // product context stays as it is.  With no fault, a step writes as the step
+    // of write_full_ does.  Under the fault, a step writes at most the budget,
+    // so the write that crosses the budget is a short write, and a step with
+    // no budget gives the failure and writes nothing.
+    os::PipeSignalBlock block = os::PipeSignalBlock::block_calling_thread();
+    UnitResult written = write_full_steps_(
+        count,
+        [descriptor, bytes](std::size_t offset, std::size_t remaining) -> core::Result<std::uint64_t, os::Errno> {
+            WriteFaultCell& cell = write_fault;
+            if (cell.is_armed && cell.budget == 0) {
+                return core::err(cell.failure);
+            }
+            std::size_t const allowed = cell.is_armed ? core::min(remaining, cell.budget) : remaining;
+            return os::result_of(os::raw_syscall(os::Syscall::write, descriptor, bytes + offset, allowed))
+                .map([&cell](std::uint64_t taken) noexcept {
+                    if (cell.is_armed) {
+                        cell.budget -= static_cast<std::size_t>(taken);
+                    }
+                    return taken;
+                });
+        });
+    if (written.err().value_or(os::Errno{}) == os::Errno::epipe) {
+        block.mark_broken_pipe();
+    }
+    return written;
+}
+
 core::Result<std::int64_t, os::Errno> file_size_(int descriptor) noexcept {
     if (is_closed(descriptor)) {
         return core::err(os::Errno::ebadf);

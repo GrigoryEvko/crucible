@@ -7347,6 +7347,22 @@ fixy_neg_compile_test(neg_os_fs_replace_external_path
   "no matching function for call"
   "replace_file\\(.*Tagged<foundation::os::PathText<4096>, fixy::tags::source::External>")
 
+# The write fault of a test: the writes of write_full on a thread fail after
+# a budget of bytes, for a context of the test source only.
+fixy_test(test_os_fs_write_fault)
+
+fixy_neg_compile_test(neg_os_fs_write_fault_arm_background_ctx
+  "no matching function for call"
+  "fixy::fs::WriteFaultScope::arm\\(const .*BackgroundCtx&")
+
+fixy_neg_compile_test(neg_os_fs_write_fault_arm_narrowed_ctx
+  "no matching function for call"
+  "fixy::fs::WriteFaultScope::arm\\(const foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<")
+
+fixy_neg_compile_test(neg_os_fs_write_fault_scope_copy
+  "use of deleted function"
+  "a scope is the one write fault of its thread")
+
 # The temporary directory door, with no TMPDIR and with TMPDIR set to the
 # directory of the test.
 fixy_test(test_os_temporary_directory)

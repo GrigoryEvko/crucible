@@ -68,6 +68,7 @@
 #include <foundation/core/Grow.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Parse.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Text.h>
 #include <foundation/effects/Ctx.h>
@@ -416,6 +417,12 @@ read_all_into_(int descriptor, ::foundation::core::Alloc allocation, ::foundatio
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 write_full_(int descriptor, void const* first, std::size_t count) noexcept;
 
+// Writes the count bytes at first as write_full_ does, under the write fault
+// of the calling thread when the thread holds one (the write fault of a test).
+// Only the write of write_full for a context of the test source calls it.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+write_full_test_(int descriptor, void const* first, std::size_t count) noexcept;
+
 // Full transfers
 //   The loops of read_full_ and write_full_.  The step moves at most remaining
 //   bytes at offset, and gives the count that the kernel moved or the error of
@@ -699,6 +706,16 @@ concept CtxFitsFileMintAt =
 // A call that needs the rights Needed of a handle with the rights Held.
 template <typename Ctx, ::fixy::os::RightSet Held, ::fixy::os::RightSet Needed>
 concept CtxFitsHandleCall = CtxAdmitsFs<Ctx> && ::fixy::os::HoldsRights<Held, Needed>;
+
+// The source of the context is the test source: the source permits the atom
+// Test.  A narrowed context keeps its source, so a test context narrowed to
+// a row with no Test still has the test source.  Only the testing door of
+// foundation/effects/Effect.h mints the test source, and the rule owners
+// refuses that door in a unit that ships.  write_full reads the write fault
+// of a test only for a context of the test source.
+template <typename Ctx>
+concept CtxHasTestSource =
+    eff::IsExecCtx<Ctx> && eff::row_contains(^^eff::cap_permitted_row_t<eff::cap_type_of_t<Ctx>>, eff::Effect::Test);
 
 // The open of a file with no name under a directory with the rights Held,
 // which needs the create right.
@@ -1746,22 +1763,105 @@ read_full(Ctx const&, ::fixy::os::HandleRef<Kind, Rights> handle,
                               first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size());
 }
 
+namespace detail {
+
+// The write of write_full for a context of the type Ctx: the write under the
+// write fault of a test for a context of the test source, and write_full_
+// for each other context.  The choice is a constant of the type, so a context
+// of each other source compiles write_full_ alone, with no read of the fault.
+template <class Ctx>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+write_full_of_(int descriptor, void const* first, std::size_t count) noexcept {
+    if constexpr (CtxHasTestSource<Ctx>) {
+        return write_full_test_(descriptor, first, count);
+    } else {
+        return write_full_(descriptor, first, count);
+    }
+}
+
+}  // namespace detail
+
 template <class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::write>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 write_full(Ctx const&, ::fixy::os::HandleRef<Kind, Rights> handle,
            ::foundation::core::View<std::byte const> buffer) noexcept {
-    return detail::write_full_(::fixy::os::detail::HandleDoor::descriptor_of(handle),
-                               first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size());
+    return detail::write_full_of_<Ctx>(::fixy::os::detail::HandleDoor::descriptor_of(handle),
+                                       first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size());
 }
 
 template <class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::write>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 write_full(Ctx const&, ::fixy::os::HandleRef<Kind, Rights> handle, ::foundation::core::TextView text) noexcept {
-    return detail::write_full_(::fixy::os::detail::HandleDoor::descriptor_of(handle),
-                               ::foundation::core::detail::text_first_(text), text.size());
+    return detail::write_full_of_<Ctx>(::fixy::os::detail::HandleDoor::descriptor_of(handle),
+                                       ::foundation::core::detail::text_first_(text), text.size());
 }
+
+// Write fault of a test
+//   A test makes the writes of its thread fail, as a full disk or an error of
+//   the device does, so it can test the path of a failed write: the cut back
+//   of an append, the remove of a temporary file, and the report of the
+//   error.  WriteFaultScope::arm(test, budget, failure) starts the fault on
+//   the calling thread, and the end of the scope ends it.  Under the fault,
+//   the writes of write_full pass until budget bytes are out.  The write that
+//   crosses the budget takes the bytes up to it (a short write), and each
+//   later write gives the errno of failure, until the scope ends.  A budget of
+//   zero fails the next write with no byte.
+//
+//   Only a context of the test source reaches the fault (CtxHasTestSource).
+//   write_full reads the fault only for such a context, under if constexpr,
+//   so a context of each other source compiles its write with no read of the
+//   fault.  The arm takes a context that owns Test.  A thread holds one fault
+//   at a time, and a second arm while a scope lives ends the process.  The
+//   scope does not copy or move, so it ends on the thread that armed it.  The
+//   fault covers the writes of write_full and no other call: a sync, a
+//   truncate and a rename run as before.
+
+// The error of a write under the write fault of a test.
+enum class WriteFailure : std::uint8_t {
+    // ENOSPC: the file system has no room for the bytes.
+    no_space,
+    // EIO: the device gave an error.
+    device_error,
+};
+
+namespace detail {
+
+// Starts the write fault of the calling thread with budget and failure.  A
+// thread that holds a fault ends the process.
+void arm_write_fault_(::foundation::core::ByteCount budget, WriteFailure failure) noexcept;
+
+// Ends the write fault of the calling thread.
+void end_write_fault_() noexcept;
+
+}  // namespace detail
+
+// The write fault of the calling thread, from its arm to its end (the write
+// fault of a test).
+class [[nodiscard]] WriteFaultScope {
+public:
+    // Starts the write fault of the calling thread.  A thread that holds a
+    // fault ends the process.
+    template <eff::IsExecCtx Ctx>
+        requires eff::CtxOwnsCapability<Ctx, eff::Effect::Test>
+    [[nodiscard]] static WriteFaultScope arm(Ctx const&, ::foundation::core::ByteCount budget,
+                                             WriteFailure failure) noexcept {
+        detail::arm_write_fault_(budget, failure);
+        return WriteFaultScope{};
+    }
+
+    WriteFaultScope(WriteFaultScope const&) = delete("a scope is the one write fault of its thread: keep it where "
+                                                     "the arm made it");
+    WriteFaultScope(WriteFaultScope&&) = delete("a scope is the one write fault of its thread: keep it where the "
+                                                "arm made it");
+    WriteFaultScope& operator=(WriteFaultScope const&) = delete("a scope is the one write fault of its thread");
+    WriteFaultScope& operator=(WriteFaultScope&&) = delete("a scope is the one write fault of its thread");
+    ~WriteFaultScope() { detail::end_write_fault_(); }
+
+private:
+    constexpr WriteFaultScope() noexcept = default;
+};
 
 // The read-only open, spelled once.
 using read_only = ::fixy::atom::fs::mode<open_mode::ReadOnly>;
