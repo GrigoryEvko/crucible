@@ -5276,9 +5276,27 @@ void collect_brands(tree type, std::vector<tree>& out) {
     add_brands(type, out, path, 0);
 }
 
+bool is_bound_brand(tree brand, tree scope);
+
+// True when the template argument ARGUMENT is a closure or a local class whose
+// function binds BRAND.  A closure with no capture holds no brand in its type, but
+// its body is part of the function that defines it, so it can name each brand of
+// that function, as the arms of a match in a scope of the brand do.
+bool is_bound_by_its_function(tree brand, tree argument) {
+    tree type = TYPE_P(argument) ? non_reference(argument) : NULL_TREE;
+    type = type != NULL_TREE ? TYPE_MAIN_VARIANT(type) : NULL_TREE;
+    if (type == NULL_TREE || !CLASS_TYPE_P(type)) {
+        return false;
+    }
+    tree decl = TYPE_MAIN_DECL(type);
+    tree function = decl != NULL_TREE ? decl_function_context(decl) : NULL_TREE;
+    return function != NULL_TREE && is_bound_brand(brand, function);
+}
+
 // True when BRAND is held by a template argument of SCOPE or of a class or a
-// function that holds SCOPE: the brand came in from outside, so SCOPE did not
-// make it (the brands).
+// function that holds SCOPE, or by the function of a closure or a local class in
+// such an argument: the brand came in from outside, so SCOPE did not make it (the
+// brands).  Each step goes to an enclosing scope, so the walk ends.
 bool is_bound_brand(tree brand, tree scope) {
     for (int depth = 0; scope != NULL_TREE && depth < kTypeDepth; ++depth) {
         tree info = NULL_TREE;
@@ -5310,7 +5328,8 @@ bool is_bound_brand(tree brand, tree scope) {
                 } else if (TREE_TYPE(argument) != NULL_TREE) {
                     collect_brands(TREE_TYPE(argument), held);
                 }
-                is_held = is_held || std::find(held.begin(), held.end(), brand) != held.end();
+                is_held = is_held || std::find(held.begin(), held.end(), brand) != held.end()
+                       || is_bound_by_its_function(brand, argument);
             });
             if (is_held) {
                 return true;

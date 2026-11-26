@@ -1,0 +1,58 @@
+// A match whose arms are closures with no capture, inside a scope of a brand:
+// each arm gives a value of the brand, and the value stays in the scope.  The
+// arms come from a member of a class of the brand, and from a function template
+// that takes the brand.  The closure types name no brand, but their bodies are
+// parts of those functions, which hold the brand.
+namespace planted {
+
+template <class Brand>
+struct Mark {
+    using brand_type = Brand;
+    int value = 0;
+};
+
+template <class T>
+struct Choice {
+    T value{};
+    bool is_full = false;
+
+    template <class OnSome, class OnNone>
+    auto match(OnSome&& on_some, OnNone&& on_none) const {
+        if (is_full) {
+            return on_some(value);
+        }
+        return on_none();
+    }
+};
+
+template <class Brand>
+Choice<Mark<Brand>> mark_of(Choice<int> const& held) {
+    return held.match([](int const& value) { return Choice<Mark<Brand>>{Mark<Brand>{value}, true}; },
+                      []() { return Choice<Mark<Brand>>{}; });
+}
+
+template <class Brand>
+struct Scope {
+    Choice<Mark<Brand>> mark(Choice<int> const& held) const {
+        return held.match([](int const& value) { return Choice<Mark<Brand>>{Mark<Brand>{value}, true}; },
+                          []() { return Choice<Mark<Brand>>{}; });
+    }
+
+    Choice<Mark<Brand>> mark_by_a_function(Choice<int> const& held) const { return mark_of<Brand>(held); }
+};
+
+template <class Body, class... Refused, class Brand = decltype([] {})>
+    requires(sizeof...(Refused) == 0)
+int with_scope(Body&& body) {
+    Scope<Brand> scope{};
+    return static_cast<Body&&>(body)(scope);
+}
+
+int marks() {
+    return with_scope([](auto& scope) {
+        Choice<int> const held{3, true};
+        return scope.mark(held).is_full && scope.mark_by_a_function(held).is_full ? 0 : 1;
+    });
+}
+
+}  // namespace planted

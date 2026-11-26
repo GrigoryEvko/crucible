@@ -1,0 +1,33 @@
+// A function with no template argument makes a fresh brand, and the arms of a
+// match give a value of it out of the function.  The closures of the arms come
+// from that function, which holds no brand from outside, so the match and the
+// function let the brand escape.
+namespace planted {
+
+template <class Brand>
+struct Mark {
+    using brand_type = Brand;
+    int value = 0;
+};
+
+template <class T>
+struct Choice {
+    T value{};
+    bool is_full = false;
+
+    template <class OnSome, class OnNone>
+    auto match(OnSome&& on_some, OnNone&& on_none) const {
+        if (is_full) {
+            return on_some(value);
+        }
+        return on_none();
+    }
+};
+
+auto escape_through_a_match(Choice<int> const& held) {
+    using Fresh = decltype([] {});
+    return held.match([](int const& value) { return Choice<Mark<Fresh>>{Mark<Fresh>{value}, true}; },
+                      []() { return Choice<Mark<Fresh>>{}; });
+}
+
+}  // namespace planted

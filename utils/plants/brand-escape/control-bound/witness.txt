@@ -1,6 +1,13 @@
 # A mint, a forwarding mint, a function and a class whose template arguments
-# give the brand, a local and a lambda with a parameter give no line.
+# give the brand, a local and a lambda with a parameter give no line.  In the
+# unit match_arms the arms of a match are closures with no capture, from a member
+# of a class of the brand and from a function template that takes it, so the
+# match gives the brand back into its scope and no line.
 
 compile bound src/bound.cpp linear-shapes=on
 flag bound -freflection
 exit bound pass
+
+compile match_arms src/match_arms.cpp linear-shapes=on
+flag match_arms -freflection
+exit match_arms pass
