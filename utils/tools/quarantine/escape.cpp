@@ -172,6 +172,8 @@ struct EscapeNames {
     tree refers = NULL_TREE;
     tree refers_unique = NULL_TREE;
     tree refers_deep = NULL_TREE;
+    tree owns_by_number = NULL_TREE;
+    tree refers_by_number = NULL_TREE;
     tree payload_cell = NULL_TREE;
     tree foundation = NULL_TREE;
     tree fixy = NULL_TREE;
@@ -1551,6 +1553,16 @@ bool is_unique_borrow_class(tree type) {
     return CLASS_TYPE_P(type) && carries_mark(type, escape_names.refers_unique);
 }
 
+bool is_number_owner_class(tree type) {
+    type = type != NULL_TREE && TYPE_P(type) ? TYPE_MAIN_VARIANT(type) : NULL_TREE;
+    return type != NULL_TREE && CLASS_TYPE_P(type) && carries_mark(type, escape_names.owns_by_number);
+}
+
+bool is_number_borrow_class(tree type) {
+    type = type != NULL_TREE && TYPE_P(type) ? TYPE_MAIN_VARIANT(type) : NULL_TREE;
+    return type != NULL_TREE && CLASS_TYPE_P(type) && carries_mark(type, escape_names.refers_by_number);
+}
+
 bool is_storage_owner(tree type) { return is_base_storage_owner(type); }
 
 bool is_block_keeper(tree type) { return is_base_storage_owner(type) || is_base_block_keeper(type); }
@@ -1576,6 +1588,15 @@ void report_view_escape(const Finding& finding) {
     }
     if (finding.kind == Kind::two_names) {
         report_two_names(finding);
+        return;
+    }
+    if (finding.kind == Kind::number_borrow) {
+        error_at(finding.spelling, "this borrow class names no object by a pointer: %s", finding.entity.c_str());
+        inform(finding.spelling, "the rule view-escape follows a borrow to the objects that it names, so no end of "
+                                 "an owner can reach a loan of this class");
+        inform(finding.spelling,
+               "a class that refers to a resource of the kernel by its number states "
+               "%<::foundation::transfer::refers_by_number{}%>, and its first type argument names the resource");
         return;
     }
     if (finding.kind == Kind::static_borrow) {
@@ -1620,6 +1641,8 @@ void register_view_escape(const char* plugin_name) {
     escape_names.refers = get_identifier("refers");
     escape_names.refers_unique = get_identifier("refers_unique");
     escape_names.refers_deep = get_identifier("refers_deep");
+    escape_names.owns_by_number = get_identifier("owns_by_number");
+    escape_names.refers_by_number = get_identifier("refers_by_number");
     escape_names.payload_cell = get_identifier("payload_cell");
     escape_names.foundation = get_identifier("foundation");
     escape_names.fixy = get_identifier("fixy");

@@ -1,0 +1,73 @@
+// An owner of a resource by its number, as a Handle of fixy/os/Handle.h.  A
+// function whose parameter names the owner by an rvalue reference is a door
+// that ends the number, also when the number lives on: a class that keeps the
+// owner, and a function that gives the owner back.  The read of the borrow is
+// an error with no read of a dead number, and the caller takes the borrow again.
+#include <foundation/ByteSeal.h>
+#include <foundation/Transfer.h>
+
+#include <utility>
+
+namespace foundation::core {
+
+struct Socket final {};
+
+template <class Resource>
+class[[= ::foundation::transfer::refers{}]][[= ::foundation::transfer::refers_by_number{}]] NumberRef final {
+public:
+    explicit NumberRef(int number) noexcept : number_{number} {}
+    [[nodiscard]] bool is_open() const noexcept { return number_ >= 0; }
+
+private:
+    int number_ = -1;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+
+template <class Resource>
+class[[= ::foundation::transfer::owns_by_number{}]] NumberOwner final {
+public:
+    NumberOwner() noexcept = default;
+    explicit NumberOwner(int number) noexcept : number_{number} {}
+    NumberOwner(NumberOwner&& other) noexcept : number_{other.number_} { other.number_ = -1; }
+    NumberOwner& operator=(NumberOwner&& other) noexcept {
+        number_ = other.number_;
+        other.number_ = -1;
+        return *this;
+    }
+    ~NumberOwner() { number_ = -1; }
+
+    [[nodiscard]] NumberRef<Resource> ref() const& noexcept { return NumberRef<Resource>{number_}; }
+
+private:
+    int number_ = -1;
+};
+
+}  // namespace foundation::core
+
+namespace planted {
+
+using ::foundation::core::NumberOwner;
+using ::foundation::core::Socket;
+
+struct Keeper {
+    NumberOwner<Socket> kept;
+    explicit Keeper(NumberOwner<Socket>&& owner) noexcept : kept{std::move(owner)} {}
+};
+
+NumberOwner<Socket> pass_back(NumberOwner<Socket>&& owner) noexcept { return std::move(owner); }
+
+bool a_class_that_keeps_the_owner() noexcept {
+    NumberOwner<Socket> owner{3};
+    auto const borrow = owner.ref();
+    Keeper const keeper{std::move(owner)};
+    return borrow.is_open() && keeper.kept.ref().is_open();
+}
+
+bool a_function_that_gives_the_owner_back() noexcept {
+    NumberOwner<Socket> owner{3};
+    auto const borrow = owner.ref();
+    NumberOwner<Socket> const back = pass_back(std::move(owner));
+    return borrow.is_open() && back.ref().is_open();
+}
+
+}  // namespace planted

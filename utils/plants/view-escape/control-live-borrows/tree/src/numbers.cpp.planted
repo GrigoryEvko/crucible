@@ -1,0 +1,106 @@
+// An owner of a resource by its number and a borrow of the resource by the
+// number, as a Handle and a HandleRef of fixy/os/Handle.h.  A plain move of the
+// owner keeps the number, so the borrow stays.  A generic function that forwards
+// the owner into its result moves it, so the borrow follows the result.  A read
+// before the end, a borrow taken again after the end, a door that takes the owner
+// by a const reference, and a borrow of a different owner give no line.
+#include <foundation/ByteSeal.h>
+#include <foundation/Transfer.h>
+
+#include <utility>
+
+namespace foundation::core {
+
+struct Socket final {};
+
+// The borrow holds a byte seal, as the stamp of a HandleRef does, so its
+// assignment is a call.
+template <class Resource>
+class[[= ::foundation::transfer::refers{}]][[= ::foundation::transfer::refers_by_number{}]] NumberRef final {
+public:
+    explicit NumberRef(int number) noexcept : number_{number} {}
+    [[nodiscard]] bool is_open() const noexcept { return number_ >= 0; }
+
+private:
+    int number_ = -1;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+
+template <class Resource>
+class[[= ::foundation::transfer::owns_by_number{}]] NumberOwner final {
+public:
+    NumberOwner() noexcept = default;
+    explicit NumberOwner(int number) noexcept : number_{number} {}
+    NumberOwner(NumberOwner&& other) noexcept : number_{other.number_} { other.number_ = -1; }
+    NumberOwner& operator=(NumberOwner&& other) noexcept {
+        number_ = other.number_;
+        other.number_ = -1;
+        return *this;
+    }
+    ~NumberOwner() { number_ = -1; }
+
+    [[nodiscard]] NumberRef<Resource> ref() const& noexcept { return NumberRef<Resource>{number_}; }
+
+private:
+    int number_ = -1;
+};
+
+}  // namespace foundation::core
+
+namespace planted {
+
+using ::foundation::core::NumberOwner;
+using ::foundation::core::NumberRef;
+using ::foundation::core::Socket;
+
+bool peek(NumberOwner<Socket> const& owner) noexcept;
+
+template <class Value>
+Value keep(Value&& value) noexcept {
+    return static_cast<Value&&>(value);
+}
+
+bool after_a_plain_move() noexcept {
+    NumberOwner<Socket> owner{3};
+    auto const borrow = owner.ref();
+    NumberOwner<Socket> const moved = std::move(owner);
+    return borrow.is_open() && peek(moved);
+}
+
+bool after_a_generic_move() noexcept {
+    NumberOwner<Socket> owner{3};
+    auto const borrow = owner.ref();
+    NumberOwner<Socket> const kept = keep(std::move(owner));
+    return borrow.is_open() && peek(kept);
+}
+
+bool before_the_end() noexcept {
+    NumberOwner<Socket> owner{3};
+    auto const borrow = owner.ref();
+    bool const is_open = borrow.is_open();
+    owner = NumberOwner<Socket>{4};
+    return is_open;
+}
+
+bool taken_again() noexcept {
+    NumberOwner<Socket> owner{3};
+    owner = NumberOwner<Socket>{4};
+    auto const fresh = owner.ref();
+    return fresh.is_open();
+}
+
+bool after_a_const_door() noexcept {
+    NumberOwner<Socket> const owner{3};
+    auto const borrow = owner.ref();
+    return peek(owner) && borrow.is_open();
+}
+
+bool after_a_different_owner() noexcept {
+    NumberOwner<Socket> owner{3};
+    NumberOwner<Socket> other{4};
+    auto const borrow = owner.ref();
+    other = NumberOwner<Socket>{5};
+    return borrow.is_open() && peek(other);
+}
+
+}  // namespace planted

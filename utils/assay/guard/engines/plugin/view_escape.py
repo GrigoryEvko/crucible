@@ -19,7 +19,10 @@ Rule
     them can write or move it (live.cpp, the two names).  One argument names
     the object itself, and the other one names it itself too, or gives a loan
     or a capture of it.  The body of a door of the base with the annotation
-    two_names_door gives no line of this kind.  The rule reads those
+    two_names_door gives no line of this kind.  The kind number-borrow is a
+    borrow class that names no object: it holds no pointer and states no
+    refers_by_number{} of foundation/Transfer.h, so no end can reach its loans
+    (route.cpp, the numbers).  The rule reads those
     finding lines in the sections of the objects of the target all of one build
     (assay.guard.engines.plugin.runner, the sections).  The same line from two
     objects counts one time.
@@ -67,6 +70,11 @@ MESSAGES = {
     "two-names": (
         "a call gives one linear object or one unique borrow to two parameters ({entity}), so the callee can write "
         "or move it under one name and then use it under the other name.  Give the object once"
+    ),
+    "number-borrow": (
+        "a borrow class names no object by a pointer ({entity}), so no end of an owner can reach its loans.  A class "
+        "that refers to a resource of the kernel by its number states refers_by_number{}, and its first type "
+        "argument names the resource"
     ),
 }
 

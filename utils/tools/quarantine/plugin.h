@@ -331,6 +331,10 @@
 //     two-names             a call whose two arguments name one object of a
 //                           linear class or of a unique borrow class, and one
 //                           of them can write or move it (live.cpp)
+//     number-borrow         a borrow class that names no object: it states
+//                           refers{}, refers_unique{} or refers_deep{}, holds
+//                           no pointer, and states no refers_by_number{}
+//                           (route.cpp, the numbers)
 //     The rule proof-routes (expression.cpp, the proof routes):
 //     union                 a union definition
 //     pointer-cast          a cast to a pointer or a reference to a proof type
@@ -1329,6 +1333,7 @@ enum class Kind : std::uint8_t {
     static_borrow,
     stale_borrow,
     two_names,
+    number_borrow,
     unrostered_witness,
     route_union,
     route_pointer_cast,
@@ -1687,6 +1692,8 @@ inline const char* kind_name(Kind kind) {
             return "stale-borrow";
         case Kind::two_names:
             return "two-names";
+        case Kind::number_borrow:
+            return "number-borrow";
         case Kind::unrostered_witness:
             return "unrostered-witness";
         case Kind::route_union:
@@ -1951,6 +1958,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::static_borrow:
         case Kind::stale_borrow:
         case Kind::two_names:
+        case Kind::number_borrow:
             return Rule::view_escape;
         case Kind::unrostered_witness:
             return Rule::witness_roster;
@@ -2119,6 +2127,7 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::static_borrow:
         case Kind::stale_borrow:
         case Kind::two_names:
+        case Kind::number_borrow:
             return true;
         default:
             return false;
@@ -2282,6 +2291,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"view-escape", "static-borrow"},
     {"view-escape", "stale-borrow"},
     {"view-escape", "two-names"},
+    {"view-escape", "number-borrow"},
     {"witness-roster", "unrostered-witness"},
     {"proof-routes", "union"},
     {"proof-routes", "pointer-cast"},
@@ -3557,10 +3567,16 @@ void report_view_escape(const Finding& finding);
 // owns_its_storage{} or keeps_its_blocks{}, and is_outside_owner() for an owner
 // of the base that releases nothing at its end (the runs outside).  In a wide
 // reading an incomplete class can hold a borrow (set_wide_borrows).
+// is_number_owner_class() is true for a class that states owns_by_number{}, and
+// is_number_borrow_class() for a class that states refers_by_number{}: an owner
+// and a borrow of a resource by its number, whose first type argument names the
+// resource (the numbers of route.cpp).  The two take a null type too.
 bool holds_borrow(tree type);
 OwnedPositions held_owner_arguments(tree type);
 bool is_borrow_class(tree type);
 bool is_unique_borrow_class(tree type);
+bool is_number_owner_class(tree type);
+bool is_number_borrow_class(tree type);
 bool is_storage_owner(tree type);
 bool is_block_keeper(tree type);
 bool is_outside_owner(tree type);

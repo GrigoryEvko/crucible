@@ -3,7 +3,9 @@
 # and of a different member (61) through a door, a swap in a callee (69), the old owner
 # that an exchange (75), a remove (81) or a consume of a Box (87) gives to a local, a
 # borrow in an arm of a match that takes the owner (94), and a second owner of the same
-# class that leaves the object (101).
+# class that leaves the object (101).  In the unit numbers a function whose parameter
+# names an owner of a resource by its number by an rvalue reference ends the number,
+# also in a class that keeps the owner (63) and in a function that gives it back (70).
 
 compile limits src/limits.cpp
 flag limits -freflection
@@ -26,3 +28,11 @@ error limits src/limits.cpp:81 | this use reads a borrow of list in view after a
 error limits src/limits.cpp:87 | this use reads a borrow of box in view after a call of foundation::core::Box::consume with box
 error limits src/limits.cpp:94 | this use reads a borrow of items in a closure of foundation::core::Option::match after a move of option
 error limits src/limits.cpp:101 | this use reads a borrow of two in view after the end of the scope of items
+
+compile numbers src/numbers.cpp
+flag numbers -freflection
+exit numbers fail
+finding numbers view-escape stale-borrow src/numbers.cpp:63:12 | borrow of owner in borrow after a constructor of planted::Keeper with owner, which ends the number of the resource that it owns
+finding numbers view-escape stale-borrow src/numbers.cpp:70:12 | borrow of owner in borrow after a call of planted::pass_back with owner, which ends the number of the resource that it owns
+error numbers src/numbers.cpp:63 | this use reads a borrow of owner in borrow after a constructor of planted::Keeper with owner, which ends the number of the resource that it owns
+error numbers src/numbers.cpp:70 | this use reads a borrow of owner in borrow after a call of planted::pass_back with owner, which ends the number of the resource that it owns

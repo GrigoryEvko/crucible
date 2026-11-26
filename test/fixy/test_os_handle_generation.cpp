@@ -2,9 +2,10 @@
 //
 // A borrow holds the number of its descriptor and the generation of the
 // number (the stamp of a descriptor of fixy/os/Fd.h), and no address of its
-// Handle.  Each case keeps a borrow past the close of its descriptor on a
-// route that no compile-time rule sees, and each door through the borrow gives
-// ebadf:
+// Handle.  Each case keeps a borrow past the close of its descriptor, and each
+// door through the borrow gives ebadf.  The rule view-escape refuses a read of
+// the borrow after an assignment of its Handle at compile time, so those cases
+// read it in an opt-out region of the class PROBE:
 //   - a copy that a helper keeps past the end of the Handle, and a later open
 //     that takes the number again
 //   - a move assignment over the Handle of the borrow
@@ -21,6 +22,7 @@
 #include <fixy/os/Fd.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Path.h>
+#include <foundation/Quarantine.h>
 #include <foundation/os/OpenFlags.h>
 
 #include <cstddef>
@@ -128,11 +130,13 @@ template <typename T>
     if (!target.is_open() || !other.is_open()) return answered(route, "nothing: an open under /tmp failed");
     FileRef const borrow = target.ref();
     target = std::move(other);
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a borrow from before the end of the descriptor reads its stale generation")
     if (!refuses_with(fs::write_full(ctx, borrow, fixy::TextView{"x"}), Errno::ebadf)) {
         return answered(route, "write_full");
     }
     if (size_of(ctx, target) != 0) return answered(route, "write_full into the file of the new descriptor");
     return refuses_each_door(ctx, borrow, route);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 // The end of a Box ends the Handle that it holds.  The borrow reads no byte of
@@ -144,7 +148,9 @@ template <typename T>
     if (!owner->is_open()) return answered(route, "nothing: the open of a file under /tmp failed");
     FileRef const borrow = owner->ref();
     owner = fixy::mint_box<fs::TemporaryFile>(alloc, temporary_file(ctx, directory));
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a borrow from before the end of the descriptor reads its stale generation")
     return refuses_each_door(ctx, borrow, route);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 // A close of the Handle and a new open into the same Handle: the kernel gives
@@ -158,11 +164,13 @@ template <typename T>
     slot = fs::TemporaryFile{};
     slot = temporary_file(ctx, directory);
     if (!slot.is_open()) return answered(route, "nothing: the second open of a file under /tmp failed");
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a borrow from before the end of the descriptor reads its stale generation")
     if (!refuses_with(fs::write_full(ctx, borrow, fixy::TextView{"x"}), Errno::ebadf)) {
         return answered(route, "write_full");
     }
     if (size_of(ctx, slot) != 0) return answered(route, "write_full into the file that took the number");
     return refuses_each_door(ctx, borrow, route);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 // A move of the Handle keeps the generation, so a borrow taken before the move

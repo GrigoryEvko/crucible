@@ -4,8 +4,10 @@
 // The split gives a read half and a write half of one socket.  The bytes that
 // the peer writes, the read half reads, and the bytes that the write half
 // writes, the peer reads.  A borrow and a foreign ref from before the split
-// give ebadf.  The join gives the Handle with its two directions back, and a
-// borrow of a half is stale after it.  The end of the write half ends the
+// give ebadf.  The rule view-escape refuses a read of such a borrow at compile
+// time, so the test reads it in an opt-out region of the class PROBE.  The
+// join gives the Handle with its two directions back, and a borrow of a half
+// is stale after it.  The end of the write half ends the
 // stream for the peer while the read half lives, and the frame then gives the
 // Handle of the read half.  Two ends give Unit and the value of the body.  A
 // half that departs makes its borrow stale.  The halves go to two threads, and
@@ -21,6 +23,7 @@
 #include <fixy/os/Socket.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -135,6 +138,7 @@ void test_a_split_divides_the_directions_and_joins() {
     bool is_each_direction_whole = false;
     bool is_joined_whole = false;
     bool is_half_borrow_stale = false;
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a borrow from before the end of the descriptor reads its stale generation")
     bool const is_joined =
         net::with_stream_halves(ctx, std::move(mine),
                                 [&ctx, &peer, &ping, &pong, before, &is_old_borrow_stale,
@@ -162,6 +166,7 @@ void test_a_split_divides_the_directions_and_joins() {
                     return socket.is_open();
                 },
                 [](Refused) noexcept { return false; });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     CRUCIBLE_TEST_ASSERT(kTest, is_joined);
     CRUCIBLE_TEST_ASSERT(kTest, is_old_borrow_stale && !shared_before.is_current());
     CRUCIBLE_TEST_ASSERT(kTest, is_each_direction_whole);
@@ -244,6 +249,7 @@ void test_a_half_that_departs_makes_its_borrow_stale() {
     Four const next{std::byte{'n'}, std::byte{'e'}, std::byte{'x'}, std::byte{'t'}};
     bool is_stale = false;
     bool is_read_after_arrive = false;
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a borrow from before the end of the descriptor reads its stale generation")
     bool const is_joined =
         net::with_stream_halves(
             ctx, std::move(mine),
@@ -257,6 +263,7 @@ void test_a_half_that_departs_makes_its_borrow_stale() {
                 return fixy::Record<decltype(arrived), decltype(write)>{std::move(arrived), std::move(write)};
             })
             .match([](UnixSocket joined) noexcept { return joined.is_open(); }, [](Refused) noexcept { return false; });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     CRUCIBLE_TEST_ASSERT(kTest, is_joined);
     CRUCIBLE_TEST_ASSERT(kTest, is_stale && is_read_after_arrive);
     fixy::check::pass(kTest, "  test_a_half_that_departs_makes_its_borrow_stale: PASSED\n");

@@ -3,6 +3,8 @@
 # the plant, so the table admits the names of the base that the planted code uses.
 
 admit foundation::core | the owners and the View whose borrows the planted code reads
+admit foundation::transfer | the marks of the owner and the borrow of a resource by its number
+admit foundation::lifetime | the byte seal of the borrow of a resource by its number
 admit std::move | a cast to an rvalue reference
 
 quarantine src/

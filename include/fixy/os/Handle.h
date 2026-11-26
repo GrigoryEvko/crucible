@@ -54,7 +54,11 @@
 //   The borrow states refers{} of foundation/Transfer.h over its kind, so the
 //   rule view-escape refuses a return or a store of the borrow of a local
 //   Handle, and the frame doors of the base read it as a borrow (HoldsNoBorrow
-//   of foundation/core/Choice.h).  It also states thread_bound{} and
+//   of foundation/core/Choice.h).  It states refers_by_number{}, and the
+//   Handle states owns_by_number{}, so the rule also refuses a read of the
+//   borrow after an assignment of its Handle, the end of its scope, or a door
+//   that takes the Handle by an rvalue reference, such as depart().  A plain
+//   move of the Handle keeps the borrow.  It also states thread_bound{} and
 //   not_shareable{}: a door on a second thread can act on the number between
 //   the check of the generation and the call, while the thread of the Handle
 //   closes it, so the borrow stays on its thread.  A table that stores a
@@ -464,8 +468,9 @@ struct HandleDoor final : ::foundation::NoObject<HandleDoor> {
 
 template <class Kind, RightSet Rights>
     requires HandleKind<Kind>
-class [[nodiscard]][[= ::foundation::transfer::refers{}]][[= ::foundation::transfer::thread_bound{}]]
-                   [[= ::foundation::transfer::not_shareable{}]] HandleRef final {
+class [[nodiscard]][[= ::foundation::transfer::refers{}]][[= ::foundation::transfer::refers_by_number{}]]
+                   [[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]]
+    HandleRef final {
     // The number of the descriptor of the Handle and its generation, or the
     // empty stamp for the borrow of an empty Handle.  The stamp holds the
     // seal of foundation/ByteSeal.h, so no copy of bytes builds a borrow.
@@ -545,9 +550,13 @@ append_descriptor_number(::foundation::os::PathText<Capacity>& path, HandleRef<K
 // Exclusive ownership of one descriptor of the kind Kind with the rights
 // Rights, closed at the end of the Handle.  The Handle stays on its thread
 // (thread_bound{}), and depart() moves it to another thread (the transit).
+// The Handle owns the descriptor by its number (owns_by_number{}), so the
+// quarantine plugin ends each HandleRef of it at its end and at each door
+// that takes it by an rvalue reference.
 template <class Kind, RightSet Rights>
     requires HandleKind<Kind>
-class [[nodiscard]][[= ::foundation::transfer::thread_bound{}]] Handle final {
+class [[nodiscard]][[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::owns_by_number{}]]
+    Handle final {
     int descriptor_ = -1;
 
     // The open gave the number to this Handle, so the generation of the
@@ -616,9 +625,10 @@ public:
     // Handle empty (the transit).  The generation of the number advances
     // first, on this thread, so each borrow and each ForeignSocketRef of the
     // number is stale from then on.  A door that reads such a borrow after the
-    // departure gives ebadf at run time and makes no call.  The plugin does not
-    // refuse that read at compile time yet.  An empty Handle gives an empty
-    // transit.  Complexity: one atomic step.
+    // departure gives ebadf at run time and makes no call.  The quarantine
+    // plugin also refuses a read of a HandleRef after the departure at compile
+    // time.  An empty Handle gives an empty transit.  Complexity: one atomic
+    // step.
     [[nodiscard]] HandleInTransit<Kind, Rights> depart() && noexcept {
         ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
         int const descriptor = descriptor_;

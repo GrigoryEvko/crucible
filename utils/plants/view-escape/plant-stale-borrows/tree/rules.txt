@@ -1,7 +1,10 @@
 # The rule table of the plant plant-stale-borrows of the rule view-escape.  The
-# units of src/ are quarantined.  The headers of the repository are outside the
-# root of the plant, so the table admits the names of the base that the
-# planted code uses.
+# units of src/ are quarantined, and the planted header of include/foundation/
+# is a base file.  The headers of the repository are outside the root of the
+# plant, so the table admits the names of the base that the planted code uses.
+
+layer low 0 include/foundation/
+allow low <foundation/Transfer.h>
 
 admit foundation::core | the owners, the sums, the Ref and the View whose borrows the planted code reads
 admit foundation::AlignedBytes | a block of bytes
@@ -9,6 +12,8 @@ admit foundation::alloc | the source of the chunks of a window
 admit foundation::effects | the capability of an allocation
 admit foundation::permissions | the permission of a lock
 admit foundation::brand | the annotation of the family tag of an arena
+admit foundation::transfer | the marks of the owner and the borrow of a resource by its number
+admit foundation::lifetime | the byte seal of the borrow of a resource by its number
 admit fixy | the locks and the regions of the planted code
 admit std::move | a cast to an rvalue reference
 admit std::construct_at | a construct at a pointer

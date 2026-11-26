@@ -386,7 +386,10 @@ filled_part_(::foundation::core::ViewMut<std::byte, Brand, Extent>&& buffer,
 //   shut_down_and_close() of the write half ends the write direction of the
 //   socket first, so the peer reads the end of the stream while the read half
 //   lives.  The end of a write half that no door ended does the same, as a
-//   backstop of a path that the rule must-consume reports.
+//   backstop of a path that the rule must-consume reports.  Each half owns its
+//   number (owns_by_number{} of foundation/Transfer.h), so the quarantine
+//   plugin refuses a read of a HandleRef of a half after a door that takes the
+//   half by an rvalue reference.
 //
 //   The body gives back a Record of the read part, the write part and at most
 //   one value.  A part is the half or the token of its end (StreamReadEnded,
@@ -468,7 +471,8 @@ public:
 template <class Kind, ::fixy::os::RightSet Rights, class Brand>
     requires ::fixy::os::StreamSocketKind<Kind> && ::foundation::brand::IsBrand<Brand>
 class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::owes_consume{}]]
-                   [[= ::foundation::transfer::thread_bound{}]] StreamReadHalf final {
+                   [[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::owns_by_number{}]]
+    StreamReadHalf final {
     // The number of the socket, or -1 for a half that a move emptied.
     int descriptor_ = -1;
     // No start of a lifetime over bytes builds a half (foundation/ByteSeal.h).
@@ -545,7 +549,8 @@ public:
 template <class Kind, ::fixy::os::RightSet Rights, class Brand>
     requires ::fixy::os::StreamSocketKind<Kind> && ::foundation::brand::IsBrand<Brand>
 class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::owes_consume{}]]
-                   [[= ::foundation::transfer::thread_bound{}]] StreamWriteHalf final {
+                   [[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::owns_by_number{}]]
+    StreamWriteHalf final {
     // The number of the duplicate, or -1 for a half that a move emptied.
     int descriptor_ = -1;
     // No start of a lifetime over bytes builds a half (foundation/ByteSeal.h).

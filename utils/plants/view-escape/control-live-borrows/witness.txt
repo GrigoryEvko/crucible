@@ -16,7 +16,10 @@
 # owner (38), and a callee that only reads the owner (45).  In the unit in_place a
 # closure argument holds a View beside a frame door that lends no object of the View
 # in place: the frame of a different array (17), and the door update, which gives the
-# body a copy of the element (29).
+# body a copy of the element (29).  In the unit numbers a borrow of a resource by its
+# number lives beside its owner: a plain move of the owner, a generic call that moves
+# the owner into its result, a read before the end, a borrow taken again, a door that
+# takes the owner by a const reference, and the end of a different owner.
 
 compile live src/live.cpp
 flag live -freflection
@@ -53,3 +56,7 @@ exit through pass
 compile in_place src/in_place.cpp
 flag in_place -freflection
 exit in_place pass
+
+compile numbers src/numbers.cpp
+flag numbers -freflection
+exit numbers pass

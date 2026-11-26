@@ -35,8 +35,24 @@
 //       a call that takes the place by a reference that is not const, when its
 //           body ends an owner of the route or a target
 //       a call that consumes an owner and takes a closure with a loan of it
+//       a door of an owner of a resource by its number that takes the owner by
+//           an rvalue reference (the numbers)
 //     A write through a borrow does not end that borrow.  A call through a
 //     reference does not end the object itself, and a target is no such object.
+//
+// Numbers
+//     A class that states owns_by_number{} of foundation/Transfer.h, such as a
+//     Handle, owns a resource of the kernel by its number, and a class that states
+//     refers_by_number{}, such as a HandleRef, refers to it.  The first type
+//     argument of each names the resource, so the borrow has it as a target and the
+//     owner has it behind itself (route.cpp, the numbers).  The doors of the owner
+//     that take it by an rvalue reference end the number: a member of the owner,
+//     such as depart(), and a function whose parameter names the owner by an
+//     rvalue reference in its general declaration, such as with_stream_halves.  A
+//     constructor and an assignment of the owner keep the number, so the loans of
+//     a plain move stay with the source.  A generic function that forwards a T&&
+//     moves the value, so the loans follow it, and the call ends them only by its
+//     body, as for each other owner.
 //
 // Ends beside a borrow
 //     One argument of a call can give a borrow, as a View or the capture of a
@@ -125,8 +141,10 @@
 //     when a local keeps it.  An owner that leaves the block of a Box reads as ended,
 //     and so does an owner that a match gives to an arm with a borrow of it.  Two owners
 //     of one class in one object are one owner, so the one that leaves takes the loans
-//     of the other one along.  The plant plant-live-limits of utils/plants/view-escape/
-//     pins these findings.
+//     of the other one along.  A function whose parameter names an owner by a number
+//     by an rvalue reference ends the number, also when it keeps the owner or gives it
+//     back.  The plant plant-live-limits of utils/plants/view-escape/ pins these
+//     findings.
 //     A call that keeps a borrow in a different argument or in a member gives no
 //     loan, and neither does a container of borrows.  A closure with a declared
 //     result that holds a borrow gives its result the loans of its captures, and a
@@ -360,6 +378,7 @@ enum class EndKind : std::uint8_t {
     assignment,
     move,
     call,
+    number,  // a door that takes an owner of a resource by its number ends the number
 };
 
 // One end of a loan that a use reads, with no tree.
@@ -523,6 +542,64 @@ void add_indices(std::vector<int>& into, const std::vector<int>& from) {
     for (int index : from) {
         add_index(into, index);
     }
+}
+
+// The declaration of the most general template of FUNCTION, or FUNCTION when it
+// is no instance of a template.
+tree general_declaration(tree function) {
+    if (DECL_LANG_SPECIFIC(function) == nullptr || DECL_TEMPLATE_INFO(function) == NULL_TREE
+        || TREE_CODE(DECL_TI_TEMPLATE(function)) != TEMPLATE_DECL) {
+        return function;
+    }
+    tree const pattern = most_general_template(DECL_TI_TEMPLATE(function));
+    return pattern != NULL_TREE && TREE_CODE(pattern) == TEMPLATE_DECL ? DECL_TEMPLATE_RESULT(pattern) : function;
+}
+
+// True when TYPE, or the class template of which TYPE is an instance, states
+// owns_by_number{}.  The type of a parameter of a template can be an instance
+// that no code instantiated, so the marks of its pattern count.
+bool names_number_owner(tree type) {
+    type = element_class(type);
+    if (type == NULL_TREE || !CLASS_TYPE_P(type)) {
+        return false;
+    }
+    if (is_number_owner_class(type)) {
+        return true;
+    }
+    tree const info = CLASSTYPE_TEMPLATE_INFO(type);
+    if (info == NULL_TREE || TREE_CODE(TI_TEMPLATE(info)) != TEMPLATE_DECL) {
+        return false;
+    }
+    tree const pattern = most_general_template(TI_TEMPLATE(info));
+    return pattern != NULL_TREE && TREE_CODE(pattern) == TEMPLATE_DECL && is_number_owner_class(TREE_TYPE(pattern));
+}
+
+// True when the general declaration FUNCTION is a door of an owner of a resource
+// by its number for the argument at INDEX (the numbers): a member function of
+// the owner for its object, or a parameter whose own type is an rvalue reference
+// to the owner.  A parameter of a generic type, such as T&& or a pack, forwards
+// the value and is no such door.
+bool is_number_door(tree function, std::size_t index) {
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL) {
+        return false;
+    }
+    bool const has_object = DECL_IOBJ_MEMBER_FUNCTION_P(function);
+    if (has_object && index == 0) {
+        return DECL_CONTEXT(function) != NULL_TREE && names_number_owner(DECL_CONTEXT(function));
+    }
+    std::size_t position = has_object ? 1 : 0;
+    for (tree parameter = FUNCTION_FIRST_USER_PARM(function); parameter != NULL_TREE;
+         parameter = DECL_CHAIN(parameter), ++position) {
+        if (DECL_PACK_P(parameter)) {
+            return false;
+        }
+        if (position == index) {
+            tree const type = TREE_TYPE(parameter);
+            return type != NULL_TREE && TYPE_REF_P(type) && TYPE_REF_IS_RVALUE(type)
+                && names_number_owner(TREE_TYPE(type));
+        }
+    }
+    return false;
 }
 
 tree strip_value(tree node) {
@@ -1405,6 +1482,7 @@ private:
                 return places_.holds(place, loan.place) && !has_dereference_below(loan.place, place);
             case EndKind::assignment:
             case EndKind::move:
+            case EndKind::number:
                 return have_common_type(loan.route, ended_parts(type))
                     || (places_.holds(place, loan.place) && have_common_type(loan.targets, ended_cells(type)));
             case EndKind::call:
@@ -1543,6 +1621,10 @@ private:
                 return "an assignment of " + places_.text(end.place);
             case EndKind::move:
                 return "a move of " + places_.text(end.place);
+            case EndKind::number:
+                return (DECL_CONSTRUCTOR_P(end.callee) ? "a constructor of " + type_text(DECL_CONTEXT(end.callee))
+                                                       : "a call of " + qualified_name(end.callee))
+                     + " with " + places_.text(end.place) + ", which ends the number of the resource that it owns";
             case EndKind::call:
                 break;
         }
@@ -2222,6 +2304,8 @@ private:
         }
         check_ends_beside(callee, arguments);
         check_two_names(callee, arguments);
+        end_numbers(callee, arguments,
+                    (is_constructor || is_assignment) && is_number_owner_class(DECL_CONTEXT(callee)));
         CallFacts facts;
         facts.callee = callee;
         facts.result = is_constructor ? DECL_CONTEXT(callee) : TREE_TYPE(type);
@@ -2606,6 +2690,30 @@ private:
                                   inner, object, is_linear);
                     return;
                 }
+            }
+        }
+    }
+
+    // A door of an owner of a resource by its number that takes the owner by an
+    // rvalue reference ends each loan of the number (the numbers), such as depart()
+    // of a Handle.  A constructor and an assignment of the owner itself move the
+    // number, so its loans stay with the source, as a plain move keeps them.
+    void end_numbers(tree callee, const std::vector<Argument>& arguments, bool is_own_move) {
+        if (callee == NULL_TREE || is_own_move) {
+            return;
+        }
+        tree const general = general_declaration(callee);
+        for (std::size_t index = 0; index < arguments.size(); ++index) {
+            const Argument& argument = arguments[index];
+            if (argument.node == NULL_TREE || !argument.is_rvalue || !is_indirect_type(argument.parameter)
+                || !is_number_owner_class(element_class(argument.held)) || !is_number_door(general, index)) {
+                continue;
+            }
+            int const place = place_of_pointee(argument.node);
+            if (place != kNoPlace) {
+                End end = make_end(EndKind::number, place);
+                end.callee = callee;
+                end_loans(place, end, argument.held, NULL_TREE);
             }
         }
     }

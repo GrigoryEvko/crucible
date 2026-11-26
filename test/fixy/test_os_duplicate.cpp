@@ -4,7 +4,9 @@
 //
 // The single-thread cases duplicate a file, sealed memory and a directory with
 // the rights that move no position, and use the duplicate after the first
-// handle closed.  A borrow that is not open gives ebadf.
+// handle closed.  A borrow that is not open gives ebadf.  The rule view-escape
+// refuses a read of a borrow after an assignment of its Handle at compile time,
+// so the test reads it in an opt-out region of the class PROBE.
 //
 // In the thread case, one thread holds a duplicate of a socket and reads its
 // congestion control, while the other thread closes the first handle and opens
@@ -24,6 +26,7 @@
 #include <fixy/os/Socket.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
 #include <foundation/permissions/Permission.h>
 
 #include <cstddef>
@@ -157,8 +160,10 @@ void test_a_borrow_that_is_not_open_gives_ebadf() {
     TcpSocket const later = handle_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
     CRUCIBLE_TEST_ASSERT(kTest, later.is_open());
     CRUCIBLE_TEST_ASSERT(kTest, fixy::net::share_socket(later.ref()).identity() == closed_identity);
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a borrow from before the end of the descriptor reads its stale generation")
     CRUCIBLE_TEST_ASSERT(kTest,
                          error_of(fixy::os::mint_duplicate<RightSet::ioctl_socket>(ctx, borrow)) == Errno::ebadf);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     fixy::check::pass(kTest, "  test_a_borrow_that_is_not_open_gives_ebadf: PASSED\n");
 }
 

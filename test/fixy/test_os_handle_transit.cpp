@@ -2,7 +2,9 @@
 //
 // depart() on the thread of the Handle advances the generation of its number,
 // so each borrow and each foreign ref of that thread is stale, and a door
-// through one gives ebadf and makes no call.  arrive() gives the Handle on the
+// through one gives ebadf and makes no call.  The rule view-escape refuses a
+// read of such a borrow at compile time, so the test reads it in an opt-out
+// region of the class PROBE.  arrive() gives the Handle on the
 // other thread, and its doors act on the same socket.  In the thread case, the
 // thread that took the Handle closes it and opens later sockets, which take its
 // number again and again, while the first thread reads through the borrow that
@@ -16,6 +18,7 @@
 #include <fixy/os/Socket.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Atomic.h>
 
 #include <cstdint>
@@ -78,12 +81,14 @@ void test_a_departure_makes_each_borrow_stale() {
     auto const shared = fixy::net::share_socket(borrow);
     CRUCIBLE_TEST_ASSERT(kTest, reads_reno(ctx, borrow) && shared.is_current());
     auto transit = std::move(socket).depart();
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a borrow from before the end of the descriptor reads its stale generation")
     CRUCIBLE_TEST_ASSERT(kTest, !borrow.is_open() && !shared.is_current());
     CRUCIBLE_TEST_ASSERT(kTest, error_of(ctx, borrow) == Errno::ebadf);
     TcpSocket const arrived = std::move(transit).arrive();
     CRUCIBLE_TEST_ASSERT(kTest, arrived.is_open() && reads_reno(ctx, arrived.ref()));
     // The arrive makes no borrow of the sender current again.
     CRUCIBLE_TEST_ASSERT(kTest, error_of(ctx, borrow) == Errno::ebadf);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     fixy::check::pass(kTest, "  test_a_departure_makes_each_borrow_stale: PASSED\n");
 }
 
@@ -115,6 +120,7 @@ void test_a_kept_borrow_fails_closed_beside_the_other_thread() {
             owned = open_socket(closer_ctx);
         }
     };
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a borrow from before the end of the descriptor reads its stale generation")
     auto reader = [&borrow, &ctx]() noexcept -> std::uint32_t {
         std::uint32_t not_stale = 0;
         for (std::uint32_t turn = 0; turn < kTurns; ++turn) {
@@ -142,6 +148,7 @@ void test_a_kept_borrow_fails_closed_beside_the_other_thread() {
                                         not_stale = foundation::linear::call_once(std::move(reader_here));
                                         return false;
                                     });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     CRUCIBLE_TEST_ASSERT(kTest, is_started);
     CRUCIBLE_TEST_ASSERT(kTest, not_stale == 0);
     CRUCIBLE_TEST_ASSERT(kTest, arrived_reno.load_acquire() == 1);

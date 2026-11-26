@@ -21,6 +21,15 @@
 //     can hold an object of each type, so it is on the route of a target that no
 //     part of the argument names.
 //
+// Numbers
+//     A class that states owns_by_number{} of foundation/Transfer.h owns a resource
+//     of the kernel by its number, and a class that states refers_by_number{}
+//     refers to it.  No pointer names the resource, so the first type argument of
+//     the class names it: it is a target of the borrow, a part of the contents of
+//     the owner, and behind the owner.  A borrow class with no target, such as one
+//     that holds a number and states no refers_by_number{}, is a finding of the
+//     kind number-borrow of the rule view-escape, because no end can reach its loans.
+//
 // Reach
 //     A result reaches into an argument when a target is the argument, a part of
 //     it or an object that it owns.  It reaches through the argument when a target
@@ -225,6 +234,30 @@ void visit_fields(tree type, Visit visit) {
     }
 }
 
+// The resource of a class that owns or borrows a resource by its number: its
+// first type argument, or null for each other class (the numbers).
+tree number_resource(tree type) {
+    if (!is_number_owner_class(type) && !is_number_borrow_class(type)) {
+        return NULL_TREE;
+    }
+    tree first = NULL_TREE;
+    visit_type_arguments(type, [&](tree argument) {
+        if (first == NULL_TREE) {
+            first = TYPE_MAIN_VARIANT(argument);
+        }
+    });
+    return first;
+}
+
+// Adds the resource of TYPE to SET when TYPE owns it by its number, or, with
+// IS_BORROW_TOO, when TYPE borrows it by its number.
+void add_number_resource(tree type, TypeSet& set, bool is_borrow_too) {
+    tree const resource = number_resource(type);
+    if (resource != NULL_TREE && (is_borrow_too || is_number_owner_class(type))) {
+        add_id(set, TYPE_UID(resource));
+    }
+}
+
 // The type TYPE with no array.
 tree without_array(tree type) {
     while (type != NULL_TREE && TREE_CODE(type) == ARRAY_TYPE) {
@@ -246,6 +279,9 @@ void add_targets(tree type, TypeSet& set, Visits& visits) {
     if (type == NULL_TREE || !visits.enter(type)) {
         return;
     }
+    if (is_number_borrow_class(type)) {
+        add_number_resource(type, set, true);
+    }
     auto add = [&](tree argument) { add_targets(argument, set, visits); };
     if (visit_owner_arguments(type, add)) {
         return;
@@ -259,11 +295,28 @@ void add_targets(tree type, TypeSet& set, Visits& visits) {
     visit_fields(type, [&](tree field) { add_targets(without_array(TREE_TYPE(field)), set, visits); });
 }
 
+// A borrow class with no target names no object, so the rule cannot end its
+// loans.  A class that refers to a resource by a number states it with
+// refers_by_number{}, and each other such class is a finding of the kind
+// number-borrow (the numbers).
+void check_number_borrow(tree type, const TypeSet& targets) {
+    type = element_class(type);
+    if (!targets.empty() || type == NULL_TREE || !CLASS_TYPE_P(type) || !is_borrow_class(type)) {
+        return;
+    }
+    tree const decl = TYPE_MAIN_DECL(type);
+    Place place = place_of(decl != NULL_TREE ? DECL_SOURCE_LOCATION(decl) : UNKNOWN_LOCATION, Scope::quarantine);
+    if (place.file != nullptr) {
+        add_finding(Kind::number_borrow, nullptr, place, type_text(type));
+    }
+}
+
 const TypeSet& targets_of(tree type) {
     return target_answers.get(TYPE_UID(type), [type] {
         TypeSet set;
         Visits visits;
         add_targets(type, set, visits);
+        check_number_borrow(type, set);
         return set;
     });
 }
@@ -293,6 +346,8 @@ void add_contents(tree type, TypeSet& set, Visits& visits, bool is_owned, bool i
         return;
     }
     add_id(set, TYPE_UID(type));
+    // An owner by a number holds its resource, and a borrow by a number reaches it.
+    add_number_resource(type, set, !is_owned);
     if (readable_class(type, &set) == NULL_TREE || !visits.enter(type, is_in_owner)
         || (is_owned && is_borrow_class(type))) {
         return;
@@ -337,6 +392,8 @@ void add_behind(tree type, TypeSet& set, Visits& visits, bool is_in_owner, bool 
     if (!visits.enter(type, is_owner)) {
         return;
     }
+    // The number of an owner by a number names its resource, as an owned pointer does.
+    add_number_resource(type, set, false);
     visit_fields(type, [&](tree field) {
         tree held = without_array(TREE_TYPE(field));
         if (!is_indirect_type(held)) {

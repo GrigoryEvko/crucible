@@ -7205,6 +7205,20 @@ fixy_neg_compile_test(neg_os_handle_ref_of_local
 fixy_neg_compile_test(neg_os_handle_ref_stored_from_local
   "neg_os_handle_ref_stored_from_local\\.cpp:19:[0-9]+: error: this function stores a borrow of the local owner into the parameter kept"
   "and the borrowed object ends with the frame of the function")
+# The Handle owns its descriptor by its number (owns_by_number{}), and the
+# borrow refers to it by the number (refers_by_number{}), so the rule refuses a
+# read of the borrow after the Handle gives the number up: a move assignment
+# over the Handle, release_to_abi(), and depart().  A plain move keeps the
+# borrow (borrow_before_move_stays_open of the test above).
+fixy_neg_compile_test(neg_os_handle_ref_after_an_assignment
+  "neg_os_handle_ref_after_an_assignment\\.cpp:14:[0-9]+: error: this use reads a borrow of owner in borrow"
+  "after an assignment of owner")
+fixy_neg_compile_test(neg_os_handle_ref_after_a_release
+  "neg_os_handle_ref_after_a_release\\.cpp:16:[0-9]+: error: this use reads a borrow of owner in borrow"
+  "after a call of fixy::os::Handle::release_to_abi with owner, which ends the number of the resource that it owns")
+fixy_neg_compile_test(neg_os_handle_ref_after_a_departure
+  "neg_os_handle_ref_after_a_departure\\.cpp:19:[0-9]+: error: this use reads a borrow of socket in borrow"
+  "after a call of fixy::os::Handle::depart with socket, which ends the number of the resource that it owns")
 
 # The copy of a file holds its range after the file changes, and refuses a range
 # outside the file.  The control shows the two risks of a private map.
@@ -7246,11 +7260,14 @@ fixy_neg_compile_test(neg_os_stream_shape_outside_the_base
 # borrow that the sender kept fails closed while the second thread closes the
 # handle and opens later sockets on its number.  The fixtures are a handle that
 # a thread body takes by move while its sender keeps a borrow, a transit that
-# the drop door ends, and a departure whose transit the code discards.
+# the drop door ends, and a departure whose transit the code discards.  The
+# body of the first fixture closes the Handle that it took, so the rule
+# view-escape also refuses the read of the kept borrow after the thread.
 fixy_test(test_os_handle_transit)
 fixy_neg_compile_test(neg_os_handle_send_with_a_kept_borrow
   "the body captures .moved. \\(field __moved, type fixy::os::Handle<fixy::os::kind::Socket<fixy::net::socket_kind::TcpStream>"
-  "The value moves to another thread, and its type is not Sendable")
+  "The value moves to another thread, and its type is not Sendable"
+  "neg_os_handle_send_with_a_kept_borrow\\.cpp:30:[0-9]+: error: this use reads a borrow of socket in borrow after a call of fixy::thread::run_joined with closer")
 fixy_neg_compile_test(neg_os_handle_transit_dropped
   "use of deleted function"
   "the drop door ends no class that owes a consume at its end")
@@ -7295,6 +7312,15 @@ fixy_neg_compile_test(neg_os_socket_pair_ctx_lacks_block
 # half while the read half lives, the transit of a half, and the halves on two
 # threads beside an echo of the peer.
 fixy_test(test_os_stream_halves)
+# The split and the end of a half end each borrow of the number: a borrow of
+# the Handle after the split, and a borrow of the write half after
+# shut_down_and_close().
+fixy_neg_compile_test(neg_os_stream_halves_ref_after_the_split
+  "neg_os_stream_halves_ref_after_the_split\\.cpp:31:[0-9]+: error: this use reads a borrow of socket in borrow"
+  "after a call of fixy::net::with_stream_halves with socket, which ends the number of the resource that it owns")
+fixy_neg_compile_test(neg_os_stream_half_ref_after_its_end
+  "neg_os_stream_half_ref_after_its_end\\.cpp:31:[0-9]+: error: this use reads a borrow of write in borrow"
+  "after a call of fixy::net::StreamWriteHalf::shut_down_and_close with write, which ends the number of the resource that it owns")
 # The gate of the frame: a socket of the message shape, a context without
 # Block, a spelled brand, and the shape of the Record that a body gives back.
 fixy_neg_compile_test(neg_os_stream_halves_of_a_message_socket

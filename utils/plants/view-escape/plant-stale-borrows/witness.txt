@@ -50,6 +50,13 @@
 # captures by reference beside a callee that moves the owner away and back (36), a
 # copy of the View in the closure (43), the View in a captured closure (51), and a
 # View beside a callee that replaces the owner (58).
+#
+# In the unit numbers a borrow of a resource by its number is stale after: an
+# assignment of its owner, the end of the scope of its owner, a member door and a
+# function door that take the owner by an rvalue reference, and a generic function
+# that lets the owner die.  A copy of the borrow and a borrow that a function gives
+# back are stale too.  A borrow class of the planted header of the base that holds
+# a number and states no refers_by_number{} is a line of the kind number-borrow.
 
 compile stale src/stale.cpp
 flag stale -freflection
@@ -272,3 +279,23 @@ error segments src/segments.cpp:27 | this use reads a borrow of list in element 
 error segments src/segments.cpp:35 | this use reads a borrow of list in element after an assignment of list
 error segments src/segments.cpp:43 | this use reads a borrow of list in element after an assignment of list
 error segments src/segments.cpp:53 | this use reads a borrow of list in run after the end of the scope of list
+
+compile numbers src/numbers.cpp
+flag numbers -freflection
+exit numbers fail
+finding numbers view-escape number-borrow include/foundation/PlantedNumbers.h:11:45 | foundation::core::BareNumberRef<foundation::core::Socket>
+finding numbers view-escape stale-borrow src/numbers.cpp:84:12 | borrow of owner in borrow after an assignment of owner
+finding numbers view-escape stale-borrow src/numbers.cpp:93:12 | borrow of owner in kept after the end of the scope of owner
+finding numbers view-escape stale-borrow src/numbers.cpp:100:12 | borrow of owner in borrow after a call of foundation::core::NumberOwner::release with owner, which ends the number of the resource that it owns
+finding numbers view-escape stale-borrow src/numbers.cpp:107:12 | borrow of owner in borrow after a call of planted::close_owner with owner, which ends the number of the resource that it owns
+finding numbers view-escape stale-borrow src/numbers.cpp:114:12 | borrow of owner in borrow after a call of planted::drop_it with owner
+finding numbers view-escape stale-borrow src/numbers.cpp:122:12 | borrow of owner in copy after an assignment of owner
+finding numbers view-escape stale-borrow src/numbers.cpp:129:12 | borrow of owner in passed after an assignment of owner
+error numbers include/foundation/PlantedNumbers.h:11 | this borrow class names no object by a pointer: foundation::core::BareNumberRef<foundation::core::Socket>
+error numbers src/numbers.cpp:84 | this use reads a borrow of owner in borrow after an assignment of owner
+error numbers src/numbers.cpp:93 | this use reads a borrow of owner in kept after the end of the scope of owner
+error numbers src/numbers.cpp:100 | this use reads a borrow of owner in borrow after a call of foundation::core::NumberOwner::release with owner, which ends the number of the resource that it owns
+error numbers src/numbers.cpp:107 | this use reads a borrow of owner in borrow after a call of planted::close_owner with owner, which ends the number of the resource that it owns
+error numbers src/numbers.cpp:114 | this use reads a borrow of owner in borrow after a call of planted::drop_it with owner
+error numbers src/numbers.cpp:122 | this use reads a borrow of owner in copy after an assignment of owner
+error numbers src/numbers.cpp:129 | this use reads a borrow of owner in passed after an assignment of owner

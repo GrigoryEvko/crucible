@@ -1,0 +1,138 @@
+// An owner of a resource by its number and a borrow of the resource by the
+// number, as a Handle and a HandleRef of fixy/os/Handle.h.  No pointer names the
+// resource, so the first type argument names it.  The borrow is stale after an
+// assignment of the owner, after the end of its scope, after a member door that
+// takes the owner by an rvalue reference, and after a function whose parameter
+// names the owner by an rvalue reference.  A generic function that lets the owner
+// die ends the borrow through its body.  A copy of the borrow, and a borrow that a
+// function gives back, are stale too.  The class BareNumberRef of the planted
+// header holds a number and states no refers_by_number{}, so it names no object.
+#include <foundation/ByteSeal.h>
+#include <foundation/PlantedNumbers.h>
+#include <foundation/Transfer.h>
+
+#include <utility>
+
+namespace foundation::core {
+
+struct Socket final {};
+
+// The borrow holds a byte seal, as the stamp of a HandleRef does, so its
+// assignment is a call.
+template <class Resource>
+class[[= ::foundation::transfer::refers{}]][[= ::foundation::transfer::refers_by_number{}]] NumberRef final {
+public:
+    explicit NumberRef(int number) noexcept : number_{number} {}
+    [[nodiscard]] bool is_open() const noexcept { return number_ >= 0; }
+
+private:
+    int number_ = -1;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+
+template <class Resource>
+class[[= ::foundation::transfer::owns_by_number{}]] NumberOwner final {
+public:
+    NumberOwner() noexcept = default;
+    explicit NumberOwner(int number) noexcept : number_{number} {}
+    NumberOwner(NumberOwner&& other) noexcept : number_{other.number_} { other.number_ = -1; }
+    NumberOwner& operator=(NumberOwner&& other) noexcept {
+        number_ = other.number_;
+        other.number_ = -1;
+        return *this;
+    }
+    ~NumberOwner() { number_ = -1; }
+
+    [[nodiscard]] NumberRef<Resource> ref() const& noexcept { return NumberRef<Resource>{number_}; }
+    [[nodiscard]] BareNumberRef<Resource> bare_ref() const& noexcept { return BareNumberRef<Resource>{number_}; }
+    [[nodiscard]] int release() && noexcept {
+        int const number = number_;
+        number_ = -1;
+        return number;
+    }
+
+private:
+    int number_ = -1;
+};
+
+}  // namespace foundation::core
+
+namespace planted {
+
+using ::foundation::core::BareNumberRef;
+using ::foundation::core::NumberOwner;
+using ::foundation::core::NumberRef;
+using ::foundation::core::Socket;
+
+void close_owner(NumberOwner<Socket>&& owner) noexcept;
+
+template <class Value>
+void drop_it(Value&& value) noexcept {
+    Value const dropped = static_cast<Value&&>(value);
+    static_cast<void>(dropped);
+}
+
+template <class Borrow>
+Borrow pass_on(Borrow borrow) noexcept {
+    return borrow;
+}
+
+bool after_an_assignment() noexcept {
+    NumberOwner<Socket> owner{3};
+    auto const borrow = owner.ref();
+    owner = NumberOwner<Socket>{4};
+    return borrow.is_open();
+}
+
+bool after_the_scope() noexcept {
+    NumberRef<Socket> kept{-1};
+    {
+        NumberOwner<Socket> const owner{3};
+        kept = owner.ref();
+    }
+    return kept.is_open();
+}
+
+bool after_a_member_door() noexcept {
+    NumberOwner<Socket> owner{3};
+    auto const borrow = owner.ref();
+    int const number = std::move(owner).release();
+    return borrow.is_open() && number >= 0;
+}
+
+bool after_a_function_door() noexcept {
+    NumberOwner<Socket> owner{3};
+    auto const borrow = owner.ref();
+    close_owner(std::move(owner));
+    return borrow.is_open();
+}
+
+bool after_a_generic_drop() noexcept {
+    NumberOwner<Socket> owner{3};
+    auto const borrow = owner.ref();
+    drop_it(std::move(owner));
+    return borrow.is_open();
+}
+
+bool a_copy_after_an_assignment() noexcept {
+    NumberOwner<Socket> owner{3};
+    auto const borrow = owner.ref();
+    auto const copy = borrow;
+    owner = NumberOwner<Socket>{4};
+    return copy.is_open();
+}
+
+bool a_passed_borrow_after_an_assignment() noexcept {
+    NumberOwner<Socket> owner{3};
+    auto const passed = pass_on(owner.ref());
+    owner = NumberOwner<Socket>{4};
+    return passed.is_open();
+}
+
+bool a_bare_borrow() noexcept {
+    NumberOwner<Socket> const owner{3};
+    auto const bare = owner.bare_ref();
+    return bare.is_open();
+}
+
+}  // namespace planted
