@@ -329,7 +329,7 @@ test/ | opted-out | 2 | ABI: the case writes the data pointer of a CrucibleMeta 
 test/ | opted-out | 3 | ABI: the case writes the data pointers of the CrucibleMeta records of vessel_api.h | -
 test/ | opted-out | 1 | ABI: the test reads the address of the weak symbol of the interpreter | the test of the proof of the GIL reads the address of the weak symbol of the interpreter, so it knows that the mint gives none through its null arm
 test/ | opted-out | 13 | ORACLE: the block of std::philox4x32 is the reference of the block of the base | -
-test/ | opted-out | 2 | PROBE: a static owner is the second name of a change in the body of its lend | PROBE: a static owner is the second name of a change in the body of its lend
+test/ | opted-out | 4 | PROBE: a static owner is the second name of a change in the body of its lend | PROBE: a static owner is the second name of a change in the body of its lend
 test/ | opted-out | 2 | PROBE: probe of the run-time check of a thread-bound object | -
 test/ | opted-out | 2 | PROBE: the address of a body tells which unit of the link holds it | PROBE: test_crucible_target_units reads the address of a kernel in each of two units of two targets, a probe of the raw behavior of the link.  The test test_target_units of foundation holds the same regions
 test/ | opted-out | 1 | PROBE: the case compares the bytes of a typed data pointer with the C pointer | -

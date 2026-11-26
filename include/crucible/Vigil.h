@@ -53,6 +53,8 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/KeyedArray.h>
+#include <foundation/core/KeyedMint.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -1017,9 +1019,30 @@ private:
     // (register_inputs_from_region_), and replay_op_ walks them.  Only the
     // producer thread reads or writes them.  The reads of the external slots
     // stand in the replay context, beside the active region.
+    //
+    // The list lends a slot in place only with key, the held key of the list
+    // (foundation/core/KeyedMint.h).  Its proof has a private constructor, and
+    // this struct is its one friend.  The gate of the door refuses a body that
+    // reaches the key, so no body of a slot replaces the list under it.
     struct BoundScalars {
-        ::fixy::HeapArray<BoundScalar> slots{};
+        struct SlotsBrand final {
+            class key_proof final {
+                friend struct BoundScalars;
+
+                constexpr key_proof() noexcept {}
+
+            public:
+                key_proof(key_proof const&) = delete("a proof of the key of the data slots stays with their list");
+                key_proof& operator=(key_proof const&) = delete("a proof of the key of the data slots stays with their "
+                                                                "list");
+            };
+        };
+
+        ::foundation::core::KeyedHeapArray<BoundScalar, SlotsBrand> slots{};
         uint32_t next = 0;
+        // The one key of slots.  The key is empty, so it takes no byte.
+        [[no_unique_address]] ::foundation::core::LoanKey<SlotsBrand> key{
+            ::foundation::core::mint_held_key<SlotsBrand>(SlotsBrand::key_proof{})};
     };
 
     // Binds the inputs of the op that the replay matched to the live op: each
@@ -1057,16 +1080,16 @@ private:
         scope.bind_external_reads(OpIndex{matched}, op);
         // The cursor passes the slots of the earlier ops, writes the value of
         // each slot of the live op, and stops at the first slot of a later op.
-        // The element door of each step lends the slot at the cursor in place,
-        // and its none arm stops the walk at the end of the list.  The guard
-        // matched the tags and the data slots of the live op, and an entry
-        // stores each of its five slots, so each read is in bounds.
+        // The keyed element door of each step lends the slot at the cursor in
+        // place, and its none arm stops the walk at the end of the list.  The
+        // guard matched the tags and the data slots of the live op, and an
+        // entry stores each of its five slots, so each read is in bounds.
         enum class SlotStep : uint8_t {
             Stop,
             Next,
         };
         while (bound.slots.with_element(
-                   bound.next,
+                   bound.key, bound.next,
                    [matched, &op](BoundScalar& slot) noexcept {
                        if (slot.op.raw() > matched) return SlotStep::Stop;
                        if (slot.op.raw() == matched) slot.value = op.entry().scalar_values.at(slot.slot.value());
@@ -1507,7 +1530,7 @@ private:
                 ++filled;
             });
         });
-        bound_scalars_.slots = std::move(listed);
+        bound_scalars_.slots.replace(bound_scalars_.key, std::move(listed));
     }
 
     // Verifies the prefix match, then delegates the pool detach, the slot
