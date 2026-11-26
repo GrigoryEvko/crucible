@@ -87,9 +87,9 @@ using OpRecordSlots = ::foundation::core::WindowStack<TensorMeta, kMaxOpRecords>
 // reads or writes the stack.
 //
 // The stack also counts the ops whose record is open (OpNest).  An adapter
-// opens one OpNest for each op that it records, also for an op that keeps
-// its records on its own stack.  The count is the depth of the next op that
-// opens.
+// opens one nest for each op that it records, through the nest door of the
+// stack or of the Vigil, also for an op that keeps its records on its own
+// stack.  The count is the depth of the next op that opens.
 class OpRecordStack {
 public:
     constexpr OpRecordStack() noexcept = default;
@@ -162,6 +162,17 @@ public:
     }
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+    // The nest door of the record of one op: body gets the depth of the op,
+    // and each op that opens a nest while body runs gets a depth one more.
+    // The door closes the nest when body returns or raises, and gives the
+    // result of body.  Only a nest door opens a nest (OpNest), and the nest
+    // is a local of the door, so the nests of one stack close in the reverse
+    // order of their opens.  body gets the depth as a value, so it holds no
+    // borrow of the nest.  O(1), and the cost of body.
+    template <class Body>
+        requires std::is_invocable_v<Body&&, OpDepth>
+    decltype(auto) with_nest(Body&& body) &;
+
 private:
     friend class OpNest;
 
@@ -178,22 +189,16 @@ private:
 
 // The nest of the record of one op on an OpRecordStack.  The constructor
 // takes the depth of the op from the stack, and each op that opens a nest
-// before the destructor runs gets a depth one more.  A nest cannot copy or
-// move, so the nests of one stack close in the reverse order of their opens.
-// A nest lives in the call of its op, so an unwind of that call closes the
-// nest too.  O(1) for each open and each close.
+// before the destructor runs gets a depth one more.  The constructor is
+// private: only the nest door of the stack (OpRecordStack::with_nest) and the
+// nest of the Vigil (VigilOpNest of crucible/Vigil.h, which the nest door of
+// the Vigil opens) make a nest, each as a local of a door.  A nest cannot
+// copy or move.  So the nests of one stack close in the reverse order of
+// their opens, and the close needs no check of the order.  An unwind of the
+// call of a door closes its nest too.  O(1) for each open and each close.
 class [[nodiscard]] OpNest {
 public:
-    explicit OpNest(OpRecordStack& stack) noexcept
-        : stack_{::fixy::erase_brand(::fixy::to(stack))}, depth_{stack.depth_}, given_at_open_{stack.given_} {
-        stack.depth_ = depth_.nested();
-    }
-
-    ~OpNest() {
-        // Each nest that opened after this one closed before it.
-        CRUCIBLE_FATAL_INVARIANT(stack_->depth_ == depth_.nested());
-        stack_->depth_ = depth_;
-    }
+    ~OpNest() { stack_->depth_ = depth_; }
 
     OpNest(const OpNest&) = delete("a nest closes at the end of the scope of its op");
     OpNest& operator=(const OpNest&) = delete("a nest closes at the end of the scope of its op");
@@ -216,10 +221,25 @@ public:
     }
 
 private:
+    friend class OpRecordStack;
+    friend class VigilOpNest;
+
+    explicit OpNest(OpRecordStack& stack) noexcept
+        : stack_{::fixy::erase_brand(::fixy::to(stack))}, depth_{stack.depth_}, given_at_open_{stack.given_} {
+        stack.depth_ = depth_.nested();
+    }
+
     ::fixy::Ref<OpRecordStack> stack_;
     OpDepth depth_{};
     uint64_t given_at_open_ = 0;
 };
+
+template <class Body>
+    requires std::is_invocable_v<Body&&, OpDepth>
+decltype(auto) OpRecordStack::with_nest(Body&& body) & {
+    const OpNest nest{*this};
+    return static_cast<Body&&>(body)(nest.depth());
+}
 
 namespace detail {
 class ValidatedOpDoor;

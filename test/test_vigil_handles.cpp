@@ -227,14 +227,15 @@ void test_busy(TestRunnerCtx const& test) {
     {
         Vigil& vigil = *table.find_recording_vigil(handle).expect("this thread holds the Vigil");
         const crucible::VigilFgCtx fg = vigil.mint_producer_context();
-        const crucible::VigilOpNest nest{vigil, fg};
         const auto is_busy = [](::fixy::Option<HandleRefusal> refused) noexcept {
             return refused.match([](HandleRefusal reason) noexcept { return reason == HandleRefusal::busy; },
                                  [] noexcept { return false; });
         };
-        CRUCIBLE_FATAL_INVARIANT(is_busy(refusal_of_end(table, handle)));
-        CRUCIBLE_FATAL_INVARIANT(is_busy(refusal_of_release(table, handle)));
-        CRUCIBLE_FATAL_INVARIANT(is_held(table, handle));
+        vigil.with_op_nest(fg, [&](crucible::OpDepth) noexcept {
+            CRUCIBLE_FATAL_INVARIANT(is_busy(refusal_of_end(table, handle)));
+            CRUCIBLE_FATAL_INVARIANT(is_busy(refusal_of_release(table, handle)));
+            CRUCIBLE_FATAL_INVARIANT(is_held(table, handle));
+        });
     }
     end_vigil(table, handle);
     pass(test, "  test_busy: PASSED\n");

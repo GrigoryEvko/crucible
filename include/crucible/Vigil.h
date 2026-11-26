@@ -735,6 +735,29 @@ public:
     OpRecordStack& op_record_stack(VigilFgCtx const&) && =
         delete("a temporary Vigil releases its slots at the end of the statement. Use a Vigil that has a name");
 
+    // The nest door of the record of one op that an adapter gives to this
+    // Vigil (VigilOpNest below): body gets the depth of the op, and each op
+    // that opens a nest while body runs gets a depth one more.  The door
+    // closes the nest when body returns or raises, and gives the result of
+    // body, also a reference that an operator of PyTorch gives.  At the
+    // close, when the op did not reach this Vigil after an op inside the nest
+    // did, the door gives the closing entry of the nest
+    // (give_unrecorded_nest).  O(1), and the cost of body.
+    template <class Body>
+        requires std::is_invocable_v<Body&&, OpDepth>
+    decltype(auto) with_op_nest(VigilFgCtx const& fg, Body&& body) &;
+
+    // The foreign nest door: the nest door above, for a body that runs an
+    // operator of PyTorch and gives its result, such as a tensor or a
+    // reference to one.  Each call stands in an opt-out region of the class
+    // ABI, and so does this door, as the foreign frame doors of
+    // ValidatedOp.h.  O(1), and the cost of body.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a foreign nest gives the result of an operator of PyTorch")
+    template <class Body>
+        requires std::is_invocable_v<Body&&, OpDepth>
+    decltype(auto) with_foreign_op_nest(VigilFgCtx const& fg, Body&& body) &;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
     // Gives the closing entry of a nest whose op did not reach this Vigil
     // after an op inside the nest did (OpNest::is_unrecorded): the op raised,
     // or the adapter refused its record.  The entry has the schema hash
@@ -1772,15 +1795,13 @@ private:
 // opens an OpNest on the record stack of the Vigil, and the adapter gives the
 // op its depth.  At the close, when the op did not reach the Vigil after an
 // op inside the nest did, the nest gives the closing entry at its depth
-// (Vigil::give_unrecorded_nest).  The nest lives in the call of its op, so an
-// unwind of a raise in that call closes it too.  An adapter opens it before
-// the frame of the op on the record stack, so the frame closes first.  O(1) for
-// each open and each close that gives no entry.
+// (Vigil::give_unrecorded_nest).  The constructor is private: only the nest
+// door Vigil::with_op_nest makes a nest, as a local of the door, so an
+// unwind of a raise in the body of the door closes it too.  An adapter opens
+// the nest before the frame of the op on the record stack, so the frame
+// closes first.  O(1) for each open and each close that gives no entry.
 class [[nodiscard]] VigilOpNest {
 public:
-    VigilOpNest(Vigil& vigil, VigilFgCtx const& fg) noexcept
-        : vigil_{::fixy::erase_brand(::fixy::to(vigil))}, nest_{vigil.op_record_stack(fg)} {}
-
     ~VigilOpNest() {
         if (nest_.is_unrecorded()) [[unlikely]]
             vigil_->give_unrecorded_nest(nest_.depth());
@@ -1795,8 +1816,29 @@ public:
     [[nodiscard]] constexpr OpDepth depth() const noexcept { return nest_.depth(); }
 
 private:
+    friend class Vigil;
+
+    VigilOpNest(Vigil& vigil, VigilFgCtx const& fg) noexcept
+        : vigil_{::fixy::erase_brand(::fixy::to(vigil))}, nest_{vigil.op_record_stack(fg)} {}
+
     ::fixy::Ref<Vigil> vigil_;
     OpNest nest_;
 };
+
+template <class Body>
+    requires std::is_invocable_v<Body&&, OpDepth>
+decltype(auto) Vigil::with_op_nest(VigilFgCtx const& fg, Body&& body) & {
+    const VigilOpNest nest{*this, fg};
+    return static_cast<Body&&>(body)(nest.depth());
+}
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a foreign nest gives the result of an operator of PyTorch")
+template <class Body>
+    requires std::is_invocable_v<Body&&, OpDepth>
+decltype(auto) Vigil::with_foreign_op_nest(VigilFgCtx const& fg, Body&& body) & {
+    const VigilOpNest nest{*this, fg};
+    return static_cast<Body&&>(body)(nest.depth());
+}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }  // namespace crucible

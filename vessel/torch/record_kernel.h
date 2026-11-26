@@ -1553,7 +1553,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // the Vigil before its parent, as the replay cursor expects.  When the
     // operation raises, or append_trace_entry refuses it, after a child got
     // to the Vigil, the close of the nest gives the closing entry of the nest
-    // (VigilOpNest).
+    // (Vigil::with_foreign_op_nest).
     //
     // The frame holds the slots from the record of the inputs to the dispatch
     // to the Vigil.  An operation that the redispatch runs opens its frame
@@ -1578,19 +1578,20 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         // before the nest, so its exit check follows the close of the nest.
         const AllocatorFollowScope follow{vigil.context()};
         crucible::OpRecordStack& stack = vigil.op_record_stack(fg);
-        const crucible::VigilOpNest nest{vigil, fg};
-        if constexpr (kRecordsInFrame) {
-            return stack.template with_foreign_frame<kSlots>(
-                [&](auto slots) -> Ret {
-                    return record_in_slots(vigil, fg, dispatch_keys, nest.depth(),
-                                           ::fixy::erase_brand(std::move(slots)), args...);
-                },
-                [&]() -> Ret { return call_recording_on_stack(vigil, fg, dispatch_keys, nest.depth(), args...); });
-        } else {
-            // The Recording writes its slots across the redispatch, in the
-            // window of a list on the stack of this call.
-            return record_on_list(vigil, fg, dispatch_keys, nest.depth(), args...);
-        }
+        return vigil.with_foreign_op_nest(fg, [&] [[gnu::always_inline]] (crucible::OpDepth depth) -> Ret {
+            if constexpr (kRecordsInFrame) {
+                return stack.template with_foreign_frame<kSlots>(
+                    [&](auto slots) -> Ret {
+                        return record_in_slots(vigil, fg, dispatch_keys, depth, ::fixy::erase_brand(std::move(slots)),
+                                               args...);
+                    },
+                    [&]() -> Ret { return call_recording_on_stack(vigil, fg, dispatch_keys, depth, args...); });
+            } else {
+                // The Recording writes its slots across the redispatch, in the
+                // window of a list on the stack of this call.
+                return record_on_list(vigil, fg, dispatch_keys, depth, args...);
+            }
+        });
     }
 
     // The record of an operator, into the slots of a frame or of a list.  Each

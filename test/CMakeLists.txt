@@ -4319,6 +4319,15 @@ crucible_neg_compile_test(neg_validated_op_records_named_writer
 crucible_neg_compile_test(neg_validated_op_sealed_temporary
   "use of deleted function .void crucible::mint_validated_op\\(TraceRing::ValidatedEntry, SealedRecords<N>&&\\)"
   "the op keeps a View of the sealed list, and a temporary list ends at the end of the full expression")
+# Only a nest door opens a nest of the record of an op, as a local of the
+# door, so the nests close in the reverse order of their opens.  Each fixture
+# builds a nest with its private constructor.
+crucible_neg_compile_test(neg_op_nest_built_outside_door
+  "is private within this context"
+  "crucible::OpNest::OpNest\\(crucible::OpRecordStack&\\)")
+crucible_neg_compile_test(neg_vigil_op_nest_built_outside_door
+  "is private within this context"
+  "crucible::VigilOpNest::VigilOpNest\\(crucible::Vigil&, const crucible::VigilFgCtx&\\)")
 
 # The door run_in_row(ctx) of a Stopped handle of a BackgroundThread requires
 # CtxAdmits<Ctx, Row<Bg, Alloc, IO, Block>>.  Each fixture hands in a context

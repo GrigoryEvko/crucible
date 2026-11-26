@@ -121,22 +121,21 @@ void test_op_nest_counts_the_open_records() {
     crucible::Vigil vigil;
     crucible::OpRecordStack& stack = vigil.op_record_stack(vigil.mint_producer_context());
     CRUCIBLE_TEST_ASSERT(kTest, stack.depth().is_top());
-    {
-        const crucible::OpNest outer{stack};
-        CRUCIBLE_TEST_ASSERT(kTest, outer.depth() == crucible::OpDepth{0});
+    stack.with_nest([&stack](crucible::OpDepth outer) {
+        CRUCIBLE_TEST_ASSERT(kTest, outer == crucible::OpDepth{0});
         CRUCIBLE_TEST_ASSERT(kTest, stack.depth() == crucible::OpDepth{1});
-        {
-            const crucible::OpNest middle{stack};
-            const crucible::OpNest inner{stack};
-            CRUCIBLE_TEST_ASSERT(kTest, middle.depth() == crucible::OpDepth{1});
-            CRUCIBLE_TEST_ASSERT(kTest, inner.depth() == crucible::OpDepth{2});
-            CRUCIBLE_TEST_ASSERT(kTest, stack.depth() == crucible::OpDepth{3});
-        }
+        stack.with_nest([&stack](crucible::OpDepth middle) {
+            stack.with_nest([&stack, middle](crucible::OpDepth inner) {
+                CRUCIBLE_TEST_ASSERT(kTest, middle == crucible::OpDepth{1});
+                CRUCIBLE_TEST_ASSERT(kTest, inner == crucible::OpDepth{2});
+                CRUCIBLE_TEST_ASSERT(kTest, stack.depth() == crucible::OpDepth{3});
+            });
+        });
         // A nest that opens after two nests closed takes the depth that they
         // took first.
-        const crucible::OpNest sibling{stack};
-        CRUCIBLE_TEST_ASSERT(kTest, sibling.depth() == crucible::OpDepth{1});
-    }
+        stack.with_nest(
+            [](crucible::OpDepth sibling) { CRUCIBLE_TEST_ASSERT(kTest, sibling == crucible::OpDepth{1}); });
+    });
     CRUCIBLE_TEST_ASSERT(kTest, stack.depth().is_top() && "each close gives back the depth of its open");
 
     // The count stops at the largest value of its word.
@@ -176,44 +175,33 @@ void test_unrecorded_nest_gives_its_closing_entry() {
     // The op raises after a child reached the Vigil: one closing entry at
     // the depth of the op.
     uint64_t given = stack.given();
-    {
-        const crucible::VigilOpNest raised{vigil, fg};
-        give_op_at(vigil, 0x300, child);
-    }
+    vigil.with_op_nest(fg, [&](crucible::OpDepth) { give_op_at(vigil, 0x300, child); });
     CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given + 2 && stack.last_given_depth() == top
                                     && "a raise after a child gives the closing entry at the depth of the op");
 
     // The op raises before an op inside it reached the Vigil: no entry.
     given = stack.given();
-    { const crucible::VigilOpNest raised{vigil, fg}; }
+    vigil.with_op_nest(fg, [](crucible::OpDepth) {});
     CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given && "a raise with no child gives no entry");
 
     // A child raises after its own child reached the Vigil, and the unwind
     // passes through the parent: one entry at each depth, the child first.
     given = stack.given();
-    {
-        const crucible::VigilOpNest parent{vigil, fg};
-        {
-            const crucible::VigilOpNest raised{vigil, fg};
-            give_op_at(vigil, 0x301, grandchild);
-        }
+    vigil.with_op_nest(fg, [&](crucible::OpDepth) {
+        vigil.with_op_nest(fg, [&](crucible::OpDepth) { give_op_at(vigil, 0x301, grandchild); });
         CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given + 2 && stack.last_given_depth() == child
                                         && "the child gives its entry at its own depth");
-    }
+    });
     CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given + 3 && stack.last_given_depth() == top
                                     && "the parent gives its entry after the entry of the child");
 
     // The parent catches the raise of the child and reaches the Vigil: the
     // child gives its entry, and the parent gives none.
     given = stack.given();
-    {
-        const crucible::VigilOpNest parent{vigil, fg};
-        {
-            const crucible::VigilOpNest raised{vigil, fg};
-            give_op_at(vigil, 0x302, grandchild);
-        }
+    vigil.with_op_nest(fg, [&](crucible::OpDepth) {
+        vigil.with_op_nest(fg, [&](crucible::OpDepth) { give_op_at(vigil, 0x302, grandchild); });
         give_op_at(vigil, 0x303, top);
-    }
+    });
     CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given + 3 && stack.last_given_depth() == top
                                     && "a parent that reaches the Vigil gives no closing entry");
 
@@ -221,16 +209,15 @@ void test_unrecorded_nest_gives_its_closing_entry() {
     // does not count for the nest.
     give_op_at(vigil, 0x304, crucible::OpDepth{3});
     given = stack.given();
-    { const crucible::VigilOpNest raised{vigil, fg}; }
+    vigil.with_op_nest(fg, [](crucible::OpDepth) {});
     CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given && "an op given before the open does not count for the nest");
 
     // An op that reaches the Vigil after its child gives no entry.
     given = stack.given();
-    {
-        const crucible::VigilOpNest recorded{vigil, fg};
+    vigil.with_op_nest(fg, [&](crucible::OpDepth) {
         give_op_at(vigil, 0x305, child);
         give_op_at(vigil, 0x306, top);
-    }
+    });
     CRUCIBLE_TEST_ASSERT(kTest, stack.given() == given + 2 && "a recorded op gives no closing entry");
 
     ::fixy::check::pass(kTest, "  test_unrecorded_nest_gives_its_closing_entry: PASSED\n");
@@ -249,9 +236,10 @@ void give_iteration(crucible::Vigil& vigil, bool does_raise) {
             give_op_at(vigil, 0x400 + op, crucible::OpDepth{0});
             continue;
         }
-        const crucible::VigilOpNest nest{vigil, fg};
-        give_op_at(vigil, 0x402, crucible::OpDepth{1});
-        if (!does_raise) give_op_at(vigil, 0x403, nest.depth());
+        vigil.with_op_nest(fg, [&vigil, does_raise](crucible::OpDepth depth) {
+            give_op_at(vigil, 0x402, crucible::OpDepth{1});
+            if (!does_raise) give_op_at(vigil, 0x403, depth);
+        });
     }
 }
 
@@ -320,11 +308,10 @@ public:
                 give_op(divrig::op_at(iteration_, op), crucible::OpDepth{0});
                 continue;
             }
-            {
-                const crucible::VigilOpNest nest{vigil, fg};
+            vigil.with_op_nest(fg, [this, end](crucible::OpDepth depth) {
                 give_op(divrig::op_at(iteration_, 2), crucible::OpDepth{1});
-                if (end == NestEnd::RECORDED) give_op(divrig::op_at(iteration_, 3), nest.depth());
-            }
+                if (end == NestEnd::RECORDED) give_op(divrig::op_at(iteration_, 3), depth);
+            });
             after_close();
         }
         ++iteration_;

@@ -1049,7 +1049,7 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // operation that the redispatch runs gets a depth one more.  When the
     // operation raises, or record_boxed_op refuses it, after an operation
     // inside it got to the Vigil, the close of the nest gives the closing
-    // entry of the nest (VigilOpNest).
+    // entry of the nest (Vigil::with_foreign_op_nest).
     //
     // The frame holds MAX_INLINE_METAS slots from the extraction of the
     // inputs to the dispatch.  An operation that the redispatch runs opens
@@ -1063,13 +1063,14 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // the nest, so its exit check follows the close of the nest.
     const crucible::vessel::AllocatorFollowScope follow{vigil.context()};
     crucible::OpRecordStack& record_stack = vigil.op_record_stack(fg);
-    const crucible::VigilOpNest nest{vigil, fg};
-    record_stack.with_foreign_frame<MAX_INLINE_METAS>(
-        [&](auto slots) {
-            record_boxed_op(op, dispatch_keys, *stack, state, vigil, fg, nest.depth(),
-                            ::fixy::erase_brand(std::move(slots)));
-        },
-        [&] { record_boxed_op_on_stack(op, dispatch_keys, *stack, state, vigil, fg, nest.depth()); });
+    vigil.with_foreign_op_nest(fg, [&] [[gnu::always_inline]] (crucible::OpDepth depth) {
+        record_stack.with_foreign_frame<MAX_INLINE_METAS>(
+            [&](auto slots) {
+                record_boxed_op(op, dispatch_keys, *stack, state, vigil, fg, depth,
+                                ::fixy::erase_brand(std::move(slots)));
+            },
+            [&] { record_boxed_op_on_stack(op, dispatch_keys, *stack, state, vigil, fg, depth); });
+    });
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 

@@ -451,20 +451,21 @@ inline void check_busy() noexcept {
     const vessel::VigilHandle live{state.live_word};
     Vigil& vigil = *state.table.find_recording_vigil(live).expect("the harness holds its Vigil");
     const VigilFgCtx fg = vigil.mint_producer_context();
-    const VigilOpNest nest{vigil, fg};
-    vessel::HeldVigil end_proof = state.table.mint_held_vigil(live).expect("the harness holds its Vigil");
     const auto is_busy = [](vessel::HandleRefusal refused) noexcept { return is_busy_refusal(refused); };
-    CRUCIBLE_FUZZ_CLAIM(kName, state.table.withdraw(std::move(end_proof))
-                                   .match(
-                                       [](::fixy::Box<Vigil> ended) noexcept {
-                                           static_cast<void>(ended);
-                                           return false;
-                                       },
-                                       is_busy));
-    vessel::HeldVigil release_proof = state.table.mint_held_vigil(live).expect("the harness holds its Vigil");
-    CRUCIBLE_FUZZ_CLAIM(
-        kName,
-        state.table.release(std::move(release_proof)).match([](::fixy::Unit) noexcept { return false; }, is_busy));
+    vigil.with_op_nest(fg, [&](OpDepth) noexcept {
+        vessel::HeldVigil end_proof = state.table.mint_held_vigil(live).expect("the harness holds its Vigil");
+        CRUCIBLE_FUZZ_CLAIM(kName, state.table.withdraw(std::move(end_proof))
+                                       .match(
+                                           [](::fixy::Box<Vigil> ended) noexcept {
+                                               static_cast<void>(ended);
+                                               return false;
+                                           },
+                                           is_busy));
+        vessel::HeldVigil release_proof = state.table.mint_held_vigil(live).expect("the harness holds its Vigil");
+        CRUCIBLE_FUZZ_CLAIM(
+            kName,
+            state.table.release(std::move(release_proof)).match([](::fixy::Unit) noexcept { return false; }, is_busy));
+    });
     CRUCIBLE_FUZZ_CLAIM(kName, state.table.find_recording_vigil(live).is_some());
 }
 
