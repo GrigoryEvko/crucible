@@ -278,10 +278,20 @@ def unread_unit_cases(expect: testing.Expect) -> None:
             known_builds=known,
         )
         status, text = testing.captured(lambda: counted.write(spec, rule, with_vessel))
+        targeted = rule_ledger.read(rule, root).expected()
+        expect(
+            f"a reduce with a vessel build of named targets reads the vessel unit only in part, so it keeps its row "
+            f"and the row of the header beside it: {targeted} {text}",
+            status == 0 and targeted.get(vessel_key) == 1 and targeted.get(header_key) == 1,
+        )
+        with_full_vessel = runner.WriteRequest(
+            root, builds["default"], more_builds=(builds["release"], builds["vessel"]), known_builds=known
+        )
+        status, text = testing.captured(lambda: counted.write(spec, rule, with_full_vessel))
         lowered = rule_ledger.read(rule, root).expected()
         expect(
-            f"a reduce with the vessel build reads the vessel unit, and it lowers its row when the count falls: "
-            f"{lowered} {text}",
+            f"a reduce with a vessel build of the target all reads the vessel unit, and it lowers its row when the "
+            f"count falls: {lowered} {text}",
             status == 0
             and vessel_key not in lowered
             and header_key not in lowered
@@ -291,6 +301,60 @@ def unread_unit_cases(expect: testing.Expect) -> None:
             "a build of named targets reads those targets, and each other build reads the target all",
             with_vessel.targets_of(builds["vessel"]) == ("crucible_vessel", "crucible_dispatch")
             and with_vessel.targets_of(builds["default"]) == runner.ALL_TARGETS,
+        )
+
+
+def split_row_cases(expect: testing.Expect) -> None:
+    """Check that a reduce keeps a row whose findings split between a full build and a build of named targets.
+
+    The row of the header vessel/torch/held.h holds three findings in a full vessel build.  The default build counts
+    one of them through a test unit that includes the header.  The vessel build of named targets counts the two that
+    the vessel unit gives.  No build of the reduce counts three, so the largest count is two.  On the old code the
+    reduce lowered the row to two, and the next full vessel build refused it.
+    """
+    with tempfile.TemporaryDirectory(prefix="counted-split-") as work:
+        root = Path(work)
+        header = "vessel/torch/held.h"
+        plant_tree(root, f"{header} | heavy-include | 3 | <chrono> | -\n")
+        for name in ("test/held_test.cpp", "vessel/torch/fallback.cpp", header):
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text("#include <chrono>\n", encoding="utf-8")
+        builds = {name: root / f"build-{name}" for name in ("default", "vessel")}
+        listed = {"default": ("test/held_test.cpp",), "vessel": ("test/held_test.cpp", "vessel/torch/fallback.cpp")}
+        for name, build in builds.items():
+            build.mkdir()
+            compdb.plant(
+                build,
+                [
+                    {"directory": str(build), "file": str(root / unit), "command": f"c++ -c {unit}", "output": "u.o"}
+                    for unit in listed[name]
+                ],
+            )
+        found = {
+            builds["default"]: [finding(header, 1, KIND, "<chrono>")],
+            builds["vessel"]: [finding(header, 2, KIND, "<chrono>"), finding(header, 3, KIND, "<chrono>")],
+        }
+
+        def planted_context(context_root: Path, build: Path | None) -> runner.PluginContext:
+            """Return the planted census of a build: one header finding in the default build, two in the vessel."""
+            return context_of(context_root, found.get(build, []) if build is not None else [])
+
+        spec = dataclasses.replace(heavy_include.SPEC, context_of=planted_context)
+        rule = rule_ledger.rule_of(RULE)
+        key = rule_ledger.Key(header, KIND, "<chrono>")
+        request = runner.WriteRequest(
+            root,
+            builds["default"],
+            more_builds=(builds["vessel"],),
+            build_targets=((builds["vessel"], ("crucible_vessel", "crucible_dispatch")),),
+            known_builds=tuple(builds.values()),
+        )
+        status, text = testing.captured(lambda: counted.write(spec, rule, request))
+        kept = rule_ledger.read(rule, root).expected()
+        expect(
+            f"a reduce keeps a row of three findings that split as one in the default build and two in the vessel "
+            f"build of named targets: {kept} {text}",
+            status == 0 and kept.get(key) == 3,
         )
 
 
@@ -335,5 +399,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (key_cases, verdict_cases, write_cases, build_cases, unread_unit_cases, seal_cases),
+        (key_cases, verdict_cases, write_cases, build_cases, unread_unit_cases, split_row_cases, seal_cases),
     )

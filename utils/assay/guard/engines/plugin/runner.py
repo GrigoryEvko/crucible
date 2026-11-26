@@ -51,12 +51,13 @@ Write
 
 Unread units
     A unit that a configured build of the presets of the tree lists, and
-    that no compile database of the builds of a reduce lists, is an unread
-    unit (unread_units()), such as a unit of vessel/torch that only the
-    vessel build compiles.  A row of a path that holds an unread unit keeps
-    its value, as in a partial write (kept_test()), so a reduce never lowers
-    the counts of a build that it did not read.  A reduce with the vessel
-    build reads each such unit, and then it lowers those rows too.
+    that no build of the target all in a reduce lists, is an unread unit
+    (unread_units()), such as a unit of vessel/torch that only the vessel
+    build compiles.  A row of a path that holds an unread unit keeps its
+    value, as in a partial write (kept_test()), so a reduce never lowers the
+    counts of a build that it did not read in full.  The vessel build of the
+    landing gate reads only its targets, so a reduce of the gate keeps the
+    rows of vessel/torch.  A person lowers them from a full vessel build.
 
 Rules
     Each finding line has a rule of the engine plugin of utils/registry.txt.
@@ -535,22 +536,26 @@ def listed_units(build: Path, root: Path) -> frozenset[str]:
 
 
 def unread_units(request: WriteRequest) -> frozenset[str]:
-    """Return each unit that a known build of the tree lists and that no build of a write lists (the unread units).
+    """Return each unit that a build lists and that no build of a write reads in full (the unread units).
 
-    A reduce reads the units that its builds compile.  A unit of vessel/torch that only the vessel build compiles
-    gives findings that a reduce with no vessel build cannot see.  The known builds are the configured builds of the
-    presets of the tree (WriteRequest.known_builds), so a source that no build compiles, such as a program of BPF,
-    is no unread unit.  Complexity: linear in the rows of the compile database of each build.
+    A reduce reads in full the units of a build of the target all.  A unit of vessel/torch that only the vessel build
+    compiles gives findings that a reduce with no vessel build cannot see.  A build of named targets, such as the
+    vessel build of the landing gate, reads only some of its units.  Its count of a row can then be below the count of
+    the full build: a header of vessel/torch gives a finding through a test unit of the default build, and two units of
+    the vessel targets give two more findings.  So each unit that a build of named targets lists, and that no build of
+    the target all lists, is unread too.  The known builds are the configured builds of the presets of the tree
+    (WriteRequest.known_builds), so a source that no build compiles, such as a program of BPF, is no unread unit.
+    Complexity: linear in the rows of the compile database of each build.
 
     Raises:
         BuildError: If the compile database of a build cannot be read
     """
-    read = set(request.builds)
-    unknown = [build for build in request.known_builds if build not in read]
+    full = [build for build in request.builds if request.targets_of(build) == ALL_TARGETS]
+    unknown = [build for build in dict.fromkeys((*request.known_builds, *request.builds)) if build not in full]
     if not unknown:
         return frozenset()
     listed: set[str] = set()
-    for build in request.builds:
+    for build in full:
         listed |= listed_units(build, request.root)
     found: set[str] = set()
     for build in unknown:
@@ -563,9 +568,9 @@ def kept_test(request: WriteRequest) -> Callable[[str], bool] | None:
 
     The test holds for a directory row, whose path ends in '/', that holds an unread unit, and for a file row whose
     directory holds an unread unit.  A header beside an unread unit, such as vessel/torch/record_kernel.h, gives the
-    findings of that unit.  Such a row keeps its value, so a reduce that did not read a build never lowers its rows.  A
-    partial write keeps each row, so it needs no test.  Complexity: linear in the unread units for each call of the
-    test.
+    findings of that unit.  Such a row keeps its value, so a reduce that did not read a build in full never lowers its
+    rows.  A partial write keeps each row, so it needs no test.  Complexity: linear in the unread units for each call
+    of the test.
 
     Raises:
         BuildError: If the compile database of a build cannot be read
