@@ -5157,6 +5157,11 @@ foundation_neg_compile_test(neg_core_lower_bound_float_key
 foundation_test(test_core_heap_array)
 foundation_test(test_core_fixed_heap_array)
 
+# A KeyedHeapArray and a KeyedMaskedArray lend an element in place, fill,
+# replace and take their storage only with the key of their brand.  A held
+# key of a class and the key of a mint each open them.
+foundation_test(test_core_keyed_array)
+
 # A MaskedArray holds a power-of-two count of elements from their default
 # constructor, so a pinned element passes.  A key at or past the count reads
 # the element of its low bits, a move leaves the source empty, and a bad
@@ -6321,6 +6326,27 @@ foundation_neg_compile_test(neg_core_keyed_heap_array_without_key
 foundation_neg_compile_test(neg_core_keyed_heap_array_reaches_key
   "use of deleted function .void foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::with_mut\\(foundation::core::LoanKey<(KeyBrand|Fresh)>&&, Body&&\\) &"
   "a body of a keyed frame reaches a LoanKey of the brand of its owner")
+# A KeyedHeapArray and a KeyedMaskedArray do not move and take no assignment,
+# they lend an element that a body writes only with their key, the gate of
+# that door refuses a body that reaches the key, and they have no value door.
+foundation_neg_compile_test(neg_core_keyed_heap_array_moved
+  "use of deleted function .foundation::core::KeyedHeapArray<T, Brand, Align>::KeyedHeapArray\\(foundation::core::KeyedHeapArray<T, Brand, Align>&&\\)"
+  "a KeyedHeapArray does not move, so a body of a keyed door finds no second holder of its storage")
+foundation_neg_compile_test(neg_core_keyed_masked_array_assigned
+  "use of deleted function .foundation::core::KeyedMaskedArray<T, Brand, Align>& foundation::core::KeyedMaskedArray<T, Brand, Align>::operator=\\(foundation::core::KeyedMaskedArray<T, Brand, Align>&&\\)"
+  "a KeyedMaskedArray does not move, so a body of a keyed door finds no second holder of its storage")
+foundation_neg_compile_test(neg_core_keyed_heap_array_element_written_with_no_key
+  "use of deleted function .void foundation::core::KeyedHeapArray<T, Brand, Align>::with_element\\(std::size_t, OnSome&&, OnNone&&\\) const &"
+  "a KeyedHeapArray lends an element only with its LoanKey")
+foundation_neg_compile_test(neg_core_keyed_masked_array_written_with_no_key
+  "use of deleted function .void foundation::core::KeyedMaskedArray<T, Brand, Align>::with_masked\\(uint64_t, Body&&\\) const &"
+  "a KeyedMaskedArray lends an element only with its LoanKey")
+foundation_neg_compile_test(neg_core_keyed_masked_array_nested_door
+  "use of deleted function .void foundation::core::KeyedMaskedArray<T, Brand, Align>::with_masked\\(foundation::core::LoanKey<Brand>&, uint64_t, Body&&\\) &"
+  "a body of a keyed element door reaches a LoanKey of the brand of its holder")
+foundation_neg_compile_test(neg_core_keyed_heap_array_set
+  "use of deleted function .void foundation::core::KeyedHeapArray<T, Brand, Align>::set\\(Arguments&& ...\\) &"
+  "a KeyedHeapArray has no value door, because a body of a keyed door could call it")
 # The body of an element door or a frame door holds no linear value by value:
 # a by-move capture of a linear end, and a by-value capture of a struct that
 # holds one, each bind to the linear twin of the door.

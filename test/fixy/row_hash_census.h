@@ -159,6 +159,7 @@
 #include <foundation/core/CallRef.h>
 #include <foundation/core/CyclicCursor.h>
 #include <foundation/core/Immortal.h>
+#include <foundation/core/KeyedArray.h>
 #include <foundation/core/Seat.h>
 #include <foundation/diag/Catalog.h>
 #include <foundation/diag/FailClosed.h>
@@ -1382,6 +1383,14 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::MaskedArray,
      "an array of a power-of-two count of elements on the heap: it holds storage and makes no claim about what the "
      "elements hold"},
+    {^^::foundation::core::KeyedHeapArray,
+     "the keyed holder of a HeapArray: it holds the array and makes no claim about what the elements hold"},
+    {^^::foundation::core::KeyedMaskedArray,
+     "the keyed holder of a MaskedArray: it holds the array and makes no claim about what the elements hold"},
+    {^^::foundation::core::KeyedHeapArrayOwner,
+     "the maker of a KeyedHeapArray: it is empty and is only an argument of the mint of a keyed owner"},
+    {^^::foundation::core::KeyedMaskedArrayOwner,
+     "the maker of a KeyedMaskedArray: it is empty and is only an argument of the mint of a keyed owner"},
     {^^::foundation::core::FixedList,
      "an inline list of at most N elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::Sealed,
