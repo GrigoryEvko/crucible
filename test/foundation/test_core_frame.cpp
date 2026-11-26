@@ -105,8 +105,10 @@ void test_fixed_array() {
     int const total = array.with_mut(key, [](auto out) noexcept { return sum_of(out); });
     CRUCIBLE_TEST_ASSERT(kTest, total == 100 && sum_of(array) == 100);
     View<int const, 4> const elements = array.view();
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a View from before the frame compares its address with the run of the frame")
     bool const is_in_place = array.with_mut(
         key, [elements](auto out) noexcept { return offset_of(elements, View<int const>{out.view()}).is_some(); });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     CRUCIBLE_TEST_ASSERT(kTest, is_in_place);
 }
 
@@ -132,8 +134,10 @@ void test_keyed_array() {
     int const lent_total = array.with_mut(back, [](auto out) noexcept { return sum_of(out); });
     CRUCIBLE_TEST_ASSERT(kTest, lent_total == 10);
     View<int const, 4> const elements = array.view();
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a View from before the frame compares its address with the run of the frame")
     bool const is_in_place = array.with_mut(
         back, [elements](auto out) noexcept { return offset_of(elements, View<int const>{out.view()}).is_some(); });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     CRUCIBLE_TEST_ASSERT(kTest, is_in_place);
 
     back = array.with_element(std::move(back), ::foundation::core::index<2>(),

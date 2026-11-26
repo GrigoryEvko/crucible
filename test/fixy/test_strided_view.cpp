@@ -528,8 +528,10 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
         ::fixy::mint_strided_view(left.view(), sizes.view(), row_major.view(), 0).expect("fits");
     ::fixy::StridedView<int const, 2> const right_view =
         ::fixy::mint_strided_view(right.view(), sizes.view(), column_major.view(), 0).expect("fits");
+    // A view of the sizes 3 by 2 over a different array: parallel() refuses it on
+    // its sizes.
     ::fixy::StridedView<int const, 2> const wrong_view =
-        ::fixy::mint_strided_view(output.view(), wrong_sizes.view(), column_major.view(), 0).expect("fits");
+        ::fixy::mint_strided_view(right.view(), wrong_sizes.view(), column_major.view(), 0).expect("fits");
 
     bool const is_summed = output.with_mut(output_key, [&](auto run) noexcept {
         auto unique_output =

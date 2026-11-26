@@ -780,6 +780,17 @@ const BorrowRoute& borrow_route(tree result, tree held) {
     return route_answers.get(pair_key(result, held), [result, held] { return make_route(result, held); });
 }
 
+const TypeSet& types_named_by(tree type) {
+    static const TypeSet none;
+    type = type != NULL_TREE ? TYPE_MAIN_VARIANT(type) : NULL_TREE;
+    return type != NULL_TREE ? targets_of(type) : none;
+}
+
+bool can_name_one_object(const TypeSet& named, const TypeSet& lent) {
+    bool const is_erased = has_id(named, kErasedType) || has_id(lent, kErasedType);
+    return !named.empty() && !lent.empty() && (is_erased || have_common_type(named, lent));
+}
+
 const TypeSet& ended_parts(tree type) {
     static const TypeSet none;
     type = element_class(type);

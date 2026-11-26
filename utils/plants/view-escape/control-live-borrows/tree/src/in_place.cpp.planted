@@ -1,0 +1,33 @@
+// A closure argument holds a View through its captures, beside a frame door that
+// lends no object of the View in place: the frame of a different array, and the
+// door update, which gives the body a copy of the element.
+#include <foundation/core/Array.h>
+#include <foundation/core/KeyedMint.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using View = fc::View<int const, 4>;
+
+int view_of_a_different_array() noexcept {
+    auto [array, key] = fc::mint_keyed_owner(fc::fixed_array_owner<int, 4>);
+    fc::FixedArray<int, 4> const other{1, 2, 3, 4};
+    View const read = other.view();
+    return array.with_mut(key, [read](auto out) noexcept {
+        for (int& element : out) {
+            element = 7;
+        }
+        return read.at(fc::index<0>());
+    });
+}
+
+int view_beside_a_copy_of_the_element() noexcept {
+    fc::FixedArray<int, 4> plain{1, 2, 3, 4};
+    fc::FixedArray<int, 4> const& readable = plain;
+    View const read = readable.view();
+    plain.update(fc::index<0>(), [read](int& element) noexcept { element = read.at(fc::index<0>()) + 1; });
+    return plain.at(fc::index<0>());
+}
+
+}  // namespace planted

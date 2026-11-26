@@ -1,6 +1,7 @@
 // Tests of foundation/core/FixedHeapArray.h: an owner of exactly N elements on
 // the heap, and its mint.
 
+#include <foundation/Quarantine.h>
 #include <foundation/core/FixedHeapArray.h>
 
 #include <foundation/core/Region.h>
@@ -67,6 +68,7 @@ void test_doors_write_in_place() {
     CRUCIBLE_FATAL_INVARIANT(steps == 1 && third == 17);
 
     ::foundation::core::View<std::uint64_t const, 4> const elements = words.view();
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a View from before the frame compares its address with the run of the frame")
     bool const is_in_place = words.with_mut(key, [elements](auto run) noexcept {
         static_assert(decltype(run)::extent == 4);
         std::uint64_t next = 10;
@@ -76,6 +78,7 @@ void test_doors_write_in_place() {
         return ::foundation::core::offset_of(elements, ::foundation::core::View<std::uint64_t const>{run.view()})
             .is_some();
     });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     CRUCIBLE_FATAL_INVARIANT(is_in_place);
     CRUCIBLE_FATAL_INVARIANT(words.at(index<0>()) == 10 && words.at(index<3>()) == 13);
 }

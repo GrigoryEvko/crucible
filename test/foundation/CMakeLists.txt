@@ -5211,6 +5211,22 @@ foundation_neg_compile_test(neg_core_keeps_its_blocks_outside_the_base
 foundation_neg_compile_test(neg_core_two_names_door_outside_the_base
   "neg_core_two_names_door_outside_the_base\\.cpp:27:[0-9]+: error: this call gives one object to two parameters: argument 0 and a capture of argument 1 of .*write_beside name token"
   "the object is linear or a unique borrow")
+# An in-place frame door lends the elements to its body under a unique borrow,
+# so a View of the same array in the body reads under the writes: a read of the
+# View, the View given to a helper that reads, the View given to a function with
+# no body, and the element frame, which gives the element by a reference.
+foundation_neg_compile_test(neg_core_frame_reads_a_view_in_place
+  "neg_core_frame_reads_a_view_in_place\\.cpp:13:[0-9]+: error: this use reads a borrow of array in a closure argument after a call of .*FixedArray::with_mut with array, which lends the object to a closure under a unique borrow"
+  "take the borrow again after the change")
+foundation_neg_compile_test(neg_core_frame_gives_a_view_in_place_to_a_helper
+  "neg_core_frame_gives_a_view_in_place_to_a_helper\\.cpp:25:[0-9]+: error: this use reads a borrow of array in a closure argument after a call of .*FixedArray::with_mut with array, which lends the object to a closure under a unique borrow"
+  "take the borrow again after the change")
+foundation_neg_compile_test(neg_core_frame_gives_a_view_in_place_to_no_body
+  "neg_core_frame_gives_a_view_in_place_to_no_body\\.cpp:15:[0-9]+: error: this use reads a borrow of array in a closure argument after a call of .*FixedArray::with_mut with array, which lends the object to a closure under a unique borrow"
+  "take the borrow again after the change")
+foundation_neg_compile_test(neg_core_element_frame_reads_a_view
+  "neg_core_element_frame_reads_a_view\\.cpp:13:[0-9]+: error: this use reads a borrow of array in a closure argument after a call of .*FixedArray::with_element with array, which lends the object to a closure under a unique borrow"
+  "take the borrow again after the change")
 # A Sealed gives its object only as a const object, so no code appends to a
 # sealed list.  It does not move, a temporary gives no object, and an object
 # that a read writes and a linear object do not seal.  test/fixy has the test.

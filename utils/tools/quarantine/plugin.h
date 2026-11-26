@@ -3614,6 +3614,13 @@ tree element_class(tree type);
 // True for a pointer and for a reference.
 bool is_indirect_type(tree type);
 const BorrowRoute& borrow_route(tree result, tree held);
+// The targets of TYPE (route.cpp): each type that its pointers name, also in its
+// fields and in the arguments of an owner.  The set holds ~0U for a target that can
+// name each object.
+const TypeSet& types_named_by(tree type);
+// True when a borrow of the types NAMED and a borrow of the types LENT can name one
+// object.  A set that holds ~0U meets each set that is not empty.
+bool can_name_one_object(const TypeSet& named, const TypeSet& lent);
 // The class TYPE and each part of it by value that has an end.
 const TypeSet& ended_parts(tree type);
 // Each class with an end that an object of TYPE holds in a member of a union.

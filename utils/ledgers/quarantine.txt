@@ -316,7 +316,7 @@ test/ | c-array-object | 49 | - | -
 test/ | c-library-call | 91 | - | -
 test/ | c-library-object | 7 | - | -
 test/ | door-header | 3 | - | -
-test/ | enum-cast | 31 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
+test/ | enum-cast | 30 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/ | foreign-symbol | 12 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | opted-out | 8 | ABI: dlsym finds each entry point of a test library by its C name | the case fallbacks of test_process_wide_across_libraries finds the two entry points of each test library by their C names with dlsym, as Python finds the entry points of the vessel, so the two declarations have C linkage
@@ -371,7 +371,7 @@ test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Ci
 test/ | region | 1 | PROBE: two parameters get one unique view to read its old name | the kind two-names of the rule view-escape makes each call that gives one linear object or one unique view to two parameters a compile error, so a test of such a call stands in a PROBE region
 test/ | replace-pending:<limits> | 7 | - | -
 test/ | replace-pending:std::bit_cast | 24 | - | -
-test/ | std-entity | 297 | - | -
+test/ | std-entity | 296 | - | -
 test/ | std-object | 101 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
@@ -597,6 +597,7 @@ test/foundation/ | opted-out | 88 | ORACLE: the differential test of the Scalar 
 test/foundation/ | opted-out | 15 | ORACLE: the printf of the C library gives the fixed text and the padded text | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/foundation/ | opted-out | 8 | ORACLE: the std algorithms are the model of the scans | -
 test/foundation/ | opted-out | 75 | ORACLE: the std types that the Choice family replaces give the state of each step | the differential test of the sums runs each step on std::optional, std::expected and std::variant as its oracle, in one ORACLE region
+test/foundation/ | opted-out | 3 | PROBE: a View from before the frame compares its address with the run of the frame | a test of an in-place frame compares the address of a View from before the frame with the run of the frame, which the kind stale-borrow of the rule view-escape refuses, so it stands in a PROBE region
 test/foundation/ | opted-out | 1 | PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes | a test of the validity test makes a Ref with zero bytes through a bit copy, as a decode of wire bytes does
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
@@ -641,6 +642,7 @@ test/foundation/ | region | 1 | ORACLE: the differential test of the Scalar fami
 test/foundation/ | region | 1 | ORACLE: the printf of the C library gives the fixed text and the padded text | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/foundation/ | region | 1 | ORACLE: the std algorithms are the model of the scans | -
 test/foundation/ | region | 1 | ORACLE: the std types that the Choice family replaces give the state of each step | the differential test of the sums runs each step on std::optional, std::expected and std::variant as its oracle, in one ORACLE region
+test/foundation/ | region | 3 | PROBE: a View from before the frame compares its address with the run of the frame | a test of an in-place frame compares the address of a View from before the frame with the run of the frame, which the kind stale-borrow of the rule view-escape refuses, so it stands in a PROBE region
 test/foundation/ | region | 1 | PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes | a test of the validity test makes a Ref with zero bytes through a bit copy, as a decode of wire bytes does
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions

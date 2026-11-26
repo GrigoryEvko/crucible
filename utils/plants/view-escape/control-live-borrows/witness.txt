@@ -13,7 +13,10 @@
 # no callee ends it.  In the unit through a closure argument holds a borrow through
 # its captures, beside an argument that gives an object, but no callee changes the
 # object of the borrow: a capture of the owner itself (31), a View of a different
-# owner (38), and a callee that only reads the owner (45).
+# owner (38), and a callee that only reads the owner (45).  In the unit in_place a
+# closure argument holds a View beside a frame door that lends no object of the View
+# in place: the frame of a different array (17), and the door update, which gives the
+# body a copy of the element (29).
 
 compile live src/live.cpp
 flag live -freflection
@@ -46,3 +49,7 @@ exit beside pass
 compile through src/through.cpp
 flag through -freflection
 exit through pass
+
+compile in_place src/in_place.cpp
+flag in_place -freflection
+exit in_place pass
