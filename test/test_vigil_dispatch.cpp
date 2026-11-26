@@ -167,6 +167,7 @@ int main() {
     test_second_producer_gets_no_proof(test);
     test_second_thread_cannot_claim_the_brand(test);
     test_released_claim_lets_another_thread_claim(test);
+    test_try_claim_refuses_a_wrong_thread(test);
     test_dispatch_basic();
     test_dispatch_divergence();
     test_dispatch_recovery();

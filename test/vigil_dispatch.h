@@ -52,6 +52,7 @@ void test_cold_gates_reject_a_context_on_another_thread(::fixy::TestRunnerCtx co
 void test_second_producer_gets_no_proof(::fixy::TestRunnerCtx const& test);
 void test_second_thread_cannot_claim_the_brand(::fixy::TestRunnerCtx const& test);
 void test_released_claim_lets_another_thread_claim(::fixy::TestRunnerCtx const& test);
+void test_try_claim_refuses_a_wrong_thread(::fixy::TestRunnerCtx const& test);
 
 // Replay, divergence and recovery through dispatch_op
 // (test_vigil_dispatch_replay.cpp).

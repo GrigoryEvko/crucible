@@ -154,6 +154,7 @@ foundation/effects/Concurrent.cpp | 2.6 | ::foundation::effects::resource, ::fou
 foundation/effects/Ctx.cpp | 0.3 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/effects/Effect.cpp | 0.1 | ::foundation::effects::cap
 foundation/effects/Resources.cpp | 2.4 | ::foundation::effects, ::foundation::effects::resource, ::foundation::permissions::permission_rows
+foundation/effects/ThreadClaim.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/heap/HeapScope.cpp | unmeasured | ::foundation::permissions::permission_rows
 foundation/os/WideAtomic.cpp | 0.0 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/permissions/Permission.cpp | 1.6 | ::foundation::permissions::permission_rows, ::foundation::permissions::tag, ::foundation::transfer::door_probe_contexts, unknown

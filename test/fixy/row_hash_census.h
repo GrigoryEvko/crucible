@@ -180,6 +180,7 @@
 #include <foundation/effects/Lift.h>
 #include <foundation/effects/Resources.h>
 #include <foundation/effects/Row.h>
+#include <foundation/effects/ThreadClaim.h>
 #include <foundation/NoObject.h>
 #include <foundation/permissions/Fwd.h>
 #include <foundation/permissions/Permission.h>
@@ -1554,6 +1555,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^fe::concurrent_row_descriptors, kMetafunction},
     {^^fe::EffectMask,
      "a set of effect atoms read at run time, from a sample or from bytes on the wire: its type names no row, and bits_from_row projects a row into it"},
+    {^^fe::ThreadClaimCell,
+     "the claim of one thread on one object: a member of the object that it guards, it neither copies nor moves, so "
+     "it is never a kernel signature argument"},
 
     {^^::fixy::AxisRecord,
      "the row of one axis in the table of fixy/Axis.h: it exists only at compile time, and it is never a value"},

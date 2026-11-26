@@ -23,7 +23,8 @@ namespace test_vigil_dispatch {
 namespace {
 
 // The text of the claim check of a thread that holds no producer claim.
-constexpr ::fixy::TextView kNotTheHolder{"foundation: fatal invariant failed: holder == current_tid"};
+constexpr ::fixy::TextView kNotTheHolder{
+    "foundation: fatal invariant failed: outcome != ClaimOutcome::held_by_other_thread"};
 
 }  // namespace
 
@@ -169,7 +170,7 @@ void test_second_thread_cannot_claim_the_brand(::fixy::TestRunnerCtx const& test
             });
             other.join();
         },
-        ::fixy::TextView{"foundation: fatal invariant failed: record != nullptr"});
+        ::fixy::TextView{"foundation: fatal invariant failed: outcome != ClaimOutcome::brand_held_by_other_thread"});
 
     // The Vigils of the cases above are gone, so another thread claims the
     // brand of the Vigil.
@@ -252,6 +253,54 @@ void test_released_claim_lets_another_thread_claim(::fixy::TestRunnerCtx const& 
     CRUCIBLE_TEST_ASSERT(test, action == DispatchResult::Action::RECORD);
 
     ::fixy::check::pass(test, "  test_released_claim_lets_another_thread_claim: PASSED\n");
+}
+
+// The fallible claim gives false where mint_producer_context ends the
+// process, and it changes nothing then.  A second thread gets false for the
+// claim that this thread holds, and for a new object of the brand while this
+// thread holds a live claim.  After the release, the second thread claims.
+// The Vigil gives the same answers through try_claim_producer.
+void test_try_claim_refuses_a_wrong_thread(::fixy::TestRunnerCtx const& test) {
+    ClaimBrand first;
+    CRUCIBLE_TEST_ASSERT(test, first.claim.try_claim() && "a free claim goes to the caller");
+    CRUCIBLE_TEST_ASSERT(test, first.claim.try_claim() && "the holder claims again");
+    bool is_held_claim_refused = false;
+    bool is_brand_refused = false;
+    bool is_claim_kept = false;
+    ::fixy::Atomic<std::uint64_t> first_address{::crucible::test::address_of_thread_bound(first)};
+    run_on_another_thread([&first_address, &is_held_claim_refused, &is_brand_refused, &is_claim_kept] noexcept {
+        ClaimBrand& carried = ::crucible::test::thread_bound_at<ClaimBrand>(first_address.load_acquire());
+        is_held_claim_refused = !carried.claim.try_claim();
+        is_claim_kept = !carried.claim.is_claimable_by_caller();
+        ClaimBrand second;
+        is_brand_refused = !second.claim.try_claim();
+    });
+    CRUCIBLE_TEST_ASSERT(test, is_held_claim_refused && is_claim_kept && "a claim of this thread refuses another");
+    CRUCIBLE_TEST_ASSERT(test, is_brand_refused && "a live claim of the brand refuses a claim on another thread");
+    CRUCIBLE_TEST_ASSERT(test, first.claim.is_claimable_by_caller() && "a refused claim changes nothing");
+
+    first.claim.release_claim();
+    bool is_released_claim_taken = false;
+    run_on_another_thread([&first_address, &is_released_claim_taken] noexcept {
+        ClaimBrand& carried = ::crucible::test::thread_bound_at<ClaimBrand>(first_address.load_acquire());
+        is_released_claim_taken = carried.claim.try_claim();
+        carried.claim.release_claim();
+    });
+    CRUCIBLE_TEST_ASSERT(test, is_released_claim_taken && "a released claim goes to the next caller");
+
+    Vigil vigil;
+    CRUCIBLE_TEST_ASSERT(test, vigil.try_claim_producer() && "a new Vigil goes to the caller");
+    bool is_vigil_refused = false;
+    ::fixy::Atomic<std::uint64_t> vigil_address{::crucible::test::address_of_thread_bound(vigil)};
+    run_on_another_thread([&vigil_address, &is_vigil_refused] noexcept {
+        is_vigil_refused = !::crucible::test::thread_bound_at<Vigil>(vigil_address.load_acquire()).try_claim_producer();
+    });
+    CRUCIBLE_TEST_ASSERT(test, is_vigil_refused && "the claim of the Vigil refuses another thread");
+    auto op = make_op(0, 0);
+    const DispatchResult recorded = crucible::test::dispatch_synthetic(vigil, op.entry, op.metas, op.n_metas);
+    CRUCIBLE_TEST_ASSERT(test, recorded.action == DispatchResult::Action::RECORD);
+
+    ::fixy::check::pass(test, "  test_try_claim_refuses_a_wrong_thread: PASSED\n");
 }
 
 }  // namespace test_vigil_dispatch

@@ -3467,6 +3467,11 @@ target_link_libraries(test_alloc_heap_state PRIVATE fixy)
 # a capture of the result.
 foundation_test(test_heap_scope)
 target_link_libraries(test_heap_scope PRIVATE fixy)
+# The claim cell of foundation/effects/ThreadClaim.h: a free cell goes to the
+# first caller, another thread gets false and changes nothing, and of four
+# threads that claim one free cell at one time, one gets true.
+foundation_test(test_thread_claim)
+target_link_libraries(test_thread_claim PRIVATE fixy)
 foundation_neg_compile_test(neg_heap_scope_release_into_other_brand
   "no matching function for call to .foundation::heap::HeapScope<.*>::release\\("
   "neg_heap_scope_release_into_other_brand\\.cpp:[0-9]+:[0-9]+: error:")

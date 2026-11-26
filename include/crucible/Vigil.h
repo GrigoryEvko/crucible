@@ -383,6 +383,15 @@ public:
     // a program with no defined producer, and this query cannot repair it.
     [[nodiscard]] bool is_producer_thread() const noexcept { return producer_claim_.is_claimable_by_caller(); }
 
+    // Claims the producer role of this Vigil for the calling thread, or gives
+    // false (try_claim of ProducerClaim).  True when the calling thread holds
+    // the claim after the call.  False when another thread holds it, or holds
+    // a live claim of another Vigil, and nothing changes then.  A front end
+    // whose calls come from a foreign runtime asks this before
+    // mint_producer_context, so a call on a wrong thread gives its refusal and
+    // never ends the process.  Two threads that ask at one time get one true.
+    [[nodiscard]] CRUCIBLE_INLINE bool try_claim_producer() noexcept { return producer_claim_.try_claim(); }
+
     // Gives up the producer claim of the calling thread (release_claim of
     // ProducerClaim).  The next op claims this Vigil again, from any thread.
     // With no claim, nothing changes.  A claim of another thread ends the

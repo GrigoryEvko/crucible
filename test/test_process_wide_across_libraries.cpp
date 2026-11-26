@@ -332,7 +332,7 @@ void test_the_reader_sees_the_claim(::fixy::TestRunnerCtx const& test, fo::Libra
             auto body = claim_a_second_brand;
             static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body)));
         },
-        ::fixy::TextView{"foundation: fatal invariant failed: record != nullptr"});
+        ::fixy::TextView{"foundation: fatal invariant failed: outcome != ClaimOutcome::brand_held_by_other_thread"});
 
     find<decltype(process_wide_release_brand)>(writer, "process_wide_release_brand")(brand);
     if (on_other_thread(is_usable) != 1) fail_claim("the claim ends when its brand is destroyed");

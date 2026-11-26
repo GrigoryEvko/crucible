@@ -624,6 +624,22 @@ public:
         return ExecCtx<ctx_cap::BrandedFg<Brand>, Row<>>{ForegroundOwner::key()};
     }
 
+    // Claims this state for the calling thread, or gives false.  True when the
+    // calling thread holds the claim after the call, also when it held it
+    // before.  False when another thread holds this claim, or holds a live
+    // claim of another state of the brand, and nothing changes then.  No
+    // branch ends the process, so a caller whose thread comes from outside
+    // the program, such as a C entry of a foreign runtime, gives its refusal
+    // on false.  After a true, mint_producer_context on the same thread takes
+    // its fast path and never ends the process.  The part that inlines is the
+    // one of mint_producer_context.
+    [[nodiscard]] CRUCIBLE_INLINE bool try_claim() noexcept {
+        const std::uintptr_t current_tid = detail::producer_claim::calling_thread_identity();
+        if (holder_now_() == current_tid) [[likely]]
+            return true;
+        return claim_(current_tid) == ClaimOutcome::claimed;
+    }
+
     // Gives up the claim of the calling thread.  The next request for a
     // context claims again, from any thread.  With no claim, nothing changes.
     // A claim of another thread ends the process in each build.
@@ -708,31 +724,46 @@ private:
     // exchange acquires.
     CRUCIBLE_INLINE void free_holder_() noexcept { holder_.store(0, std::memory_order_release); }
 
-    [[gnu::cold, gnu::noinline]] void claim_or_reject_(std::uintptr_t current_tid) noexcept {
+    // The outcome of a claim of the calling thread: the thread holds the
+    // claim, another thread holds it, or another thread holds a live claim of
+    // another state of the brand.
+    enum class ClaimOutcome : std::uint8_t {
+        claimed,
+        held_by_other_thread,
+        brand_held_by_other_thread,
+    };
+
+    // The claim of the calling thread, with no end of the process.  A failed
+    // claim changes nothing.
+    [[gnu::cold, gnu::noinline]] ClaimOutcome claim_(std::uintptr_t current_tid) noexcept {
         std::uintptr_t holder = holder_now_();
-        if (holder == 0) {
-            // The exchange acquires the release store of release_claim, so
-            // the writes of the thread that gave up the claim happen before
-            // each access of this thread.  A failed exchange leaves the
-            // winner's id in `holder`, which the check below reports.
-            if (holder_.compare_exchange_strong(holder, current_tid, std::memory_order_acquire,
-                                                std::memory_order_relaxed)) {
-                BrandRecord* const record = enter_brand_(current_tid);
-                if (record != nullptr) {
-                    entered_record_ = record;
-                    return;
-                }
-                // Another thread holds a live claim of this brand.  The claim
-                // is undone first, so that its destructor removes no entry
-                // that it did not make.
-                free_holder_();
-                CRUCIBLE_FATAL_INVARIANT(record != nullptr);
-            }
+        if (holder == current_tid) return ClaimOutcome::claimed;
+        if (holder != 0) return ClaimOutcome::held_by_other_thread;
+        // The exchange acquires the release store of release_claim, so the
+        // writes of the thread that gave up the claim happen before each
+        // access of this thread.  A failed exchange leaves the id of the
+        // winner in `holder`, which is not the id of this thread.
+        if (!holder_.compare_exchange_strong(holder, current_tid, std::memory_order_acquire, std::memory_order_relaxed))
+            return ClaimOutcome::held_by_other_thread;
+        BrandRecord* const record = enter_brand_(current_tid);
+        if (record == nullptr) {
+            // Another thread holds a live claim of this brand.  The claim is
+            // undone first, so that its destructor removes no entry that it
+            // did not make.
+            free_holder_();
+            return ClaimOutcome::brand_held_by_other_thread;
         }
-        // Not a contract clause.  The predicate is about a thread identity
+        entered_record_ = record;
+        return ClaimOutcome::claimed;
+    }
+
+    [[gnu::cold, gnu::noinline]] void claim_or_reject_(std::uintptr_t current_tid) noexcept {
+        const ClaimOutcome outcome = claim_(current_tid);
+        // Not contract clauses.  The predicates are about a thread identity
         // this function just read, and a contract evaluates to nothing in a
         // target built with the semantic set to `ignore`.
-        CRUCIBLE_FATAL_INVARIANT(holder == current_tid);
+        CRUCIBLE_FATAL_INVARIANT(outcome != ClaimOutcome::brand_held_by_other_thread);
+        CRUCIBLE_FATAL_INVARIANT(outcome != ClaimOutcome::held_by_other_thread);
     }
 
     // The record of a brand names the one thread that holds its live
