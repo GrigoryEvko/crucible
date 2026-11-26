@@ -899,10 +899,10 @@ tree annotation_class(tree attribute) {
     return CLASS_TYPE_P(type) ? type : NULL_TREE;
 }
 
-// The class of the first annotation of ATTRIBUTES that is the class
+// The first annotation of ATTRIBUTES whose class is the class
 // foundation::SPACE::NAME, or a specialization of the template of that name,
 // or null.  Complexity: linear in the attributes.
-tree find_base_annotation(tree attributes, tree name, tree space) {
+tree base_annotation_attribute(tree attributes, tree name, tree space) {
     static tree const foundation = get_identifier("foundation");
     for (tree attribute = attributes; attribute != NULL_TREE; attribute = TREE_CHAIN(attribute)) {
         tree annotation = annotation_class(attribute);
@@ -919,10 +919,55 @@ tree find_base_annotation(tree attributes, tree name, tree space) {
         }
         if (scope != NULL_TREE && TREE_CODE(scope) == NAMESPACE_DECL && DECL_NAME(scope) == foundation
             && CP_DECL_CONTEXT(scope) == global_namespace) {
-            return annotation;
+            return attribute;
         }
     }
     return NULL_TREE;
+}
+
+tree find_base_annotation(tree attributes, tree name, tree space) {
+    tree const attribute = base_annotation_attribute(attributes, name, space);
+    return attribute != NULL_TREE ? annotation_class(attribute) : NULL_TREE;
+}
+
+tree borrow_target(tree type) {
+    static tree const transfer = get_identifier("transfer");
+    static tree const borrow_marks[] = {
+        get_identifier("refers"),
+        get_identifier("refers_unique"),
+        get_identifier("refers_deep"),
+    };
+    type = type != NULL_TREE && TYPE_P(type) ? TYPE_MAIN_VARIANT(type) : NULL_TREE;
+    if (type == NULL_TREE || !CLASS_TYPE_P(type)) {
+        return NULL_TREE;
+    }
+    tree attribute = NULL_TREE;
+    for (tree mark : borrow_marks) {
+        if (attribute == NULL_TREE) {
+            attribute = base_annotation_attribute(TYPE_ATTRIBUTES(type), mark, transfer);
+        }
+    }
+    if (attribute == NULL_TREE) {
+        return NULL_TREE;
+    }
+    // The value of the annotation is a temporary of the class of the mark, whose
+    // first member is the reflection of the stated target.
+    tree value = TREE_VALUE(TREE_VALUE(attribute));
+    if (value != NULL_TREE && TREE_CODE(value) == TARGET_EXPR) {
+        value = TARGET_EXPR_INITIAL(value);
+    }
+    tree const first = value != NULL_TREE && TREE_CODE(value) == CONSTRUCTOR && CONSTRUCTOR_NELTS(value) > 0
+                         ? CONSTRUCTOR_ELT(value, 0)->value
+                         : NULL_TREE;
+    tree const handle = first != NULL_TREE && TREE_CODE(first) == REFLECT_EXPR ? REFLECT_EXPR_HANDLE(first) : NULL_TREE;
+    if (handle != NULL_TREE && TYPE_P(handle) && TREE_CODE(handle) != LANG_TYPE) {
+        return handle;
+    }
+    tree const info = CLASSTYPE_TEMPLATE_INFO(type);
+    tree const arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    tree const argument =
+        arguments != NULL_TREE && TREE_VEC_LENGTH(arguments) > 0 ? TREE_VEC_ELT(arguments, 0) : NULL_TREE;
+    return argument != NULL_TREE && TYPE_P(argument) ? argument : NULL_TREE;
 }
 
 bool carries_base_annotation(tree attributes, tree name, tree space) {

@@ -1,0 +1,8 @@
+# The rule table of the plant plant-named-target-returns of the rule
+# view-escape.  The unit of src/ is quarantined.  The headers of the repository
+# are outside the root of the plant, so the table admits the names of the base
+# that the planted code uses.
+
+admit foundation::transfer | the mark refers_deep, whose statement names the target of the borrow
+
+quarantine src/

@@ -1,0 +1,6 @@
+# The rule table of the plant plant-named-target-statics of the rule
+# process-wide-state.  The unit of src/ is quarantined.
+
+admit foundation::transfer | the thread_bound marker and the mark refers_deep, which the planted code names
+admit foundation::core | the Choice family, whose sums the planted code holds
+quarantine src/

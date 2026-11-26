@@ -53,8 +53,10 @@
 //     variable is the root of its own path.
 //
 // Referents
-//     A member of a borrow class whose result points at the first type argument
-//     of the class, such as operator* of a Ref, names the object of the borrow.
+//     A member of a borrow class whose result points at the target of the class,
+//     such as operator* of a Ref, names the object of the borrow.  The target is
+//     the type that the statement of the refers mark names, or else the first
+//     type argument (borrow_target of plugin.cpp).
 //     The walk takes that object from the initializer of a local borrow, such as
 //     to(X) or a copy of a local borrow, and from the braced initializer of each
 //     field of a borrow class of an arm.  So a write through a Ref that a capture
@@ -370,9 +372,9 @@ Path lvalue_path(tree node, tree closure, int depth) {
 }
 
 // The path of the object that a borrow names, when the call NODE is a member of
-// a borrow class whose result points at the first type argument of the class,
-// such as operator* or operator-> of a Ref (the referents).  The path is the path
-// of the borrow with the step kReferent, or a path with no root.
+// a borrow class whose result points at the target of the class (borrow_target
+// of plugin.cpp), such as operator* or operator-> of a Ref (the referents).  The
+// path is the path of the borrow with the step kReferent, or a path with no root.
 Path referent_path(tree node, tree closure, int depth) {
     tree const callee = cp_get_callee_fndecl_nofold(node);
     if (callee == NULL_TREE || DECL_LANG_SPECIFIC(callee) == nullptr || !DECL_OBJECT_MEMBER_FUNCTION_P(callee)
@@ -381,11 +383,8 @@ Path referent_path(tree node, tree closure, int depth) {
     }
     tree const owner = TYPE_MAIN_VARIANT(DECL_CONTEXT(callee));
     tree const result = TREE_TYPE(TREE_TYPE(callee));
-    tree const info = CLASS_TYPE_P(owner) ? CLASSTYPE_TEMPLATE_INFO(owner) : NULL_TREE;
-    tree const arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
-    tree const target =
-        arguments != NULL_TREE && TREE_VEC_LENGTH(arguments) > 0 ? TREE_VEC_ELT(arguments, 0) : NULL_TREE;
-    if (!is_borrow_class(owner) || !is_indirect_type(result) || target == NULL_TREE || !TYPE_P(target)
+    tree const target = is_borrow_class(owner) ? borrow_target(owner) : NULL_TREE;
+    if (target == NULL_TREE || !is_indirect_type(result)
         || TYPE_MAIN_VARIANT(TREE_TYPE(result)) != TYPE_MAIN_VARIANT(target)) {
         return {};
     }

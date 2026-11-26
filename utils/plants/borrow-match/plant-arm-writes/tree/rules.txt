@@ -5,6 +5,7 @@
 
 admit foundation::core | the sums Option, Result and OneOf, whose borrow match the planted code calls
 admit foundation::effects | the capability of an allocation of a heap bit set
+admit foundation::transfer | the mark refers_deep of a borrow that names its target
 admit std::move | a cast to an rvalue reference
 admit std::as_const | a read through a const reference
 

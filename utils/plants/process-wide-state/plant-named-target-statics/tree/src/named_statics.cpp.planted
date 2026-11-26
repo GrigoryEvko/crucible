@@ -1,0 +1,28 @@
+// Objects with static storage duration whose types hold a borrow of a class
+// that states thread_bound{}, where the borrow names that class in its
+// statement and takes a tag as its first type argument.  Each thread reaches
+// such an object, so the walk of the thread-bound statics reads the target of
+// the borrow, not its first type argument.
+#include <foundation/Transfer.h>
+#include <foundation/core/Choice.h>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct Tag final {};
+
+struct [[= ::foundation::transfer::thread_bound{}]] PinnedEnd {
+    int handle = 0;
+};
+
+template <class First, class Target>
+struct[[= ::foundation::transfer::refers_deep{^^Target}]] Named {
+    int count = 0;
+};
+
+// A global of the borrow, and a global of an Option of it.
+Named<Tag, PinnedEnd> g_named{};
+Option<Named<Tag, PinnedEnd>> g_slot{};
+
+}  // namespace planted

@@ -1,0 +1,28 @@
+// A borrow whose first type argument is a tag and whose statement names its
+// target names an object of that target.  A return of such a borrow of a
+// local is a finding of the rule view-escape.  A return of such a borrow of a
+// parameter by reference is none.
+#include <foundation/Transfer.h>
+
+namespace planted {
+
+struct Tag final {};
+
+// The statement names the target, and the class keeps a reference to it.
+template <class First, class Target>
+class[[= ::foundation::transfer::refers_deep{^^Target}]] Named {
+public:
+    explicit Named(Target& target) noexcept : target_{target} {}
+
+private:
+    Target& target_;
+};
+
+Named<Tag, int> named_of_local() {
+    int value = 1;
+    return Named<Tag, int>{value};
+}
+
+Named<Tag, int> named_of_parameter(int& value) { return Named<Tag, int>{value}; }
+
+}  // namespace planted

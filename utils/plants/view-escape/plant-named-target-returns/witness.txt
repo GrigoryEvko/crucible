@@ -1,0 +1,10 @@
+# A return of a borrow of a local is an error in each mode also when the
+# borrow names its target in its statement and takes a tag as its first type
+# argument (23).  The return of such a borrow of a parameter by reference (26)
+# is no finding.
+
+compile named src/named_returns.cpp
+flag named -freflection
+exit named fail
+finding named view-escape escaped-borrow src/named_returns.cpp:23:33 | borrow of the local value
+error named src/named_returns.cpp:23 | this function gives back a borrow of the local value, and that object ends with the frame of the function

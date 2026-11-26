@@ -1,7 +1,9 @@
 // The arm of a borrow match holds a Ref of the sum by a capture by copy, and it
 // writes the sum through that Ref: an assignment through operator*, a mutating
 // call through operator->, the same through a copy of a local Ref, and an
-// assignment of a heap bit set whose keys the door lends.
+// assignment of a heap bit set whose keys the door lends.  A borrow whose first
+// type argument is a tag and whose statement names the sum is such a Ref too.
+#include <foundation/Transfer.h>
 #include <foundation/core/BitSet.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
@@ -48,6 +50,27 @@ unsigned long assigned_heap_set(::foundation::effects::Alloc alloc) {
         }
         return count;
     });
+}
+
+// A borrow whose first type argument is a tag names the sum in its statement.
+template <class First, class Target>
+class[[= ::foundation::transfer::refers_deep{^^Target}]] Named {
+public:
+    explicit Named(Target& target) noexcept : target_{target} {}
+    [[nodiscard]] Target& operator*() const noexcept { return target_; }
+
+private:
+    Target& target_;
+};
+
+[[nodiscard]] Named<BitTag, Option<int>> name_of(Option<int>& target) noexcept {
+    return Named<BitTag, Option<int>>{target};
+}
+
+int assigned_through_a_named_borrow() {
+    Option<int> held = Option<int>::some(4);
+    auto other = name_of(held);
+    return held.match([other](int const& value) mutable { *other = none; return value; }, [] { return 0; });
 }
 
 }  // namespace planted

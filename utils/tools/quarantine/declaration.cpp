@@ -2700,12 +2700,7 @@ bool reaches_static_mark(tree type, StaticWalk kind, ReachWalk& walk, int depth)
     static tree const transfer = get_identifier("transfer");
     static tree const loan_key_mark = get_identifier("loan_key_mark");
     static tree const core = get_identifier("core");
-    static tree const first_argument_annotations[] = {
-        get_identifier("payload_cell"),
-        get_identifier("refers"),
-        get_identifier("refers_unique"),
-        get_identifier("refers_deep"),
-    };
+    static tree const payload_cell = get_identifier("payload_cell");
     bool const is_key_walk = kind == StaticWalk::loan_key;
     if (depth > kTypeDepth) {
         walk.reach_unread_part();
@@ -2748,22 +2743,30 @@ bool reaches_static_mark(tree type, StaticWalk kind, ReachWalk& walk, int depth)
             is_held = reaches_static_mark(TREE_TYPE(field), kind, walk, depth + 1);
         }
     }
-    // A class that refers to or holds the object of its first type argument
-    // behind a pointer or in its own bytes states it, as a Ref and an Option
-    // do, and an owner states each argument that it owns, as a Box does.  Each
-    // other type argument can be a brand or a tag, which names no object.  The
-    // walk also reads the members, so it reads the owned arguments of a class
-    // outside the base too: the mark only adds a reach.
+    // A class that holds the object of its first type argument in its own bytes
+    // states payload_cell{}, as an Option does, and an owner states each argument
+    // that it owns, as a Box does.  A class that refers to an object behind a
+    // pointer states a refers mark, and the walk reaches the target of the mark:
+    // the type that its statement names, or else its first type argument
+    // (borrow_target of plugin.cpp).  Each other type argument can be a brand or a
+    // tag, which names no object.  The walk also reads the members, so it reads the
+    // owned arguments of a class outside the base too: the mark only adds a reach.
     OwnedPositions owned = owned_positions(type);
-    for (tree name : first_argument_annotations) {
-        if (!owned.is_stated && carries_base_annotation(TYPE_ATTRIBUTES(type), name, transfer)) {
+    tree target = NULL_TREE;
+    if (!owned.is_stated) {
+        if (carries_base_annotation(TYPE_ATTRIBUTES(type), payload_cell, transfer)) {
             owned = OwnedPositions::first();
+        } else {
+            target = borrow_target(type);
         }
     }
     if (!is_held) {
         visit_owned_arguments(type, owned, [&](tree argument) {
             is_held = is_held || reaches_static_mark(argument, kind, walk, depth + 1);
         });
+    }
+    if (!is_held && target != NULL_TREE) {
+        is_held = reaches_static_mark(target, kind, walk, depth + 1);
     }
     return walk.leave(type, is_held);
 }

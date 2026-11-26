@@ -1,0 +1,15 @@
+# Each object with static storage duration whose type holds a borrow whose
+# statement names a class that states thread_bound{} is the kind
+# thread-bound-static, also when the first type argument of the borrow is a
+# tag: a global of the borrow (25) and a global of an Option of it (26).  Each
+# global can change, so it is unmarked-static too.  Its borrow names no object
+# of static storage, so the rule view-escape gives static-borrow for it as well.
+compile report src/named_statics.cpp errors=report
+flag report -freflection
+exit report fail
+finding report process-wide-state thread-bound-static src/named_statics.cpp:25:23 | planted::g_named
+finding report process-wide-state unmarked-static src/named_statics.cpp:25:23 | planted::g_named
+finding report view-escape static-borrow src/named_statics.cpp:25:23 | planted::g_named
+finding report process-wide-state thread-bound-static src/named_statics.cpp:26:31 | planted::g_slot
+finding report process-wide-state unmarked-static src/named_statics.cpp:26:31 | planted::g_slot
+finding report view-escape static-borrow src/named_statics.cpp:26:31 | planted::g_slot

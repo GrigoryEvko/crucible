@@ -3333,6 +3333,15 @@ void report_open_regions();
 // is_std_as_const() for std::as_const.
 tree annotation_class(tree attribute);
 bool carries_base_annotation(tree attributes, tree name, tree space);
+// borrow_target() gives the target of a borrow class: the type that the
+// statement of its refers, refers_unique or refers_deep mark of
+// foundation/Transfer.h names, as refers_deep{^^T} names T, or else its first type
+// argument, or null for a class with no refers mark.  The target keeps its
+// qualifiers, so a walk of the paths that are not const stops at a Ref of a const
+// object.  A statement that names no type, or the unknown type of an unresolved
+// overloaded function, gives the first type argument too.  Complexity: linear in
+// the attributes of the class.
+tree borrow_target(tree type);
 
 // The type arguments that a class owns, from its annotation by_arguments of
 // include/foundation/Transfer.h: each type argument when the annotation names

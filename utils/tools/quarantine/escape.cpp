@@ -11,10 +11,11 @@
 //   owns an object of each type argument that the mark names, as a Box does,
 //   so the walk reads those arguments and no member.  The rule trusts the mark
 //   only in a class of the base, and reads the members of a marked class
-//   outside it.  A class that states payload_cell{} or one of the three refers
-//   marks holds the object of its first type argument in its own bytes or
-//   behind a pointer, as an Option and a Ref do, so the walk reads that
-//   argument too.  A class of the
+//   outside it.  A class that states payload_cell{} holds the object of its
+//   first type argument in its own bytes, as an Option does, so the walk reads
+//   that argument too.  A class that states one of the three refers marks names
+//   its target: the type that its statement names, as refers_deep{^^T} names T,
+//   or else its first type argument (borrow_target of plugin.cpp).  A class of the
 //   base that states owns_its_storage{} holds no borrow: its pointers name its
 //   own storage.  So a Box of an arena holds no borrow, and the object of a
 //   door of the Box is the Box (the marked owners).  A class of the base that
@@ -103,7 +104,10 @@
 //   the linear design hold: a function returns
 //   a borrow of a parameter that it marks, and a class that cannot move or
 //   copy holds a view of a member that it declares first.  Neither of the two
-//   meets a return or a store of a borrow of a local.
+//   meets a return or a store of a borrow of a local.  A refers mark whose
+//   statement names no type that the plugin can read, such as the unknown type
+//   of an unresolved overloaded function, names the first type argument as its
+//   target.
 //
 // Open bodies
 //   A body can name an owner of a class that is incomplete there, and the unit
@@ -377,11 +381,11 @@ bool is_standard_reference(tree function) {
 constexpr int kNameDepth = 6;
 
 // Adds the types that a borrow of TYPE names: the element of a reference or a
-// pointer, the first type argument of a class with a refers mark, and the
-// targets of each part of a class that holds a borrow, such as an Option of a
-// Ref.  A class with an open answer can name each type in a wide reading, which
-// the target null stands for.  Complexity: linear in the parts of the type, to
-// the depth kNameDepth.
+// pointer, the target of a class with a refers mark (borrow_target of
+// plugin.cpp), and the targets of each part of a class that holds a borrow, such
+// as an Option of a Ref.  A class with an open answer can name each type in a
+// wide reading, which the target null stands for.  Complexity: linear in the
+// parts of the type, to the depth kNameDepth.
 void add_borrow_targets(tree type, std::vector<tree>& out, int depth) {
     if (type == NULL_TREE || type == error_mark_node || depth > kNameDepth) {
         return;
@@ -407,8 +411,9 @@ void add_borrow_targets(tree type, std::vector<tree>& out, int depth) {
     bool const is_borrow = carries_mark(type, escape_names.refers) || carries_mark(type, escape_names.refers_unique)
                         || carries_mark(type, escape_names.refers_deep);
     if (is_borrow) {
-        if (arguments != NULL_TREE && TREE_VEC_LENGTH(arguments) > 0 && TYPE_P(TREE_VEC_ELT(arguments, 0))) {
-            out.push_back(TYPE_MAIN_VARIANT(TREE_VEC_ELT(arguments, 0)));
+        tree const target = borrow_target(type);
+        if (target != NULL_TREE) {
+            out.push_back(TYPE_MAIN_VARIANT(target));
         }
         return;
     }

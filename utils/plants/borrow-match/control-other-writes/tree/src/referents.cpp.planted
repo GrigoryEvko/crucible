@@ -1,7 +1,9 @@
 // The arm of a borrow match holds a Ref by a capture by copy, and no write
 // through it reaches the sum that the match reads: the Ref names a different
 // Option, the Ref of the same Option only reads it, and the write through the
-// Ref comes after the match.
+// Ref comes after the match.  A borrow whose statement names its target, with a
+// tag as its first type argument, names a different Option too.
+#include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
 
@@ -31,6 +33,30 @@ int assigned_after_the_match() {
     int const value = held.match([](int const& payload) { return payload; }, [] { return 0; });
     *other = none;
     return value;
+}
+
+struct Tag final {};
+
+// A borrow whose first type argument is a tag names an Option in its statement.
+template <class First, class Target>
+class[[= ::foundation::transfer::refers_deep{^^Target}]] Named {
+public:
+    explicit Named(Target& target) noexcept : target_{target} {}
+    [[nodiscard]] Target& operator*() const noexcept { return target_; }
+
+private:
+    Target& target_;
+};
+
+[[nodiscard]] Named<Tag, Option<int>> name_of(Option<int>& target) noexcept { return Named<Tag, Option<int>>{target}; }
+
+int assigned_a_different_option_through_a_named_borrow() {
+    Option<int> held = Option<int>::some(5);
+    Option<int> spare = Option<int>::some(6);
+    auto other = name_of(spare);
+    int const value = held.match([other](int const& payload) mutable { *other = none; return payload; },
+                                 [] { return 0; });
+    return value + (spare.is_some() ? 1 : 0);
 }
 
 }  // namespace planted

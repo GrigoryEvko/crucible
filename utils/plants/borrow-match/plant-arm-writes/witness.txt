@@ -78,17 +78,21 @@ flag syntax -freflection
 exit syntax fail
 
 # In the unit referents the arm holds a Ref of the sum by a capture by copy, and
-# it writes the sum through the Ref: an assignment through operator* (18), a
-# mutating call through operator-> (25), an assignment through a copy of a local
-# Ref (33), and an assignment of a heap bit set whose keys with_keys lends (43).
+# it writes the sum through the Ref: an assignment through operator* (20), a
+# mutating call through operator-> (27), an assignment through a copy of a local
+# Ref (35), and an assignment of a heap bit set whose keys with_keys lends (45).
+# A borrow whose first type argument is a tag and whose statement names the sum
+# is such a Ref too (73).
 compile referents src/referents.cpp
 flag referents -freflection
 exit referents fail
-finding referents borrow-match borrow-match src/referents.cpp:18:66 | assignment held
-finding referents borrow-match borrow-match src/referents.cpp:25:39 | mutating-call held
-finding referents borrow-match borrow-match src/referents.cpp:33:66 | assignment held
-finding referents borrow-match borrow-match src/referents.cpp:43:79 | assignment set
-error referents src/referents.cpp:18 | this arm of a borrow match writes the sum that the match reads (assignment held)
-error referents src/referents.cpp:25 | this arm of a borrow match writes the sum that the match reads (mutating-call held)
-error referents src/referents.cpp:33 | this arm of a borrow match writes the sum that the match reads (assignment held)
-error referents src/referents.cpp:43 | this arm of a borrow match writes the sum that the match reads (assignment set)
+finding referents borrow-match borrow-match src/referents.cpp:20:66 | assignment held
+finding referents borrow-match borrow-match src/referents.cpp:27:39 | mutating-call held
+finding referents borrow-match borrow-match src/referents.cpp:35:66 | assignment held
+finding referents borrow-match borrow-match src/referents.cpp:45:79 | assignment set
+finding referents borrow-match borrow-match src/referents.cpp:73:66 | assignment held
+error referents src/referents.cpp:20 | this arm of a borrow match writes the sum that the match reads (assignment held)
+error referents src/referents.cpp:27 | this arm of a borrow match writes the sum that the match reads (mutating-call held)
+error referents src/referents.cpp:35 | this arm of a borrow match writes the sum that the match reads (assignment held)
+error referents src/referents.cpp:45 | this arm of a borrow match writes the sum that the match reads (assignment set)
+error referents src/referents.cpp:73 | this arm of a borrow match writes the sum that the match reads (assignment held)
