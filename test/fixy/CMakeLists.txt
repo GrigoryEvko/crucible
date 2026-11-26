@@ -3525,6 +3525,12 @@ fixy_neg_compile_test(neg_sess_pin_body_captures_the_handle
 fixy_neg_compile_test(neg_sess_pin_body_holds_linear
   "use of deleted function .static void fixy::session::HandleFactory::pin"
   "the body holds a linear value by value, and the door calls it with no consume")
+# The release of a pin moves the pinned handle on, so a body that keeps a View
+# of its Resource in an Option that it captures by reference keeps a borrow
+# past the pin (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
+fixy_neg_compile_test(neg_sess_pin_body_keeps_a_view_of_the_resource
+  "no matching function for call to .fixy::session::HandleFactory::pin\\("
+  "required for the satisfaction of .StoresNoBorrowOutside<Body>.")
 fixy_neg_compile_test(neg_sess_transport_holds_linear
   "no matching function for call to .fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>"
   "required for the satisfaction of .HoldsNoLinearValue<F>.")

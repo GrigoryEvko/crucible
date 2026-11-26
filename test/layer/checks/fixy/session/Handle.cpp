@@ -97,4 +97,39 @@ static_assert(!::foundation::linear::LinearValue<HandleAt<Owes, check::Off>>);
 
 }  // namespace detail::linear_handle_self_test
 
+namespace detail::pin_body_self_test {
+
+// A pin asks StoresNoBorrowOutside of its body.  A body that captures this of
+// a class that holds a session handle reaches the std::source_location of the
+// handle, whose pointer the store walk reads as a writable pointer, so the pin
+// refuses it while the handle holds a std::source_location and no site of the
+// base.  A body that captures only the part that it writes passes.
+struct PinWire {
+    int sent = 0;
+};
+using PinHead = SessionHandle<Send<int, End>, PinWire, void, check::Enforced>;
+class PinStage {
+public:
+    [[nodiscard]] auto body_of_this() noexcept {
+        return [this](auto pinned) noexcept {
+            ++steps_;
+            return pinned;
+        };
+    }
+    [[nodiscard]] auto body_of_steps() noexcept {
+        return [&steps = steps_](auto pinned) noexcept {
+            ++steps;
+            return pinned;
+        };
+    }
+
+private:
+    ::fixy::Option<PinHead> held_{};
+    int steps_ = 0;
+};
+static_assert(!::foundation::core::StoresNoBorrowOutside<decltype(PinStage{}.body_of_this())>);
+static_assert(::foundation::core::StoresNoBorrowOutside<decltype(PinStage{}.body_of_steps())>);
+
+}  // namespace detail::pin_body_self_test
+
 }  // namespace fixy::session

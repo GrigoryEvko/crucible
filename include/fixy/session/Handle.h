@@ -1235,10 +1235,18 @@ public:
     // A pin is a bind, the body and a release in one scope.  The pin calls
     // the body of its caller and does not own it, so the body holds no
     // linear value by value (HoldsNoLinearValue of foundation/Linear.h).
+    // The body gives the pinned handle back, and the release moves it on, so
+    // a borrow of its Resource that the body keeps in an object that it
+    // captures by reference outlives the pin.  So the body stores no borrow
+    // outside the call (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
+    // A handle holds a std::source_location, whose pointer the store walk
+    // reads as a pointer that the body can write.  So a body that captures
+    // this of a class that holds a handle is refused, and such a body
+    // captures the parts that it writes.
     template <typename Ctx, typename Proto, typename Resource, typename LoopCtx, AbandonAction Action, typename PS,
               typename Body>
-        requires ::foundation::effects::IsExecCtx<Ctx> && (!is_terminal_state_v<Proto>)
-              && PinBody<Body> && ::foundation::linear::HoldsNoLinearValue<Body>
+        requires ::foundation::effects::IsExecCtx<Ctx> && (!is_terminal_state_v<Proto>) && PinBody<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>
               && detail::PinBodyGivesAPinnedHandle<
                      Body, SessionHandle<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>>
     [[nodiscard]] static constexpr auto
