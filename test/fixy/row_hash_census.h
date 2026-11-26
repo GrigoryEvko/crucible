@@ -1154,6 +1154,9 @@ inline constexpr StatedZero kZeros[] = {
      "object holds"},
     {^^::foundation::core::FrameRunSlot,
      "a slot of one run of an arena object: a borrow, as a View is, that makes no claim about its elements"},
+    {^^::foundation::core::FrameRunSetSlot,
+     "a slot of a set of runs of an arena object: a table of counts and borrows of runs, which makes no claim about "
+     "their elements"},
     {^^::foundation::core::FrameRef,
      "a borrow of one object that a frame of an arena made: it lives in the frame and owns nothing"},
     {^^::foundation::core::FrameElement,

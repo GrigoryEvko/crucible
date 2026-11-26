@@ -3581,6 +3581,9 @@ foreach(_arena_frame_fixture neg_core_arena_frame_store_across_frames neg_core_a
     "no matching function for call to .foundation::core::ArenaFrame<.*>::store"
     "mismatched types .foundation::core::<lambda\\(\\)>. and .foundation::core::<lambda\\(\\)>.")
 endforeach()
+foundation_neg_compile_test(neg_core_arena_frame_run_set_of_other_frame
+  "no matching function for call to .foundation::core::ArenaFrame<.*>::store_runs"
+  "mismatched types .foundation::core::<lambda\\(\\)>. and .foundation::core::<lambda\\(\\)>.")
 foreach(_arena_frame_fixture neg_core_arena_parcel_seal_of_other_frame neg_core_arena_parcel_body_gives_no_seal)
   foundation_neg_compile_test(${_arena_frame_fixture}
     "no matching function for call to .mint_arena_parcel"

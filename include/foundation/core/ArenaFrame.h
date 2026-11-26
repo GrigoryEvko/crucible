@@ -17,6 +17,9 @@
 //                                   fills a FrameLink or a FrameRunSlot of the
 //                                   holder with a value of the same frame
 //   frame.clear(holder, &H::slot)   empties a FrameLink of the holder
+//   frame.store_runs<Slot, Is...>(holder, &H::slot, runs...)
+//                                   fills one slot of counts of a
+//                                   FrameRunSetSlot and its runs Is
 //   frame.seal(runs...)             the runs, sealed for a parcel
 //   mint_arena_parcel(std::move(box), body)
 //                                   an ArenaParcel: the Box of an arena and the
@@ -82,9 +85,12 @@
 #include <foundation/Transfer.h>
 #include <foundation/core/BumpArena.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Convert.h>
 #include <foundation/core/Link.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
+#include <foundation/core/RunSet.h>
+#include <foundation/reflect/TypeList.h>
 
 #include <cstddef>
 #include <type_traits>
@@ -196,6 +202,47 @@ private:
     constexpr void set_(ArenaRun<T, Family> run) noexcept { run_ = run; }
 
     ArenaRun<T, Family> run_{};
+};
+
+// A slot of a set of runs of the family (foundation/core/RunSet.h): a table of
+// counts and the first element of each run.  Its reads are the reads of the
+// ArenaRunSet, and only a frame fills it, as for FrameLink: frame.store_runs
+// sets the count of one slot of counts and each run of that slot together.
+template <UnsignedInteger Count, ::foundation::brand::IsFreshBrand Family, class... Runs>
+    requires detail::RunsOfSet<Runs...>
+class FrameRunSetSlot final {
+public:
+    constexpr FrameRunSetSlot() noexcept = default;
+    FrameRunSetSlot(FrameRunSetSlot const&) = delete("a slot takes its runs only through a store of a frame");
+    FrameRunSetSlot&
+    operator=(FrameRunSetSlot const&) = delete("a slot takes its runs only through a store of a frame");
+    constexpr ~FrameRunSetSlot() = default;
+
+    // The count at the slot of counts.
+    template <std::size_t Slot>
+    [[nodiscard]] constexpr Count count() const noexcept {
+        return set_.template count<Slot>();
+    }
+
+    // True when the run at index I holds the count of its slot.
+    template <std::size_t I>
+    [[nodiscard]] constexpr bool has_run() const noexcept {
+        return set_.template has_run<I>();
+    }
+
+    // The run at index I, as a View of const elements.
+    template <std::size_t I>
+    [[nodiscard]] constexpr auto view() const& noexcept {
+        return set_.template view<I>();
+    }
+    template <std::size_t I>
+    void view() const&& = delete("a View of a temporary slot dangles when the owner of its runs ends");
+
+private:
+    template <class FrameFamily, class Fresh>
+    friend class ArenaFrame;
+
+    ArenaRunSet<Count, Family, Runs...> set_{};
 };
 
 // One object that a frame made, with the brand of the frame.  It gives the
@@ -347,6 +394,11 @@ template <class Target, class Made, class Family>
 template <class Holder, class Family, class Fresh>
 concept FrameHolder = detail::is_frame_holder_<std::remove_cvref_t<Holder>, Family, Fresh>;
 
+// The run at index I of a set of the runs Runs has its count at the slot Slot.
+template <std::size_t Slot, std::size_t I, class... Runs>
+concept RunOfSlot =
+    (I < sizeof...(Runs)) && (::foundation::reflect::pack_at_t<I, ::foundation::reflect::Pack<Runs...>>::slot == Slot);
+
 // The frame of one arena of a family, with the scope brand Fresh of the call
 // site of its door (the family).  Only the doors of this header build a frame,
 // and the frame lives in the frame of the door.  It has no copy and no move.
@@ -406,6 +458,32 @@ public:
         requires FrameHolder<Holder, Family, Fresh> && std::is_base_of_v<Base, detail::held_t_<Holder>>
     constexpr void clear(Holder const& holder, FrameLink<Target, Family> Base::* slot) noexcept {
         ((*holder).*slot).set_(Option<Ref<Target, Family>>{});
+    }
+
+    // Fills one slot of counts of a set of runs of the holder: the count of
+    // the slot Slot takes the size of the first run, and the run at each index
+    // of Is takes the run at the same position of runs.  Each index names a
+    // run of the slot Slot, and each run is of this frame.  A run of another
+    // size, or a size above the count type, ends the process in each build,
+    // as set of the ArenaRunSet does.
+    template <std::size_t Slot, std::size_t... Is, class Holder, class Base, class Count, class... Runs, class... Mades>
+        requires FrameHolder<Holder, Family, Fresh> && std::is_base_of_v<Base, detail::held_t_<Holder>>
+              && (sizeof...(Is) == sizeof...(Mades)) && (sizeof...(Is) > 0) && (RunOfSlot<Slot, Is, Runs...> && ...)
+    constexpr void store_runs(Holder const& holder, FrameRunSetSlot<Count, Family, Runs...> Base::* slot,
+                              FrameRun<Mades, Family, Fresh>... runs) noexcept {
+        using Set = ArenaRunSet<Count, Family, Runs...>;
+        Set& set = ((*holder).*slot).set_;
+        Record<FrameRun<Mades, Family, Fresh>...> all{runs...};
+        std::size_t const size = all.at(index<0>()).size();
+        set.template set_count<Slot>(
+            narrow<Count>(size).expect("a run of a set holds more elements than the count type of the set holds"));
+        auto const put = [&set]<std::size_t I, class Made>(FrameRun<Made, Family, Fresh>& made) noexcept {
+            FrameRun<typename Set::template element_t<I>, Family, Fresh> run{made};
+            set.template set<I>(run.weaken());
+        };
+        [&put, &all]<std::size_t... Positions>(std::index_sequence<Positions...> /*order*/) noexcept {
+            (put.template operator()<Is>(all.at(index<Positions>())), ...);
+        }(std::index_sequence_for<Mades...>{});
     }
 
     // The runs, sealed for the parcel of this frame (the parcel).

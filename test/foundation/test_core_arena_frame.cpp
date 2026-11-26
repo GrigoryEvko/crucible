@@ -42,6 +42,14 @@ struct Entry {
     fc::FrameLink<Node const, TestFamily> owner{};
 };
 
+// An op with a set of runs: two runs that share the count of slot 0, and one
+// run with the count of slot 1, as the inputs and the scalars of an op are.
+struct Op {
+    fc::FrameRunSetSlot<std::uint16_t, TestFamily, fc::RunOf<std::uint32_t const, 0>, fc::RunOf<std::uint64_t const, 0>,
+                        fc::RunOf<std::uint32_t const, 1>>
+        arrays{};
+};
+
 // An arm of a branch: a value and a link to the node that it runs.  A branch
 // holds a run of arms that are not const, as a branch of the DAG does.
 struct Arm {
@@ -183,6 +191,35 @@ void test_store_fills_a_run_of_arms() {
     CRUCIBLE_FATAL_INVARIANT(total == 12);
 }
 
+// A store of runs fills one slot of counts of a set of runs and each run of
+// that slot, and leaves the other slot as it was.
+void test_store_runs_fills_a_set_of_runs() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    fc::BumpArena<TestFamily> arena = fc::mint_bump_arena<TestFamily>(block);
+    std::uint64_t const total = fc::with_arena_frame(arena, [alloc](auto& frame) noexcept {
+        auto const op = frame.template make<Op>(alloc);
+        auto metas = frame.array(alloc, std::size_t{3}, std::uint32_t{4});
+        auto slots = frame.array(alloc, std::size_t{3}, std::uint64_t{9});
+        frame.template store_runs<0, 0, 1>(op, &Op::arrays, metas, slots);
+        CRUCIBLE_FATAL_INVARIANT(op->arrays.template count<0>() == 3 && op->arrays.template count<1>() == 0);
+        CRUCIBLE_FATAL_INVARIANT(op->arrays.template has_run<0>() && op->arrays.template has_run<2>());
+        auto scalars = frame.array(alloc, std::size_t{2}, std::uint32_t{1});
+        frame.template store_runs<1, 2>(op, &Op::arrays, scalars);
+        std::uint64_t sum = 0;
+        for (std::uint32_t const meta : op->arrays.template view<0>()) {
+            sum += meta;
+        }
+        for (std::uint64_t const slot : op->arrays.template view<1>()) {
+            sum += slot;
+        }
+        for (std::uint32_t const scalar : op->arrays.template view<2>()) {
+            sum += scalar;
+        }
+        return sum;
+    });
+    CRUCIBLE_FATAL_INVARIANT(total == 41);
+}
+
 // A link slot of a base takes an object of a derived class: to() of the base
 // gives the Ref of the family.
 void test_store_links_a_derived_object_to_a_base_slot() {
@@ -259,6 +296,7 @@ int main() {
     test_const_holder_reads_const();
     test_store_fills_the_slots_of_an_element();
     test_store_fills_a_run_of_arms();
+    test_store_runs_fills_a_set_of_runs();
     test_store_links_a_derived_object_to_a_base_slot();
     test_frame_on_a_box_gives_the_box_back();
     test_parcel_carries_its_runs_to_a_second_frame();
