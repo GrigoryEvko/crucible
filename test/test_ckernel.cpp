@@ -106,39 +106,25 @@ int main() {
                                        && "all known ids must have proper names");
     }
 
-    // Rejection of an out-of-range byte is pinned by negative-compile
-    // fixtures.  What this block pins is the accepting half: every byte
-    // below the kernel count builds a validated raw without firing the
-    // contract, and widening it yields the matching enumerator.  The
-    // values chosen are the two ends of the range plus a mid-range
-    // sample, so the coverage is not just the boundaries.
-    {
-        static_assert(sizeof(ValidCKernelIdRaw) == sizeof(uint8_t),
-                      "ValidCKernelIdRaw must collapse to a bare uint8_t");
-
-        // Zero is the lowest valid value, and the default of the field.
-        {
-            const ValidCKernelIdRaw raw = ::fixy::mint_refined<kValidCKernelIdBound>(uint8_t{0});
-            CRUCIBLE_TEST_ASSERT(test, make_ckernel_id(raw) == CKernelId::OPAQUE);
-        }
-
-        // One below the kernel count is the highest valid value.
-        {
-            constexpr uint8_t LAST = static_cast<uint8_t>(ckernel_id_count - 1);
-            const ValidCKernelIdRaw raw = ::fixy::mint_refined<kValidCKernelIdBound>(LAST);
-            CRUCIBLE_TEST_ASSERT(test, make_ckernel_id(raw) == CKernelId::COMM_BARRIER);
-            CRUCIBLE_TEST_ASSERT(test, static_cast<uint8_t>(make_ckernel_id(raw)) == LAST);
-        }
-
-        // Widening must preserve the underlying byte, not renumber it.
-        for (uint8_t v : {uint8_t{1}, uint8_t{42}, uint8_t{100}, static_cast<uint8_t>(CKernelId::SDPA),
-                          static_cast<uint8_t>(CKernelId::CONV2D), static_cast<uint8_t>(CKernelId::ACT_RELU)}) {
-            const ValidCKernelIdRaw raw = ::fixy::mint_refined<kValidCKernelIdBound>(v);
-            const CKernelId id = make_ckernel_id(raw);
-            CRUCIBLE_TEST_ASSERT(test,
-                                 static_cast<uint8_t>(id) == v && "make_ckernel_id must preserve underlying byte");
-        }
+    // A byte widens into a CKernelId through enum_from.  Each byte below the
+    // count of the ids gives the id of that byte, the first byte past the
+    // last id gives none, and so does each larger byte.  The loader refuses
+    // such a byte in an image (test_serialize_release_gate).
+    for (unsigned raw = 0; raw <= 255; ++raw) {
+        const uint8_t byte = static_cast<uint8_t>(raw);
+        const ::fixy::Option<CKernelId> id = ::fixy::enum_from<CKernelId>(byte);
+        const bool names_an_id = std::size_t{byte} < ckernel_id_count;
+        CRUCIBLE_TEST_ASSERT(test, id.is_some() == names_an_id);
+        CRUCIBLE_TEST_ASSERT(test, id.is_none_or([byte](CKernelId named) noexcept {
+            return static_cast<uint8_t>(named) == byte;
+        }) && "enum_from preserves the byte of the id");
     }
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::enum_from<CKernelId>(uint8_t{0}).is_some_and([](CKernelId named) noexcept {
+        return named == CKernelId::OPAQUE;
+    }));
+    CRUCIBLE_TEST_ASSERT(test,
+                         ::fixy::enum_from<CKernelId>(static_cast<uint8_t>(ckernel_id_count - 1))
+                             .is_some_and([](CKernelId named) noexcept { return named == CKernelId::COMM_BARRIER; }));
 
     {
         CKernelTable t;

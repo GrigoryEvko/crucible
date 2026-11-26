@@ -771,16 +771,9 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
                 ::fixy::enum_from_field<TrainingPhase, 2>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
             te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
         }
-        // The explicit bound is what rejects an out-of-range byte in every
-        // build. The typed widening that follows it then holds by
-        // construction.
-        {
-            const uint8_t raw_kernel_id = r.r<uint8_t>();
-            if (std::size_t{raw_kernel_id} >= ckernel_id_count) [[unlikely]] {
-                return ::fixy::err(r.reason_or(LoadError::field_out_of_range));
-            }
-            te.kernel_id = make_ckernel_id(::fixy::mint_refined<kValidCKernelIdBound>(raw_kernel_id));
-        }
+        // The kernel id: enum_from refuses each byte that names no id, in
+        // each build, and the refusal gives the error of the field.
+        te.kernel_id = r.read_enumerator(CKernelId::OPAQUE);
         // Each value of the word is a depth (OpDepth).
         te.depth = OpDepth{r.r<uint16_t>()};
         // Each value of two bits is a tag, and each bit of the data slots is

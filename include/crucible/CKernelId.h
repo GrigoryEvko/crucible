@@ -1,14 +1,12 @@
 #pragma once
 
-// The kernel taxonomy as an enum, and the gate that widens an untrusted
-// byte into it.
+// The kernel taxonomy as an enum, and the count of its ids.
 //
 // A trace entry stores one CKernelId, so every includer of the trace types
 // needs the enum.  The registration table, the classification and the names
 // of the identifiers are in crucible/CKernel.h, which includes this header.
 
 #include <fixy/Core.h>
-#include <fixy/Refined.h>
 #include <foundation/reflect/EnumName.h>
 
 #include <cstddef>
@@ -201,23 +199,9 @@ enum class CKernelId : uint8_t {
 };
 
 // The count of the kernel ids, from reflection.  The ids have no gap, so the
-// count is also the first byte that names no id.
+// count is also the first byte that names no id.  A byte from a trace file or
+// across a foreign runtime widens into a CKernelId only through enum_from of
+// fixy/Core.h, which gives no id for a byte at or past the count.
 inline constexpr std::size_t ckernel_id_count = ::foundation::reflect::enum_count<CKernelId>;
-
-// The gate for widening an untrusted byte back into CKernelId. A byte
-// recovered from a trace file or across a foreign-runtime boundary can be out
-// of range after version skew or corruption, and a bare static_cast would turn
-// it into an enum value no switch handles. Admitting only the bytes below
-// ckernel_id_count makes the widening below total.  The one door into the
-// type is ::fixy::mint_refined<kValidCKernelIdBound>(byte).  Each byte below
-// the count names a kernel (the check file of crucible/CKernel.h), so the
-// widening has its proof in the type.
-inline constexpr auto kValidCKernelIdBound = ::fixy::bounded_above<ckernel_id_count - 1>;
-
-using ValidCKernelIdRaw = ::fixy::Refined<kValidCKernelIdBound, uint8_t>;
-
-[[nodiscard, gnu::const]] inline constexpr CKernelId make_ckernel_id(ValidCKernelIdRaw raw) noexcept {
-    return ::fixy::enum_from<CKernelId>(raw.value()).expect("a ValidCKernelIdRaw names an enumerator");
-}
 
 }  // namespace crucible

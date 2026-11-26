@@ -10,10 +10,8 @@ static_assert(::fixy::no_scoped_view_field_check<CKernelTable>());
 
 static_assert(sizeof(CKernelTableSingleton) == sizeof(CKernelTable*));
 
-// Each byte below ckernel_id_count names a kernel, and the count names none.
-// ValidCKernelIdRaw holds a byte below the count, so the expect of
-// make_ckernel_id of crucible/CKernelId.h has its proof in the type and never
-// ends the process.
+// Each byte below ckernel_id_count names a kernel, and the count names none,
+// so enum_from widens exactly the bytes of the ids.
 [[nodiscard]] consteval bool names_each_byte_below_the_count() {
     for (uint8_t raw = 0; std::size_t{raw} < ckernel_id_count; ++raw) {
         if (::fixy::enum_from<CKernelId>(raw).is_none()) return false;
