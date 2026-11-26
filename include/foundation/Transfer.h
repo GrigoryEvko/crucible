@@ -151,6 +151,15 @@
 //     writer, as a ViewMut does.  refers_deep{} states that the class refers
 //     to that object, and that a const object of the class gives only const
 //     access to it and does not copy, as a Link does.
+//     refers_static{} states that each pointer that the class holds as its
+//     own data member names an object of static storage, as the pointer of a
+//     StaticText does.  No frame holds such an object, so the pointer is no
+//     borrow of a frame.  The walks of this header do not read the mark:
+//     sendable{} and the other statements give the properties of such a
+//     class.  The store check of foundation/core/CaptureStore.h reads such a
+//     pointer as no borrow slot.  It trusts the mark only in a class of the
+//     base, and the check file of each marked class pins that no constructor
+//     takes a pointer of the run time.
 //     thread_bound{} states that the class belongs to one owner thread: a
 //     value does not move to another thread, and no other thread writes it.
 //     The class then is not Sendable and two threads cannot write it, but it
@@ -364,6 +373,7 @@ struct by_arguments final {};
 struct refers final {};
 struct refers_unique final {};
 struct refers_deep final {};
+struct refers_static final {};
 struct thread_bound final {};
 struct payload_cell final {};
 struct synchronized final {};

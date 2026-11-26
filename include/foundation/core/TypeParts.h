@@ -186,6 +186,11 @@ struct TypeParts {
     // A handle of the base that states keeps_own_borrows{}.  The store check
     // reads it as no borrow slot.
     bool keeps_own_borrows = false;
+    // A class of the base that states refers_static{} of foundation/Transfer.h,
+    // such as a StaticText: each pointer that it holds as its own data member
+    // names static storage.  The store check reads such a pointer as no borrow
+    // slot, and reads each other part of the class.
+    bool refers_static = false;
     // A class with an array of bytes or a union in a member.  Such a member can
     // hold a value of a type argument.  A class with no such member holds a
     // value of a type argument only in a member of a type that names it, which
@@ -458,13 +463,14 @@ consteval void list_arguments_(TypeParts& parts, PartList<Room>& list, std::meta
 
 // Reads the marks of the class that a walk reads: is_borrow and
 // gives_const_access, is_storage_owner and the marks of an owner, the key
-// mark, keeps_own_borrows, and is_share.
+// mark, keeps_own_borrows, refers_static, and is_share.
 consteval void read_marks_(TypeParts& parts, std::meta::info type) {
     namespace tr = ::foundation::transfer;
     bool states_owner = false;
     bool owns_arguments = false;
     bool refers_deep = false;
     bool keeps_own = false;
+    bool refers_static = false;
     std::vector<std::meta::info> const annotations = std::meta::annotations_of(type);
     std::meta::info const* const first = annotations.data();
     std::size_t const count = annotations.size();
@@ -487,16 +493,19 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
             parts.is_key_marked = true;
         } else if (mark == ^^keeps_own_borrows) {
             keeps_own = true;
+        } else if (mark == ^^tr::refers_static) {
+            refers_static = true;
         } else if (mark == ^^tr::shares) {
             parts.is_share = true;
         }
     }
-    if (!states_owner && !refers_deep && !keeps_own) return;
+    if (!states_owner && !refers_deep && !keeps_own && !refers_static) return;
     bool const is_of_the_base = ::foundation::reflect::is_class_of_the_base_(type);
     parts.is_storage_owner = states_owner && is_of_the_base && !parts.is_share;
     parts.states_by_arguments = owns_arguments && is_of_the_base;
     parts.gives_const_access = refers_deep && is_of_the_base;
     parts.keeps_own_borrows = keeps_own && is_of_the_base;
+    parts.refers_static = refers_static && is_of_the_base;
 }
 
 // True when the state of a core states releases_nothing as true

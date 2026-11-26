@@ -72,6 +72,10 @@
 //       and the walk reads no part of it.  Each door of it that stores an
 //       object runs ArenaKeeps, so the object holds borrows only of the brand
 //       of the handle
+//     * a pointer member of a class of the base that states refers_static{}
+//       (foundation/Transfer.h), such as the pointer of a StaticText, names
+//       static storage, so it is no borrow slot.  The walk reads each other
+//       part of the class
 //     * each other class gives its members.  A class template can hold a
 //       value of a type argument in raw bytes, as a FixedList or an Option
 //       does, so a class with an array of bytes or a union in a member gives
@@ -269,12 +273,14 @@ private:
 // Pushes the bases and the members of the class in the region: a member by
 // reference in the region of its target, a mutable member of an object that
 // the body does not own in the writable region, and each other part in the
-// region of its class.
+// region of its class.  A pointer member of a class of the base that states
+// refers_static{} names static storage, so it is no part of the walk.
 consteval void push_members_(StoreWalk& walk, TypeParts const& parts, StoreRegion region) {
     PartRun const run = parts.run();
     for (std::size_t index = parts.member_start; index < parts.size; ++index) {
         TypePart const part = run[index];
         if (part.has(PartFact::is_plain)) continue;
+        if (parts.refers_static && std::meta::is_pointer_type(part.type)) continue;
         if (part.has(PartFact::was_reference)) {
             walk.push(indirect_node_(part.type, target_region_(part)));
         } else {

@@ -10,6 +10,7 @@
 #include <foundation/core/List.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/StaticText.h>
 
 #include <utility>
 
@@ -283,6 +284,23 @@ struct CapturesUnmarkedHandleOfTheBase {
 static_assert(!is_refused<CapturesEpoch>() && !is_refused<CapturesMarkedHandleOfTheBase>());
 static_assert(is_refused<CapturesUnmarkedHandleOfTheBase>());
 
+// The pointer of a StaticText names static storage (refers_static{} of
+// foundation/Transfer.h), so a capture by reference of an Option of a
+// StaticText passes.  The mark covers only the pointer members of the
+// marked class: a marked class with a View in a member still refuses.
+struct[[= ::foundation::transfer::refers_static{}]] StaticAndView {
+    StaticText text{"text"};
+    View<int> view{};
+};
+struct CapturesStaticText {
+    Option<StaticText>& text;
+};
+struct CapturesStaticAndView {
+    StaticAndView& mixed;
+};
+static_assert(type_parts_v<StaticText>.refers_static && type_parts_v<StaticAndView>.refers_static);
+static_assert(!is_refused<CapturesStaticText>() && is_refused<CapturesStaticAndView>());
+
 }  // namespace detail::capture_store_checks
 
 }  // namespace foundation::core
@@ -322,6 +340,14 @@ struct[[= core::keeps_own_borrows{}]] HandleStash {
     core::Option<core::View<int>> held{};
 };
 static_assert(is_stash_refused<HandleStash>());
+
+// The walk trusts refers_static{} only on a class of the base, so a class
+// outside the base that states it gets no bit, and the walk reads each of its
+// pointer members as a borrow slot.
+struct[[= transfer::refers_static{}]] StaticStash {
+    int count = 0;
+};
+static_assert(!core::detail::type_parts_v<StaticStash>.refers_static);
 
 // The walk trusts refers_deep{} only on a class of the base, so a borrow
 // outside the base that states it and gives its target as it is refuses a

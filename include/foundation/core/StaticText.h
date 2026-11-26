@@ -67,8 +67,13 @@ struct atomic_word<StaticText> {
 };
 
 // The text has static storage, and no thread writes it, so a StaticText
-// moves to another thread with no borrow (foundation/Transfer.h).
-class[[= ::foundation::transfer::sendable{}]] StaticText {
+// moves to another thread with no borrow (foundation/Transfer.h).  Each
+// constructor takes its pointer from a constant or from the word of a cell
+// that to_word gave, so the pointer names static storage (refers_static{}).
+// The fixtures neg_static_text_from_a_pointer and
+// neg_core_static_text_from_runtime_pointer pin that no constructor takes a
+// pointer of the run time.
+class[[= ::foundation::transfer::sendable{}]][[= ::foundation::transfer::refers_static{}]] StaticText {
 public:
     // The text of a string literal.  The constructor is consteval, so a
     // pointer of the run time cannot reach it, a literal with a zero before
