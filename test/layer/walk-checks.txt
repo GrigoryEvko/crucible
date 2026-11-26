@@ -132,6 +132,7 @@ foundation/ChannelBinding.cpp | 0.1 | ::foundation::transfer::door_probe_context
 foundation/Closure.cpp | 1.8 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/Transfer.cpp | 5.2 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/algebra/net/Reflect.cpp | 2.6 | unknown
+foundation/core/ArenaFrame.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Array.cpp | 0.9 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Atomic.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/BumpArena.cpp | unmeasured | unknown

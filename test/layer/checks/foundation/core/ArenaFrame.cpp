@@ -1,0 +1,68 @@
+// The compile-time checks of foundation/core/ArenaFrame.h.
+
+#include <foundation/core/ArenaFrame.h>
+
+#include <foundation/Brand.h>
+#include <foundation/Transfer.h>
+#include <foundation/core/BumpArena.h>
+#include <foundation/core/Link.h>
+#include <foundation/core/Ref.h>
+
+#include <cstdint>
+#include <type_traits>
+
+namespace foundation::core {
+
+namespace detail::arena_frame_checks {
+
+// The family of the checks, and a second family that states no relation to
+// it.
+struct[[= ::foundation::brand::arena_family_brand{}]] Family final {};
+struct[[= ::foundation::brand::arena_family_brand{}]] OtherFamily final {};
+
+// An object with the two slots of the family.
+struct WithSlots {
+    std::uint32_t value = 0;
+    FrameLink<WithSlots, Family> next{};
+    FrameRunSlot<std::uint32_t const, Family> items{};
+};
+
+// A slot does not copy and does not move, so no copy carries a link into an
+// object of a different arena.
+static_assert(!std::is_copy_constructible_v<FrameLink<WithSlots, Family>>);
+static_assert(!std::is_move_constructible_v<FrameLink<WithSlots, Family>>);
+static_assert(!std::is_copy_assignable_v<FrameLink<WithSlots, Family>>);
+static_assert(!std::is_copy_constructible_v<FrameRunSlot<std::uint32_t const, Family>>);
+static_assert(!std::is_copy_assignable_v<FrameRunSlot<std::uint32_t const, Family>>);
+
+// An arena of the family keeps an object with the slots of its family, and an
+// arena of another family refuses it (ArenaKeeps of foundation/core/BumpArena.h).
+static_assert(ArenaKeeps<WithSlots, Family>);
+static_assert(!ArenaKeeps<WithSlots, OtherFamily>);
+
+// The same object with a Link and an ArenaRun in place of the two slots.
+struct WithFamilyForms {
+    std::uint32_t value = 0;
+    Link<WithFamilyForms, Family> next{};
+    ArenaRun<std::uint32_t const, Family> items{};
+};
+
+// A slot moves between threads and is shared as the family form that it holds
+// is (foundation/Transfer.h).
+static_assert(::foundation::transfer::Sendable<WithSlots> == ::foundation::transfer::Sendable<WithFamilyForms>);
+static_assert(::foundation::transfer::Shareable<WithSlots> == ::foundation::transfer::Shareable<WithFamilyForms>);
+
+// Only a frame makes a FrameRef: a family Ref gives none.  No class holds a
+// FrameRef, a FrameRun or a FrameElement as a member, because the rule
+// brand-escape refuses a member that names a scope brand.  The check reads the
+// type in the body of a function, where the scope brand of a frame lives.
+consteval bool is_frame_ref_only_of_a_frame() {
+    using Fresh = CRUCIBLE_SCOPE_BRAND;
+    return !std::is_constructible_v<FrameRef<std::uint32_t, Family, Fresh>, Ref<std::uint32_t, Family>>
+        && !std::is_constructible_v<FrameRun<std::uint32_t, Family, Fresh>, ArenaRun<std::uint32_t, Family>>;
+}
+static_assert(is_frame_ref_only_of_a_frame());
+
+}  // namespace detail::arena_frame_checks
+
+}  // namespace foundation::core

@@ -367,6 +367,21 @@
       "constructor": "(?<!~)\\bArenaBuildKey\\("
     },
     {
+      "name": "neg_witness_core_arenaframe_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bArenaFrame\\("
+    },
+    {
+      "name": "neg_witness_core_arenaframedoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "(?<!~)\\bArenaFrameDoor\\("
+    },
+    {
+      "name": "neg_witness_core_arenaparcel_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bArenaParcel\\("
+    },
+    {
       "name": "neg_witness_core_arenaposition_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bArenaPosition\\("
@@ -375,6 +390,11 @@
       "name": "neg_witness_core_arenarun_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bArenaRun\\("
+    },
+    {
+      "name": "neg_witness_core_arenaseal_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bArenaSeal\\("
     },
     {
       "name": "neg_witness_core_arrayframekeydoor_direct_construction",
@@ -640,6 +660,21 @@
       "name": "neg_witness_core_foreigntextdoor_direct_construction",
       "reason": "use of deleted function",
       "constructor": "(?<!~)\\bForeignTextDoor\\("
+    },
+    {
+      "name": "neg_witness_core_frameelement_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bFrameElement\\("
+    },
+    {
+      "name": "neg_witness_core_frameref_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bFrameRef\\("
+    },
+    {
+      "name": "neg_witness_core_framerun_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bFrameRun\\("
     },
     {
       "name": "neg_witness_core_growtext_direct_construction",
@@ -2383,6 +2418,34 @@
     {
       "type": "foundation::core::ArenaPosition<int, forge::arena>",
       "header": "foundation/core/BumpArena.h"
+    },
+    {
+      "type": "foundation::core::FrameRef<int, forge::arena, forge::brand>",
+      "header": "foundation/core/ArenaFrame.h"
+    },
+    {
+      "type": "foundation::core::FrameElement<int, forge::arena, forge::brand>",
+      "header": "foundation/core/ArenaFrame.h"
+    },
+    {
+      "type": "foundation::core::FrameRun<int, forge::arena, forge::brand>",
+      "header": "foundation/core/ArenaFrame.h"
+    },
+    {
+      "type": "foundation::core::ArenaSeal<forge::arena, forge::brand, int>",
+      "header": "foundation/core/ArenaFrame.h"
+    },
+    {
+      "type": "foundation::core::ArenaFrame<forge::arena, forge::brand>",
+      "header": "foundation/core/ArenaFrame.h"
+    },
+    {
+      "type": "foundation::core::ArenaFrameDoor",
+      "header": "foundation/core/ArenaFrame.h"
+    },
+    {
+      "type": "foundation::core::ArenaParcel<forge::arena, int>",
+      "header": "foundation/core/ArenaFrame.h"
     },
     {
       "type": "foundation::core::CommittedRangeDoor",

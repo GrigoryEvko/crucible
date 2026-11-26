@@ -3566,6 +3566,50 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
     PASS_REGULAR_EXPRESSION "AddressSanitizer: use-after-poison")
 endif()
 
+# The frame of an arena of a family: the stores into the slots of objects of
+# its arena, the setter of many slots, a link to a base, and a parcel.
+foundation_test(test_core_arena_frame)
+target_link_libraries(test_core_arena_frame PRIVATE fixy)
+# A store takes no family Ref from to() and no value of another frame, a slot
+# takes no store outside a frame, also from a member of its holder, and a
+# parcel holds only the runs that the frame of its mint sealed.
+foundation_neg_compile_test(neg_core_arena_frame_store_family_ref
+  "no matching function for call to .foundation::core::ArenaFrame<.*>::store"
+  ".foundation::core::Ref<.anonymous.::Base, .anonymous.::TestFamily>. is not derived from .const foundation::core::FrameRef<Made, .anonymous.::TestFamily, foundation::core::<lambda\\(\\)> >.")
+foreach(_arena_frame_fixture neg_core_arena_frame_store_across_frames neg_core_arena_frame_run_into_other_frame)
+  foundation_neg_compile_test(${_arena_frame_fixture}
+    "no matching function for call to .foundation::core::ArenaFrame<.*>::store"
+    "mismatched types .foundation::core::<lambda\\(\\)>. and .foundation::core::<lambda\\(\\)>.")
+endforeach()
+foreach(_arena_frame_fixture neg_core_arena_parcel_seal_of_other_frame neg_core_arena_parcel_body_gives_no_seal)
+  foundation_neg_compile_test(${_arena_frame_fixture}
+    "no matching function for call to .mint_arena_parcel"
+    "required for the satisfaction of .ArenaParcelBody<Body, Family, Fresh>."
+    "is_seal_of_<.*evaluated to .false.")
+endforeach()
+foundation_neg_compile_test(neg_core_arena_parcel_outside_frame
+  "foundation::core::ArenaParcel<Family, Ts>::ArenaParcel\\(.*. is private within this context"
+  "neg_core_arena_parcel_outside_frame\\.cpp:[0-9]+:[0-9]+: error")
+foreach(_arena_frame_fixture neg_core_arena_frame_body_gives_a_frame_ref neg_core_arena_frame_body_gives_a_seal)
+  foundation_neg_compile_test(${_arena_frame_fixture}
+    "no matching function for call to .with_arena_frame"
+    "required for the satisfaction of .ArenaFrameResult<")
+endforeach()
+foundation_neg_compile_test(neg_core_arena_frame_door_private
+  "foundation::core::ArenaFrameDoor::open\\(.*. is private within this context"
+  "neg_core_arena_frame_door_private\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_arena_frame_box_as_an_lvalue
+  "use of deleted function .void foundation::core::with_arena_frame"
+  "with_arena_frame takes a Box by move and gives it back")
+foundation_neg_compile_test(neg_core_arena_frame_parcel_as_an_lvalue
+  "use of deleted function .void foundation::core::with_arena_frame"
+  "with_arena_frame takes a parcel by move and gives it back")
+foreach(_arena_frame_fixture neg_core_arena_slot_set_outside_a_frame neg_core_arena_slot_member_copies_a_foreign_ref)
+  foundation_neg_compile_test(${_arena_frame_fixture}
+    ".constexpr void foundation::core::FrameLink<T, Family>::set_\\(.*. is private within this context"
+    "${_arena_frame_fixture}\\.cpp:[0-9]+:[0-9]+: error")
+endforeach()
+
 # The spare storage of the growable owners (the spare storage of
 # foundation/core/Heap.h).  Each program reads a slot of its owner that holds
 # no element: a GrowText after a clear, a SmallList on the heap after take_last,

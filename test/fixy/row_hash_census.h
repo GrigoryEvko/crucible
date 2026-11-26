@@ -155,6 +155,7 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/ArenaFrame.h>
 #include <foundation/core/CallRef.h>
 #include <foundation/core/CyclicCursor.h>
 #include <foundation/core/Immortal.h>
@@ -1148,6 +1149,25 @@ inline constexpr StatedZero kZeros[] = {
      "an optional borrow of one object: it owns nothing and makes no claim about what the object holds"},
     {^^::foundation::core::LinkCursor,
      "the position of a loop over a Link: it lives inside the loop, and it is never a value in a signature"},
+    {^^::foundation::core::FrameLink,
+     "a slot of one link of an arena object: an optional borrow that owns nothing and makes no claim about what the "
+     "object holds"},
+    {^^::foundation::core::FrameRunSlot,
+     "a slot of one run of an arena object: a borrow, as a View is, that makes no claim about its elements"},
+    {^^::foundation::core::FrameRef,
+     "a borrow of one object that a frame of an arena made: it lives in the frame and owns nothing"},
+    {^^::foundation::core::FrameElement,
+     "a borrow of one element of a run of a frame of an arena: it lives in the frame and owns nothing"},
+    {^^::foundation::core::FrameRun,
+     "a run of elements that a frame of an arena made: a borrow, as a View is, that lives in the frame"},
+    {^^::foundation::core::ArenaSeal,
+     "the runs that one frame of an arena sealed for a parcel: it lives in the body of the frame, and it is never a "
+     "value in a kernel signature"},
+    {^^::foundation::core::ArenaFrame,
+     "the frame of one arena: it lives in the frame of its door and holds a borrow of the arena"},
+    {^^::foundation::core::ArenaFrameDoor, "the door of the frames of an arena: static members only, never a value"},
+    {^^::foundation::core::ArenaParcel,
+     "the Box of an arena and the runs of a frame on it: it owns storage and makes no claim about the elements"},
     {^^::foundation::core::RefMut,
      "the unique borrow of one object in a frame door: it owns nothing and makes no claim about what the object "
      "holds"},
