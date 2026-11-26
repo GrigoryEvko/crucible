@@ -57,6 +57,21 @@ static_assert(std::is_assignable_v<NodeLink&, NodeLink&> && !std::is_copy_assign
 static_assert(std::is_constructible_v<Node, Node&> && !std::is_copy_constructible_v<Node>);
 static_assert(std::is_nothrow_move_constructible_v<NodeLink> && std::is_trivially_destructible_v<NodeLink>);
 
+// A Link of a const target copies also from a const Link, and so does a class
+// that holds one.  The gate of the copy takes no byte.
+using ReadLink = Link<Node const, Chain>;
+struct HoldsReadLink {
+    ReadLink read{};
+};
+static_assert(std::is_copy_constructible_v<ReadLink> && std::is_copy_assignable_v<ReadLink>);
+static_assert(std::is_copy_constructible_v<HoldsReadLink> && std::is_copy_assignable_v<HoldsReadLink>);
+static_assert(sizeof(ReadLink) == sizeof(void*));
+static_assert(std::is_constructible_v<ConstCopyGate<int>, ConstCopyGate<int>&>);
+static_assert(!std::is_copy_constructible_v<ConstCopyGate<int>> && !std::is_copy_assignable_v<ConstCopyGate<int>>);
+static_assert(std::is_copy_constructible_v<ConstCopyGate<int const>>
+              && std::is_copy_assignable_v<ConstCopyGate<int const>>);
+static_assert(std::is_empty_v<ConstCopyGate<int>> && std::is_empty_v<ConstCopyGate<int const>>);
+
 // A Link that is not const gives a Ref<T, Brand>, and a const Link gives only
 // a Ref<T const, Brand>, by each door.
 static_assert(std::is_same_v<decltype(std::declval<NodeLink&>().expect("")), Ref<Node, Chain>>);
@@ -133,6 +148,12 @@ CRUCIBLE_CLOSED_SURFACE(link_names, NodeLink);
 static_assert(transfer::Shareable<Node> && transfer::Shareable<NodeLink const>);
 static_assert(!transfer::Sendable<NodeLink> && !transfer::SendableBeside<NodeLink>);
 static_assert(transfer::Sendable<Link<Cell, Chain>> && transfer::SendableBeside<Link<Cell, Chain>>);
+// A Link of a const target is a reference to const of its object: Sendable
+// when two threads can read the object, and SendableBeside only when two
+// threads can write it.
+static_assert(transfer::Sendable<ReadLink> && transfer::Shareable<ReadLink>);
+static_assert(!transfer::SendableBeside<ReadLink> && !transfer::SendableOwned<ReadLink>);
+static_assert(transfer::SendableBeside<Link<Cell const, Chain>>);
 
 // A walk of a chain of two nodes, which writes through a Link that is not
 // const and reads through a const Link.

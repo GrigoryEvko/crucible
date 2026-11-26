@@ -27,12 +27,18 @@
 //   for (Ref<T, Brand> object : link)
 //                             one pass over the object, or no pass
 //
-// A Link copies only from a Link that is not const, as a mutable borrow of
-// Rust moves but does not copy out of a shared borrow.  So no copy of a const
-// Link writes the object.  A Link states refers_deep{} (foundation/Transfer.h).
-// Two threads can read one const Link when two threads can read the object.
-// A copy of a Link that is not const refers to the same object and can write
-// it, so a Link is Sendable only when two threads can write the object.
+// A Link of a target that is not const copies only from a Link that is not
+// const, as a mutable borrow of Rust moves but does not copy out of a shared
+// borrow.  So no copy of a const Link writes the object.  A Link of a const
+// target copies also from a const Link, as a shared borrow of Rust copies,
+// because the copy gives only const access too.  ConstCopyGate below gives
+// the two forms.  A Link states refers_deep{^^T} (foundation/Transfer.h),
+// which names T as its target.  Two
+// threads can read one const Link when two threads can read the object.  A
+// copy of a Link that is not const refers to the same object and can write
+// it, so a Link of a target that is not const is Sendable only when two
+// threads can write the object.  A Link of a const target is Sendable when
+// two threads can read the object.
 
 #include <foundation/Brand.h>
 #include <foundation/Transfer.h>
@@ -43,6 +49,31 @@
 #include <utility>
 
 namespace foundation::core {
+
+// The member that gives a class that states refers_deep{} its copy, such as
+// a Link or an ArenaRun.  A copy of a const object of such a class must not
+// give a writer of its target (foundation/Transfer.h).  The gate of a target
+// that is not const copies only from a gate that is not const.  The gate of a
+// const target copies also from a const gate, because no copy writes a const
+// target.  The holder declares no copy and no move, so its implicit copy
+// takes the form of the copy of its gate, and so does the implicit copy of
+// each class that holds the holder.  The holder names the same target in
+// its statement, refers_deep{^^Target}, because the transfer walk admits a
+// copy from a const object only for a named const target.  Under
+// [[no_unique_address]] the gate takes no byte.
+template <class Target>
+class ConstCopyGate final {
+public:
+    constexpr ConstCopyGate() noexcept = default;
+    constexpr ConstCopyGate(ConstCopyGate& other) noexcept = default;
+    constexpr ConstCopyGate(ConstCopyGate&& other) noexcept = default;
+    constexpr ConstCopyGate& operator=(ConstCopyGate& other) noexcept = default;
+    constexpr ConstCopyGate& operator=(ConstCopyGate&& other) noexcept = default;
+    constexpr ~ConstCopyGate() = default;
+};
+
+template <class Target>
+class ConstCopyGate<Target const> final {};
 
 // The cursor of the pass over a Link.  It holds a copy of the Ref, so a pass
 // over a temporary Link reads no object that the full expression ends.
@@ -74,7 +105,7 @@ private:
 };
 
 template <class T, ::foundation::brand::IsFreshBrand Brand>
-class[[= ::foundation::transfer::refers_deep{}]] Link final {
+class[[= ::foundation::transfer::refers_deep{^^T}]] Link final {
 public:
     // A Link that refers to no object.
     constexpr Link() noexcept = default;
@@ -86,14 +117,9 @@ public:
     constexpr Link(Option<Ref<T, Brand>> target) noexcept : target_{target} {}
     constexpr Link(Ref<T, Brand> target) noexcept : target_{some(target)} {}
 
-    // A copy takes a Link that is not const.  No constructor takes a const
-    // Link, so a class that holds a Link copies only from an object that is
-    // not const too.
-    constexpr Link(Link& other) noexcept = default;
-    constexpr Link(Link&& other) noexcept = default;
-    constexpr Link& operator=(Link& other) noexcept = default;
-    constexpr Link& operator=(Link&& other) noexcept = default;
-    constexpr ~Link() = default;
+    // The Link declares no copy and no move.  Its gate gives the copy: from a
+    // Link that is not const, or also from a const Link of a const target.  A
+    // class that holds a Link gets the same copy.
 
     [[nodiscard]] constexpr bool is_some() const noexcept { return target_.is_some(); }
     [[nodiscard]] constexpr bool is_none() const noexcept { return target_.is_none(); }
@@ -194,6 +220,7 @@ public:
 
 private:
     Option<Ref<T, Brand>> target_{};
+    [[no_unique_address]] ConstCopyGate<T> gate_{};
 };
 
 }  // namespace foundation::core

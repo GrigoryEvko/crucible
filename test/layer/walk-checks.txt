@@ -135,7 +135,7 @@ foundation/algebra/net/Reflect.cpp | 2.6 | unknown
 foundation/core/ArenaFrame.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Array.cpp | 0.9 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Atomic.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
-foundation/core/BumpArena.cpp | unmeasured | unknown
+foundation/core/BumpArena.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/CaptureStore.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/KeyWalk.cpp | unmeasured | unknown
 foundation/core/Link.cpp | 0.3 | ::foundation::transfer::door_probe_contexts, unknown

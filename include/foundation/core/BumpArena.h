@@ -347,28 +347,25 @@ class ArenaRefDoor final : ::foundation::NoObject<ArenaRefDoor> {
 // gives the View of an lvalue run for a read in place.  That View carries no
 // brand (epochs above).
 //
-// A const run gives its elements only as const, and it does not copy, as a
-// Link does: a copy takes a run that is not const.  So a reader of a const
-// object that holds a run writes no element through the run, and the run
-// states refers_deep{} (foundation/Transfer.h).  The check file of this header
-// pins each const door.
+// A const run gives its elements only as const, as a Link does.  A run of
+// elements that are not const copies only from a run that is not const.  A
+// run of const elements copies also from a const run, because the copy gives
+// only const elements too.  ConstCopyGate of foundation/core/Link.h gives the
+// two forms.  So a reader of a const object that holds a run writes no
+// element through the run, and the run states refers_deep{^^T}
+// (foundation/Transfer.h), which names T as its target.  The check file of
+// this header pins each const door and each copy.
 template <ViewElement T, ::foundation::brand::IsBrand Brand>
-class[[= ::foundation::transfer::refers_deep{}]] ArenaRun final {
+class[[= ::foundation::transfer::refers_deep{^^T}]] ArenaRun final {
 public:
     using brand_type = Brand;
 
     // The empty run, which names no byte.
     constexpr ArenaRun() noexcept = default;
 
-    // A copy takes a run that is not const.  The rule holds for a run of
-    // const elements too, because a class that states refers_deep{} and
-    // copies from a const object holds no transfer property
-    // (foundation/Transfer.h).
-    constexpr ArenaRun(ArenaRun& other) noexcept = default;
-    constexpr ArenaRun(ArenaRun&& other) noexcept = default;
-    constexpr ArenaRun& operator=(ArenaRun& other) noexcept = default;
-    constexpr ArenaRun& operator=(ArenaRun&& other) noexcept = default;
-    constexpr ~ArenaRun() = default;
+    // The run declares no copy and no move.  Its gate gives the copy: from a
+    // run that is not const, or also from a const run of const elements.  A
+    // class that holds a run, such as a FrameRun, gets the same copy.
 
     // The run of the same elements as const, with the same brand, also from
     // a const run.
@@ -411,6 +408,7 @@ private:
     constexpr explicit ArenaRun(View<T> run) noexcept : run_{run} {}
 
     View<T> run_{};
+    [[no_unique_address]] ConstCopyGate<T> gate_{};
 };
 
 namespace detail {

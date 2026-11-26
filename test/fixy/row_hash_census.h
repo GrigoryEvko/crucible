@@ -1150,6 +1150,8 @@ inline constexpr StatedZero kZeros[] = {
      "an optional borrow of one object: it owns nothing and makes no claim about what the object holds"},
     {^^::foundation::core::LinkCursor,
      "the position of a loop over a Link: it lives inside the loop, and it is never a value in a signature"},
+    {^^::foundation::core::ConstCopyGate,
+     "the member that gives a borrow its copy: it holds no value, and it is never a value in a signature"},
     {^^::foundation::core::FrameLink,
      "a slot of one link of an arena object: an optional borrow that owns nothing and makes no claim about what the "
      "object holds"},

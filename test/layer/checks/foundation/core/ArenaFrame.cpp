@@ -94,6 +94,21 @@ consteval bool is_frame_ref_only_of_a_frame() {
 }
 static_assert(is_frame_ref_only_of_a_frame());
 
+// A FrameRun copies as its ArenaRun does: a run of elements that are not
+// const only from a run that is not const, and a run of const elements also
+// from a const run.  A const run of const elements gives its family run.
+consteval bool copies_as_its_family_run() {
+    using Fresh = CRUCIBLE_SCOPE_BRAND;
+    using Writable = FrameRun<std::uint32_t, Family, Fresh>;
+    using Read = FrameRun<std::uint32_t const, Family, Fresh>;
+    return std::is_constructible_v<Writable, Writable&> && !std::is_constructible_v<Writable, Writable const&>
+        && !std::is_assignable_v<Writable&, Writable const&> && std::is_copy_constructible_v<Read>
+        && std::is_copy_assignable_v<Read>
+        && std::is_same_v<decltype(std::declval<Read const&>().weaken()), ArenaRun<std::uint32_t const, Family>>
+        && sizeof(Read) == sizeof(View<std::uint32_t const>);
+}
+static_assert(copies_as_its_family_run());
+
 // Only parallel() of a FrameRun makes a BrandedFrameRun: a BrandedView of the
 // scope gives none, so each element of a BrandedFrameRun is an element of a
 // run of its frame.  It takes the place of the View of its run, and the index

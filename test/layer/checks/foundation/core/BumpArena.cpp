@@ -105,7 +105,7 @@ static_assert(
 // A const run gives only const access, as each class that states
 // refers_deep{} does (the store check of foundation/core/CaptureStore.h
 // trusts the mark): each const door gives a const element, and a const run
-// does not copy into a writable run.
+// of elements that are not const does not copy.
 static_assert(std::is_same_v<decltype(std::declval<ArenaRun<int, Family>&>().view()), View<int>>);
 static_assert(std::is_same_v<decltype(std::declval<ArenaRun<int, Family> const&>().view()), View<int const>>);
 static_assert(std::is_same_v<decltype(std::declval<ArenaRun<int, Family> const&>().window(RunStart{ElementCount{0}},
@@ -115,6 +115,27 @@ static_assert(!std::is_constructible_v<ArenaRun<int, Family>, ArenaRun<int, Fami
 static_assert(std::is_constructible_v<ArenaRun<int, Family>, ArenaRun<int, Family>&>);
 static_assert(!std::is_assignable_v<ArenaRun<int, Family>&, ArenaRun<int, Family> const&>);
 static_assert(sizeof(ArenaRun<int const, Family>) == sizeof(View<int const>));
+static_assert(sizeof(ArenaRun<int, Family>) == sizeof(View<int>));
+
+// A run of const elements copies also from a const run, because the copy
+// gives only const elements too.  A class that holds a run gets the copy of
+// its run.  The copy keeps the transfer facts of a reference to const.
+struct HoldsWritableRun {
+    ArenaRun<int, Family> run{};
+};
+struct HoldsConstRun {
+    ArenaRun<int const, Family> run{};
+};
+static_assert(std::is_copy_constructible_v<ArenaRun<int const, Family>>
+              && std::is_copy_assignable_v<ArenaRun<int const, Family>>);
+static_assert(std::is_constructible_v<HoldsWritableRun, HoldsWritableRun&>
+              && !std::is_constructible_v<HoldsWritableRun, HoldsWritableRun const&>);
+static_assert(std::is_assignable_v<HoldsWritableRun&, HoldsWritableRun&>
+              && !std::is_assignable_v<HoldsWritableRun&, HoldsWritableRun const&>);
+static_assert(std::is_copy_constructible_v<HoldsConstRun> && std::is_copy_assignable_v<HoldsConstRun>);
+static_assert(::foundation::transfer::Sendable<ArenaRun<int const, Family>>
+              && ::foundation::transfer::Shareable<ArenaRun<int const, Family>>);
+static_assert(!::foundation::transfer::Sendable<ArenaRun<int, Family>>);
 // The closed surface of a run makes a new door of it come with its own pin
 // of the const form here.
 inline constexpr TextView arena_run_names{"ArenaRun brand_type view window size"};

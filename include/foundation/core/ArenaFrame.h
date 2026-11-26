@@ -345,9 +345,11 @@ private:
 
 // A run that a frame made, with the brand of the frame.  weaken() gives the
 // family run (the scope brand), and element() gives one element as a holder of
-// a store.
+// a store.  It copies as its ArenaRun does: a run of elements that are not
+// const only from a run that is not const, and a run of const elements also
+// from a const run.  It names T as its target, as the ArenaRun does.
 template <ViewElement T, ::foundation::brand::IsBrand Family, ::foundation::brand::IsBrand Fresh>
-class[[= ::foundation::transfer::refers_deep{}]] FrameRun final {
+class[[= ::foundation::transfer::refers_deep{^^T}]] FrameRun final {
 public:
     // The run of the same elements as const, of the same frame.
     template <class Writable>
@@ -361,11 +363,10 @@ public:
     [[nodiscard]] constexpr std::size_t size() const noexcept { return run_.size(); }
 
     // The family run, for a read, a result or a seal.  A const run gives a
-    // run of const elements, as a copy of a const ArenaRun does.
+    // run of const elements: the conversion of a const ArenaRun, or the copy
+    // of a const ArenaRun of const elements.
     [[nodiscard]] constexpr ArenaRun<T, Family> weaken() & noexcept { return run_; }
-    [[nodiscard]] constexpr ArenaRun<T const, Family> weaken() const& noexcept
-        requires(!std::is_const_v<T>)
-    {
+    [[nodiscard]] constexpr ArenaRun<T const, Family> weaken() const& noexcept {
         return ArenaRun<T const, Family>{run_};
     }
 
