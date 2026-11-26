@@ -135,4 +135,29 @@ bool a_bare_borrow() noexcept {
     return bare.is_open();
 }
 
+// A borrow by a number with no seal, so its assignment is trivial: the front end
+// copies the temporary of the result through its address.
+template <class Resource>
+class[[= ::foundation::transfer::refers{}]][[= ::foundation::transfer::refers_by_number{}]] PlainNumberRef final {
+public:
+    explicit PlainNumberRef(bool is_open) noexcept : is_open_{is_open} {}
+    [[nodiscard]] bool is_open() const noexcept { return is_open_; }
+
+private:
+    bool is_open_ = false;
+};
+
+PlainNumberRef<Socket> plain_ref_of(NumberOwner<Socket> const& owner) noexcept {
+    return PlainNumberRef<Socket>{owner.ref().is_open()};
+}
+
+bool a_plain_borrow_after_the_scope() noexcept {
+    PlainNumberRef<Socket> kept{false};
+    {
+        NumberOwner<Socket> const owner{3};
+        kept = plain_ref_of(owner);
+    }
+    return kept.is_open();
+}
+
 }  // namespace planted

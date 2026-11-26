@@ -96,6 +96,9 @@
 //     that is not const can hold the object, as the pointer of std::construct_at
 //     does, the loan goes to the object of that argument.  An object behind a pointer
 //     is no local of the body, so a body that moves an owner into it ends nothing.
+//     The front end gives a trivial assignment of a class from a temporary as a read
+//     of the temporary through its address, so the store gets the loans of the
+//     temporary, as an assignment through operator= does.
 //
 // Effects
 //     The effect of a body on a parameter is the set of the classes with an end
@@ -990,6 +993,15 @@ private:
             case COMPONENT_REF:
             case ARRAY_REF:
             case INDIRECT_REF: {
+                // A trivial assignment from a temporary reads *&TARGET_EXPR: the value of
+                // the temporary.
+                if (TREE_CODE(node) == INDIRECT_REF) {
+                    tree const address = strip_value(TREE_OPERAND(node, 0));
+                    if (address != NULL_TREE && TREE_CODE(address) == ADDR_EXPR
+                        && TREE_CODE(strip_value(TREE_OPERAND(address, 0))) == TARGET_EXPR) {
+                        return loans_of_value(TREE_OPERAND(address, 0));
+                    }
+                }
                 // A borrow that a member holds.  A borrow behind a pointer is of
                 // an object that the body does not know.
                 int const place = place_of_lvalue(node);

@@ -56,7 +56,9 @@
 # function door that take the owner by an rvalue reference, and a generic function
 # that lets the owner die.  A copy of the borrow and a borrow that a function gives
 # back are stale too.  A borrow class of the planted header of the base that holds
-# a number and states no refers_by_number{} is a line of the kind number-borrow.
+# a number and states no refers_by_number{} is a line of the kind number-borrow.  A
+# borrow with a trivial assignment is stale after the end of the scope of its owner,
+# when the assignment copies the temporary of a call (160).
 
 compile stale src/stale.cpp
 flag stale -freflection
@@ -291,6 +293,7 @@ finding numbers view-escape stale-borrow src/numbers.cpp:107:12 | borrow of owne
 finding numbers view-escape stale-borrow src/numbers.cpp:114:12 | borrow of owner in borrow after a call of planted::drop_it with owner
 finding numbers view-escape stale-borrow src/numbers.cpp:122:12 | borrow of owner in copy after an assignment of owner
 finding numbers view-escape stale-borrow src/numbers.cpp:129:12 | borrow of owner in passed after an assignment of owner
+finding numbers view-escape stale-borrow src/numbers.cpp:160:12 | borrow of owner in kept after the end of the scope of owner
 error numbers include/foundation/PlantedNumbers.h:11 | this borrow class names no object by a pointer: foundation::core::BareNumberRef<foundation::core::Socket>
 error numbers src/numbers.cpp:84 | this use reads a borrow of owner in borrow after an assignment of owner
 error numbers src/numbers.cpp:93 | this use reads a borrow of owner in kept after the end of the scope of owner
@@ -299,3 +302,4 @@ error numbers src/numbers.cpp:107 | this use reads a borrow of owner in borrow a
 error numbers src/numbers.cpp:114 | this use reads a borrow of owner in borrow after a call of planted::drop_it with owner
 error numbers src/numbers.cpp:122 | this use reads a borrow of owner in copy after an assignment of owner
 error numbers src/numbers.cpp:129 | this use reads a borrow of owner in passed after an assignment of owner
+error numbers src/numbers.cpp:160 | this use reads a borrow of owner in kept after the end of the scope of owner
