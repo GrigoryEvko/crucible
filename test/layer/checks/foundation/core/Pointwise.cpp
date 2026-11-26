@@ -74,8 +74,11 @@ static_assert(
 
 // The test of no overlap of an input with the output, the order of the axes
 // and the axis of the tile path.
-static_assert(lane_class_of_(0) == LaneClass::Splat && lane_class_of_(1) == LaneClass::Dense);
-static_assert(lane_class_of_(2) == LaneClass::StepTwo && lane_class_of_(3) == LaneClass::General);
+static_assert(input_class_of_(0) == InputClass::Splat && input_class_of_(1) == InputClass::Dense);
+static_assert(input_class_of_(2) == InputClass::StepTwo && input_class_of_(3) == InputClass::General);
+// The class of an input names one of four loops.  The loop Switched is no
+// class of an input, so a match over the class of an input has no arm of it.
+static_assert(::foundation::reflect::enum_count<InputClass> == 4 && ::foundation::reflect::enum_count<LaneClass> == 5);
 static_assert(tile_class_of_(64, 1) == TileClass::Transposed && tile_class_of_(1, 64) == TileClass::Dense);
 static_assert(tile_class_of_(0, 64) == TileClass::Splat && tile_class_of_(3, 64) == TileClass::General);
 static_assert(tile_class_of_(1, 1) == TileClass::Dense, "a stride of one on a reads a dense register");

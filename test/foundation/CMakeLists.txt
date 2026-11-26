@@ -2452,6 +2452,13 @@ foundation_neg_compile_test(neg_thread_local_ref_value_base_holds_member_pointer
 # reads an integer of a text, and test_core_parse compares it with a
 # reference of the grammar and with std::from_chars.
 foundation_test(test_core_report)
+# assume_unreachable traps under UBSan, and it costs nothing in Release.  Its
+# test runs only in a build whose test units take UBSan: the preset default
+# and the preset ubsan-strict.
+if(CRUCIBLE_SAN_COMPILE_FLAGS OR CRUCIBLE_UBSAN_STRICT)
+  foundation_test(test_core_assume_unreachable)
+  target_link_libraries(test_core_assume_unreachable PRIVATE fixy)
+endif()
 # A report and a fatal exit to a standard error with no reader raise no
 # SIGPIPE in the thread, and the mask of the thread after the write is the
 # mask before it.

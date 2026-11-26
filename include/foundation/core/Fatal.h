@@ -10,6 +10,8 @@
 //                         and ends the process
 //   unreachable()         the same, for a point that the code marks as one
 //                         that control never reaches
+//   assume_unreachable()  a point that a type proves unreachable: no code
+//                         in Release, and a trap under UBSan
 //
 // This header names no text type, so the Choice family and the cursor of
 // foundation/core/Cursor.h can end the process below foundation/core/Text.h.
@@ -215,5 +217,15 @@ constexpr std::uint32_t fmt_line_(FmtParts const& fmt) noexcept { return site_li
     detail::report_fatal_("control reached a point that the code marks as unreachable", detail::site_file_(site),
                           detail::site_line_(site), detail::site_function_(site));
 }
+
+// The point that a type proves unreachable, such as the default arm of a
+// switch over a closed enumeration whose values come only from a door of
+// the base.  Use it only where a type gives that proof, and name the proof
+// in a comment at the call.  It costs nothing in Release: the optimizer
+// removes the arm and the test that leads to it.  Under UBSan it traps:
+// the units of the tests of the preset default and each unit of the preset
+// ubsan-strict end the process at it.  Each other caller uses unreachable(),
+// which ends the process in each build.
+[[noreturn, gnu::always_inline]] inline void assume_unreachable() noexcept { __builtin_unreachable(); }
 
 }  // namespace foundation::core

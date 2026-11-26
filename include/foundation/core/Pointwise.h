@@ -107,6 +107,7 @@
 
 #include <foundation/Simd.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/EnumMatch.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
@@ -176,7 +177,18 @@ concept LaneOpOf =
 
 namespace detail {
 
-// The loop of a view on the inner axis of a pointwise walk.
+// The class of the loop of a view on the inner axis of a pointwise walk, as
+// its stride gives it (input_class_of_).  A view holds one of these four, and
+// no input holds the loop Switched below.
+enum class InputClass : std::uint8_t {
+    Dense,
+    Splat,
+    StepTwo,
+    General,
+};
+
+// The loop of a view on the inner axis of a pointwise walk: the loop of each
+// class of an input, and the loop Switched.
 enum class LaneClass : std::uint8_t {
     Dense,
     Splat,
@@ -423,12 +435,13 @@ CRUCIBLE_INLINE constexpr void for_each_row_(WalkPlan<Views, Capacity> const& pl
     }
 }
 
-// The loop of a view of the lane path, from its stride on the inner axis.
-[[nodiscard]] constexpr LaneClass lane_class_of_(std::size_t step) noexcept {
-    if (step == 1) return LaneClass::Dense;
-    if (step == 0) return LaneClass::Splat;
-    if (step == 2) return LaneClass::StepTwo;
-    return LaneClass::General;
+// The class of the loop of a view of the lane path, from its stride on the
+// inner axis.
+[[nodiscard]] constexpr InputClass input_class_of_(std::size_t step) noexcept {
+    if (step == 1) return InputClass::Dense;
+    if (step == 0) return InputClass::Splat;
+    if (step == 2) return InputClass::StepTwo;
+    return InputClass::General;
 }
 
 // The lane count W as a count of array elements.
@@ -443,7 +456,7 @@ struct TileInput {
     E const* first = nullptr;
     std::size_t step_a = 0;
     std::size_t step_b = 0;
-    LaneClass row_class = LaneClass::General;
+    InputClass row_class = InputClass::General;
     bool is_transposed = false;
 };
 
@@ -974,30 +987,34 @@ CRUCIBLE_INLINE void transpose_registers_(Raw (&rows)[lane_count_<W>]) noexcept 
 }
 
 // The register of an input on a for one position of b: the loop of its class,
-// with live lanes from a0.
+// with live lanes from a0.  The class of an input names one of four loops.
+// The switch keeps the jump of the tile path: the bodies of a match leave the
+// inline code of the tile, and an arm General that takes the default arm too
+// makes the optimizer copy the loop of the rows for each class.
 template <int W, class E>
 [[nodiscard]] CRUCIBLE_INLINE ::foundation::simd::vec<E, W> read_tile_row_(TileInput<W, E> const& input, E const* row,
                                                                            std::size_t a0, std::size_t live) noexcept {
     std::size_t const width = static_cast<std::size_t>(W);
     switch (input.row_class) {
-        case LaneClass::Dense: {
+        case InputClass::Dense: {
             LaneRow<LaneClass::Dense, W, E> const reader{row, 1, {}};
             return live == width ? reader.full(a0) : reader.tail(a0, live);
         }
-        case LaneClass::Splat:
+        case InputClass::Splat:
             return ::foundation::simd::vec<E, W>{*row};
-        case LaneClass::StepTwo: {
+        case InputClass::StepTwo: {
             LaneRow<LaneClass::StepTwo, W, E> const reader{row, 2, {}};
             return live == width ? reader.full(a0) : reader.tail(a0, live);
         }
-        case LaneClass::General: {
+        case InputClass::General: {
             LaneRow<LaneClass::General, W, E> const reader{row, input.step_a, {}};
             return live == width ? reader.full(a0) : reader.tail(a0, live);
         }
-        // Switched is a class of a loop, and no row of an input holds it.
-        case LaneClass::Switched:
+        // The proof of the default arm: a value of InputClass comes only from
+        // input_class_of_ or InputClass{}, which is the enumerator Dense, and
+        // the switch names each enumerator, which -Wswitch-enum checks.
         default:
-            ::foundation::core::unreachable();
+            ::foundation::core::assume_unreachable();
     }
 }
 
@@ -1291,46 +1308,36 @@ inline constexpr std::size_t max_lane_class_inputs = 2;
 
 // Calls next with the loops of the inputs from the index Done on, as template
 // arguments.  An input past the first max_lane_class_inputs inputs takes the
-// loop Switched in place of StepTwo and General.
+// loop Switched in place of StepTwo and General.  The class of an input
+// names one of four loops, so each match has an arm for each and no other
+// arm.
 template <std::size_t Done, std::size_t Inputs, LaneClass... Chosen, class Next>
-CRUCIBLE_INLINE void choose_lane_classes_(LaneClass const (&classes)[Inputs], Next const& next) noexcept {
+CRUCIBLE_INLINE void choose_lane_classes_(InputClass const (&classes)[Inputs], Next const& next) noexcept {
     if constexpr (Done == Inputs) {
         next(LaneClasses<Chosen...>{});
     } else if constexpr (Done >= max_lane_class_inputs) {
-        switch (classes[Done]) {
-            case LaneClass::Dense:
-                choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Dense>(classes, next);
-                return;
-            case LaneClass::Splat:
-                choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Splat>(classes, next);
-                return;
-            case LaneClass::StepTwo:
-            case LaneClass::General:
-                choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Switched>(classes, next);
-                return;
-            // Switched is the class of this loop, and no input holds it.
-            case LaneClass::Switched:
-            default:
-                ::foundation::core::unreachable();
-        }
+        match_enum(classes[Done], arm<InputClass::Dense>([&] noexcept {
+                       choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Dense>(classes, next);
+                   }),
+                   arm<InputClass::Splat>([&] noexcept {
+                       choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Splat>(classes, next);
+                   }),
+                   arm<InputClass::StepTwo, InputClass::General>([&] noexcept {
+                       choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Switched>(classes, next);
+                   }));
     } else {
-        switch (classes[Done]) {
-            case LaneClass::Dense:
-                choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Dense>(classes, next);
-                return;
-            case LaneClass::Splat:
-                choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Splat>(classes, next);
-                return;
-            case LaneClass::StepTwo:
-                choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::StepTwo>(classes, next);
-                return;
-            case LaneClass::General:
-                choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::General>(classes, next);
-                return;
-            case LaneClass::Switched:
-            default:
-                ::foundation::core::unreachable();
-        }
+        match_enum(classes[Done], arm<InputClass::Dense>([&] noexcept {
+                       choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Dense>(classes, next);
+                   }),
+                   arm<InputClass::Splat>([&] noexcept {
+                       choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Splat>(classes, next);
+                   }),
+                   arm<InputClass::StepTwo>([&] noexcept {
+                       choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::StepTwo>(classes, next);
+                   }),
+                   arm<InputClass::General>([&] noexcept {
+                       choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::General>(classes, next);
+                   }));
     }
 }
 
@@ -1356,7 +1363,7 @@ CRUCIBLE_INLINE void run_tiles_(Op const& op, std::index_sequence<Is...> sequenc
         run_tile_plan_<W>(chosen, op, sequence, outer, rows_of_(outer, 1), size_a, size_b, out,
                           plan.strides[0][tile_axis],
                           TileInput<W, Es>{inputs, plan.strides[Is + 1][inner], plan.strides[Is + 1][tile_axis],
-                                           lane_class_of_(plan.strides[Is + 1][inner]),
+                                           input_class_of_(plan.strides[Is + 1][inner]),
                                            plan.strides[Is + 1][tile_axis] == 1 && plan.strides[Is + 1][inner] > 1}...);
     };
     if constexpr (sizeof...(Es) > max_tile_class_inputs) {
@@ -1395,9 +1402,9 @@ void run_lanes_(Op const& op, WalkPlan<1 + sizeof...(Es), Capacity> const& plan,
     if constexpr (input_count == 0) {
         run_lane_plan_<lanes, LaneClass::Dense>(LaneClasses<>{}, Sequence{}, op, plan, out);
     } else {
-        LaneClass classes[input_count]{};
+        InputClass classes[input_count]{};
         for (std::size_t input = 0; input < input_count; ++input) {
-            classes[input] = lane_class_of_(plan.strides[input + 1][inner]);
+            classes[input] = input_class_of_(plan.strides[input + 1][inner]);
         }
         choose_lane_classes_<0, input_count>(
             classes, [&]<LaneClass... InClasses>(LaneClasses<InClasses...> chosen) noexcept {
