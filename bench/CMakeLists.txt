@@ -503,6 +503,105 @@ if(_record_leaf_not_measured)
   set_tests_properties(bench_strided_budget PROPERTIES DISABLED TRUE)
 endif()
 
+# The sweep of exp, log and erf of fixy/fp against its oracles
+# (bench/fp_sweep.cpp): each float input against the pinned CORE-MATH, and a
+# sample of double inputs against the pinned MPFR.  Only the preset bench
+# sets CRUCIBLE_FP_SWEEP, so the gate builds no oracle: bench-fuzz leaves it
+# off.  The sweep is no bench: it measures no time, and `loop bench` does not
+# list it.  Its six tests with the label fp_sweep are tests of the build of
+# the nightly preset bench, so the nightly entry runs them in its `loop test`
+# of that build, each time that an input of a test changes.
+#
+# The library core_math_reference holds the six C files of CORE-MATH.  GMP
+# and MPFR build with their configure scripts into the build directory, MPFR
+# against that GMP, as static libraries with no shared library.  Each build
+# writes only into its binary directory, so the sources of the tools
+# directory stay as the pins gave them.
+#
+# A build with no install of the three pins, or with no make, gives no sweep
+# and no test, and the configure prints the install command.
+option(CRUCIBLE_FP_SWEEP "Build the sweep of fixy/fp against CORE-MATH and MPFR" OFF)
+set(_fp_sweep_ready OFF)
+if(CRUCIBLE_FP_SWEEP)
+  crucible_pinned_source(core-math _core_math_directory)
+  crucible_pinned_source(gmp _gmp_directory)
+  crucible_pinned_source(mpfr _mpfr_directory)
+  if(_core_math_directory STREQUAL "" OR _gmp_directory STREQUAL "" OR _mpfr_directory STREQUAL ""
+     OR NOT CRUCIBLE_MAKE_PROGRAM)
+    message(STATUS "bench_fp_sweep: the sweep needs the pinned core-math, gmp and mpfr and the program make, so the "
+                   "build has no sweep.  Install the pins with: python3 ${CMAKE_SOURCE_DIR}/utils/bin/setup install "
+                   "core-math gmp mpfr")
+  else()
+    set(_fp_sweep_ready ON)
+  endif()
+endif()
+if(_fp_sweep_ready)
+  add_library(core_math_reference STATIC
+    "${_core_math_directory}/src/binary32/exp/expf.c"
+    "${_core_math_directory}/src/binary32/log/logf.c"
+    "${_core_math_directory}/src/binary32/erf/erff.c"
+    "${_core_math_directory}/src/binary64/exp/exp.c"
+    "${_core_math_directory}/src/binary64/log/log.c"
+    "${_core_math_directory}/src/binary64/erf/erf.c")
+  target_compile_options(core_math_reference PRIVATE -O2 -march=native -fPIC)
+
+  # The tests of the configure script of GMP 6.3.0 declare functions in the
+  # form of C before C23, which GCC 16 refuses in its default C23, so the
+  # two builds name the language C17 with the extensions of GNU.
+  set(_gmp_prefix "${CMAKE_CURRENT_BINARY_DIR}/gmp_reference/prefix")
+  ExternalProject_Add(gmp_reference_build
+    SOURCE_DIR "${_gmp_directory}"
+    BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/gmp_reference/build"
+    DOWNLOAD_COMMAND ""
+    UPDATE_COMMAND ""
+    CONFIGURE_COMMAND "${_gmp_directory}/configure" "CC=${CMAKE_C_COMPILER}" "CFLAGS=-O2 -fPIC -std=gnu17"
+                      "--prefix=${_gmp_prefix}" --disable-shared --enable-static
+    BUILD_COMMAND "${CRUCIBLE_MAKE_PROGRAM}" -j 8
+    INSTALL_COMMAND "${CRUCIBLE_MAKE_PROGRAM}" install
+    BUILD_BYPRODUCTS "${_gmp_prefix}/lib/libgmp.a"
+    LOG_CONFIGURE ON
+    LOG_BUILD ON
+    LOG_INSTALL ON
+    LOG_OUTPUT_ON_FAILURE ON)
+  set(_mpfr_prefix "${CMAKE_CURRENT_BINARY_DIR}/mpfr_reference/prefix")
+  ExternalProject_Add(mpfr_reference_build
+    SOURCE_DIR "${_mpfr_directory}"
+    BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/mpfr_reference/build"
+    DOWNLOAD_COMMAND ""
+    UPDATE_COMMAND ""
+    CONFIGURE_COMMAND "${_mpfr_directory}/configure" "CC=${CMAKE_C_COMPILER}" "CFLAGS=-O2 -fPIC -std=gnu17"
+                      "--prefix=${_mpfr_prefix}" "--with-gmp=${_gmp_prefix}" --disable-shared --enable-static
+    BUILD_COMMAND "${CRUCIBLE_MAKE_PROGRAM}" -j 8
+    INSTALL_COMMAND "${CRUCIBLE_MAKE_PROGRAM}" install
+    BUILD_BYPRODUCTS "${_mpfr_prefix}/lib/libmpfr.a"
+    DEPENDS gmp_reference_build
+    LOG_CONFIGURE ON
+    LOG_BUILD ON
+    LOG_INSTALL ON
+    LOG_OUTPUT_ON_FAILURE ON)
+  add_library(mpfr_reference STATIC IMPORTED)
+  set_target_properties(mpfr_reference PROPERTIES IMPORTED_LOCATION "${_mpfr_prefix}/lib/libmpfr.a")
+  add_dependencies(mpfr_reference mpfr_reference_build)
+  add_library(gmp_reference STATIC IMPORTED)
+  set_target_properties(gmp_reference PROPERTIES IMPORTED_LOCATION "${_gmp_prefix}/lib/libgmp.a")
+  add_dependencies(gmp_reference gmp_reference_build)
+
+  add_executable(bench_fp_sweep fp_sweep.cpp fp_sweep_oracles.cpp)
+  target_link_libraries(bench_fp_sweep PRIVATE fixy core_math_reference mpfr_reference gmp_reference)
+  # The headers of MPFR and GMP are in the build directory, so their include
+  # directory is a system directory of the oracle unit alone.
+  set_source_files_properties(fp_sweep_oracles.cpp PROPERTIES
+    COMPILE_OPTIONS "-isystem;${_mpfr_prefix}/include;-isystem;${_gmp_prefix}/include")
+  target_compile_options(bench_fp_sweep PRIVATE -O3 -march=native)
+  foreach(_sweep_kind float double)
+    foreach(_sweep_function exp log erf)
+      add_test(NAME fp_sweep_${_sweep_function}_${_sweep_kind}
+               COMMAND bench_fp_sweep ${_sweep_kind} ${_sweep_function})
+      set_tests_properties(fp_sweep_${_sweep_function}_${_sweep_kind} PROPERTIES TIMEOUT 3600 LABELS "fp_sweep")
+    endforeach()
+  endforeach()
+endif()
+
 # The scan of the timed windows of each bench.  test/bench_windows/check_windows.py
 # reads each bench, and it refuses a timed window whose loops hold no
 # instruction of the body of the row: the optimizer moved the work of the

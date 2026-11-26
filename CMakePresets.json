@@ -91,7 +91,8 @@
       "displayName": "GCC 16 + libstdc++ 16 (C++26, Bench)",
       "binaryDir": "${sourceDir}/build-bench",
       "cacheVariables": {
-        "CRUCIBLE_BENCH": "ON"
+        "CRUCIBLE_BENCH": "ON",
+        "CRUCIBLE_FP_SWEEP": "ON"
       },
       "vendor": { "crucible": { "tier": "nightly" } }
     },
