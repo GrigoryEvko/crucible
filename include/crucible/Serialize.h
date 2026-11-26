@@ -626,8 +626,8 @@ template <class Brand, std::size_t Extent>
         w.w(arm.value);
         // An arm with no target writes the hash zero.
         const uint64_t target_hash =
-            arm.target().match([](DagRef<TraceNode const> target) noexcept { return target->merkle_hash.raw(); },
-                               []() noexcept { return uint64_t{0}; });
+            arm.target.match([](DagRef<TraceNode const> target) noexcept { return target->merkle_hash.raw(); },
+                             []() noexcept { return uint64_t{0}; });
         w.w(target_hash);
     }
 
@@ -893,7 +893,7 @@ read_region_(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image
     node->merkle_hash = hdr.merkle_hash;
     node->content_hash = hdr.content_hash;
     node->numerics = numerics;
-    node->next = ::fixy::none;
+    // A new node holds no continuation, and the caller links it.
     node->ops = ops_run.weaken();
     node->first_op_schema = first_op_schema;
     node->measured_ms = measured_ms;
@@ -988,18 +988,21 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     const DagFrameRef<BranchNode, Fresh> node = mint_dag_node<BranchNode>(a, frame);
     node->kind = TraceNodeKind::BRANCH;
     node->merkle_hash = hdr.merkle_hash;
-    node->next = ::fixy::none;  // the caller resolves the continuation separately
+    // A new node holds no continuation, and the caller resolves it separately.
     node->guard = guard;
     DagFrameRun<BranchNode::Arm, Fresh> arms = frame.template build_array<BranchNode::Arm>(
         a, ::fixy::ElementCount{num_arms}, [](::fixy::RunStart) noexcept { return BranchNode::Arm{}; });
     node->set_arms(arms.weaken());
-    for (BranchNode::Arm& arm : node->arms()) {
-        arm.value = r.r<int64_t>();
+    // The resolver gives a node of the frame, so frame.store links it to the
+    // arm.  An arm with no resolved node keeps its empty target.
+    for (size_t index = 0; index < num_arms; ++index) {
+        const auto arm =
+            arms.element(::fixy::RunStart{::fixy::ElementCount{index}}).expect("the run holds each arm of the image");
+        arm->value = r.r<int64_t>();
         const MerkleHash target_h = MerkleHash{r.r<uint64_t>()};
         const ::fixy::Option<DagFrameRef<TraceNode, Fresh>> target = resolver(target_h);
-        arm.set_target(target.match(
-            [](DagFrameRef<TraceNode, Fresh> const& resolved) noexcept { return TraceLink::some(resolved.weaken()); },
-            []() noexcept { return TraceLink{}; }));
+        for (DagFrameRef<TraceNode, Fresh> const& resolved : target)
+            frame.store(arm, &BranchNode::Arm::target, resolved);
     }
 
     // Replay finds an arm by binary search on the value, so an image with

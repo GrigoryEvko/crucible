@@ -141,7 +141,7 @@ namespace {
         CRUCIBLE_TEST_ASSERT(kTest, terminal.kind == crucible::TraceNodeKind::TERMINAL);
         CRUCIBLE_TEST_ASSERT(kTest, terminal.next.is_none());
 
-        region_node->next = crucible::make_link(terminal);
+        frame.store(region_node, &crucible::TraceNode::next, terminal_node);
         crucible::recompute_merkle(region);
         CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(region.merkle_hash));
     });
@@ -803,7 +803,7 @@ namespace {
             body_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x6AA6};
             auto const body = crucible::make_region(test.alloc, frame, body_ops_run);
             auto const body_end = crucible::make_terminal(test.alloc, frame);
-            body->next = crucible::make_link(*body_end);
+            frame.store(body, &crucible::TraceNode::next, body_end);
             return body;
         };
 
@@ -866,7 +866,7 @@ namespace {
                 branch->kind = crucible::TraceNodeKind::BRANCH;
                 auto arms = frame.template build_array<crucible::BranchNode::Arm>(
                     test.alloc, ::fixy::ElementCount{1},
-                    [](::fixy::RunStart) noexcept { return crucible::BranchNode::Arm{1, crucible::TraceLink{}}; });
+                    [](::fixy::RunStart) noexcept { return crucible::BranchNode::Arm{1}; });
                 branch->set_arms(arms.weaken());
                 crucible::recompute_merkle(*branch);
                 // The child prints the hash only when the hash returns.

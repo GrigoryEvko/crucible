@@ -37,8 +37,8 @@ void check_loops(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     auto const body_r2 = crucible::make_region(alloc, frame, body_ops2_run);
 
     auto const body_term = crucible::make_terminal(alloc, frame);
-    body_r1->next = crucible::make_link(*body_r2);
-    body_r2->next = crucible::make_link(*body_term);
+    frame.store(body_r1, &crucible::TraceNode::next, body_r2);
+    frame.store(body_r2, &crucible::TraceNode::next, body_term);
 
     ContentHash body_ch = crucible::compute_body_content_hash(*body_r1);
     CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(body_ch));
@@ -72,8 +72,8 @@ void check_loops(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     final_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x4444};
     auto const final_region = crucible::make_region(alloc, frame, final_ops_run);
     auto const dag_term = crucible::make_terminal(alloc, frame);
-    final_region->next = crucible::make_link(*dag_term);
-    loop->next = crucible::make_link(*final_region);
+    frame.store(final_region, &crucible::TraceNode::next, dag_term);
+    frame.store(loop, &crucible::TraceNode::next, final_region);
 
     // Merkle hash covers loop body, feedback, termination, and continuation
     crucible::recompute_merkle(*loop);
@@ -82,13 +82,13 @@ void check_loops(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
 
     auto const loop2 =
         crucible::make_loop(alloc, frame, body_r1, body_ch, fb_edges_run, crucible::LoopTermKind::REPEAT, 8);
-    loop2->next = crucible::make_link(*final_region);
+    frame.store(loop2, &crucible::TraceNode::next, final_region);
     crucible::recompute_merkle(*loop2);
     CRUCIBLE_TEST_ASSERT(kTest, loop2->merkle_hash != loop_merkle);
 
     auto const loop3 =
         crucible::make_loop(alloc, frame, body_r1, body_ch, fb_edges_run, crucible::LoopTermKind::UNTIL, 4, 0.001f);
-    loop3->next = crucible::make_link(*final_region);
+    frame.store(loop3, &crucible::TraceNode::next, final_region);
     crucible::recompute_merkle(*loop3);
     CRUCIBLE_TEST_ASSERT(kTest, loop3->merkle_hash != loop_merkle);
     CRUCIBLE_TEST_ASSERT(kTest, loop3->merkle_hash != loop2->merkle_hash);
@@ -100,7 +100,7 @@ void check_loops(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     *fb_edges2.get(1).expect("the run holds two edges") = {.output_idx = 1, .input_idx = 1};
     auto const loop4 =
         crucible::make_loop(alloc, frame, body_r1, body_ch, fb_edges2_run, crucible::LoopTermKind::REPEAT, 4);
-    loop4->next = crucible::make_link(*final_region);
+    frame.store(loop4, &crucible::TraceNode::next, final_region);
     crucible::recompute_merkle(*loop4);
     CRUCIBLE_TEST_ASSERT(kTest, loop4->merkle_hash != loop_merkle);
 
@@ -143,7 +143,7 @@ void check_loops(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
 
     auto const loop_zero =
         crucible::make_loop(alloc, frame, body_r1, body_ch, fb_edges_run, crucible::LoopTermKind::REPEAT, 0);
-    loop_zero->next = crucible::make_link(*final_region);
+    frame.store(loop_zero, &crucible::TraceNode::next, final_region);
     uint32_t zero_count = 0;
     bool zero_ok = crucible::replay(*loop_zero, never_diverges, counter_of(zero_count));
     CRUCIBLE_TEST_ASSERT(kTest, zero_ok);
@@ -155,7 +155,7 @@ void check_loops(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     alt_body_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x9999};
     auto const alt_body = crucible::make_region(alloc, frame, alt_body_ops_run);
     auto const alt_body_term = crucible::make_terminal(alloc, frame);
-    alt_body->next = crucible::make_link(*alt_body_term);
+    frame.store(alt_body, &crucible::TraceNode::next, alt_body_term);
     ContentHash alt_ch = crucible::compute_body_content_hash(*alt_body);
     CRUCIBLE_TEST_ASSERT(kTest, alt_ch != body_ch);
 
@@ -182,11 +182,11 @@ void check_loops(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
         auto build_until_loop = [&](float epsilon) {
             const auto body = crucible::make_region(alloc, frame, loop_body_ops_run);
             const auto body_end = crucible::make_terminal(alloc, frame);
-            body->next = crucible::make_link(*body_end);
+            frame.store(body, &crucible::TraceNode::next, body_end);
             const auto node = crucible::make_loop(alloc, frame, body, crucible::compute_body_content_hash(*body),
                                                   no_edges_run, crucible::LoopTermKind::UNTIL, 3, epsilon);
             const auto node_end = crucible::make_terminal(alloc, frame);
-            node->next = crucible::make_link(*node_end);
+            frame.store(node, &crucible::TraceNode::next, node_end);
             crucible::recompute_merkle(*node);
             return node;
         };

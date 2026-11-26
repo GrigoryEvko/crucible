@@ -551,12 +551,12 @@ public:
         requires FrameHolder<Holder, Family, Fresh> && std::is_base_of_v<Base, detail::held_t_<Holder>>
     [[nodiscard]] constexpr Option<FrameRef<Target, Family, Fresh>>
     follow(Holder const& holder, FrameLink<Target, Family> Base::* slot) const noexcept {
-        Option<Ref<Target, Family>> target = ((*holder).*slot).link_.option();
-        if (target.is_none()) {
-            return Option<FrameRef<Target, Family, Fresh>>{};
-        }
-        return Option<FrameRef<Target, Family, Fresh>>::some(FrameRef<Target, Family, Fresh>{
-            static_cast<Option<Ref<Target, Family>>&&>(target).expect("the test above found the object")});
+        Option<Ref<Target, Family>> const target = ((*holder).*slot).link_.option();
+        return target.match(
+            [](Ref<Target, Family> const& object) noexcept {
+                return Option<FrameRef<Target, Family, Fresh>>::some(FrameRef<Target, Family, Fresh>{object});
+            },
+            []() noexcept { return Option<FrameRef<Target, Family, Fresh>>{}; });
     }
 
     // Fills one slot of counts of a set of runs of the holder: the count of

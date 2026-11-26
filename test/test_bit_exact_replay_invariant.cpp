@@ -220,7 +220,7 @@ struct Built {
             ctx.alloc, frame,
             ops_run.window(::fixy::RunStart{::fixy::ElementCount{kSplit}}, ::fixy::ElementCount{kNumOps - kSplit})
                 .expect("the tail is in the ops"));
-        head->next = crucible::make_link(*tail);
+        frame.store(head, &crucible::TraceNode::next, tail);
 
         auto slots_run = arena.array<TensorSlot>(ctx.alloc, kNumSlots, TensorSlot{});
         // A plain View of an arena run: the View carries no brand of its arena.

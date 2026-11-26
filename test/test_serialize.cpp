@@ -505,9 +505,8 @@ static void check_descriptor_images_agree() {
             // The arm at position 0 holds the value 2, and the arm at
             // position 1 the value 1.
             auto arms = frame.template build_array<crucible::BranchNode::Arm>(
-                alloc, ::fixy::ElementCount{2}, [](::fixy::RunStart at) noexcept {
-                    return crucible::BranchNode::Arm{at.value().raw() == 0 ? 2 : 1, crucible::TraceLink{}};
-                });
+                alloc, ::fixy::ElementCount{2},
+                [](::fixy::RunStart at) noexcept { return crucible::BranchNode::Arm{at.value().raw() == 0 ? 2 : 1}; });
             branch->set_arms(arms.weaken());
             crucible::BranchNode const& branch_read = *branch;
             auto [branch_bytes, branch_buf] =

@@ -21,17 +21,22 @@ namespace {
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
-// A branch of two arms, of the values 1 and 2, in the arena of the frame.
+// A branch of two arms, of the values 1 and 2, in the arena of the frame.  The
+// arm of the value 1 runs first, and the arm of the value 2 runs second.
 template <class Fresh>
 [[nodiscard]] crucible::DagFrameRef<crucible::BranchNode, Fresh>
-make_two_arm_branch(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& frame, crucible::TraceLink first,
-                    crucible::TraceLink second) noexcept {
+make_two_arm_branch(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& frame,
+                    std::type_identity_t<crucible::DagFrameRef<crucible::TraceNode, Fresh>> first,
+                    std::type_identity_t<crucible::DagFrameRef<crucible::TraceNode, Fresh>> second) noexcept {
     auto const branch = crucible::mint_dag_node<crucible::BranchNode>(alloc, frame);
     branch->kind = crucible::TraceNodeKind::BRANCH;
     auto arms = frame.template build_array<crucible::BranchNode::Arm>(
-        alloc, ::fixy::ElementCount{2}, [first, second](::fixy::RunStart at) noexcept {
-            return at.value().raw() == 0 ? crucible::BranchNode::Arm{1, first} : crucible::BranchNode::Arm{2, second};
-        });
+        alloc, ::fixy::ElementCount{2},
+        [](::fixy::RunStart at) noexcept { return crucible::BranchNode::Arm{at.value().raw() == 0 ? 1 : 2}; });
+    frame.store(arms.element(::fixy::RunStart{::fixy::ElementCount{0}}).expect("the branch holds two arms"),
+                &crucible::BranchNode::Arm::target, first);
+    frame.store(arms.element(::fixy::RunStart{::fixy::ElementCount{1}}).expect("the branch holds two arms"),
+                &crucible::BranchNode::Arm::target, second);
     branch->set_arms(arms.weaken());
     return branch;
 }
@@ -66,9 +71,9 @@ void check_links(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     static_assert(sizeof(crucible::TraceLink) == sizeof(void*));
     CRUCIBLE_TEST_ASSERT(kTest, crucible::TraceLink{}.is_none());
 
-    // make_link gives the full link to the node.  is_link_to compares the
+    // A link holds the family Ref of the node.  is_link_to compares the
     // address of the linked node with the address of the node.
-    const crucible::TraceLink to_region = crucible::make_link(region);
+    const crucible::TraceLink to_region = crucible::TraceLink::some(region_as_trace.weaken());
     CRUCIBLE_TEST_ASSERT(kTest, to_region.is_some());
     CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(to_region, region));
     CRUCIBLE_TEST_ASSERT(kTest, !crucible::is_link_to(to_region, terminal));
@@ -107,14 +112,13 @@ void check_links(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     auto const region_b_node = crucible::make_region(alloc, frame, ops_b_run);
     crucible::RegionNode& region_b = *region_b_node;
     auto const region_a_end = crucible::make_terminal(alloc, frame);
-    region_a_node->next = crucible::make_link(*region_a_end);
+    frame.store(region_a_node, &crucible::TraceNode::next, region_a_end);
     auto const region_b_end = crucible::make_terminal(alloc, frame);
-    region_b_node->next = crucible::make_link(*region_b_end);
-    auto const branch_node =
-        make_two_arm_branch(alloc, frame, crucible::make_link(region_a), crucible::make_link(region_b));
+    frame.store(region_b_node, &crucible::TraceNode::next, region_b_end);
+    auto const branch_node = make_two_arm_branch(alloc, frame, region_a_node, region_b_node);
     crucible::BranchNode& branch = *branch_node;
     auto const branch_end = crucible::make_terminal(alloc, frame);
-    branch_node->next = crucible::make_link(*branch_end);
+    frame.store(branch_node, &crucible::TraceNode::next, branch_end);
 
     // The doors of a region and of a branch give the node itself, and no
     // value for each other kind.
@@ -141,9 +145,9 @@ void check_links(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     // The arms keep their targets, and resolved_target gives the node.
     crucible::BranchNode::Arm& first_arm = *branch.arms().get(0).expect("the branch holds two arms");
     const crucible::BranchNode::Arm& second_arm = *branch.arms().get(1).expect("the branch holds two arms");
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(first_arm.target(), region_a));
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(second_arm.target(), region_b));
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(crucible::make_link(first_arm.resolved_target()), region_a));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(first_arm.target.option(), region_a));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(second_arm.target.option(), region_b));
+    CRUCIBLE_TEST_ASSERT(kTest, &first_arm.resolved_target() == &static_cast<crucible::TraceNode&>(region_a));
 
     // The merkle hash of the branch folds the merkle hash of each target in
     // the order of the arms, and then the hash of the continuation.  The
@@ -184,8 +188,8 @@ void check_links(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     crucible::BranchNode& loaded = *loaded_node;
     const crucible::BranchNode::Arm& loaded_first = *loaded.arms().get(0).expect("the image holds two arms");
     const crucible::BranchNode::Arm& loaded_second = *loaded.arms().get(1).expect("the image holds two arms");
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(loaded_first.target(), region_a));
-    CRUCIBLE_TEST_ASSERT(kTest, loaded_second.target().is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(loaded_first.target.option(), region_a));
+    CRUCIBLE_TEST_ASSERT(kTest, loaded_second.target.is_none());
 
     auto const& loaded_read = loaded;
     auto [written_again, image_again] =
@@ -205,7 +209,7 @@ void check_links(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
             alloc, image.view().window(0, written).expect("the writer writes inside its image"), frame)
             .expect("the image of a branch loads");
     for (const crucible::BranchNode::Arm& arm : unresolved_node->arms()) {
-        CRUCIBLE_TEST_ASSERT(kTest, arm.target().is_none());
+        CRUCIBLE_TEST_ASSERT(kTest, arm.target.is_none());
     }
 
     // ── The walks along the links ────────────────────────────────────
@@ -232,7 +236,8 @@ void check_links(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     // The count of nodes: the branch, the two arm regions with their
     // TERMINAL nodes, and the TERMINAL continuation.  An empty link has no
     // node.
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::dag_node_count(crucible::make_link(branch)) == 6);
+    crucible::TraceLink const branch_link = crucible::TraceLink::some(TraceRef{branch_node}.weaken());
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::dag_node_count(branch_link) == 6);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::dag_node_count(crucible::TraceLink{}) == 0);
 
     // collect_regions reads the region of each arm.
@@ -243,11 +248,11 @@ void check_links(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
 
     // dag_diff agrees on one DAG and on two empty links, and reports an end
     // of one chain against a node of the other.
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::dag_diff(crucible::make_link(branch), crucible::make_link(branch)).kind
-                                    == crucible::DagDiff::Kind::IDENTICAL);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         crucible::dag_diff(branch_link, branch_link).kind == crucible::DagDiff::Kind::IDENTICAL);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::dag_diff(crucible::TraceLink{}, crucible::TraceLink{}).kind
                                     == crucible::DagDiff::Kind::IDENTICAL);
-    const crucible::DagDiff ended = crucible::dag_diff(crucible::make_link(region), crucible::TraceLink{});
+    const crucible::DagDiff ended = crucible::dag_diff(to_region, crucible::TraceLink{});
     CRUCIBLE_TEST_ASSERT(kTest, ended.kind == crucible::DagDiff::Kind::STRUCTURE_MISMATCH);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(ended.node_a, region));
     CRUCIBLE_TEST_ASSERT(kTest, ended.node_b.is_none());
@@ -255,11 +260,11 @@ void check_links(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     // find_merge_point gives the link to the first region of the shared
     // tail, and an empty link when the tails differ.
     const ::fixy::View<const crucible::TraceEntry> tail_ops = ops_b;
-    CRUCIBLE_TEST_ASSERT(
-        kTest, crucible::is_link_to(crucible::find_merge_point(tail_ops, crucible::make_link(region_b), ::fixy::none),
-                                    region_b));
+    crucible::TraceLink const link_b = crucible::TraceLink::some(TraceRef{region_b_node}.weaken());
+    crucible::TraceLink const link_a = crucible::TraceLink::some(TraceRef{region_a_node}.weaken());
     CRUCIBLE_TEST_ASSERT(kTest,
-                         crucible::find_merge_point(tail_ops, crucible::make_link(region_a), ::fixy::none).is_none());
+                         crucible::is_link_to(crucible::find_merge_point(tail_ops, link_b, ::fixy::none), region_b));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::find_merge_point(tail_ops, link_a, ::fixy::none).is_none());
     CRUCIBLE_TEST_ASSERT(kTest, crucible::find_merge_point(tail_ops, crucible::TraceLink{}, ::fixy::none).is_none());
 }
 
@@ -280,7 +285,7 @@ void check_add_branch(::foundation::effects::Alloc alloc, ::foundation::effects:
     suffix_ops_run.view().get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xB2};
     auto const suffix_region = crucible::make_region(alloc, frame, suffix_ops_run);
     auto const suffix_end = crucible::make_terminal(alloc, frame);
-    suffix_region->next = crucible::make_link(*suffix_end);
+    frame.store(suffix_region, &crucible::TraceNode::next, suffix_end);
     TraceRef const suffix = suffix_region;
 
     // The new ops end with the op of the suffix.
@@ -294,7 +299,7 @@ void check_add_branch(::foundation::effects::Alloc alloc, ::foundation::effects:
     crucible::BranchNode::Arm const& low = *branch->arms().get(0).expect("the branch holds two arms");
     crucible::BranchNode::Arm const& high = *branch->arms().get(1).expect("the branch holds two arms");
     CRUCIBLE_TEST_ASSERT(kTest, low.value == 3 && high.value == 7);
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(high.target(), *divergence));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(high.target.option(), *divergence));
     crucible::TraceNode const& new_node = low.resolved_target();
     CRUCIBLE_TEST_ASSERT(kTest, new_node.kind == crucible::TraceNodeKind::REGION);
     CRUCIBLE_TEST_ASSERT(kTest, new_node.expect_region()->content_hash == suffix_region->content_hash);
@@ -309,12 +314,30 @@ void check_add_branch(::foundation::effects::Alloc alloc, ::foundation::effects:
                                             crucible::Guard{}, ::fixy::Option<TraceRef>::some(suffix), ::fixy::none);
     CRUCIBLE_TEST_ASSERT(kTest, apart->next.is_none());
     CRUCIBLE_TEST_ASSERT(
-        kTest, crucible::is_link_to(apart->arms().get(0).expect("the branch holds two arms")->target(), *divergence));
+        kTest,
+        crucible::is_link_to(apart->arms().get(0).expect("the branch holds two arms")->target.option(), *divergence));
 
     // No suffix: the branch continues nowhere.
     auto const alone = crucible::add_branch(alloc, nondet, frame, cache, divergence, new_ops_run, 1, 2,
                                             crucible::Guard{}, ::fixy::none, ::fixy::none);
     CRUCIBLE_TEST_ASSERT(kTest, alone->next.is_none());
+
+    // A suffix whose shared tail starts at its second region: the region of
+    // the op 0xD4, then the region of the op 0xB2.  The new ops end with 0xB2
+    // and not with 0xD4, so the walk follows one link to the merge point.
+    auto head_ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    head_ops_run.view().get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xD4};
+    auto const head_region = crucible::make_region(alloc, frame, head_ops_run);
+    frame.store(head_region, &crucible::TraceNode::next, suffix_region);
+    auto deep_ops_run = frame.array(alloc, std::size_t{2}, crucible::TraceEntry{});
+    deep_ops_run.view().get(0).expect("the run holds two ops")->schema_hash = crucible::SchemaHash{0xE5};
+    deep_ops_run.view().get(1).expect("the run holds two ops")->schema_hash = crucible::SchemaHash{0xB2};
+    TraceRef const head = head_region;
+    auto const deep = crucible::add_branch(alloc, nondet, frame, cache, divergence, deep_ops_run, 1, 2,
+                                           crucible::Guard{}, ::fixy::Option<TraceRef>::some(head), ::fixy::none);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(deep->next.option(), *suffix_region));
+    crucible::TraceNode const& deep_region = deep->arms().get(1).expect("the branch holds two arms")->resolved_target();
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(deep_region.next.option(), *suffix_region));
 }
 
 }  // namespace

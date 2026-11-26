@@ -95,26 +95,30 @@ static_assert(DagNodeType<TraceNode> && DagNodeType<RegionNode> && !DagNodeType<
 // Each borrow of the DAG carries the DagArena brand, and the runs that a node
 // borrows are runs of a DAG arena with the size of a View.
 static_assert(std::is_same_v<TraceLink, ::fixy::Option<DagRef<TraceNode>>>);
-static_assert(std::is_same_v<NodeLink, ::fixy::Link<TraceNode, DagArena>>);
+static_assert(std::is_same_v<NodeLink, ::foundation::core::FrameLink<TraceNode, DagArena>>);
+static_assert(sizeof(NodeLink) == sizeof(void*), "a link slot takes the one pointer of its link");
+static_assert(!std::is_copy_constructible_v<NodeLink> && !std::is_move_constructible_v<NodeLink>
+              && !std::is_copy_assignable_v<NodeLink> && !std::is_move_assignable_v<NodeLink>);
+static_assert(!std::is_assignable_v<NodeLink&, TraceLink>, "only a store of a frame fills a link slot");
 static_assert(std::is_same_v<decltype(std::declval<RegionNode&>().ops), ::fixy::ArenaRun<TraceEntry const, DagArena>>);
 static_assert(sizeof(::fixy::ArenaRun<TraceEntry const, DagArena>) == sizeof(::fixy::View<TraceEntry const>));
 static_assert(!std::is_constructible_v<::fixy::ArenaRun<TraceEntry const, DagArena>, ::fixy::View<TraceEntry const>>);
 
 // An arm holds its target as a NodeLink, so a const arm gives its target
-// only as const and does not copy.  An arm copies from an arm that is not
-// const, and an arena builds a run of arms with build_array.
+// only as const.  An arm does not copy or move, and an arena builds a run of
+// arms with build_array.
 static_assert(sizeof(BranchNode::Arm) == 16, "an arm holds its value and the one pointer of its link");
-static_assert(!std::is_copy_constructible_v<BranchNode::Arm>
-              && std::is_constructible_v<BranchNode::Arm, BranchNode::Arm&>);
-static_assert(!std::is_copy_assignable_v<BranchNode::Arm>);
-static_assert(
-    std::is_same_v<decltype(std::declval<BranchNode::Arm const&>().target()), ::fixy::Option<DagRef<TraceNode const>>>);
+static_assert(!std::is_copy_constructible_v<BranchNode::Arm> && !std::is_move_constructible_v<BranchNode::Arm>
+              && !std::is_constructible_v<BranchNode::Arm, BranchNode::Arm&>);
+static_assert(!std::is_copy_assignable_v<BranchNode::Arm> && !std::is_move_assignable_v<BranchNode::Arm>);
+static_assert(std::is_same_v<decltype(std::declval<BranchNode::Arm const&>().target.option()),
+                             ::fixy::Option<DagRef<TraceNode const>>>);
 static_assert(std::is_same_v<decltype(std::declval<BranchNode::Arm const&>().resolved_target()), TraceNode const&>);
-static_assert(std::is_same_v<decltype(std::declval<BranchNode::Arm&>().target()), TraceLink>);
+static_assert(std::is_same_v<decltype(std::declval<BranchNode::Arm&>().target.option()), TraceLink>);
 
 // A region of the pipeline does not change after its publication, so two
 // threads can read one through a reference to const.  The pin holds each part
-// that a reader reaches: the continuation through a const Link, the ops and
+// that a reader reaches: the continuation through a const link slot, the ops and
 // the plan as const, the runs of each op as const, and the kernel as a
 // compiled kernel of const, whose statement MerkleDag.h gives.
 static_assert(::foundation::transfer::Shareable<RegionNode const>);

@@ -495,9 +495,27 @@ add_branch(::foundation::effects::Alloc a, ::foundation::effects::cap::Nondet no
     const TraceLink suffix = existing_suffix.match(
         [](DagFrameRef<TraceNode, Fresh> const& head) noexcept { return TraceLink::some(head.weaken()); },
         []() noexcept { return TraceLink{}; });
-    const TraceLink merge = find_merge_point(new_ops.view(), suffix, recipe);
+    const TraceLink merge_link = find_merge_point(new_ops.view(), suffix, recipe);
 
-    new_region->next = merge;
+    // The merge point as a node of the frame.  The walk starts at the suffix,
+    // a node of the frame, and frame.follow gives each next node of the chain
+    // as a node of the frame.  find_merge_point gives a region of that chain,
+    // so the walk stops at it.  O(n) for the n nodes from the suffix to the
+    // merge point, which find_merge_point bounds.
+    ::fixy::Option<DagFrameRef<TraceNode, Fresh>> merge{};
+    ::fixy::Option<DagFrameRef<TraceNode, Fresh>> at =
+        merge_link.is_some() ? existing_suffix : ::fixy::Option<DagFrameRef<TraceNode, Fresh>>{};
+    while (at.is_some()) {
+        const DagFrameRef<TraceNode, Fresh> node = at.take().expect("the test of the loop found a node");
+        if (is_link_to(merge_link, *node)) {
+            merge = ::fixy::Option<DagFrameRef<TraceNode, Fresh>>::some(node);
+            break;
+        }
+        at = frame.follow(node, &TraceNode::next);
+    }
+    CRUCIBLE_FATAL_INVARIANT(merge_link.is_none() || merge.is_some());
+    for (DagFrameRef<TraceNode, Fresh> const& node : merge)
+        frame.store(new_region, &TraceNode::next, node);
 
     // The dispatch path does not yet carry an effect row down to here, so the
     // lookup uses the bare-type row.  Every untyped caller therefore agrees
@@ -520,14 +538,23 @@ add_branch(::foundation::effects::Alloc a, ::foundation::effects::cap::Nondet no
     const bool is_old_first = old_guard_value <= new_guard_value;
     DagFrameRun<BranchNode::Arm, Fresh> arms = frame.template build_array<BranchNode::Arm>(
         a, ::fixy::ElementCount{2},
-        [is_old_first, old_guard_value, new_guard_value, divergence = divergence_point.weaken(),
-         region = new_region.weaken()](::fixy::RunStart at) noexcept {
-            const bool is_old_arm = (at.value().raw() == 0) == is_old_first;
-            return is_old_arm ? BranchNode::Arm{old_guard_value, make_link(*divergence)}
-                              : BranchNode::Arm{new_guard_value, make_link(*region)};
+        [is_old_first, old_guard_value, new_guard_value](::fixy::RunStart position) noexcept {
+            const bool is_old_arm = (position.value().raw() == 0) == is_old_first;
+            return BranchNode::Arm{is_old_arm ? old_guard_value : new_guard_value};
         });
+    // The old arm runs the point of divergence, and the new arm runs the new
+    // region.  The arms, the two nodes and the branch are of the frame.
+    const DagFrameRef<TraceNode, Fresh> old_target = divergence_point;
+    const DagFrameRef<TraceNode, Fresh> new_target = new_region;
+    for (size_t index = 0; index < 2; ++index) {
+        const bool is_old_arm = (index == 0) == is_old_first;
+        const auto arm =
+            arms.element(::fixy::RunStart{::fixy::ElementCount{index}}).expect("the branch holds two arms");
+        frame.store(arm, &BranchNode::Arm::target, is_old_arm ? old_target : new_target);
+    }
     branch->set_arms(arms.weaken());
-    branch->next = merge;
+    for (DagFrameRef<TraceNode, Fresh> const& node : merge)
+        frame.store(branch, &TraceNode::next, node);
 
     recompute_merkle(*branch);
 

@@ -29,7 +29,7 @@ int main() {
     for (const crucible::DagRef<crucible::TraceNode const> continuation : published.get().next) {
         for (const crucible::DagRef<crucible::BranchNode const> branch : continuation->as_branch()) {
             for (crucible::BranchNode::Arm const& arm : branch->arms()) {
-                for (const crucible::DagRef<crucible::TraceNode>& target : arm.target())
+                for (const crucible::DagRef<crucible::TraceNode>& target : arm.target)
                     target->merkle_hash = crucible::MerkleHash{};
             }
         }

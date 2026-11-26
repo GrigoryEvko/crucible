@@ -29,8 +29,7 @@ namespace crucible::fuzz::boundary {
         branch->merkle_hash = MerkleHash{0x5eed0000u + arms};
         auto arm_run = frame.template build_array<BranchNode::Arm>(
             alloc, ::fixy::ElementCount{arms}, [values](::fixy::RunStart at) noexcept {
-                return BranchNode::Arm{*values.get(at.value().raw()).expect("a position is below the count of values"),
-                                       TraceLink{}};
+                return BranchNode::Arm{*values.get(at.value().raw()).expect("a position is below the count of values")};
             });
         branch->set_arms(arm_run.weaken());
         ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});

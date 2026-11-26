@@ -349,11 +349,13 @@ using TraceLink = ::fixy::Option<DagRef<TraceNode>>;
 using RegionLink = ::fixy::Option<DagRef<RegionNode>>;
 using ConstRegionLink = ::fixy::Option<DagRef<RegionNode const>>;
 
-// A link of a node to the node that it continues to or runs.  A const node
-// gives the node of each such link only as const, so a reader of a const
-// region writes no node that the region reaches.  The link takes eight bytes
-// too.
-using NodeLink = ::fixy::Link<TraceNode, DagArena>;
+// A link of a node to the node that it continues to or runs, as a slot of a
+// frame (foundation/core/ArenaFrame.h).  Only frame.store fills it, with a
+// holder and a node of one frame, so the node of the link is in the arena of
+// its holder.  A const node gives the node of each such link only as const,
+// so a reader of a const region writes no node that the region reaches.  The
+// link takes eight bytes too.
+using NodeLink = ::foundation::core::FrameLink<TraceNode, DagArena>;
 
 // A kind of node of the DAG: TraceNode or a class that derives from it.
 template <class Node>
@@ -416,10 +418,6 @@ struct TraceNode {
     [[nodiscard]] DagRef<BranchNode const> expect_branch() const noexcept;
     [[nodiscard]] DagRef<LoopNode const> expect_loop() const noexcept;
 };
-
-// A full link to the node.  Each node lives in a DAG arena, so the Ref of
-// the node has the DagArena brand.
-[[nodiscard]] inline TraceLink make_link(TraceNode& node) noexcept { return ::fixy::some(::fixy::to(node)); }
 
 // True when the link reaches the node.  The test compares the addresses of
 // the two nodes.
@@ -569,35 +567,30 @@ struct BranchNode : TraceNode {
     Guard guard;
 
     // One arm: the guard value and the node that the arm runs.  A const arm
-    // gives its node only as const, and it copies only from an arm that is
-    // not const, as its NodeLink does.  So an arena builds a run of arms with
-    // build_array, one arm for each position.
+    // gives its node only as const.  The target is a slot of a frame, so an
+    // arm does not copy or move, and an arena builds a run of arms with
+    // build_array, one arm for each position.  frame.store fills the target
+    // of the FrameElement of each arm.
     class Arm {
     public:
         int64_t value = 0;  // the observed guard outcome
-
-        constexpr Arm() noexcept = default;
-        constexpr Arm(int64_t guard_value, TraceLink arm_target) noexcept : value{guard_value}, target_{arm_target} {}
-
         // The node that the arm runs.  An arm of a loaded branch has no
         // target until a caller resolves it.
-        [[nodiscard]] TraceLink target() noexcept { return target_.option(); }
-        [[nodiscard]] ::fixy::Option<DagRef<TraceNode const>> target() const noexcept { return target_.option(); }
-        void set_target(TraceLink arm_target) noexcept { target_ = NodeLink{arm_target}; }
+        NodeLink target{};
+
+        constexpr Arm() noexcept = default;
+        constexpr explicit Arm(int64_t guard_value) noexcept : value{guard_value} {}
 
         // The target of the arm.  A hash of the branch reads the target of
         // each arm, so an arm with no target ends the process here.
         [[nodiscard]] TraceNode& resolved_target() noexcept {
-            return *target_.expect("an arm of the branch has no target: resolve the targets of a "
-                                   "loaded branch before a walk reads them");
+            return *target.expect("an arm of the branch has no target: resolve the targets of a "
+                                  "loaded branch before a walk reads them");
         }
         [[nodiscard]] TraceNode const& resolved_target() const noexcept {
-            return *target_.expect("an arm of the branch has no target: resolve the targets of a "
-                                   "loaded branch before a walk reads them");
+            return *target.expect("an arm of the branch has no target: resolve the targets of a "
+                                  "loaded branch before a walk reads them");
         }
-
-    private:
-        NodeLink target_{};
     };
 
     uint32_t pad1 = 0;  // the bytes between the guard and the arms
@@ -777,7 +770,7 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 // and the content_hash of each region on it are both fixed at construction.
 [[nodiscard, gnu::pure]] inline ContentHash compute_body_content_hash(TraceNode& body) noexcept {
     uint64_t body_hash_state = 0x9E3779B97F4A7C15ULL;
-    for (const DagRef<TraceNode> node : walk_trace(make_link(body))) {
+    for (const DagRef<TraceNode> node : walk_trace(::fixy::some(::fixy::to(body)))) {
         for (const DagRef<RegionNode>& region : node->as_region())
             body_hash_state = ::foundation::reflect::combine_ids(body_hash_state, region->content_hash.raw());
     }
@@ -1256,7 +1249,7 @@ make_loop(::foundation::effects::Alloc a, DagFrame<Fresh>& frame,
     CRUCIBLE_PRE(term_kind != LoopTermKind::UNTIL || repeat_count > 0u);
     const DagFrameRef<LoopNode, Fresh> node = mint_dag_node<LoopNode>(a, frame);
     node->kind = TraceNodeKind::LOOP;
-    node->body = make_link(*body);
+    frame.store(node, &LoopNode::body, body);
     node->body_content_hash = body_content_hash;
     node->feedback_edges = feedback.weaken();
     node->term_kind = term_kind;
@@ -1275,7 +1268,7 @@ make_loop(::foundation::effects::Alloc a, DagFrame<Fresh>& frame,
 inline void recompute_merkle(TraceNode& node) {
     for (const DagRef<BranchNode>& branch : node.as_branch()) {
         for (BranchNode::Arm& arm : branch->arms())
-            for (const DagRef<TraceNode>& target : arm.target())
+            for (const DagRef<TraceNode>& target : arm.target)
                 recompute_merkle(*target);
     }
     for (const DagRef<LoopNode>& loop : node.as_loop()) {
@@ -1309,7 +1302,7 @@ collect_regions(TraceNode const& first, ::fixy::ViewMut<RegionNode const*, Brand
             }
             case TraceNodeKind::BRANCH: {
                 for (BranchNode::Arm const& arm : node->expect_branch()->arms())
-                    for (const DagRef<TraceNode const>& target : arm.target())
+                    for (const DagRef<TraceNode const>& target : arm.target)
                         count = collect_regions(*target, out, count);
                 break;
             }
@@ -1364,7 +1357,8 @@ collect_regions(TraceNode const& first, ::fixy::ViewMut<RegionNode const*, Brand
                          [tail]() noexcept { return compute_content_hash(tail); });
 
         if (new_hash != region->content_hash) break;
-        merge = make_link(*region);
+        TraceNode& merge_node = *region;
+        merge = ::fixy::some(::fixy::to(merge_node));
         new_pos -= region_ops;
     }
 
@@ -1412,7 +1406,7 @@ template <typename GuardEval, typename RegionExec>
                         else if (mid_arm.value > val)
                             hi = mid;
                         else {
-                            arm = mid_arm.target();
+                            arm = mid_arm.target.option();
                             break;
                         }
                     }
@@ -1530,7 +1524,7 @@ struct DagDiff {
             for (auto [arm_a, arm_b] :
                  ba->arms().walk().try_zip(bb->arms().walk()).expect("the two branches hold one count of arms")) {
                 if (arm_a->value != arm_b->value) return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
-                DagDiff arm_diff = dag_diff(arm_a->target(), arm_b->target(), depth + 1);
+                DagDiff arm_diff = dag_diff(arm_a->target.option(), arm_b->target.option(), depth + 1);
                 if (arm_diff.kind != DagDiff::Kind::IDENTICAL) return arm_diff;
             }
             a = node_a->next.option();
@@ -1570,7 +1564,7 @@ struct DagDiff {
         switch (node->kind) {
             case TraceNodeKind::BRANCH: {
                 for (BranchNode::Arm& arm : node->expect_branch()->arms())
-                    count += dag_node_count(arm.target());
+                    count += dag_node_count(arm.target.option());
                 break;
             }
             case TraceNodeKind::LOOP:

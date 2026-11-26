@@ -2374,6 +2374,14 @@ crucible_neg_compile_test(neg_dag_node_mint_of_a_plan
 crucible_neg_compile_test(neg_dag_node_mint_in_another_family
   "no matching function for call to .mint_dag_node<crucible::RegionNode>.*foundation::core::ArenaFrame<.anonymous.::OtherFamily, "
   "mismatched types .crucible::DagArena. and .\\{anonymous\\}::OtherFamily.")
+# A link of a node is a slot of a frame: only a store of one frame fills it,
+# so no family link and no node of another frame takes it.
+crucible_neg_compile_test(neg_dag_link_assigned_outside_a_frame
+  "neg_dag_link_assigned_outside_a_frame\\.cpp:[0-9]+:[0-9]+: error: no match for .operator=."
+  "operand types are .crucible::NodeLink. \\{aka .foundation::core::FrameLink<crucible::TraceNode, crucible::DagArena>.\\} and .foundation::core::Option<foundation::core::Ref<crucible::TraceNode, crucible::DagArena> >.")
+crucible_neg_compile_test(neg_dag_link_stored_across_frames
+  "neg_dag_link_stored_across_frames\\.cpp:[0-9]+:[0-9]+: error: no matching function for call to .foundation::core::ArenaFrame<crucible::DagArena, foundation::core::<lambda\\(\\)> >::store"
+  "mismatched types .foundation::core::<lambda\\(\\)>. and .foundation::core::<lambda\\(\\)>.")
 
 # A slot of the kernel cache gives its one writer only with the claim that won
 # the slot.
@@ -2394,7 +2402,7 @@ crucible_neg_compile_test(neg_branch_arm_target_raw_read
   "error: base operand of .->. has non-pointer type"
   "non-pointer type .foundation::core::Option<foundation::core::Ref<const crucible::TraceNode")
 crucible_neg_compile_test(neg_published_region_writes_through_an_arm
-  "invalid initialization of reference of type .crucible::DagRef<crucible::TraceNode>&. \\{aka .const foundation::core::Ref<crucible::TraceNode, crucible::DagArena>&.\\} from expression of type .const foundation::core::Ref<const crucible::TraceNode"
+  "invalid initialization of reference of type .crucible::DagRef<crucible::TraceNode>&. \\{aka .const foundation::core::Ref<crucible::TraceNode, crucible::DagArena>&.\\} from expression of type .foundation::core::Ref<const crucible::TraceNode"
   "neg_published_region_writes_through_an_arm.cpp:[0-9]+:[0-9]+: error")
 crucible_neg_compile_test(neg_published_region_writes_through_a_loop_body
   "invalid initialization of reference of type .crucible::DagRef<crucible::TraceNode>&. \\{aka .const foundation::core::Ref<crucible::TraceNode, crucible::DagArena>&.\\} from expression of type .foundation::core::Ref<const crucible::TraceNode"
