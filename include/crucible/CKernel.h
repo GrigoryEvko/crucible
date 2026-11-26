@@ -615,9 +615,6 @@ inline void publish_static_ckernel_table() noexcept {
             return "RNG_NORMAL";
         case CKernelId::COMM_BARRIER:
             return "COMM_BARRIER";
-
-        case CKernelId::NUM_KERNELS:
-            ::fixy::unreachable();
         default:
             return "<unknown>";
     }

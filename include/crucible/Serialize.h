@@ -776,7 +776,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         // construction.
         {
             const uint8_t raw_kernel_id = r.r<uint8_t>();
-            if (raw_kernel_id >= static_cast<uint8_t>(CKernelId::NUM_KERNELS)) [[unlikely]] {
+            if (std::size_t{raw_kernel_id} >= ckernel_id_count) [[unlikely]] {
                 return ::fixy::err(r.reason_or(LoadError::field_out_of_range));
             }
             te.kernel_id = make_ckernel_id(::fixy::mint_refined<kValidCKernelIdBound>(raw_kernel_id));

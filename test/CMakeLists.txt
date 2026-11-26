@@ -2071,15 +2071,15 @@ crucible_neg_compile_test(neg_merkle_dag_variant_id_overflow
   "__builtin_trap.*is not a constant expression"
   "Monotonic<unsigned int(, std::less<unsigned int> )?>::bump\\(\\)")
 
-# ValidCKernelIdRaw is Refined<bounded_above<NUM_KERNELS - 1>, uint8_t>.
+# ValidCKernelIdRaw is Refined<bounded_above<ckernel_id_count - 1>, uint8_t>.
 # It is the gate at each widening of a uint8_t to a CKernelId.  The door
-# mint_refined must refuse the NUM_KERNELS sentinel (the edge of the
-# bound) and UINT8_MAX (the wide miss).  The first regex says that the
-# precondition of the door failed.  The second names the door and the
-# refused value.
-crucible_neg_compile_test(neg_ckernel_id_raw_at_sentinel
+# mint_refined must refuse the byte of the count of the kernel ids (the
+# edge of the bound) and UINT8_MAX (the wide miss).  The first regex says
+# that the precondition of the door failed.  The second names the door and
+# the refused value.
+crucible_neg_compile_test(neg_ckernel_id_raw_at_count
   "__builtin_trap.*is not a constant expression"
-  "mint_refined<BoundedAbove<[0-9]+>\\(\\), unsigned char>\\(\\(\\(uint8_t\\)crucible::CKernelId::NUM_KERNELS\\)\\)")
+  "mint_refined<BoundedAbove<[0-9]+>\\(\\), unsigned char>\\(\\(\\(uint8_t\\)\\(\\(std::size_t\\)crucible::ckernel_id_count\\)\\)\\)")
 crucible_neg_compile_test(neg_ckernel_id_raw_uint8_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<[0-9]+>\\(\\), unsigned char>\\(255\\)")

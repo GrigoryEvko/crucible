@@ -321,9 +321,9 @@ constexpr OpCategory kCategorization[] = {
     {CKernelId::COMM_BARRIER, RecipeRelevance::SYNC, "all-rank barrier"},
 };
 
-// NUM_KERNELS is the sentinel past the last op, so its value is the number of
-// ops including the fallback at zero.
-constexpr std::size_t kExpectedCategorizationSize = static_cast<std::size_t>(CKernelId::NUM_KERNELS);
+// The count of the kernel ids from reflection: the number of ops including
+// the fallback at zero.
+constexpr std::size_t kExpectedCategorizationSize = crucible::ckernel_id_count;
 
 static_assert(std::size(kCategorization) == kExpectedCategorizationSize,
               "kCategorization covers every CKernelId. An op was added "

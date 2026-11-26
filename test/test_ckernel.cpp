@@ -39,16 +39,6 @@ using ExtHash = ::fixy::Tagged<crucible::SchemaHash, ::fixy::tags::source::Exter
 // tests use no Vigil, so they take that context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
-// NUM_KERNELS is the count of the kernel ids, and it names no kernel.  Its
-// arm in ckernel_name is the unreachable point, which ends the process in
-// each build.  The call runs in a child through expect_dies of the Check
-// family.
-static void expect_name_of_the_count_ends_the_process(::fixy::TestRunnerCtx const& test) {
-    ::fixy::check::expect_dies(
-        test, [] noexcept { static_cast<void>(crucible::ckernel_name(crucible::CKernelId::NUM_KERNELS)); },
-        ::fixy::TextView{"foundation: fatal: control reached a point that the code marks as unreachable"});
-}
-
 int main() {
     using namespace crucible;
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
@@ -107,7 +97,7 @@ int main() {
 
     // The fallback name for an unnamed id opens with an angle bracket,
     // which is what the second half of the assertion below catches.
-    for (uint8_t i = 1; i < static_cast<uint8_t>(CKernelId::NUM_KERNELS); i++) {
+    for (uint8_t i = 1; std::size_t{i} < ckernel_id_count; i++) {
         const ::fixy::TextView name = ckernel_name(static_cast<CKernelId>(i));
         const bool opens_with_an_angle_bracket =
             name.window(0, 1).match([](::fixy::TextView first) noexcept { return first == ::fixy::TextView{"<"}; },
@@ -134,7 +124,7 @@ int main() {
 
         // One below the kernel count is the highest valid value.
         {
-            constexpr uint8_t LAST = static_cast<uint8_t>(CKernelId::NUM_KERNELS) - uint8_t{1};
+            constexpr uint8_t LAST = static_cast<uint8_t>(ckernel_id_count - 1);
             const ValidCKernelIdRaw raw = ::fixy::mint_refined<kValidCKernelIdBound>(LAST);
             CRUCIBLE_TEST_ASSERT(test, make_ckernel_id(raw) == CKernelId::COMM_BARRIER);
             CRUCIBLE_TEST_ASSERT(test, static_cast<uint8_t>(make_ckernel_id(raw)) == LAST);
@@ -230,8 +220,6 @@ int main() {
     // A table holds 256 entries, and each padding byte of an entry costs one
     // store at each initialization of an automatic table (padding_bytes.h).
     crucible::test::expect_no_padding_byte<^^CKernelEntry>(kTest);
-
-    expect_name_of_the_count_ends_the_process(test);
 
     ::fixy::check::pass(test, "test_ckernel: all tests passed\n");
     return 0;

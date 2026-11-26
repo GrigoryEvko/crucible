@@ -9,16 +9,19 @@
 
 #include <fixy/Core.h>
 #include <fixy/Refined.h>
+#include <foundation/reflect/EnumName.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace crucible {
 
 // Enumerator values are a persisted format. They are written into trace files
 // and recovered from untrusted bytes, so an existing enumerator is never
-// renumbered or removed, and a new one is appended immediately before
-// NUM_KERNELS. OPAQUE is 0 so a zero-initialised classification field already
-// holds the safe fallback.
+// renumbered or removed, and a new one is appended at the end. OPAQUE is 0 so
+// a zero-initialised classification field already holds the safe fallback.
+// The ids have no gap, so ckernel_id_count below is the first byte that names
+// no id.
 //
 // Aliases and backend variants of one mathematical operation share a single
 // identifier. An in-place variant folds into its out-of-place identifier. The
@@ -195,22 +198,21 @@ enum class CKernelId : uint8_t {
     RNG_NORMAL,
 
     COMM_BARRIER,
-
-    NUM_KERNELS
 };
+
+// The count of the kernel ids, from reflection.  The ids have no gap, so the
+// count is also the first byte that names no id.
+inline constexpr std::size_t ckernel_id_count = ::foundation::reflect::enum_count<CKernelId>;
 
 // The gate for widening an untrusted byte back into CKernelId. A byte
 // recovered from a trace file or across a foreign-runtime boundary can be out
 // of range after version skew or corruption, and a bare static_cast would turn
-// it into an enum value no switch handles. Admitting only [0, NUM_KERNELS)
-// makes the widening below total.  The one door into the type is
-// ::fixy::mint_refined<kValidCKernelIdBound>(byte).  The bound excludes the
-// sentinel NUM_KERNELS, which enum_from takes as an enumerator, so the type
-// says more than "names an enumerator".  Each byte below NUM_KERNELS names a
-// kernel (the check file of crucible/CKernel.h), so the widening has its
-// proof in the type.
-inline constexpr auto kValidCKernelIdBound =
-    ::fixy::bounded_above<static_cast<uint8_t>(CKernelId::NUM_KERNELS) - uint8_t{1}>;
+// it into an enum value no switch handles. Admitting only the bytes below
+// ckernel_id_count makes the widening below total.  The one door into the
+// type is ::fixy::mint_refined<kValidCKernelIdBound>(byte).  Each byte below
+// the count names a kernel (the check file of crucible/CKernel.h), so the
+// widening has its proof in the type.
+inline constexpr auto kValidCKernelIdBound = ::fixy::bounded_above<ckernel_id_count - 1>;
 
 using ValidCKernelIdRaw = ::fixy::Refined<kValidCKernelIdBound, uint8_t>;
 

@@ -82,6 +82,7 @@ constexpr size_t kRegionPrefix = 32 + 4 + 8 + 8 + 4 + 4 + 1;  // = 61
 //   num_scalar_args(2) grad_enabled(1) op_flags(1) kernel_id(1) depth(2)
 //   scalar_types(2)
 constexpr size_t kEntryHeader = 8 + 8 + 8 + 8 + 2 + 2 + 2 + 1 + 1 + 1 + 2 + 2;  // = 45
+constexpr size_t kEntryKernelId = kRegionPrefix + 8 + 8 + 8 + 8 + 2 + 2 + 2 + 1 + 1;  // kernel_id byte
 // The image of a descriptor: sizes[8]*8 + strides[8]*8 + ndim(1) + dtype(1)
 //   + device_type(1) + device_idx(1) + layout(1) + requires_grad(1)
 //   + flags(1) + ... with no data pointer.
@@ -139,9 +140,11 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
         size_t off;
         uint8_t bad;
     };
-    const ::fixy::FixedArray<Corruption, 10> cases{
+    const ::fixy::FixedArray<Corruption, 11> cases{
         // The node kind runs to a terminal value, so 99 is far out of range.
         {"header.kind", kKindOffset, 99},
+        // The kernel ids run below ckernel_id_count, so the count names no id.
+        {"entry.kernel_id", kEntryKernelId, static_cast<uint8_t>(crucible::ckernel_id_count)},
         // A tensor has at most 8 dimensions, so 200 is out of range.
         {"meta.ndim", kMetaNdim, 200},
         // The scalar-type enumeration has a hole at 14.
