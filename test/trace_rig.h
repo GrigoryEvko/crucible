@@ -45,7 +45,7 @@ template <class Owner>
 class Local;
 
 // Records one op through the producer ends of a local ring and a local log
-// (record_into of crucible/Vigil.h).  Returns false when the ring is full.
+// (TraceRing::try_record).  Returns false when the ring is full.
 // The definition follows the class Local.
 [[nodiscard]] inline bool record_local(Local<TraceRing>& ring, Local<MetaLog>& log, ValidatedOp const& op,
                                        ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {},
@@ -246,7 +246,7 @@ inline bool record_local(LocalRing& ring, LocalLog& log, ValidatedOp const& op, 
     return ::fixy::concurrent::with_held_ends(
         ring.split_.producer_side(), proof, log.split_.producer_side(), proof,
         [&op, scope_hash, callsite_hash, depth](TraceRing::Producer& ring_end, MetaLog::Producer& log_end) noexcept {
-            return record_into(ring_end, log_end, op, scope_hash, callsite_hash, depth);
+            return TraceRing::try_record(ring_end, log_end, op.metas(), op.entry(), scope_hash, callsite_hash, depth);
         });
 }
 
@@ -424,14 +424,14 @@ public:
     TraceRig(TraceRig&&) = delete("a BackgroundThread holds the sides of a rig, so the rig does not move");
 
     // Records one op through the producer sides of the ring and of the log
-    // (record_into of crucible/Vigil.h).  Returns false when the ring is full.
+    // (TraceRing::try_record).  Returns false when the ring is full.
     [[nodiscard]] bool record(ValidatedOp const& op, ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {},
                               OpDepth depth = {}) noexcept {
         RigProducerProof const proof{};
         return ::fixy::concurrent::with_held_ends(
             ring_.ring_.producer_side(), proof, log_.log_.producer_side(), proof,
             [&op, scope_hash, callsite_hash, depth](TraceRing::Producer& ring, MetaLog::Producer& log) noexcept {
-                return record_into(ring, log, op, scope_hash, callsite_hash, depth);
+                return TraceRing::try_record(ring, log, op.metas(), op.entry(), scope_hash, callsite_hash, depth);
             });
     }
 

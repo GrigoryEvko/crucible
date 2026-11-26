@@ -50,6 +50,8 @@
 #include <type_traits>
 #include <utility>
 
+#include <crucible/MetaLog.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/warden/Registry.h>
 
@@ -271,12 +273,27 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     using head_writer = ::fixy::SoleWriterProof<TraceRing, HeadWriter>;
     using tail_writer = ::fixy::SoleWriterProof<TraceRing, TailWriter>;
 
-    // The ends of a ring (fixy/concurrent/SpscEnds.h) hold no state.  The
-    // ring keeps the private line of each side, and only the doors of that
-    // side, which take its end, write the line.  So one pointer reaches each
-    // part of a side, as on the record path before the split.
-    struct producer_state {};
-    struct consumer_state {};
+    // The state of each side lives in the end of that side
+    // (fixy/concurrent/SpscEnds.h), on a cache line of its own.  So the line
+    // of the producer is never the line of the consumer, of head_ or of
+    // tail_, and only the doors of a side, which take its end, write it.
+    //
+    // The producer keeps its copy of the head and its view of the tail.  A
+    // stale view of the tail is safe, because it can only under-report free
+    // space, which costs a real reload of tail and never an overwrite of a
+    // slot the consumer has not read.  Monotonic enforces the direction: tail
+    // only ever advances, so an observation that moved backwards is a lost
+    // acquire.
+    struct alignas(64) producer_state {
+        ::fixy::Monotonic<uint64_t> own_head = ::fixy::mint_monotonic<uint64_t>(0);
+        ::fixy::Monotonic<uint64_t> cached_tail = ::fixy::mint_monotonic<uint64_t>(0);
+    };
+    // The consumer keeps its copy of the tail.  The drains track their
+    // position here, and they publish to tail only once the copies are
+    // complete.
+    struct alignas(64) consumer_state {
+        uint64_t consumer_tail = 0;
+    };
 
     // The two ends of a ring.  The side doors below are the only doors that
     // write a side of the ring, and each takes the end of its side.
@@ -294,33 +311,6 @@ private:
 
     alignas(64)::fixy::AtomicMonotonic<uint64_t, tail_writer> tail_ =
         ::fixy::mint_atomic_monotonic<uint64_t, tail_writer>(0);
-
-    // The copy of the tail of the consumer.  Only the doors of the consumer
-    // read or write it, so the drains track their position here and publish
-    // to tail only once the copies are complete.
-    //
-    // It does not share a line with tail, although sharing one would be
-    // harmless: AtomicMonotonic carries its own alignas(64) and is 64 bytes
-    // wide, so tail fills bytes 64 through 127 by itself and this field
-    // starts the line after it. The producer never touches either, so the
-    // extra line costs a second consumer-private fetch and no invalidation.
-    uint64_t consumer_tail_ = 0;
-
-    // The producer's private view of tail, on its own line. Packing it with
-    // the consumer-written counters above would make every producer refresh
-    // invalidate the consumer's hot line. The 56 bytes that follow are not
-    // paid for by this alignment: entries[] starts at the next 64-byte
-    // boundary regardless, so dropping the alignment moves the padding rather
-    // than reclaiming it.
-    //
-    // A stale value here is safe because it can only under-report free space,
-    // which costs a real reload of tail and never an overwrite of a slot the
-    // consumer has not read. Monotonic enforces the direction: tail only ever
-    // advances, so an observation that moved backwards is a lost acquire.
-    alignas(64)::fixy::Monotonic<uint64_t> cached_tail_ = ::fixy::mint_monotonic<uint64_t>(0);
-    // The copy of the head of the producer, on the same private line (the two
-    // publishes).  It holds the value of the head after each publish.
-    ::fixy::Monotonic<uint64_t> own_head_ = ::fixy::mint_monotonic<uint64_t>(0);
 
     // The five parallel arrays of the slots.  The producer end writes a slot,
     // and the consumer end copies it out after the publish of the head.
@@ -347,33 +337,6 @@ public:
     TraceRing(TraceRing&&) = delete("SPSC ring is pinned to a producer/consumer thread pair");
     TraceRing& operator=(TraceRing&&) = delete("SPSC ring is pinned to a producer/consumer thread pair");
 
-    // A free slot of the ring, which try_reserve found.  The token holds the
-    // head at the reservation.  Only commit moves the head, so a token that
-    // the producer drops leaves the ring as it was.  The token has no
-    // destructor work, and it only moves, so one reservation fills one slot.
-    //
-    // The producer commits a token before it reserves again.  The ring has
-    // one producer, so no other append can move the head between the two
-    // calls.  A token that names an old head fails the step check of each
-    // commit, in each build.
-    class [[nodiscard]] Reservation {
-    public:
-        Reservation(const Reservation&) = delete("one reservation fills one slot of the ring");
-        Reservation& operator=(const Reservation&) = delete("one reservation fills one slot of the ring");
-        ~Reservation() = default;
-
-        // The moves are those of the bytes.  The token only moves, so an
-        // Option of a token takes the owning slot, which moves it.
-        Reservation(Reservation&&) noexcept = default;
-        Reservation& operator=(Reservation&&) noexcept = default;
-
-    private:
-        explicit constexpr Reservation(uint64_t reserved_head) noexcept : head_{reserved_head} {}
-        friend struct TraceRing;
-
-        uint64_t head_ = 0;
-    };
-
     // The doors of the two sides.  Each door takes the end of its side, and
     // only a frame door of a split lends an end (fixy/concurrent/SpscEnds.h).
     // So the type proves the one producer and the one consumer, and no
@@ -381,51 +344,43 @@ public:
     // analysis cannot express the one writer of a side, so each door
     // suppresses it.
     //
-    // Reserves the slot at the head, or gives no token when the ring is full.
-    // The ring does not change: the head moves in commit.
-    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE static ::fixy::Option<Reservation> try_reserve(Producer& producer) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY {
-        TraceRing& ring = *producer.owner_;
-        const uint64_t h = ring.own_head_.get();
-
-        // Refreshing from the consumer's atomic is the slow path, taken only
-        // once the private view says the ring is full.
-        if (h - ring.cached_tail_.get() >= CAPACITY) [[unlikely]] {
-            ring.cached_tail_.advance(ring.tail_.get());
-            if (h - ring.cached_tail_.get() >= CAPACITY) [[unlikely]]
-                return ::fixy::none;
-        }
-        return ::fixy::Option<Reservation>::some(Reservation{h});
-    }
-
-    // Appends one entry, or returns false when the ring is full.  The append
-    // is a reservation and its commit.  A caller that names no depth records
-    // an op that no recorded op runs.
+    // Each append of the producer is one door: a reservation of the slot at
+    // the head and its commit, in one body.  The reservation is private, and
+    // nothing between the room test and the commit appends to the ring, so
+    // the reserved head is the copy of the head of the end.
+    //
+    // Appends one entry, or returns false when the ring is full.  A caller
+    // that names no depth records an op that no recorded op runs.
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE static bool
     try_append(Producer& producer, const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
                CallsiteHash callsite_hash = {}, OpDepth depth = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return try_reserve(producer).match(
+        return try_reserve_(producer).match(
             [&](Reservation reserved) noexcept {
-                commit(producer, std::move(reserved), e, meta_start, scope_hash, callsite_hash, depth);
+                commit_(producer, std::move(reserved), e, meta_start, scope_hash, callsite_hash, depth);
                 return true;
             },
             [] noexcept { return false; });
     }
 
-    // Writes the entry into the reserved slot, and moves the head past it.
-    // The consumer then sees the entry.  Each argument has no default, so a
-    // caller cannot drop a field of the slot.  The release of the publish
-    // carries the five slot writes to the consumer.  The producer end is the
-    // proof of the one writer, so the publish loads nothing from the head
-    // (the two publishes).  A token that names an old head fails the step
-    // check of the publish in each build.
-    [[gnu::hot]] CRUCIBLE_INLINE static void commit(Producer& producer, Reservation reserved, const Entry& e,
-                                                    MetaIndex meta_start, ScopeHash scope_hash,
-                                                    CallsiteHash callsite_hash, OpDepth depth) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY {
-        TraceRing& ring = *producer.owner_;
-        const uint64_t h = ring.fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
-        ring.head_.advance_sole_writer_by_proof(prove_head_writer_(), ring.own_head_, h + 1);
+    // Records one op through the producer ends of the ring and of its
+    // metadata log, and returns false when the ring is full.  The slot of the
+    // ring is reserved first.  A full ring then refuses the op before the log
+    // takes a record, so the log holds no record of an op that the ring does
+    // not hold.  A full log gives the op no metadata index, and the ring
+    // still takes the op, so the detector sees it.  An op with no records
+    // gets no index from the log either.  The door flattens, so the match and
+    // its arms inline, and the record makes no call apart from the copy of
+    // the records.
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE static bool
+    try_record(Producer& ring, MetaLog::Producer& log, ::fixy::View<const TensorMeta> metas, const Entry& entry,
+               ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        return try_reserve_(ring).match(
+            [&](Reservation reserved) noexcept {
+                const MetaIndex meta_start = MetaLog::try_append(log, metas);
+                commit_(ring, std::move(reserved), entry, meta_start, scope_hash, callsite_hash, depth);
+                return true;
+            },
+            [] noexcept { return false; });
     }
 
     // The append of a pure caller.  The gate reads the row of the context of
@@ -499,14 +454,14 @@ public:
         TraceRing& ring = *producer.owner_;
         ring.head_.reset_under_quiescence();
         ring.tail_.reset_under_quiescence();
-        ring.consumer_tail_ = 0;
-        ring.cached_tail_.reset_under_quiescence();
-        ring.own_head_.reset_under_quiescence();
+        consumer.state_.consumer_tail = 0;
+        producer.state_.cached_tail.reset_under_quiescence();
+        producer.state_.own_head.reset_under_quiescence();
         CRUCIBLE_POST(0, ring.head_.get() == 0);
         CRUCIBLE_POST(0, ring.tail_.get() == 0);
-        CRUCIBLE_POST(0, ring.consumer_tail_ == 0);
-        CRUCIBLE_POST(0, ring.cached_tail_.get() == 0);
-        CRUCIBLE_POST(0, ring.own_head_.get() == 0);
+        CRUCIBLE_POST(0, consumer.state_.consumer_tail == 0);
+        CRUCIBLE_POST(0, producer.state_.cached_tail.get() == 0);
+        CRUCIBLE_POST(0, producer.state_.own_head.get() == 0);
     }
 
     // head and tail are read at different instants while both threads run, so
@@ -529,6 +484,66 @@ public:
     [[nodiscard]] uint64_t total_consumed() const noexcept CRUCIBLE_NO_THREAD_SAFETY { return tail_.get(); }
 
 private:
+    // A free slot of the ring, which try_reserve_ found.  The token holds the
+    // head at the reservation.  Only commit_ moves the head, so a token that
+    // the producer drops leaves the ring as it was.  The token has no
+    // destructor work, and it only moves, so one reservation fills one slot.
+    // Only the body of one append door holds a token, from its room test to
+    // its commit.
+    class [[nodiscard]] Reservation {
+    public:
+        Reservation(const Reservation&) = delete("one reservation fills one slot of the ring");
+        Reservation& operator=(const Reservation&) = delete("one reservation fills one slot of the ring");
+        ~Reservation() = default;
+
+        // The moves are those of the bytes.  The token only moves, so an
+        // Option of a token takes the owning slot, which moves it.
+        Reservation(Reservation&&) noexcept = default;
+        Reservation& operator=(Reservation&&) noexcept = default;
+
+    private:
+        explicit constexpr Reservation(uint64_t reserved_head) noexcept : head_{reserved_head} {}
+        friend struct TraceRing;
+
+        uint64_t head_ = 0;
+    };
+    // A reservation only moves, and its moves are those of its bytes.  An
+    // Option of a reservation moves it through the owning slot.
+    static_assert(__is_trivially_copyable(Reservation) && !__is_constructible(Reservation, Reservation const&));
+
+    // Reserves the slot at the head, or gives no token when the ring is full.
+    // The ring does not change: the head moves in commit_.
+    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE static ::fixy::Option<Reservation> try_reserve_(Producer& producer) noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
+        TraceRing& ring = *producer.owner_;
+        producer_state& state = producer.state_;
+        const uint64_t h = state.own_head.get();
+
+        // Refreshing from the consumer's atomic is the slow path, taken only
+        // once the private view says the ring is full.
+        if (h - state.cached_tail.get() >= CAPACITY) [[unlikely]] {
+            state.cached_tail.advance(ring.tail_.get());
+            if (h - state.cached_tail.get() >= CAPACITY) [[unlikely]]
+                return ::fixy::none;
+        }
+        return ::fixy::Option<Reservation>::some(Reservation{h});
+    }
+
+    // Writes the entry into the reserved slot, and moves the head past it.
+    // The consumer then sees the entry.  Each argument has no default, so a
+    // door cannot drop a field of the slot.  The release of the publish
+    // carries the five slot writes to the consumer.  The producer end is the
+    // proof of the one writer, so the publish loads nothing from the head
+    // (the two publishes).
+    [[gnu::hot]] CRUCIBLE_INLINE static void commit_(Producer& producer, Reservation reserved, const Entry& e,
+                                                     MetaIndex meta_start, ScopeHash scope_hash,
+                                                     CallsiteHash callsite_hash, OpDepth depth) noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
+        TraceRing& ring = *producer.owner_;
+        const uint64_t h = ring.fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
+        ring.head_.advance_sole_writer_by_proof(prove_head_writer_(), producer.state_.own_head, h + 1);
+    }
+
     // The proofs of the writers of the two counters.  The doors of a side
     // make the proof of its side, and the end of the side that each door
     // takes proves the one writer.
@@ -616,7 +631,7 @@ private:
 
         TraceRing& ring = *consumer.owner_;
         const uint64_t h = ring.head_.get();
-        const uint64_t t = ring.consumer_tail_;
+        const uint64_t t = consumer.state_.consumer_tail;
 
         // The clamp is an assignment and a conditional assignment.  GCC 16
         // at -O1 with -fsanitize=bounds-strict does not keep the bound
@@ -649,7 +664,7 @@ private:
         // consumer of its last store to tail, and the consumer end proves the
         // one writer, so the publish loads nothing from tail.
         const uint64_t next_tail = t + count;
-        ring.consumer_tail_ = next_tail;
+        consumer.state_.consumer_tail = next_tail;
         ring.tail_.advance_sole_writer_by_proof_from(prove_tail_writer_(), t, next_tail);
         CRUCIBLE_POST(count, count <= room);
         // The count came from a 32-bit difference, so it fits the result.

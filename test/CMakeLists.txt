@@ -3797,6 +3797,18 @@ crucible_neg_compile_test(neg_tracering_scalar_values_list_wrong_arity
   "no matching function for call to .foundation::core::FixedArray<long int, 5>::FixedArray\\(<brace-enclosed initializer list>\\)."
   "candidate expects 5 arguments, 6 provided")
 
+# The reservation of a slot of TraceRing is private to the append doors of the
+# ring, so each room test and its commit stay in one door.  Two fixtures hold
+# the two gates:
+#   * neg_tracering_reservation_named: a caller names the type Reservation.
+#   * neg_tracering_try_reserve_called: a caller calls try_reserve_.
+crucible_neg_compile_test(neg_tracering_reservation_named
+  ".class crucible::TraceRing::Reservation. is private within this context"
+  "declared private here")
+crucible_neg_compile_test(neg_tracering_try_reserve_called
+  ".static foundation::core::Option<crucible::TraceRing::Reservation> crucible::TraceRing::try_reserve_\\(Producer&\\). is private within this context"
+  "declared private here")
+
 # BitMask stores a refined mask.  The numeric ceiling
 # ((1 << kGroupWidth) - 1) bounds the mask, not kGroupWidth itself: a
 # valid mask of width 16 can be 0xF0F0.  The two fixtures pin the edge

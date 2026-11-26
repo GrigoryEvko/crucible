@@ -76,34 +76,6 @@ class DeadlineWatchdog;
 
 namespace crucible {
 
-// Records one op through the producer ends of a trace ring and of its
-// metadata log.  The ends prove the one producer, so the function has no
-// thread gate, and the two publishes load nothing from the heads (the two
-// publishes of crucible/TraceRing.h).  Vigil::record_op opens the two ends of
-// its own ring and log, and a test opens the ends of a ring and a log that it
-// owns.
-//
-// The ring slot is reserved first.  A full ring then refuses the op before
-// the log takes a record, so the log holds no record of an op that the ring
-// does not hold.  A full log gives the op no metadata index, and the ring
-// still takes the op, so the detector sees it.  An op with no records gets no
-// index from the log either.  Returns false when the ring is full.
-//
-// The function flattens, so the match and its arms inline, and the record of
-// an op makes no call apart from the copy of the records.
-[[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool record_into(TraceRing::Producer& ring,
-                                                                       MetaLog::Producer& log, const ValidatedOp& op,
-                                                                       ScopeHash scope_hash, CallsiteHash callsite_hash,
-                                                                       OpDepth depth) noexcept {
-    return TraceRing::try_reserve(ring).match(
-        [&](TraceRing::Reservation reserved) noexcept {
-            const MetaIndex meta_start = MetaLog::try_append(log, op.metas());
-            TraceRing::commit(ring, std::move(reserved), op.entry(), meta_start, scope_hash, callsite_hash, depth);
-            return true;
-        },
-        [] noexcept { return false; });
-}
-
 // The two sides of the trace ring of a Vigil: the proof of the record path
 // (RecordProof of crucible/ForegroundCtx.h), which only the producer claim of
 // the Vigils makes, opens the producer side, and the proof of the drain stage
@@ -271,7 +243,7 @@ public:
                                        "Vigil, so a Vigil has no move");
 
     // Reserves a ring slot, appends the tensor metadata, and then commits an
-    // op fingerprint to the slot (record_into).  Returns false when the ring
+    // op fingerprint to the slot (TraceRing::try_record).  Returns false when the ring
     // is full, in which case the op is dropped and the next iteration
     // re-records everything.  A full metadata log gives the op no records.
     //
@@ -885,8 +857,8 @@ private:
         return ::fixy::concurrent::with_held_ends(ring_.producer_side(), proof, meta_log_.producer_side(), proof,
                                                   [&op, scope_hash, callsite_hash, depth] [[gnu::always_inline]] (
                                                       TraceRing::Producer & ring, MetaLog::Producer & log) noexcept {
-                                                      return record_into(ring, log, op, scope_hash, callsite_hash,
-                                                                         depth);
+                                                      return TraceRing::try_record(ring, log, op.metas(), op.entry(),
+                                                                                   scope_hash, callsite_hash, depth);
                                                   });
     }
 

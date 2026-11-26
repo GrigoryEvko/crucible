@@ -1,12 +1,14 @@
-// record_into reserves the slot of the trace ring before the metadata log
-// takes the records of the op.
+// TraceRing::try_record reserves the slot of the trace ring before the
+// metadata log takes the records of the op.
 //
 // The ring and the log here have no consumer, so the ring fills after
 // CAPACITY ops and stays full.  A full ring refuses the op, and the log must
 // then hold no record of it: a record with no op in the ring is a record that
-// no op names.  A reservation that the producer drops leaves the ring as it
-// was.  A full log gives the op no metadata index, and the ring still takes
-// the op.  Each test holds a ring and a log of its own.
+// no op names.  An op with no records takes no metadata index.  A full log
+// gives the op no metadata index, and the ring still takes the op.  Each
+// test holds a ring and a log of its own.  The reservation is private to the
+// doors of the ring, so no test holds one (the fixtures
+// neg_tracering_reservation_named and neg_tracering_try_reserve_called).
 
 #include <crucible/MetaLog.h>
 #include <crucible/TraceRing.h>
@@ -97,24 +99,25 @@ void test_full_ring_leaves_no_record_in_the_log() {
     CRUCIBLE_TEST_ASSERT(kTest, ring_produced(ring) == TraceRing::CAPACITY);
 }
 
-void test_dropped_reservation_leaves_the_ring() {
+void test_op_with_no_records_takes_no_index() {
     LocalRing ring{};
     LocalLog log{::foundation::effects::testing::test().alloc};
 
-    ring.with_producer([](TraceRing::Producer& end) noexcept {
-        const ::fixy::Option<TraceRing::Reservation> reserved = TraceRing::try_reserve(end);
-        CRUCIBLE_TEST_ASSERT(kTest, reserved.is_some() && "an empty ring refused a reservation");
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, ring_produced(ring) == 0 && "a dropped reservation moved the head");
-
-    // The slot of the dropped reservation takes the next op.
-    const OpMetas metas{};
-    const TraceRing::Entry entry = entry_with_two_tensors(0x300);
-    CRUCIBLE_TEST_ASSERT(kTest, record(ring, log, entry, metas));
-    CRUCIBLE_TEST_ASSERT(kTest, ring_produced(ring) == 1);
+    TraceRing::Entry entry{};
+    entry.schema_hash = crucible::SchemaHash{0x300};
+    entry.shape_hash = crucible::ShapeHash{0x301};
+    CRUCIBLE_TEST_ASSERT(
+        kTest, crucible::test::record_local(
+                   ring, log, crucible::test::certify_synthetic_op(entry, ::fixy::View<const crucible::TensorMeta>{})));
+    CRUCIBLE_TEST_ASSERT(kTest, ring_produced(ring) == 1 && log_produced(log) == 0);
     TraceRing::Entry drained{};
-    const MetaIndex meta_start = drain_meta_start(ring, drained);
+    CRUCIBLE_TEST_ASSERT(kTest, !drain_meta_start(ring, drained).is_valid() && "an op with no records named records");
     CRUCIBLE_TEST_ASSERT(kTest, drained.schema_hash == entry.schema_hash);
+
+    // The next op with records takes the first records of the log.
+    const OpMetas metas{};
+    CRUCIBLE_TEST_ASSERT(kTest, record(ring, log, entry_with_two_tensors(0x310), metas));
+    const MetaIndex meta_start = drain_meta_start(ring, drained);
     CRUCIBLE_TEST_ASSERT(kTest, meta_start.is_valid() && meta_start.raw() == 0 && "the op did not name its records");
     CRUCIBLE_TEST_ASSERT(kTest, log_produced(log) == 2);
 }
@@ -162,7 +165,7 @@ void test_full_log_records_the_op_with_no_index() {
 
 int main() {
     test_full_ring_leaves_no_record_in_the_log();
-    test_dropped_reservation_leaves_the_ring();
+    test_op_with_no_records_takes_no_index();
     test_op_names_the_records_it_appended();
     test_full_log_records_the_op_with_no_index();
     return 0;
