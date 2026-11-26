@@ -30,6 +30,12 @@
 //     that holds a number and states no refers_by_number{}, is a finding of the
 //     kind number-borrow of the rule view-escape, because no end can reach its loans.
 //
+// Static texts
+//     A class of the base that states refers_static{} of foundation/Transfer.h, such
+//     as a StaticText, holds only pointers to static storage, and the header checks
+//     each constructor and each part of it.  So its pointer to a character names no
+//     object of the program: the class has no target and reaches nothing.
+//
 // Reach
 //     A result reaches into an argument when a target is the argument, a part of
 //     it or an object that it owns.  It reaches through the argument when a target
@@ -276,7 +282,7 @@ void add_targets(tree type, TypeSet& set, Visits& visits) {
         return;
     }
     type = readable_class(element_class(type), &set);
-    if (type == NULL_TREE || !visits.enter(type)) {
+    if (type == NULL_TREE || !visits.enter(type) || names_static_storage(type)) {
         return;
     }
     if (is_number_borrow_class(type)) {
@@ -349,7 +355,7 @@ void add_contents(tree type, TypeSet& set, Visits& visits, bool is_owned, bool i
     // An owner by a number holds its resource, and a borrow by a number reaches it.
     add_number_resource(type, set, !is_owned);
     if (readable_class(type, &set) == NULL_TREE || !visits.enter(type, is_in_owner)
-        || (is_owned && is_borrow_class(type))) {
+        || (is_owned && is_borrow_class(type)) || names_static_storage(type)) {
         return;
     }
     // A unique handle, such as a ViewMut, has no copy and a move, and it lends its

@@ -5084,6 +5084,11 @@ foundation_neg_compile_test(neg_core_foreign_text_door_lookalike
 foundation_neg_compile_test(neg_core_static_text_run_past_object
   "array subscript value .7. is outside the bounds of array type .const char \\[4\\]."
   "expansion of .foundation::core::mint_static_text\\(")
+# A StaticText holds no borrow (refers_static{}), but a record that holds one
+# beside a TextView of a local run is still a borrow of the run.
+foundation_neg_compile_test(neg_core_static_text_beside_a_borrowed_run
+  "neg_core_static_text_beside_a_borrowed_run\\.cpp:24:[0-9]+: error: this use reads a borrow of local in kept"
+  "after the end of the scope of local")
 foundation_neg_compile_test(neg_core_view_enumerate_range_forged
   "redefinition of .class foundation::core::detail::EnumerateStage<Element, Count, Brand, Extent>."
   "previous definition of .class foundation::core::detail::EnumerateStage<Element, Count, Brand, Extent>.")

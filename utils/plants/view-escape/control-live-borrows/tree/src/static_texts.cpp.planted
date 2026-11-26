@@ -1,0 +1,39 @@
+// A StaticText states refers_static{} of foundation/Transfer.h: its pointer names
+// static storage, so it names no object of the program and holds no borrow.  A
+// value that holds one and comes from a call with a local lives on after the end
+// of the scope of that local, and after a change of it.
+#include <foundation/core/Array.h>
+#include <foundation/core/StaticText.h>
+
+namespace planted {
+
+using ::foundation::core::HeapArray;
+using ::foundation::core::StaticText;
+
+struct Note {
+    StaticText text = "";
+};
+
+struct Store {
+    HeapArray<int> items{};
+};
+
+Note note_of(Store& store) noexcept;
+
+unsigned long kept_past_the_scope() noexcept {
+    Note kept{};
+    for (int turn = 0; turn < 2; ++turn) {
+        Store store{};
+        kept = note_of(store);
+    }
+    return kept.text.view().size();
+}
+
+unsigned long kept_past_a_change() noexcept {
+    Store store{};
+    Note const note = note_of(store);
+    store = Store{};
+    return note.text.view().size();
+}
+
+}  // namespace planted

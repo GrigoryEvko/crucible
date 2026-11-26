@@ -3571,12 +3571,16 @@ void report_view_escape(const Finding& finding);
 // is_number_borrow_class() for a class that states refers_by_number{}: an owner
 // and a borrow of a resource by its number, whose first type argument names the
 // resource (the numbers of route.cpp).  The two take a null type too.
+// names_static_storage() is true for a class of the base that states
+// refers_static{}: each pointer that it holds names static storage, so it holds
+// no borrow and names no object of the program (the static texts).
 bool holds_borrow(tree type);
 OwnedPositions held_owner_arguments(tree type);
 bool is_borrow_class(tree type);
 bool is_unique_borrow_class(tree type);
 bool is_number_owner_class(tree type);
 bool is_number_borrow_class(tree type);
+bool names_static_storage(tree type);
 bool is_storage_owner(tree type);
 bool is_block_keeper(tree type);
 bool is_outside_owner(tree type);

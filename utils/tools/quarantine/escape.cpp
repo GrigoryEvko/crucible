@@ -17,8 +17,10 @@
 //   argument too.  A class of the
 //   base that states owns_its_storage{} holds no borrow: its pointers name its
 //   own storage.  So a Box of an arena holds no borrow, and the object of a
-//   door of the Box is the Box (the marked owners).  The rule reads each
-//   function whose return type holds a borrow.
+//   door of the Box is the Box (the marked owners).  A class of the base that
+//   states refers_static{}, such as a StaticText, holds no borrow: its pointers
+//   name static storage (the static texts).  The rule reads each function whose
+//   return type holds a borrow.
 //
 // Origins
 //   The origins of an expression are the objects that its borrow can name.
@@ -174,6 +176,7 @@ struct EscapeNames {
     tree refers_deep = NULL_TREE;
     tree owns_by_number = NULL_TREE;
     tree refers_by_number = NULL_TREE;
+    tree refers_static = NULL_TREE;
     tree payload_cell = NULL_TREE;
     tree foundation = NULL_TREE;
     tree fixy = NULL_TREE;
@@ -299,8 +302,10 @@ bool reaches_borrow(tree type, ReachWalk& walk, int depth) {
         return step == ReachWalk::Step::yes;
     }
     // The pointers of an owner of its storage in the base, such as an arena,
-    // name its own blocks, so the class holds no borrow.
-    if (is_base_storage_owner(type)) {
+    // name its own blocks, so the class holds no borrow.  The pointers of a class
+    // of the base that states refers_static{}, such as a StaticText, name static
+    // storage, so it holds no borrow either.
+    if (is_base_storage_owner(type) || names_static_storage(type)) {
         return walk.leave(type, false);
     }
     bool const is_borrow = carries_mark(type, escape_names.refers) || carries_mark(type, escape_names.refers_unique)
@@ -1563,6 +1568,15 @@ bool is_number_borrow_class(tree type) {
     return type != NULL_TREE && CLASS_TYPE_P(type) && carries_mark(type, escape_names.refers_by_number);
 }
 
+// The rule trusts refers_static{} only in a class of the base, as the store walk
+// of foundation/core/CaptureStore.h does: check_refers_static_statement of
+// foundation/Transfer.h checks each constructor and each part of such a class.
+bool names_static_storage(tree type) {
+    type = type != NULL_TREE && TYPE_P(type) ? TYPE_MAIN_VARIANT(type) : NULL_TREE;
+    return type != NULL_TREE && CLASS_TYPE_P(type) && carries_mark(type, escape_names.refers_static)
+        && is_of_base_namespace(type);
+}
+
 bool is_storage_owner(tree type) { return is_base_storage_owner(type); }
 
 bool is_block_keeper(tree type) { return is_base_storage_owner(type) || is_base_block_keeper(type); }
@@ -1643,6 +1657,7 @@ void register_view_escape(const char* plugin_name) {
     escape_names.refers_deep = get_identifier("refers_deep");
     escape_names.owns_by_number = get_identifier("owns_by_number");
     escape_names.refers_by_number = get_identifier("refers_by_number");
+    escape_names.refers_static = get_identifier("refers_static");
     escape_names.payload_cell = get_identifier("payload_cell");
     escape_names.foundation = get_identifier("foundation");
     escape_names.fixy = get_identifier("fixy");
