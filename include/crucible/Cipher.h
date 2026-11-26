@@ -703,10 +703,10 @@ private:
     // load is its one check.  Malformed lines are skipped rather than fatal.
     // A corrupt or truncated log leaves the in-memory state as a proper
     // prefix of what was on disk instead of killing the process.  A line
-    // whose step is above MAX_COMMIT_STEP, or whose order is above
-    // MAX_COMMIT_ORDER, is corrupt.  The steps and the places of the commits
-    // only grow, so a line whose step goes back, or whose place does not
-    // grow, is a corrupt line too.  The load reports each line that it skips
+    // whose step is above MAX_COMMIT_STEP, whose order is above
+    // MAX_COMMIT_ORDER, or whose hash is zero, is corrupt.  The steps and the
+    // places of the commits only grow, so a line whose step goes back, or
+    // whose place does not grow, is a corrupt line too.  The load reports each line that it skips
     // on the standard error, with the number of the line and the reason.
     void load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allocation);
 };

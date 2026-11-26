@@ -159,6 +159,14 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
                                ::fixy::mint_tagged<::fixy::tags::source::External>(root.c_text().view()))
                       .expect("the harness opens its store");
     const auto view = cipher.mint_open_view(kHarnessCtx);
+    // The log is the record of the commits, so a log with a commit gives the
+    // head: the hash of its last commit, which is not zero.
+    cipher.last_committed_step().match(
+        [&cipher, &view](::fixy::session::StepId last) noexcept {
+            CRUCIBLE_FUZZ_CLAIM("cipher_store",
+                                !cipher.empty() && cipher.head() == cipher.hash_at_step(view, last.raw()));
+        },
+        [] noexcept {});
 
     detail::StorePath session_dir{};
     const detail::HexName session_name = detail::hex16(session_raw);
@@ -275,6 +283,8 @@ enum class CipherSeed : std::uint8_t {
     order_above_ceiling,
     // A head log with no line, so the open reads the head from HEAD.
     head_only,
+    // A head log whose last line has the hash zero.
+    zero_hash,
 };
 
 // Byte offsets in a 72-byte event record.
@@ -312,6 +322,9 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
             break;
         case CipherSeed::head_only:
             has_log_line = false;
+            break;
+        case CipherSeed::zero_hash:
+            log_tail = ::fixy::TextView{"2,0000000000000000,2\n"};
             break;
         default:
             ::fixy::unreachable();
@@ -382,6 +395,10 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
     add_seed(seeds, cipher_store_seed(CipherSeed::order_above_ceiling));
     // A store whose head log holds no line, so the open parses HEAD.
     add_seed(seeds, cipher_store_seed(CipherSeed::head_only));
+    // Regression: a head log whose last line has the hash zero.  The load
+    // took it as a commit with no head, and the open took the head from
+    // HEAD.
+    add_seed(seeds, cipher_store_seed(CipherSeed::zero_hash));
     return seeds;
 }
 

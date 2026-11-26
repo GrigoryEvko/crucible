@@ -678,6 +678,8 @@ enum class LogLineSkip : std::uint8_t {
     step_above_limit,
     // The order is above Cipher::MAX_COMMIT_ORDER.
     order_above_limit,
+    // The hash is zero, the sentinel of no content, and no commit names it.
+    zero_hash,
     // The step is below the step of the last line that the load took.
     step_order,
     // The order is not above the order of the last line that the load took.
@@ -695,6 +697,8 @@ enum class LogLineSkip : std::uint8_t {
             return ::fixy::TextView{"the step is above MAX_COMMIT_STEP"};
         case LogLineSkip::order_above_limit:
             return ::fixy::TextView{"the order is above MAX_COMMIT_ORDER"};
+        case LogLineSkip::zero_hash:
+            return ::fixy::TextView{"the hash is zero, and no commit names the hash zero"};
         case LogLineSkip::step_order:
             return ::fixy::TextView{"the step is below the step of the last line that the load took"};
         case LogLineSkip::order_not_growing:
@@ -1482,6 +1486,11 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
         // each later line a place that does not grow, and each later commit
         // would find no place.
         if (line.order > MAX_COMMIT_ORDER) return ::fixy::some(LogLineSkip::order_above_limit);
+        // The hash zero is the sentinel of no content, and record_event
+        // refuses it.  A line that took it would be a commit with no head: the
+        // open would take the head from HEAD, which then names no commit of
+        // the log, and hash_at_step would give no content at its step.
+        if (line.hash == 0) return ::fixy::some(LogLineSkip::zero_hash);
         // The log only grows in step order, and its append checks that
         // order with a contract that aborts.  A line out of order is a
         // corrupt line, so it is skipped like the others.

@@ -151,17 +151,20 @@ using LogOrders = ::fixy::FixedList<std::uint64_t, kLogLines>;
     return ::fixy::freeze(std::move(text));
 }
 
-// Writes text as the whole log of cipher.  A store that opens the root after
-// the write reads the text.
-static void write_log_of(Cipher const& cipher, ::fixy::TextView text) {
+// Writes text as the whole file name under the root of cipher, such as the
+// log or HEAD.  A store that opens the root after the write reads the text.
+static void write_file_of(Cipher const& cipher, ::fixy::CText name, ::fixy::TextView text) {
     using WriteTruncate = ::fixy::atom::fs::mode<::fixy::fs::open_mode::WriteTruncate>;
     const ::fixy::fs::DirectoryHandle root = root_directory_of(cipher);
     const ::fixy::fs::FileOf<WriteTruncate> file =
-        ::fixy::fs::mint_file_at<WriteTruncate>(store_ctx(), root.ref(), "log")
-            .expect("the test opens the log to write it")
+        ::fixy::fs::mint_file_at<WriteTruncate>(store_ctx(), root.ref(), name)
+            .expect("the test opens the file of the store to write it")
             .consume();
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fs::write_full(store_ctx(), file.ref(), text).is_ok());
 }
+
+// Writes text as the whole log of cipher.
+static void write_log_of(Cipher const& cipher, ::fixy::TextView text) { write_file_of(cipher, "log", text); }
 
 // The report of an open of the store at the path name under the scratch
 // directory.  The open runs in a child, so the test reads the standard error
@@ -643,6 +646,38 @@ static void test_t17_open_reports_each_skipped_line(::fixy::fs::TemporaryDirecto
     ::fixy::check::pass(kTest, "  T17 open_reports_each_skipped_line:      PASSED\n");
 }
 
+// A line whose hash is zero is corrupt: zero is the sentinel of no content,
+// and record_event refuses it.  The open skips the line and reports it, so
+// the head is the hash of the last line that loads.  The old store took the
+// line as a commit with no head.  It then took the head from a HEAD that
+// names no commit of the log, gave no content at the step of the line, and
+// refused a commit at the step of the last sound line.
+
+static void test_t18_open_skips_a_zero_hash(::fixy::fs::TemporaryDirectory const& scratch) {
+    {
+        const Cipher made = open_store(scratch, "t18");
+        write_file_of(made, "HEAD", ::fixy::TextView{"00000000000090ee\n"});
+        write_log_of(made, ::fixy::TextView{"1,0000000000009001,1\n"
+                                            "2,0000000000000000,2\n"});
+    }
+    auto cipher = open_store(scratch, "t18");
+    const auto view = cipher.mint_open_view(store_ctx());
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x9001u} && "the head is the last commit of the log");
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.hash_at_step(view, 2u) == ContentHash{0x9001u});
+    CRUCIBLE_TEST_ASSERT(
+        kTest, cipher.last_committed_step().is_some_and([](::fixy::session::StepId step) { return step.raw() == 1u; }));
+    record(cipher, store_ctx(), view, ContentHash{0x9002u}, 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == ContentHash{0x9002u});
+
+    const ::fixy::process::ChildReport report = open_report_of(scratch, "t18");
+    constexpr ::fixy::TextView kSkip{
+        "[crucible] the Cipher store skips the line 2 of its head log, with the step 2 and the order 2: the hash is "
+        "zero, and no commit names the hash zero\n"};
+    CRUCIBLE_TEST_ASSERT(kTest, count_in(report.output(), kSkip) == 1);
+
+    ::fixy::check::pass(kTest, "  T18 open_skips_a_zero_hash:              PASSED\n");
+}
+
 // The header asserts the content of the required row where it
 // declares it.  Restating those assertions here makes this binary's
 // compilation depend on them as well, and puts them where someone
@@ -878,6 +913,7 @@ int main() {
     test_t15_no_place_after_the_ceiling(scratch);
     test_t16_open_skips_an_order_above_the_ceiling(scratch);
     test_t17_open_reports_each_skipped_line(scratch);
+    test_t18_open_skips_a_zero_hash(scratch);
 
     test_required_row_header_fence();
     test_multi_event_durability(scratch);
