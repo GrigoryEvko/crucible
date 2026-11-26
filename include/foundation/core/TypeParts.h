@@ -188,8 +188,10 @@ struct TypeParts {
     bool keeps_own_borrows = false;
     // A class of the base that states refers_static{} of foundation/Transfer.h,
     // such as a StaticText: each pointer that it holds as its own data member
-    // names static storage.  The store check reads such a pointer as no borrow
-    // slot, and reads each other part of the class.
+    // names static storage.  The read of the mark checks each constructor of
+    // the class (check_refers_static_statement of foundation/Transfer.h).  The
+    // store check reads such a pointer as no borrow slot, and reads each other
+    // part of the class.
     bool refers_static = false;
     // A class with an array of bytes or a union in a member.  Such a member can
     // hold a value of a type argument.  A class with no such member holds a
@@ -505,6 +507,9 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
     parts.states_by_arguments = owns_arguments && is_of_the_base;
     parts.gives_const_access = refers_deep && is_of_the_base;
     parts.keeps_own_borrows = keeps_own && is_of_the_base;
+    // The check of the constructors of a class that states refers_static{}
+    // stops the build when one of them can take a pointer of the run time.
+    if (refers_static && is_of_the_base) tr::detail::check_refers_static_statement(type);
     parts.refers_static = refers_static && is_of_the_base;
 }
 

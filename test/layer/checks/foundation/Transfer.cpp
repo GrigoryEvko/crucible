@@ -10,7 +10,9 @@
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/RunSet.h>
+#include <foundation/core/StaticText.h>
 #include <foundation/core/Strided.h>
+#include <foundation/reflect/Members.h>
 #include <foundation/reflect/TypeComponents.h>
 
 namespace foundation::transfer {
@@ -656,6 +658,89 @@ static_assert(holds_its_statement(^^StatedPlain) && !holds_its_statement(^^State
 static_assert(Sendable<StatedWithCellBorrow> && SendableBeside<StatedWithCellBorrow>
               && !holds_its_statement(^^StatedWithCellBorrow));
 static_assert(!holds_its_statement(^^Plain), "a class with no statement holds none");
+
+// The constructors of static storage.  A class passes when each constructor
+// is consteval, takes a key tied to the class, or takes only classes whose
+// constructors pass.  A ClosedTextKey is closed: only its owner builds one.
+// An OpenTextKey is not, so it ties nothing.
+class ConstantSite {
+public:
+    consteval explicit ConstantSite(int line) noexcept : line_{line} {}
+    [[nodiscard]] constexpr int line() const noexcept { return line_; }
+
+private:
+    int line_ = 0;
+};
+class LooseSite {
+public:
+    constexpr explicit LooseSite(int line) noexcept : line_{line} {}
+    [[nodiscard]] constexpr int line() const noexcept { return line_; }
+
+private:
+    int line_ = 0;
+};
+template <class Owner>
+class ClosedTextKey {
+    friend Owner;
+    constexpr ClosedTextKey() noexcept {}
+};
+template <class Owner>
+class OpenTextKey {
+public:
+    constexpr OpenTextKey() noexcept {}
+};
+class TextOfASite {
+public:
+    constexpr explicit TextOfASite(ConstantSite const& site) noexcept : line_{site.line()} {}
+
+private:
+    int line_ = 0;
+};
+class TextOfALooseSite {
+public:
+    constexpr explicit TextOfALooseSite(LooseSite const& site) noexcept : line_{site.line()} {}
+
+private:
+    int line_ = 0;
+};
+class TextOfAClosedKey {
+public:
+    constexpr TextOfAClosedKey(int word, ClosedTextKey<TextOfAClosedKey> const&) noexcept : word_{word} {}
+
+private:
+    int word_ = 0;
+};
+class TextOfAnOpenKey {
+public:
+    constexpr TextOfAnOpenKey(int word, OpenTextKey<TextOfAnOpenKey> const&) noexcept : word_{word} {}
+
+private:
+    int word_ = 0;
+};
+struct AggregateText {
+    int word = 0;
+};
+static_assert(first_open_static_constructor(^^ConstantSite, static_walk_depth) == std::meta::info{});
+static_assert(first_open_static_constructor(^^TextOfASite, static_walk_depth) == std::meta::info{});
+static_assert(first_open_static_constructor(^^TextOfAClosedKey, static_walk_depth) == std::meta::info{});
+static_assert(first_open_static_constructor(^^LooseSite, static_walk_depth) != std::meta::info{});
+static_assert(first_open_static_constructor(^^TextOfALooseSite, static_walk_depth) != std::meta::info{});
+static_assert(first_open_static_constructor(^^TextOfAnOpenKey, static_walk_depth) != std::meta::info{});
+static_assert(first_open_static_constructor(^^AggregateText, static_walk_depth) == ^^AggregateText);
+
+// GCC 16 gives no query for consteval, so is_consteval_function reads the
+// word in the text of display_string_of.  The pins fail when that text
+// changes, and StaticText, whose literal form is consteval, then refuses.
+consteval std::meta::info first_constructor_of(std::meta::info type) {
+    return ::foundation::reflect::find_member(type, std::meta::access_context::unprivileged(),
+                                              [](std::meta::info member) { return std::meta::is_constructor(member); });
+}
+static_assert(is_consteval_function(first_constructor_of(^^ConstantSite)),
+              "display_string_of of a consteval constructor holds the word consteval");
+static_assert(!is_consteval_function(first_constructor_of(^^LooseSite)),
+              "display_string_of of a constexpr constructor holds no word consteval");
+static_assert(first_open_static_constructor(^^::foundation::core::StaticText, static_walk_depth) == std::meta::info{},
+              "each constructor of StaticText passes the check of refers_static{}");
 
 }  // namespace detail::transfer_self_test
 

@@ -70,6 +70,9 @@ struct atomic_word<StaticText> {
 // moves to another thread with no borrow (foundation/Transfer.h).  Each
 // constructor takes its pointer from a constant or from the word of a cell
 // that to_word gave, so the pointer names static storage (refers_static{}).
+// The check of the mark reads the types of the constructors: the literal form
+// is consteval, the Site form takes a Site, whose one constructor is
+// consteval, and the form of a word takes the key that only a cell makes.
 // The fixtures neg_static_text_from_a_pointer and
 // neg_core_static_text_from_runtime_pointer pin that no constructor takes a
 // pointer of the run time.
@@ -89,10 +92,13 @@ public:
     // so it cannot reach this constructor.
     explicit constexpr StaticText(Site const& site) noexcept : first_{detail::site_file_(site)} {}
 
-    // A literal binds to the array form above, and a pointer gets here.
+    // A literal binds to the array form above, and a pointer gets here.  The
+    // deleted form is consteval, because the check of refers_static{} cannot
+    // tell a deleted template from one that is not.
     template <class Pointer>
         requires std::is_pointer_v<std::remove_cvref_t<Pointer>>
-    StaticText(Pointer&& text) = delete("a pointer of the run time can name a text that ends before the program");
+    consteval StaticText(Pointer&& text) = delete("a pointer of the run time can name a text that ends before the "
+                                                  "program");
 
     // The characters before the zero.  No object is larger than
     // __PTRDIFF_MAX__ bytes, and that bound keeps GCC from changing the loop

@@ -157,9 +157,9 @@
 //     borrow of a frame.  The walks of this header do not read the mark:
 //     sendable{} and the other statements give the properties of such a
 //     class.  The store check of foundation/core/CaptureStore.h reads such a
-//     pointer as no borrow slot.  It trusts the mark only in a class of the
-//     base, and the check file of each marked class pins that no constructor
-//     takes a pointer of the run time.
+//     pointer as no borrow slot.  It reads the mark only on a class of the
+//     base, and the read checks each constructor of the class (the
+//     constructors of static storage).
 //     thread_bound{} states that the class belongs to one owner thread: a
 //     value does not move to another thread, and no other thread writes it.
 //     The class then is not Sendable and two threads cannot write it, but it
@@ -292,6 +292,29 @@
 //       - a deleted template.  GCC 16 gives no is_deleted of a template, and
 //         can_substitute gives no specialization of a deleted one, so a
 //         deleted twin cannot stand on a class whose doors the check reads.
+//
+// Constructors of static storage
+//     A class that states refers_static{} holds only pointers that a constant
+//     expression made, when each constructor of it passes one of these, by
+//     induction on the types:
+//       - it is consteval, a copy or a move constructor of the class, or
+//         deleted.  A deleted template is consteval too, because GCC 16 gives
+//         no is_deleted of a template;
+//       - each of its parameters is a class whose own constructors pass this
+//         rule, as the Site of a StaticText is;
+//       - it takes a key tied to the class: a closed class that no public
+//         default constructor builds, such as atomic_word_key<StaticText>,
+//         which only the cell of the class makes.
+//     An aggregate, and a class with a default constructor that it does not
+//     declare, fail.  The check proves the types only.  The body of each
+//     constructor copies pointers only from its typed inputs, which is a
+//     stated trust of the base, as the comment beside each such constructor
+//     tells.  GCC 16 gives no query for consteval, so the check reads the word
+//     consteval in the text of display_string_of.  A change of that text makes
+//     the check refuse StaticText, so the check fails closed, and the check
+//     file of this header pins the text.  The read of the mark in
+//     foundation/core/TypeParts.h runs the check, and a constructor that fails
+//     stops the build with the class and the constructor in the message.
 //
 // Share
 //     Many holders hold a share of one pool at one time, so a share proves no
@@ -1621,6 +1644,131 @@ consteval void check_synchronized_statement(std::meta::info type) {
         if (!holds_write) refuse_synchronized_part(type, part.member);
     }
     if (plain != std::meta::info{}) check_synchronized_doors(type, plain);
+}
+
+// True when the function or the function template is consteval.  GCC 16
+// gives no query for it.  The text of display_string_of of a consteval
+// function holds the word consteval before the qualified name: at the start,
+// or after the head and the requires clause of a template.  No type and no
+// name holds that word.  So the test reads the text, and a text of another
+// form reads as not consteval.  A change of the text of GCC then makes the
+// check of refers_static{} refuse StaticText, so the check fails closed, and
+// the check file of this header pins the text.  The text becomes an array of
+// static storage, so the test reads its characters with no type of the
+// standard library.  Complexity: linear in the length of the text, times the
+// length of the word.
+[[nodiscard]] consteval bool is_consteval_function(std::meta::info function) {
+    const char* const text =
+        std::meta::extract<const char*>(std::meta::reflect_constant_string(std::meta::display_string_of(function)));
+    const char* const word = "consteval ";
+    for (std::size_t at = 0; text[at] != '\0'; ++at) {
+        if (at != 0 && text[at - 1] != ' ') continue;
+        std::size_t matched = 0;
+        while (word[matched] != '\0' && text[at + matched] == word[matched]) {
+            ++matched;
+        }
+        if (word[matched] == '\0') return true;
+    }
+    return false;
+}
+
+// The depth of the walk of the parameters of a constructor of a class that
+// states refers_static{} (the constructors of static storage).  A walk deeper
+// than it counts as open, so the check fails closed.
+inline constexpr int static_walk_depth = 4;
+
+[[nodiscard]] consteval std::meta::info first_open_static_constructor(std::meta::info type, int depth);
+
+// True when the parameter type is a key tied to the owner (the constructors of
+// static storage): a closed class that no default constructor of the public
+// builds, with the owner as its own type or as a type argument, such as
+// atomic_word_key<StaticText>.  Only the stated maker of the key builds one.
+[[nodiscard]] consteval bool is_key_of(std::meta::info bare, std::meta::info owner) {
+    return is_class_or_union(bare) && std::meta::is_complete_type(bare) && is_closed_class(bare, closed_walk_depth)
+        && !std::meta::is_default_constructible_type(bare) && is_tied_to(bare, owner);
+}
+
+// True when the constructor makes only pointers that a constant expression
+// made (the constructors of static storage): it is consteval, a copy or a
+// move of the class, or deleted; it takes a key tied to the class; or each of
+// its parameters is a class whose own constructors pass this rule.
+[[nodiscard]] consteval bool is_static_constructor(std::meta::info constructor, std::meta::info owner, int depth) {
+    namespace refl = ::foundation::reflect;
+    if (is_consteval_function(constructor)) return true;
+    if (std::meta::is_constructor_template(constructor)) return false;
+    if (std::meta::is_deleted(constructor) || std::meta::is_copy_constructor(constructor)
+        || std::meta::is_move_constructor(constructor)) {
+        return true;
+    }
+    bool has_parameter = false;
+    bool is_each_static = true;
+    const std::meta::info key =
+        refl::find_parameter(constructor, [owner, depth, &has_parameter, &is_each_static](std::meta::info parameter) {
+            has_parameter = true;
+            const std::meta::info bare = refl::bare_type(std::meta::type_of(parameter));
+            if (is_key_of(bare, owner)) return true;
+            const bool is_static_class = depth > 1 && is_class_or_union(bare) && std::meta::is_complete_type(bare)
+                                      && first_open_static_constructor(bare, depth - 1) == std::meta::info{};
+            is_each_static = is_each_static && is_static_class;
+            return false;
+        });
+    if (key != std::meta::info{}) return true;
+    return has_parameter && is_each_static;
+}
+
+// The first constructor of the class that can make a pointer that no
+// constant expression made, or the class itself when an aggregate
+// initialization or a default constructor that the class does not declare
+// builds it, or a null reflection (the constructors of static storage).
+// Complexity: linear in the members of the class, times the parameters of
+// each constructor, to static_walk_depth levels.
+[[nodiscard]] consteval std::meta::info first_open_static_constructor(std::meta::info type, int depth) {
+    if (std::meta::is_aggregate_type(type)) return type;
+    bool has_default = false;
+    const std::meta::info open = ::foundation::reflect::find_member(
+        type, std::meta::access_context::unchecked(), [type, depth, &has_default](std::meta::info member) {
+            const bool is_constructor = std::meta::is_constructor(member);
+            if (!is_constructor && !std::meta::is_constructor_template(member)) return false;
+            has_default = has_default || (is_constructor && std::meta::is_default_constructor(member));
+            return !is_static_constructor(member, type, depth);
+        });
+    if (open != std::meta::info{}) return open;
+    if (!has_default && std::meta::is_default_constructible_type(type)) return type;
+    return std::meta::info{};
+}
+
+// The refusal of a constructor of a class that states refers_static{} (the
+// constructors of static storage).  The walk reads a specialization of the
+// variable below, which stops the build.  Its three messages give the rule,
+// the class and the constructor, or the class again when an aggregate
+// initialization or an undeclared default constructor builds it.
+template <std::meta::info Class, std::meta::info Constructor>
+consteval bool refuse_open_static_constructor() {
+    static_assert(Class == std::meta::info{},
+                  "transfer: a class states refers_static{}, so each pointer that it holds names static storage, but "
+                  "a constructor of it can take a pointer that no constant expression made.  A constructor passes "
+                  "when it is consteval, a copy or a move of the class, or deleted, when it takes a key tied to the "
+                  "class, or when each parameter is a class whose constructors pass the same rule.  An aggregate "
+                  "and a class with a default constructor that it does not declare refuse too (the constructors of "
+                  "static storage of foundation/Transfer.h).  The next two messages name the class and the "
+                  "constructor");
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Class));
+    static_assert(Class == std::meta::info{}, std::meta::display_string_of(Constructor));
+    return false;
+}
+
+template <std::meta::info Class, std::meta::info Constructor>
+inline constexpr bool open_static_constructor_refusal = refuse_open_static_constructor<Class, Constructor>();
+
+// Stops the build when a class that states refers_static{} has a constructor
+// that can take a pointer that no constant expression made (the constructors
+// of static storage).  TypeParts of foundation/core/TypeParts.h reads the
+// mark only on a class of the base, and it runs this check there.
+consteval void check_refers_static_statement(std::meta::info type) {
+    const std::meta::info open = first_open_static_constructor(type, static_walk_depth);
+    if (open == std::meta::info{}) return;
+    const std::meta::info arguments[] = {std::meta::reflect_constant(type), std::meta::reflect_constant(open)};
+    static_cast<void>(std::meta::extract<bool>(std::meta::substitute(^^open_static_constructor_refusal, arguments)));
 }
 
 // The goal that rule 1 asks of a reference to the type of the node, for the

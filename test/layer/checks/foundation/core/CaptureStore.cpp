@@ -287,10 +287,15 @@ static_assert(is_refused<CapturesUnmarkedHandleOfTheBase>());
 // The pointer of a StaticText names static storage (refers_static{} of
 // foundation/Transfer.h), so a capture by reference of an Option of a
 // StaticText passes.  The mark covers only the pointer members of the
-// marked class: a marked class with a View in a member still refuses.
-struct[[= ::foundation::transfer::refers_static{}]] StaticAndView {
-    StaticText text{"text"};
-    View<int> view{};
+// marked class: a marked class with a View in a member still refuses.  Its
+// one constructor is consteval, as the check of the mark asks.
+class[[= ::foundation::transfer::refers_static{}]] StaticAndView {
+public:
+    consteval StaticAndView() noexcept {}
+
+private:
+    StaticText text_{"text"};
+    View<int> view_{};
 };
 struct CapturesStaticText {
     Option<StaticText>& text;

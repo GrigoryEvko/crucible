@@ -6947,7 +6947,7 @@ fixy_test(test_core_region)
 # no literal with a zero before its end reaches it.
 fixy_test(test_static_text)
 fixy_neg_compile_test(neg_static_text_from_a_pointer
-  "use of deleted function .foundation::core::StaticText::StaticText\\(Pointer&&\\) \\[with Pointer = const char\\*\\]."
+  "use of deleted function .consteval foundation::core::StaticText::StaticText\\(Pointer&&\\) \\[with Pointer = const char\\*\\]."
   "a pointer of the run time can name a text that ends before the program")
 fixy_neg_compile_test(neg_static_text_with_a_zero_before_its_end
   "in .constexpr. expansion of .*foundation::core::StaticText::StaticText<5>"
