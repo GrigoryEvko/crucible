@@ -3724,8 +3724,11 @@ void finish_linear_rules();
 // name ENTITY (the sum holders).
 void check_static_linear_sum(tree decl, const std::string& entity);
 // linear.cpp: true for a linear class, which states linear{} or holds a linear
-// value.  The kind two-names of live.cpp reads it.
+// value, and true for a function of a base file with the annotation
+// two_names_door of foundation/Linear.h.  The kind two-names of live.cpp reads
+// them.
 bool is_linear_class(tree type);
+bool is_two_names_door(tree function);
 
 // An object of static or thread storage duration DECL that holds a borrow
 // type of the base: the kind static-borrow of the rule view-escape (the

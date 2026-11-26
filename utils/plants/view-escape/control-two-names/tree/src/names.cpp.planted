@@ -1,14 +1,19 @@
 // No call gives one object of a linear class or of a unique borrow class to two
 // parameters that can write or move it, and no line names the rule view-escape.
 // Two loans of one object, from a door or from a moved object, are no second
-// name.
+// name.  A capture of a different object is no second name, and an assignment
+// takes a loan that a move of its own target gives.
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
 
 #include <tuple>
 #include <utility>
 
 namespace planted {
+
+namespace fc = ::foundation::core;
 
 struct [[= ::foundation::linear::linear{}]] Token {
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
@@ -54,5 +59,23 @@ void parts_from_a_door(Holder& holder) noexcept { write_two(holder.first(), hold
 void parts_of_a_moved_object(Pair pair) noexcept { take_two(std::move(pair.first), std::move(pair.second)); }
 
 void parts_of_a_tuple(std::tuple<Token, Token>& tuple) noexcept { write_two(std::get<0>(tuple), std::get<1>(tuple)); }
+
+template <class Body>
+void write_beside(Token& token, Body& body) noexcept {
+    Token taken{std::move(token)};
+    token = std::move(taken);
+    body();
+}
+
+void capture_of_a_different_object(Token& token, Token& other) noexcept {
+    auto read = [&other]() noexcept { static_cast<void>(other); };
+    write_beside(token, read);
+}
+
+void reborrow_into_its_name(fc::HeapArray<int>& items) noexcept {
+    items = fc::with_mut(std::move(items), [](auto view) noexcept {
+        view = fc::reborrow(std::move(view), [](auto lent) noexcept { static_cast<void>(lent); });
+    });
+}
 
 }  // namespace planted

@@ -2357,41 +2357,90 @@ private:
         return !is_indirect_type(argument.parameter) || argument.is_write;
     }
 
+    // The class of the object that two overlapping places ONE and OTHER name, when
+    // it is a linear class or a unique borrow class, or null.  IS_LINEAR tells which.
+    tree two_names_class(int one, int other, bool& is_linear) const {
+        tree const object = element_class(places_.type(places_.holds(one, other) ? other : one));
+        is_linear = object != NULL_TREE && CLASS_TYPE_P(object) && is_linear_class(object);
+        return object != NULL_TREE && (is_linear || is_unique_borrow_class(object)) ? object : NULL_TREE;
+    }
+
+    // Records the two names of the call at the place PLACE of the object OBJECT.
+    void add_two_names(tree callee, std::string const& names, int place, tree object, bool is_linear) {
+        std::string const callee_text =
+            callee != NULL_TREE ? qualified_name(callee) : std::string("a function pointer");
+        reading_.two_names.push_back(TwoNames{location_, names + " of " + callee_text + " name " + places_.text(place)
+                                                             + ", " + (is_linear ? "a linear " : "a unique borrow ")
+                                                             + type_text(object)});
+    }
+
     // A call whose two arguments name one object of a linear class or of a unique
-    // borrow class, and one of them can write or move it (the two names).  Two loans
-    // of one object, from a door or from a moved object, are no second name.  An
-    // assignment whose two sides name one object is the kind self-move of the rule
-    // must-consume.  Complexity: the square of the arguments of the call.
+    // borrow class, and one of them can write or move it (the two names).  One
+    // argument names the object itself, and the other one names it itself too, or
+    // gives a loan or a capture of it.  Two loans of one object, from a door or from
+    // a moved object, are no second name.  An assignment whose two sides name one
+    // object is the kind self-move of the rule must-consume, and a loan that a move
+    // of the target of an assignment gives is no second name: the target holds no
+    // value until the assignment.  A body of a door with the annotation
+    // two_names_door of foundation/Linear.h lends its object under two names on
+    // purpose.  Complexity: the square of the arguments of the call, times their
+    // loans.
     void check_two_names(tree callee, const std::vector<Argument>& arguments) {
-        if (!reads_uses_ || !state_.is_reachable || arguments.size() < 2
-            || (callee != NULL_TREE && DECL_ASSIGNMENT_OPERATOR_P(callee))) {
+        if (!reads_uses_ || !state_.is_reachable || arguments.size() < 2 || is_two_names_door(function_)) {
             return;
         }
+        bool const is_assignment = callee != NULL_TREE && DECL_ASSIGNMENT_OPERATOR_P(callee);
         std::vector<int> places(arguments.size(), kNoPlace);
         for (std::size_t index = 0; index < arguments.size(); ++index) {
             places[index] = named_place(arguments[index]);
         }
-        for (std::size_t first = 0; first < arguments.size(); ++first) {
+        for (std::size_t first = 0; first < arguments.size() && !is_assignment; ++first) {
             for (std::size_t second = first + 1; second < arguments.size(); ++second) {
                 if (places[first] == kNoPlace || places[second] == kNoPlace
                     || !places_.overlaps(places[first], places[second])
                     || !(is_writing(arguments[first]) || is_writing(arguments[second]))) {
                     continue;
                 }
-                bool const is_first_outer = places_.holds(places[first], places[second]);
-                tree const object = element_class(places_.type(is_first_outer ? places[second] : places[first]));
-                bool const is_linear = object != NULL_TREE && CLASS_TYPE_P(object) && is_linear_class(object);
-                if (object == NULL_TREE || !(is_linear || is_unique_borrow_class(object))) {
+                bool is_linear = false;
+                tree const object = two_names_class(places[first], places[second], is_linear);
+                if (object != NULL_TREE) {
+                    int const inner = places_.holds(places[first], places[second]) ? places[second] : places[first];
+                    add_two_names(callee,
+                                  "argument " + std::to_string(first) + " and argument " + std::to_string(second),
+                                  inner, object, is_linear);
+                    return;
+                }
+            }
+        }
+        for (std::size_t named = 0; named < arguments.size(); ++named) {
+            if (places[named] == kNoPlace) {
+                continue;
+            }
+            for (std::size_t lending = 0; lending < arguments.size(); ++lending) {
+                if (lending == named) {
                     continue;
                 }
-                std::string const callee_text =
-                    callee != NULL_TREE ? qualified_name(callee) : std::string("a function pointer");
-                reading_.two_names.push_back(
-                    TwoNames{location_, "argument " + std::to_string(first) + " and argument " + std::to_string(second)
-                                            + " of " + callee_text + " name "
-                                            + places_.text(is_first_outer ? places[second] : places[first]) + ", "
-                                            + (is_linear ? "a linear " : "a unique borrow ") + type_text(object)});
-                return;
+                std::vector<Binding> bindings;
+                add_bindings(arguments[lending], bindings);
+                for (const Binding& binding : bindings) {
+                    if (binding.loan < 0 || !places_.overlaps(places[named], binding.place)
+                        || !(is_writing(arguments[named]) || binding.is_write)) {
+                        continue;
+                    }
+                    bool const is_moved_target = is_assignment && named == 0 && loans_[binding.loan].is_moved;
+                    bool is_linear = false;
+                    tree const object = two_names_class(places[named], binding.place, is_linear);
+                    if (is_moved_target || object == NULL_TREE) {
+                        continue;
+                    }
+                    int const inner = places_.holds(places[named], binding.place) ? binding.place : places[named];
+                    add_two_names(callee,
+                                  "argument " + std::to_string(named) + " and "
+                                      + (binding.is_capture ? "a capture of argument " : "a loan of argument ")
+                                      + std::to_string(lending),
+                                  inner, object, is_linear);
+                    return;
+                }
             }
         }
     }

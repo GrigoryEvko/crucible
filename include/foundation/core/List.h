@@ -865,14 +865,15 @@ class ListFrameKeyDoor final : ::foundation::NoObject<ListFrameKeyDoor> {
 // the list back: alone for a body that gives void, and after the result in a
 // Record for each other body.  The pack refuses each explicit argument, so no
 // caller names the brand of the frame.  The list holds its elements inline,
-// so the door moves size() elements in and out.  Complexity: O(size()), and
-// the cost of the body.
+// so the door moves size() elements in and out.  The door gives the held list
+// and the View of its run to one call, so it states two_names_door of
+// foundation/Linear.h.  Complexity: O(size()), and the cost of the body.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
     requires NamesNoArgument<Refused...> && MovedOwner<Owner> && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
           && FrameBody<Body, typename Owner::element_type, Fresh>
-[[nodiscard]] constexpr detail::frame_return_t<
+[[= ::foundation::linear::two_names_door{}]] [[nodiscard]] constexpr detail::frame_return_t<
     detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
-with_mut(Owner&& owner, Body&& body) noexcept {
+    with_mut(Owner&& owner, Body&& body) noexcept {
     Owner held{static_cast<Owner&&>(owner)};
     View<typename Owner::element_type> const run = frame_run_(ListFrameKeyDoor::key_(), held);
     return detail::give_run_back_<Fresh>(ListFrameKeyDoor::key_(), static_cast<Owner&&>(held), run,

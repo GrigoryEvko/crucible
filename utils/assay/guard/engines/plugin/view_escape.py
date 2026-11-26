@@ -16,7 +16,10 @@ Rule
     that the name borrows: a move, an assignment, a call or the end of a scope
     (live.cpp, the ends).  The kind two-names is a call whose two arguments
     name one object of a linear class or of a unique borrow class, and one of
-    them can write or move it (live.cpp, the two names).  The rule reads those
+    them can write or move it (live.cpp, the two names).  One argument names
+    the object itself, and the other one names it itself too, or gives a loan
+    or a capture of it.  The body of a door of the base with the annotation
+    two_names_door gives no line of this kind.  The rule reads those
     finding lines in the sections of the objects of the target all of one build
     (assay.guard.engines.plugin.runner, the sections).  The same line from two
     objects counts one time.

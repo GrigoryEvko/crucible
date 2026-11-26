@@ -754,6 +754,9 @@ struct LinearNames {
     // The annotation of a storage door or a frame of the base (the moves
     // through a borrow).
     tree moves_own_storage = NULL_TREE;
+    // The annotation of a door of the base whose body lends its object under two
+    // names (the kind two-names of live.cpp).
+    tree two_names_door = NULL_TREE;
 };
 
 LinearNames linear_names;
@@ -7288,6 +7291,17 @@ void on_linear_collection(void*, void*) {
 
 bool is_linear_class(tree type) { return is_linear_type(type); }
 
+// True when FUNCTION carries the annotation two_names_door and a base file
+// declares it.  A function outside the base can carry the annotation, but the
+// kind two-names does not trust it there, as moves_own_storage().
+bool is_two_names_door(tree function) {
+    if (function == NULL_TREE || linear_names.two_names_door == NULL_TREE
+        || !carries_linear_annotation(function, linear_names.two_names_door)) {
+        return false;
+    }
+    return place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine).file_class == FileClass::base;
+}
+
 // An alias at namespace scope, from the walk of the declarations
 // (declaration.cpp), because the front end gives no event PLUGIN_FINISH_DECL
 // for an alias (the shapes).
@@ -7506,6 +7520,7 @@ void register_linear(const char* plugin_name, bool checks_must_consume, bool che
     linear_names.needs_empty = get_identifier("needs_empty");
     linear_names.once_door = get_identifier("once_door");
     linear_names.moves_own_storage = get_identifier("moves_own_storage");
+    linear_names.two_names_door = get_identifier("two_names_door");
     if (checks_must_consume) {
         register_callback(plugin_name, PLUGIN_FOLDED_INITIALIZER, on_folded_initializer, nullptr);
         register_callback(plugin_name, PLUGIN_EMPTY_CLASS_ASSIGNMENT, on_empty_class_assignment, nullptr);

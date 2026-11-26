@@ -376,10 +376,12 @@ void read_the_last_element_of_the_region() {
 // The borrow of the region from before the region moves into the loop.
 void read_a_borrow_of_the_region() {
     HeapArray<Word> items = count_from(0);
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the run-time compare of reads(), which the compile-time borrow rules refuse")
     items = ::fixy::with_region<Written>(std::move(items), [](auto region) noexcept {
         View<Word const> const borrow = ::fixy::mint_borrowed(region);
         return read_beside_the_shards(std::move(region), borrow);
     });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 // The keyed owner whose frame lends the run of the region.

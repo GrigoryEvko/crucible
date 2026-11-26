@@ -7649,7 +7649,8 @@ fixy_neg_compile_test(neg_spawn_parallel_for_input_not_in_reads
   "Give the run to the door in reads\\(\\)")
 fixy_neg_compile_test(neg_parallel_reduce_combine_holds_a_view
   "static assertion failed: mint_parallel_for: the body captures .combine. \\(field __combine, type \\{anonymous\\}::AddsTheFirstPartial\\)"
-  "The first part that refuses it: foundation::core::View<const long unsigned int>")
+  "The first part that refuses it: foundation::core::View<const long unsigned int>"
+  "neg_parallel_reduce_combine_holds_a_view\\.cpp:31:[0-9]+: error: this call gives one object to two parameters: argument 2 and a loan of argument 3 of .*reduce_by_tree_in_parallel name region")
 # The element of a region of a parallel loop is SendableBeside, and a class of
 # parts that holds a borrow states its proof.
 fixy_neg_compile_test(neg_spawn_parallel_for_region_of_writing_views

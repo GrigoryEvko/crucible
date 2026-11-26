@@ -1,0 +1,54 @@
+// Each call gives one object of a linear class or of a unique borrow class to one
+// parameter, and a loan or a capture of the same object to a different parameter.
+// One of the two can write the object.  A function outside the base with the
+// annotation two_names_door keeps its line, because the rule trusts the
+// annotation only in a base file.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+    int count = 0;
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept = default;
+    Token(const Token&) = delete;
+};
+
+template <class Body>
+void write_beside(Token& token, Body& body) noexcept {
+    token.count = static_cast<int>(body()) + 1;
+}
+
+template <class View, class Body>
+void fill_beside(View& view, Body& body) noexcept {
+    static_cast<void>(body());
+    static_cast<void>(view.size());
+}
+
+void capture_beside_the_object(Token& token) noexcept {
+    auto read = [&token]() noexcept { return token.count; };
+    write_beside(token, read);
+}
+
+void capture_of_a_view_beside_it(fc::HeapArray<int>& items) noexcept {
+    items = fc::with_mut(std::move(items), [](auto view) noexcept {
+        auto size = [&view]() noexcept { return view.size(); };
+        fill_beside(view, size);
+    });
+}
+
+[[= ::foundation::linear::two_names_door{}]] void door_outside_the_base(Token& token) noexcept {
+    auto read = [&token]() noexcept { return token.count; };
+    write_beside(token, read);
+}
+
+}  // namespace planted

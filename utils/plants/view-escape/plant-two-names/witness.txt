@@ -4,7 +4,10 @@
 # object and its member (43), a move into a parameter by value and a reference
 # (47), and a unique view (51).  The rule gives a line of the kind two-names for
 # each call.  The kind reads a linear class through the family linear, which
-# each build of the tree turns on with must-consume=on.
+# each build of the tree turns on with must-consume=on.  In the unit hidden one
+# argument names the object, and a closure of a different argument captures it:
+# a token (39), a unique view (45), and a token in a function outside the base
+# with the annotation two_names_door, which the rule does not trust there (51).
 
 compile names src/names.cpp must-consume=on
 flag names -freflection
@@ -21,3 +24,13 @@ finding names view-escape two-names src/names.cpp:47:18 | argument 0 and argumen
 error names src/names.cpp:47 | this call gives one object to two parameters: argument 0 and argument 1 of planted::take_and_read name token, a linear planted::Token
 finding names view-escape two-names src/names.cpp:51:77 | argument 0 and argument 1 of planted::fill_two name view, a unique borrow foundation::core::ViewMut<int, foundation::core::<lambda()>, 18446744073709551615>
 error names src/names.cpp:51 | this call gives one object to two parameters: argument 0 and argument 1 of planted::fill_two name view, a unique borrow foundation::core::ViewMut<int, foundation::core::<lambda()>, 18446744073709551615>
+
+compile hidden src/hidden.cpp must-consume=on
+flag hidden -freflection
+exit hidden fail
+finding hidden view-escape two-names src/hidden.cpp:39:17 | argument 0 and a capture of argument 1 of planted::write_beside name token, a linear planted::Token
+error hidden src/hidden.cpp:39 | this call gives one object to two parameters: argument 0 and a capture of argument 1 of planted::write_beside name token, a linear planted::Token
+finding hidden view-escape two-names src/hidden.cpp:45:20 | argument 0 and a capture of argument 1 of planted::fill_beside name view, a unique borrow foundation::core::ViewMut<int, foundation::core::<lambda()>, 18446744073709551615>
+error hidden src/hidden.cpp:45 | this call gives one object to two parameters: argument 0 and a capture of argument 1 of planted::fill_beside name view, a unique borrow foundation::core::ViewMut<int, foundation::core::<lambda()>, 18446744073709551615>
+finding hidden view-escape two-names src/hidden.cpp:51:17 | argument 0 and a capture of argument 1 of planted::write_beside name token, a linear planted::Token
+error hidden src/hidden.cpp:51 | this call gives one object to two parameters: argument 0 and a capture of argument 1 of planted::write_beside name token, a linear planted::Token

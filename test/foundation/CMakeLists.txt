@@ -5127,6 +5127,10 @@ foundation_neg_compile_test(neg_core_segment_list_run_after_assignment
 foundation_neg_compile_test(neg_core_keeps_its_blocks_outside_the_base
   "neg_core_keeps_its_blocks_outside_the_base\\.cpp:27:[0-9]+: error: this use reads a borrow of renewed in view after a call of .*Renewed::renew with renewed"
   "neg_core_keeps_its_blocks_outside_the_base\\.cpp:26:")
+# The kind two-names trusts the annotation two_names_door only in a base file.
+foundation_neg_compile_test(neg_core_two_names_door_outside_the_base
+  "neg_core_two_names_door_outside_the_base\\.cpp:27:[0-9]+: error: this call gives one object to two parameters: argument 0 and a capture of argument 1 of .*write_beside name token"
+  "the object is linear or a unique borrow")
 # A Sealed gives its object only as a const object, so no code appends to a
 # sealed list.  It does not move, a temporary gives no object, and an object
 # that a read writes and a linear object do not seal.  test/fixy has the test.

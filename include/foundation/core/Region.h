@@ -1855,11 +1855,12 @@ constexpr View<T, Extent> take_run_(ViewMut<T, Brand, Extent>& view) noexcept {
 
 template <class T, class Brand, std::size_t Extent, class Body>
     requires FrameBody<Body, T, Brand, Extent>
-[[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>,
-                                               ViewMut<T, Brand, Extent>>
-reborrow(ViewMut<T, Brand, Extent>&& view, Body&& body) noexcept {
+[[= ::foundation::linear::two_names_door{}]] [[nodiscard]] constexpr detail::frame_return_t<
+    detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, ViewMut<T, Brand, Extent>>
+    reborrow(ViewMut<T, Brand, Extent>&& view, Body&& body) noexcept {
     // The frame holds the parent while the body runs, so no name of the caller
-    // reaches the run in that time.
+    // reaches the run in that time.  The door gives the held parent and the
+    // View of its run to one call, so it states two_names_door.
     ViewMut<T, Brand, Extent> held{std::move(view)};
     View<T, Extent> const run = detail::run_of_(held);
     return detail::give_run_back_<Brand>(RegionFrameKeyDoor::key_(), std::move(held), run, static_cast<Body&&>(body));
