@@ -209,14 +209,14 @@ OpPacket build_pkt(const OpDef& op, uint32_t iter) {
 void feed_iter(Vigil& v, const std::vector<OpDef>& ops, uint32_t iter) {
     for (const auto& op : ops) {
         auto p = build_pkt(op, iter);
-        CRUCIBLE_TEST_ASSERT(kTest, v.record_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas)));
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::test::record_synthetic(v, p.entry, p.metas, p.n_metas));
     }
 }
 
 void feed_trigger(Vigil& v, const std::vector<OpDef>& ops, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K && i < ops.size(); i++) {
         auto p = build_pkt(ops[i], iter);
-        CRUCIBLE_TEST_ASSERT(kTest, v.record_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas)));
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::test::record_synthetic(v, p.entry, p.metas, p.n_metas));
     }
 }
 

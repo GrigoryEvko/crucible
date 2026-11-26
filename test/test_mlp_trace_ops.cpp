@@ -159,7 +159,7 @@ OpPacket build_op(uint32_t iter, uint32_t op_idx) {
 void feed_iteration(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto pkt = build_op(iter, i);
-        bool ok = vigil.record_op(crucible::test::certify_synthetic_op(pkt.entry, pkt.metas, pkt.n_metas));
+        bool ok = crucible::test::record_synthetic(vigil, pkt.entry, pkt.metas, pkt.n_metas);
         CRUCIBLE_TEST_ASSERT(kTest, ok && "record_op failed");
     }
 }
@@ -167,7 +167,7 @@ void feed_iteration(Vigil& vigil, uint32_t iter) {
 void feed_trigger(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto pkt = build_op(iter, i);
-        bool ok = vigil.record_op(crucible::test::certify_synthetic_op(pkt.entry, pkt.metas, pkt.n_metas));
+        bool ok = crucible::test::record_synthetic(vigil, pkt.entry, pkt.metas, pkt.n_metas);
         CRUCIBLE_TEST_ASSERT(kTest, ok);
     }
 }

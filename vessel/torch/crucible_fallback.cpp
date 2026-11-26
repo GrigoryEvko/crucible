@@ -924,17 +924,21 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
     // nothing.
     //
     // dispatch_op_pure takes the context of the producer claim, which the
-    // caller took before the extraction.
-    const auto validated =
-        crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), first_records(metas, counts.total()));
-    for (const crucible::ValidatedOp& certified : validated) {
-        const crucible::DispatchResult result =
-            vigil.dispatch_op_pure(fg, certified, scope_hash, crucible::CallsiteHash{}, depth);
-        // The read of the eager word at a region entry, as in
-        // append_trace_entry of record_kernel.h.
-        if (result.enters_region) [[unlikely]]
-            crucible::vessel::observe_eager_numerics(vigil, fg);
-    }
+    // caller took before the extraction.  The ladder takes the one writer of
+    // the records by move, so no code writes them after the mint.  The
+    // extraction keeps each count at most MAX_INLINE_METAS.
+    crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry),
+                                      ::foundation::core::take_prefix_up_to(std::move(metas), counts.total()))
+        .match(
+            [&] [[gnu::always_inline]] (crucible::ValidatedOp certified) {
+                const crucible::DispatchResult result =
+                    vigil.dispatch_op_pure(fg, certified, scope_hash, crucible::CallsiteHash{}, depth);
+                // The read of the eager word at a region entry, as in
+                // append_trace_entry of record_kernel.h.
+                if (result.enters_region) [[unlikely]]
+                    crucible::vessel::observe_eager_numerics(vigil, fg);
+            },
+            [] noexcept {});
 }
 
 // Records one operation through a list on the stack of this call.  The

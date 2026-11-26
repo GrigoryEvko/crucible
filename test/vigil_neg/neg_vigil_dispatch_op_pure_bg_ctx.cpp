@@ -13,8 +13,7 @@ int main() {
     crucible::Vigil vigil;
     crucible::TraceRing::Entry entry{};
     const crucible::ValidatedOp op =
-        crucible::mint_validated_op(crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(),
-                                    ::fixy::View<const crucible::TensorMeta>{})
+        crucible::mint_validated_op(crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>())
             .expect("an entry with no tensors takes no records");
     const ::fixy::BgLoadCtx ctx{::foundation::effects::testing::bg()};
     (void)vigil.dispatch_op_pure(ctx, op);

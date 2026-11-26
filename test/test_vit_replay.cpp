@@ -53,9 +53,12 @@ double run_compiled_iterations(Vigil& vigil) {
     for (uint32_t iter = 4; iter < 1004; iter++) {
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             auto p = build_op(i, iter);
-            // The timed loop calls dispatch_op directly, so the time is that
-            // of the inlined hot path and not that of a helper call.
-            auto r = vigil.dispatch_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas));
+            // The timed loop calls dispatch_op inline, so the time is that of
+            // the inlined hot path and of the copy of the records into a
+            // sealed list, and not that of a helper call.
+            auto r = crucible::test::with_synthetic_op(
+                p.entry, p.metas, p.n_metas,
+                [&vigil](crucible::ValidatedOp const& op) { return vigil.dispatch_op(op); });
             CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
         }
     }

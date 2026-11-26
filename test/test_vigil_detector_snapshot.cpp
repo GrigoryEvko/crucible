@@ -50,7 +50,7 @@ void record(Vigil& vigil, uint64_t position) {
     entry.num_inputs = 1;
     entry.num_outputs = 1;
     const ::fixy::FixedArray<crucible::TensorMeta, 2> metas{make_meta(), make_meta()};
-    (void)vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, 2));
+    (void)crucible::test::record_synthetic(vigil, entry, metas, 2);
 }
 
 // Reads the two values after each op, with no flush, while the detect stage

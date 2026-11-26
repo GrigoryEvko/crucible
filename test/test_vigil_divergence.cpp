@@ -67,13 +67,12 @@ void feed_one_region(crucible::Vigil& vigil, uint32_t first_iter) {
     for (uint32_t iter = first_iter; iter < first_iter + 2; iter++) {
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             auto recorded = op_at(iter, i);
-            (void)vigil.record_op(
-                crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
+            (void)crucible::test::record_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
         }
     }
     for (uint32_t i = 0; i < K; i++) {
         auto recorded = op_at(first_iter + 2, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
+        (void)crucible::test::record_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
     }
 }
 
@@ -181,8 +180,7 @@ void test_divergence_drops_the_regions_of_the_backlog() {
     for (uint32_t iter = 4; iter < 4 + BACKLOG_ITERATIONS; iter++) {
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             auto recorded = op_at(iter, i);
-            (void)vigil.record_op(
-                crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
+            (void)crucible::test::record_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
         }
     }
 
@@ -395,7 +393,7 @@ divrig::OpData cycle_op(uint32_t cycle, uint32_t iter, uint32_t op_idx) {
 
 void record_cycle_op(crucible::Vigil& vigil, uint32_t cycle, uint32_t iter, uint32_t op_idx) {
     divrig::OpData made = cycle_op(cycle, iter, op_idx);
-    (void)vigil.record_op(crucible::test::certify_synthetic_op(made.entry, made.metas, made.n_metas));
+    (void)crucible::test::record_synthetic(vigil, made.entry, made.metas, made.n_metas);
 }
 
 // The input of feed_one_region, with the ops of the cycle.
@@ -661,11 +659,11 @@ void test_same_region_keeps_the_alignment() {
     const uint64_t step_before = vigil.current_step();
     for (uint32_t i = K; i < NUM_OPS; i++) {
         OpData recorded = op_at(2, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
+        (void)crucible::test::record_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
     }
     for (uint32_t i = 0; i < K; i++) {
         OpData recorded = op_at(3, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
+        (void)crucible::test::record_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
     }
     CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() > step_before && "the second region must be published");

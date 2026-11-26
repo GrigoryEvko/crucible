@@ -108,13 +108,12 @@ void feed_one_region(crucible::Vigil& vigil, uint32_t first_iter) {
     for (uint32_t iter = first_iter; iter < first_iter + 2; iter++) {
         for (uint32_t i = 0; i < kOps; i++) {
             auto recorded = op_at(iter, i);
-            (void)vigil.record_op(
-                crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
+            (void)crucible::test::record_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
         }
     }
     for (uint32_t i = 0; i < kSignature; i++) {
         auto recorded = op_at(first_iter + 2, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
+        (void)crucible::test::record_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
     }
 }
 

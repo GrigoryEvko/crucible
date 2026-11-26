@@ -78,7 +78,7 @@ struct LoopScalars {
 void record_ops(Vigil& vigil, Iteration iter, uint32_t count) {
     for (uint32_t i = 0; i < count; i++) {
         const OpData d = make_scalar_op(iter, OpIndex{i}, scalars_of(iter));
-        (void)vigil.record_op(crucible::test::certify_synthetic_op(d.entry, d.metas, d.n_metas));
+        (void)crucible::test::record_synthetic(vigil, d.entry, d.metas, d.n_metas);
     }
 }
 

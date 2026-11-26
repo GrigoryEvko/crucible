@@ -294,14 +294,14 @@ OpPacket build_op(uint32_t op_idx, uint32_t iter) {
 void feed_iteration(Vigil& v, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto p = build_op(i, iter);
-        CRUCIBLE_TEST_ASSERT(kTest, v.record_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas)));
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::test::record_synthetic(v, p.entry, p.metas, p.n_metas));
     }
 }
 
 void feed_trigger(Vigil& v, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto p = build_op(i, iter);
-        CRUCIBLE_TEST_ASSERT(kTest, v.record_op(crucible::test::certify_synthetic_op(p.entry, p.metas, p.n_metas)));
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::test::record_synthetic(v, p.entry, p.metas, p.n_metas));
     }
 }
 

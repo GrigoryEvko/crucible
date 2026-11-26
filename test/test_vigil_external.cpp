@@ -119,8 +119,8 @@ crucible::DispatchResult dispatch(crucible::Vigil& vigil, ::fixy::View<std::byte
     const divrig::OpData made = op_reading_batch(memory, iter, op_idx, op1_first);
     const crucible::OpDepth depth =
         op1_first == kNestResult && op_idx == 0 ? crucible::OpDepth{1} : crucible::OpDepth{};
-    return vigil.dispatch_op(crucible::test::certify_synthetic_op(made.entry, made.metas, made.n_metas),
-                             crucible::ScopeHash{}, crucible::CallsiteHash{}, depth);
+    return crucible::test::dispatch_synthetic(vigil, made.entry, made.metas, made.n_metas, crucible::ScopeHash{},
+                                              crucible::CallsiteHash{}, depth);
 }
 
 // Records two whole iterations and the head of a third, which publish a

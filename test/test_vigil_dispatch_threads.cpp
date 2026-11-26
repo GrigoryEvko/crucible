@@ -133,14 +133,13 @@ void test_second_producer_gets_no_proof(::fixy::TestRunnerCtx const& test) {
         test,
         [](Vigil& vigil, VigilFgCtx const&) noexcept {
             auto second = make_op(0, 1);
-            static_cast<void>(
-                vigil.record_op(crucible::test::certify_synthetic_op(second.entry, second.metas, second.n_metas)));
+            static_cast<void>(crucible::test::record_synthetic(vigil, second.entry, second.metas, second.n_metas));
         },
         kNotTheHolder);
 
     Vigil vigil;
     auto first = make_op(0, 0);
-    const bool took = vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas));
+    const bool took = crucible::test::record_synthetic(vigil, first.entry, first.metas, first.n_metas);
     CRUCIBLE_TEST_ASSERT(test, took);
 
     ::fixy::check::pass(test, "  test_second_producer_gets_no_proof: PASSED\n");

@@ -19,7 +19,7 @@
 //
 //   data_ptr_typed(typed, i)  : TypedMeta, std::size_t   -> ExternalDataPtr
 //   decode_ffi_meta(record)   : const CrucibleMeta&      -> Option<TensorMeta>
-//   decode_ffi_records(...)   : TypedMeta, slots         -> Option<View<TensorMeta const>>
+//   decode_ffi_records(...)   : TypedMeta, slots&&       -> Option<ViewMut<TensorMeta>>
 //
 //   TypedSchemaName           := InternedSchemaName
 //   schema_name_typed(hash)   : SchemaHash               -> TypedSchemaName
@@ -261,18 +261,19 @@ template <class Slots>
 }  // namespace detail
 
 // Decodes one record at typed into each slot of the run of a frame, in order,
-// and gives the View of the slots.  The caller gives as many slots as it gives
+// and gives the run back.  The caller gives as many slots as it gives
 // records: the slots of the frame of the op on the record stack, or the run of
-// another frame.  The decode writes through the ViewMut of the frame, so it is
-// the one writer of the run, and the View of the result reads the run while
-// the frame lends it.  No value when decode_ffi_meta refuses a record.  The
-// caller then records nothing.  Linear in the count of the slots.
+// another frame.  The decode takes the ViewMut of the frame by move, so it is
+// the one writer of the run, and the result is that one writer again, which
+// the caller gives to the mint of the op.  No value when decode_ffi_meta
+// refuses a record.  The caller then records nothing.  Linear in the count of
+// the slots.
 template <class Brand, std::size_t Extent>
-[[nodiscard]] inline ::fixy::Option<::fixy::View<TensorMeta const>>
-decode_ffi_records(TypedMeta typed, ::fixy::ViewMut<TensorMeta, Brand, Extent>& slots) noexcept {
-    if (!detail::decode_ffi_records_into_(typed, slots)) return ::fixy::none;
-    ::fixy::View<TensorMeta const> const decoded = slots.view();
-    return ::fixy::Option<::fixy::View<TensorMeta const>>::some(decoded);
+[[nodiscard]] inline ::fixy::Option<::fixy::ViewMut<TensorMeta, Brand, Extent>>
+decode_ffi_records(TypedMeta typed, ::fixy::ViewMut<TensorMeta, Brand, Extent>&& slots) noexcept {
+    ::fixy::ViewMut<TensorMeta, Brand, Extent> decoded{std::move(slots)};
+    if (!detail::decode_ffi_records_into_(typed, decoded)) return ::fixy::none;
+    return ::fixy::Option<::fixy::ViewMut<TensorMeta, Brand, Extent>>::some(std::move(decoded));
 }
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -591,15 +592,21 @@ using ValidatedEntryTag = crucible::TraceRing::ValidatedEntryPtr::tag_type;
 // failure value that carries the second tag, which is what makes running
 // the checks the only way an adapter reaches a recording entry point.
 //
-// The records are the inputs and then the outputs of the entry.
+// The records are the inputs and then the outputs of the entry, in the run
+// of a frame, whose one writer the door takes by move and gives to the mint.
 // crucible::mint_validated_op gives no op for a count of records that is
 // not their sum, so the foreign caller of such a count records nothing.
+template <class Brand, std::size_t Extent>
 [[nodiscard]] CRUCIBLE_HOT constexpr ::fixy::Option<crucible::ValidatedOp>
-validate_ffi_op(crucible::TraceRing::FromPytorchEntryPtr raw, ::fixy::View<const crucible::TensorMeta> metas) noexcept {
+validate_ffi_op(crucible::TraceRing::FromPytorchEntryPtr raw,
+                ::fixy::ViewMut<crucible::TensorMeta, Brand, Extent>&& metas) noexcept {
+    ::fixy::ViewMut<crucible::TensorMeta, Brand, Extent> held{std::move(metas)};
     if (raw.value() == nullptr) return ::fixy::none;
     const crucible::TraceRing::Entry& entry = *raw.value();
-    if (!crucible::entry_is_well_formed(entry) || !metas_are_well_formed(metas)) return ::fixy::none;
-    return crucible::mint_validated_op(std::move(raw).retag<ValidatedEntryTag>(), metas);
+    if (!crucible::entry_is_well_formed(entry)
+        || !metas_are_well_formed(::fixy::View<const crucible::TensorMeta>{held.view()}))
+        return ::fixy::none;
+    return crucible::mint_validated_op(std::move(raw).retag<ValidatedEntryTag>(), std::move(held));
 }
 
 }  // namespace crucible::vessel

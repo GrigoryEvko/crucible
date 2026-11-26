@@ -750,8 +750,7 @@ public:
         entry.shape_hash = ShapeHash{::foundation::reflect::combine_ids(kUnrecordedNestSchema.raw(), depth.raw())};
         // This code builds each field of the entry, so the entry is valid by
         // construction, as the comment of TraceRing::ValidatedEntryPtr states.
-        const ValidatedOp op = mint_validated_op(mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(),
-                                                 ::fixy::View<const TensorMeta>{})
+        const ValidatedOp op = mint_validated_op(mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>())
                                    .expect("an entry with no tensor takes no record");
         (void)dispatch_op(op, ScopeHash{}, CallsiteHash{}, depth);
     }

@@ -378,8 +378,9 @@ struct DispatchOpExEntry {};
 //
 // The op borrows its records, so the thunk opens a frame of n_metas slots on
 // the record stack of the Vigil and decodes the records of the caller into
-// it.  A count that does not fit the free slots, or a record that the decode
-// refuses, records nothing.
+// it.  The decode and the mint take the one writer of the slots by move, so
+// no code writes the records after the mint.  A count that does not fit the
+// free slots, or a record that the decode refuses, records nothing.
 //
 // The op runs no other op through this entry, so it opens no nest.  Its depth
 // is the count of the nests that are open when it arrives.
@@ -401,16 +402,19 @@ dispatch_records(crucible::Vigil& vigil, crucible::TraceRing::Entry& entry, cruc
     return record_stack.with_foreign_frame(
         count,
         [&] [[gnu::always_inline]] (auto slots) noexcept {
-            for (const ::fixy::View<const crucible::TensorMeta> records :
-                 crucible::vessel::decode_ffi_records(metas_typed, slots)) {
-                entry.shape_hash = guard_word_of(entry, records, depth);
-                for (const crucible::ValidatedOp& op :
-                     crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
-                    return encode_dispatch_result(
-                        vigil.dispatch_op_pure(fg, op, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth));
-                }
-            }
-            return refused_dispatch_result();
+            return crucible::vessel::decode_ffi_records(metas_typed, std::move(slots))
+                .match(
+                    [&] [[gnu::always_inline]] (auto records) noexcept {
+                        entry.shape_hash = guard_word_of(entry, records.view(), depth);
+                        return crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), std::move(records))
+                            .match(
+                                [&] [[gnu::always_inline]] (crucible::ValidatedOp op) noexcept {
+                                    return encode_dispatch_result(vigil.dispatch_op_pure(
+                                        fg, op, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth));
+                                },
+                                [] noexcept { return refused_dispatch_result(); });
+                    },
+                    [] noexcept { return refused_dispatch_result(); });
         },
         [] noexcept { return refused_dispatch_result(); });
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

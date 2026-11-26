@@ -55,7 +55,9 @@ constexpr uint32_t kFillRecords = 4096;
 }
 
 [[nodiscard]] bool record(LocalRing& ring, LocalLog& log, const TraceRing::Entry& entry, OpMetas const& metas) {
-    return crucible::test::record_local(ring, log, crucible::test::certify_synthetic_op(entry, metas.view()));
+    return crucible::test::with_synthetic_op(entry, metas, 2, [&ring, &log](crucible::ValidatedOp const& op) {
+        return crucible::test::record_local(ring, log, op);
+    });
 }
 
 // Drains one entry and its metadata index.  The ring holds at least one.
@@ -106,9 +108,7 @@ void test_op_with_no_records_takes_no_index() {
     TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{0x300};
     entry.shape_hash = crucible::ShapeHash{0x301};
-    CRUCIBLE_TEST_ASSERT(
-        kTest, crucible::test::record_local(
-                   ring, log, crucible::test::certify_synthetic_op(entry, ::fixy::View<const crucible::TensorMeta>{})));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::test::record_local(ring, log, crucible::test::certify_synthetic_op(entry)));
     CRUCIBLE_TEST_ASSERT(kTest, ring_produced(ring) == 1 && log_produced(log) == 0);
     TraceRing::Entry drained{};
     CRUCIBLE_TEST_ASSERT(kTest, !drain_meta_start(ring, drained).is_valid() && "an op with no records named records");

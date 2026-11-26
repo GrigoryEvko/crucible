@@ -4,15 +4,14 @@
 // check.
 //
 // An adapter fills an entry from the values of a foreign runtime, and its
-// pointer carries the tag FromPytorch.  Only the checks of the ladder retag
-// it to Validated, and mint_validated_op takes only the second tag.  So an
-// entry that skipped the checks reaches no recording entry point.
+// copy in the tag carries the tag FromPytorch.  Only the checks of the ladder
+// retag it to Validated, and mint_validated_op takes only the second tag.  So
+// an entry that skipped the checks reaches no recording entry point.
 
 #include <crucible/ValidatedOp.h>
 
 int main() {
     crucible::TraceRing::Entry entry{};
-    const auto op =
-        crucible::mint_validated_op(crucible::mint_ffi_entry(entry), ::fixy::View<const crucible::TensorMeta>{});
+    const auto op = crucible::mint_validated_op(crucible::mint_ffi_entry(entry));
     return op.is_some() ? 0 : 1;
 }

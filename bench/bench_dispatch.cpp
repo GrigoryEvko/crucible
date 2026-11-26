@@ -50,15 +50,31 @@ constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foregrou
 TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry&&) =
     delete("the result points into the entry, and a temporary entry ends before the result");
 
-// Certifies an Entry this file built, and pairs it with its records, so it
-// can reach record_op and dispatch_op.  The process ends when the count of
-// the records disagrees with the entry.
+// Certifies an Entry this file built, and pairs it with its sealed records,
+// so it can reach record_op and dispatch_op.  The process ends when the count
+// of the records disagrees with the entry.  The op points into the entry and
+// holds a View of the sealed list.
+template <std::size_t N>
 [[nodiscard]] CRUCIBLE_INLINE ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry CRUCIBLE_LIFETIMEBOUND,
-                                                               ::fixy::View<const TensorMeta> metas) noexcept {
-    return crucible::mint_validated_op(certify_synthetic_entry(entry), metas)
+                                                               SealedRecords<N> const& records
+                                                               CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return crucible::mint_validated_op(certify_synthetic_entry(entry), records)
         .expect("the count of the records agrees with the entry");
 }
-ValidatedOp certify_synthetic_op(const TraceRing::Entry&&, ::fixy::View<const TensorMeta>) =
+template <std::size_t N>
+ValidatedOp certify_synthetic_op(const TraceRing::Entry&&, SealedRecords<N> const&) =
+    delete("the op points into the entry, and a temporary entry ends before the op");
+template <std::size_t N>
+ValidatedOp certify_synthetic_op(const TraceRing::Entry&, SealedRecords<N> const&&) =
+    delete("the op keeps a View of the sealed list, and a temporary list ends before the op");
+
+// The same for an entry with no records.
+[[nodiscard]] CRUCIBLE_INLINE ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry
+                                                               CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return crucible::mint_validated_op(certify_synthetic_entry(entry))
+        .expect("the entry of an op with no records counts no tensor");
+}
+ValidatedOp certify_synthetic_op(const TraceRing::Entry&&) =
     delete("the op points into the entry, and a temporary entry ends before the op");
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -126,21 +142,17 @@ TensorMeta make_meta(SyntheticAddress address) noexcept {
     return m;
 }
 
+// The entry of an op and its records, sealed when the op is made
+// (SealedRecords of crucible/ValidatedOp.h).  A timed body mints the op from
+// the sealed records, so it copies no record.  The product path of the
+// vessel mints the op from the one writer of the run of a frame instead, so
+// the bodies here are not the product path.  An op does not move, so the ops
+// of a cycle live in a heap array (Ops), and a body of a cycle reads one more
+// pointer than a body of an op in a local.
 struct OpData {
     TraceRing::Entry entry{};
-    ::fixy::FixedArray<TensorMeta, 2> metas{};
-    uint16_t n_metas = 0;
+    SealedRecords<2> records;
 };
-
-// The records of the op: the first n_metas records of its array.
-[[nodiscard]] CRUCIBLE_INLINE ::fixy::View<const TensorMeta> records_of(const OpData& op
-                                                                        CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return ::fixy::View<const TensorMeta>{op.metas.view()}
-        .window(0, op.n_metas)
-        .expect("the count fits the records of the op");
-}
-::fixy::View<const TensorMeta>
-records_of(const OpData&&) = delete("the result points into the op, and a temporary op ends before the result");
 
 // The tensor that an op after the first one reads.
 enum class InputSource : std::uint8_t {
@@ -153,48 +165,55 @@ enum class InputSource : std::uint8_t {
 constexpr IterationNumber kParameterIteration{200};
 
 OpData make_op(uint32_t iter, uint32_t op_idx, InputSource source = InputSource::PreviousOutput) noexcept {
-    OpData d;
     const OpSlot slot = OpSlot::check(op_idx).expect("the position of an op is below NUM_OPS");
-    d.entry.schema_hash = SCHEMA.at(slot);
-    d.entry.shape_hash = SHAPE.at(slot);
-    d.entry.num_inputs = (op_idx == 0) ? 0 : 1;
-    d.entry.num_outputs = 1;
+    TraceRing::Entry entry{};
+    entry.schema_hash = SCHEMA.at(slot);
+    entry.shape_hash = SHAPE.at(slot);
+    entry.num_inputs = (op_idx == 0) ? 0 : 1;
+    entry.num_outputs = 1;
 
-    uint16_t idx = 0;
+    ::fixy::FixedList<TensorMeta, 2> records{};
     if (op_idx > 0)
-        d.metas.set(::fixy::Index<2>::check(idx++).expect("the position fits the array"),
-                    make_meta(source == InputSource::Parameter
+        (void)records
+            .append(make_meta(source == InputSource::Parameter
                                   ? fake_address(kParameterIteration, OpPosition{op_idx})
-                                  : fake_address(IterationNumber{iter}, OpPosition{op_idx - 1})));
-    d.metas.set(::fixy::Index<2>::check(idx++).expect("the position fits the array"),
-                make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx})));
-    d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
-    return d;
+                                  : fake_address(IterationNumber{iter}, OpPosition{op_idx - 1})))
+            .expect("the list holds the two records of an op");
+    (void)records.append(make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx})))
+        .expect("the list holds the two records of an op");
+    return OpData{.entry = entry, .records = SealedRecords<2>{std::move(records)}};
 }
 
 // The ops of one iteration, in the order of the cycle.
-using Ops = ::fixy::FixedArray<OpData, NUM_OPS>;
+using Ops = ::fixy::HeapArray<OpData>;
 
 // The ops of the iteration 10, which the COMPILED rows dispatch after the
-// setup of setup_compiled_vigil.
+// setup of setup_compiled_vigil.  Each op is built in its place.
 [[nodiscard]] Ops make_compiled_ops(InputSource source = InputSource::PreviousOutput) noexcept {
-    Ops ops{};
-    for (OpSlot const slot : ::fixy::IndexRange<NUM_OPS>{})
-        ops.set(slot, make_op(10, static_cast<uint32_t>(slot.raw()), source));
-    return ops;
+    return ::fixy::mint_heap_array_with<OpData>(
+        ::foundation::effects::testing::test().alloc, NUM_OPS,
+        [source](std::size_t position) noexcept { return make_op(10, static_cast<uint32_t>(position), source); });
 }
+
+// The op at a position of the cycle, below NUM_OPS.
+[[nodiscard]] CRUCIBLE_INLINE const OpData& op_at(Ops const& ops CRUCIBLE_LIFETIMEBOUND,
+                                                  std::size_t position) noexcept {
+    return *ops.get(position).expect("the position of an op is below NUM_OPS");
+}
+const OpData&
+op_at(Ops const&&, std::size_t) = delete("the op is an element of the array, and a temporary array ends before the op");
 
 void feed_record(Vigil& vigil, uint32_t iter, InputSource source) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(iter, i, source);
-        (void)vigil.record_op(certify_synthetic_op(d.entry, records_of(d)));
+        (void)vigil.record_op(certify_synthetic_op(d.entry, d.records));
     }
 }
 
 void feed_trigger(Vigil& vigil, uint32_t iter, InputSource source) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(iter, i, source);
-        (void)vigil.record_op(certify_synthetic_op(d.entry, records_of(d)));
+        (void)vigil.record_op(certify_synthetic_op(d.entry, d.records));
     }
 }
 
@@ -211,14 +230,14 @@ void wait_region_published(Vigil& vigil) {
     uint32_t unexpected_results = 0;
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(iter, i, source);
-        const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+        const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
         unexpected_results += static_cast<uint32_t>(r.action != DispatchResult::Action::RECORD);
     }
     unexpected_results += static_cast<uint32_t>(!vigil.context().is_compiled());
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(iter, i, source);
-        const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+        const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
         unexpected_results += static_cast<uint32_t>(r.action != DispatchResult::Action::COMPILED);
     }
     return unexpected_results;
@@ -545,7 +564,6 @@ int main() {
         e.shape_hash = ShapeHash{0xAAA};
         e.num_inputs = 0;
         e.num_outputs = 0;
-        const ::fixy::View<const TensorMeta> no_records{};
         uint64_t refused = 0;
         uint64_t tick = 0;
         auto report = bench::Run("Vigil::record_op (0 metas, profiler hook)")
@@ -555,7 +573,7 @@ int main() {
                           .core(bench::env_core())
                           .measure([&] {
                               e.schema_hash = SchemaHash{0x1000000u + tick++};
-                              const bool took = vigil.record_op(certify_synthetic_op(e, no_records));
+                              const bool took = vigil.record_op(certify_synthetic_op(e));
                               refused += static_cast<uint64_t>(!took);
                               bench::do_not_optimize(took);
                           });
@@ -566,7 +584,6 @@ int main() {
     bench::add_report(reports, [&] {
         Vigil vigil;
         auto d = make_op(0, 1);
-        const ::fixy::View<const TensorMeta> records = records_of(d);
         uint64_t refused = 0;
         uint64_t tick = 0;
         auto report = bench::Run("Vigil::record_op (2 metas)")
@@ -576,7 +593,7 @@ int main() {
                           .core(bench::env_core())
                           .measure([&] {
                               d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
-                              const bool took = vigil.record_op(certify_synthetic_op(d.entry, records));
+                              const bool took = vigil.record_op(certify_synthetic_op(d.entry, d.records));
                               refused += static_cast<uint64_t>(!took);
                               bench::do_not_optimize(took);
                           });
@@ -593,7 +610,6 @@ int main() {
     bench::add_report(reports, [&] {
         Vigil vigil;
         auto d = make_op(0, 1);
-        const ::fixy::View<const TensorMeta> records = records_of(d);
         uint64_t recorded = 0;
         uint64_t tick = 0;
         auto report = bench::Run("dispatch_op [RECORDING, no pending]")
@@ -603,7 +619,7 @@ int main() {
                           .core(bench::env_core())
                           .measure([&] {
                               d.entry.schema_hash = SchemaHash{0x1000000u + tick++};
-                              const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records));
+                              const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
                               recorded += static_cast<uint64_t>(r.is_record());
                               bench::do_not_optimize(r);
                           });
@@ -621,8 +637,8 @@ int main() {
 
         OpSlot slot = ::fixy::index<0>();
         return bench::run("dispatch_op [COMPILED, cyclic]", [&] {
-            const OpData& d = ops.at(slot);
-            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+            const OpData& d = op_at(ops, slot.raw());
+            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
             bench::do_not_optimize(r);
             slot = next_in_cycle(slot);
         });
@@ -638,8 +654,8 @@ int main() {
         const VigilFgCtx fg = vigil.mint_producer_context();
         OpSlot slot = ::fixy::index<0>();
         return bench::run("dispatch_op [COMPILED + output_ptr]", [&] {
-            const OpData& d = ops.at(slot);
-            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+            const OpData& d = op_at(ops, slot.raw());
+            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
             if (r.action == DispatchResult::Action::COMPILED)
                 bench::do_not_optimize(vigil.output_ptr(fg, crucible::OutputPosition{0}));
             bench::do_not_optimize(r);
@@ -657,13 +673,13 @@ int main() {
         using LeadSlot = ::fixy::Index<NUM_OPS - 1>;
         LeadSlot slot = ::fixy::index<0>();
         return bench::run("dispatch_op [COMPILED, MATCH only]", [&] {
-            const OpData& d = ops.at(slot);
-            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+            const OpData& d = op_at(ops, slot.raw());
+            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
             bench::do_not_optimize(r);
             ::fixy::Option<LeadSlot> next = LeadSlot::check(slot.raw() + 1);
             if (next.is_none()) {
-                const OpData& last = ops.at(::fixy::index<NUM_OPS - 1>());
-                auto rl = vigil.dispatch_op(certify_synthetic_op(last.entry, records_of(last)));
+                const OpData& last = op_at(ops, NUM_OPS - 1);
+                auto rl = vigil.dispatch_op(certify_synthetic_op(last.entry, last.records));
                 bench::do_not_optimize(rl);
             }
             slot = std::move(next).value_or(LeadSlot{::fixy::index<0>()});
@@ -677,7 +693,7 @@ int main() {
 
         return bench::run("dispatch_op [full 8-op iteration]", [&] {
             for (const OpData& d : ops) {
-                auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+                auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
                 bench::do_not_optimize(r);
             }
         });
@@ -693,8 +709,8 @@ int main() {
 
         OpSlot next = ::fixy::index<0>();
         return bench::run("dispatch_op [COMPILED, chained position]", [&] {
-            const OpData& d = ops.at(next);
-            const DispatchResult r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+            const OpData& d = op_at(ops, next.raw());
+            const DispatchResult r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
             next = OpSlot::check((r.op_index.raw() + 1) % NUM_OPS).expect("the remainder is below NUM_OPS");
         });
     }());
@@ -711,8 +727,8 @@ int main() {
 
         OpSlot slot = ::fixy::index<0>();
         return bench::run("dispatch_op [COMPILED, external reads]", [&] {
-            const OpData& d = ops.at(slot);
-            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+            const OpData& d = op_at(ops, slot.raw());
+            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
             bench::do_not_optimize(r);
             slot = next_in_cycle(slot);
         });
@@ -726,7 +742,7 @@ int main() {
 
         return bench::run("dispatch_op [8-op iteration, external reads]", [&] {
             for (const OpData& d : ops) {
-                auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+                auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
                 bench::do_not_optimize(r);
             }
         });
@@ -753,7 +769,7 @@ int main() {
             unexpected_results += setup_compiled_vigil(vigil);
             for (uint32_t i = 0; i < 3; i++) {
                 auto d = make_op(10, i);
-                const auto rr = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+                const auto rr = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
                 unexpected_results += static_cast<uint32_t>(rr.action != DispatchResult::Action::COMPILED);
             }
             TraceRing::Entry bad{};
@@ -761,11 +777,13 @@ int main() {
             bad.shape_hash = SHAPE.at(::fixy::index<3>());
             bad.num_inputs = 1;
             bad.num_outputs = 1;
-            ::fixy::FixedArray<TensorMeta, 2> bad_metas{
-                make_meta(fake_address(IterationNumber{10}, OpPosition{2})),
-                make_meta(fake_address(IterationNumber{10}, OpPosition{3})),
-            };
-            auto rr = vigil.dispatch_op(certify_synthetic_op(bad, bad_metas.view()));
+            ::fixy::FixedList<TensorMeta, 2> bad_list{};
+            (void)bad_list.append(make_meta(fake_address(IterationNumber{10}, OpPosition{2})))
+                .expect("the list holds the two records of an op");
+            (void)bad_list.append(make_meta(fake_address(IterationNumber{10}, OpPosition{3})))
+                .expect("the list holds the two records of an op");
+            const SealedRecords<2> bad_metas{std::move(bad_list)};
+            auto rr = vigil.dispatch_op(certify_synthetic_op(bad, bad_metas));
             bench::do_not_optimize(rr);
             unexpected_results += static_cast<uint32_t>(rr.action != DispatchResult::Action::RECORD);
             unexpected_results += static_cast<uint32_t>(rr.status != ReplayStatus::DIVERGED);

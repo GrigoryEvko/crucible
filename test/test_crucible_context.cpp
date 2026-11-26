@@ -494,18 +494,20 @@ static void test_external_reads_follow_the_region() {
     const ::fixy::RunAddress first_data = ::fixy::mint_run_address(owner.view(), 0).expect("the block holds 64 bytes");
     const ::fixy::RunAddress second_data =
         ::fixy::mint_run_address(owner.view(), 32).expect("the block holds 64 bytes");
-    ::fixy::FixedArray<crucible::TensorMeta, 1> first_records{};
-    ::fixy::FixedArray<crucible::TensorMeta, 1> second_records{};
-    first_records.update(::fixy::index<0>(), [first_data](crucible::TensorMeta& record) noexcept {
+    ::fixy::FixedArray<crucible::TensorMeta, 1> first_metas{};
+    ::fixy::FixedArray<crucible::TensorMeta, 1> second_metas{};
+    first_metas.update(::fixy::index<0>(), [first_data](crucible::TensorMeta& record) noexcept {
         record.data_ptr = crucible::external_data_ptr(::foundation::core::foreign_pointer(first_data));
     });
-    second_records.update(::fixy::index<0>(), [second_data](crucible::TensorMeta& record) noexcept {
+    second_metas.update(::fixy::index<0>(), [second_data](crucible::TensorMeta& record) noexcept {
         record.data_ptr = crucible::external_data_ptr(::foundation::core::foreign_pointer(second_data));
     });
+    const crucible::SealedRecords<1> first_records{crucible::test::record_list_of(first_metas, 1)};
+    const crucible::SealedRecords<1> second_records{crucible::test::record_list_of(second_metas, 1)};
     crucible::TraceRing::Entry entry{};
     entry.num_inputs = 1;
-    const crucible::ValidatedOp first_op = crucible::test::certify_synthetic_op(entry, first_records, 1);
-    const crucible::ValidatedOp second_op = crucible::test::certify_synthetic_op(entry, second_records, 1);
+    const crucible::ValidatedOp first_op = crucible::test::certify_synthetic_op(entry, first_records);
+    const crucible::ValidatedOp second_op = crucible::test::certify_synthetic_op(entry, second_records);
 
     CrucibleContext ctx{g_test.alloc};
     auto context_key = crucible::mint_context_key(g_test);

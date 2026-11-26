@@ -910,20 +910,17 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // slot, so the lanes of a record past its rank stay zero.
 //
 // Where the slots of a Recording live: in the window of a foreign frame of the
-// record stack or of the list of the cold path, which the caller lends as the
-// ViewMut of the window (SlotsLent), or in the list that the Recording holds
-// inline (SlotsOwned).  An operation with an exact bound records into a
-// Recording of its own, so its list gives out no View.  Each caller of a lent
-// window erases its brand (erase_brand), so each family of the record has one
-// instance for its lent windows.
+// record stack, or of a list on the stack of the kernel, which the caller
+// lends as the ViewMut of the window (SlotsLent).  The ViewMut is the one
+// writer of the slots, and the mint of the op takes it by move
+// (append_trace_entry), so no code writes the records after the mint.  An
+// operation with an exact bound records into a window of a list of its own.
+// Each caller of a lent window erases its brand (erase_brand), so each family
+// of the record has one instance for its lent windows.
 template <class Brand>
 struct SlotsLent final {
     template <uint32_t Count>
     using storage = ::fixy::ViewMut<crucible::TensorMeta, Brand, Count>;
-};
-struct SlotsOwned final {
-    template <uint32_t Count>
-    using storage = ::fixy::FixedArray<crucible::TensorMeta, Count>;
 };
 
 // Lends the slot at a proven index of the run of a frame to body in place,
@@ -950,19 +947,11 @@ struct Recording {
     // Capacity.
     static constexpr uint32_t kSlots = Capacity > 0 ? Capacity : 1;
 
-    // True when the caller lends the slots.
-    static constexpr bool kIsLent = !std::is_same_v<Home, SlotsOwned>;
-
     // The slots of the records: the ViewMut of the window that a caller
-    // lends, or the list that a Recording of the home SlotsOwned holds.
+    // lends.
     using Storage = typename Home::template storage<kSlots>;
 
-    explicit Recording(Storage&& slots) noexcept
-        requires kIsLent
-        : metas{std::move(slots)} {}
-    Recording() noexcept
-        requires(!kIsLent)
-        : metas{} {}
+    explicit Recording(Storage&& slots) noexcept : metas{std::move(slots)} {}
 
     Storage metas;
     MetaCount counts{};
@@ -977,18 +966,13 @@ struct Recording {
     // read of the counts, and each check of an index or a window folds.
     //
     // Writes meta into the slot at position.  The slots of a lent window are
-    // the ViewMut that the caller lends for the record of one op, and the list
-    // of the home SlotsOwned takes the value through its value door.  Each
+    // the ViewMut that the caller lends for the record of one op.  Each
     // caller tests the position against Capacity first, so the optimizer
     // removes the check.
     CRUCIBLE_INLINE void set_slot(uint32_t position, crucible::TensorMeta const& meta) noexcept {
         const ::fixy::Index<kSlots> slot =
             ::fixy::Index<kSlots>::check(position).expect("a count below Capacity names a slot");
-        if constexpr (kIsLent) {
-            with_frame_slot(metas, slot, [&meta](crucible::TensorMeta& held) noexcept { held = meta; });
-        } else {
-            metas.set(slot, meta);
-        }
+        with_frame_slot(metas, slot, [&meta](crucible::TensorMeta& held) noexcept { held = meta; });
     }
 
     // The slots for a read.
@@ -1004,12 +988,16 @@ struct Recording {
         return read_slots().window(0, count).expect("the inputs fit the slots");
     }
 
-    // The records of the operation: the inputs and then the outputs.  The
-    // adds keep the total count at most Capacity.
-    [[nodiscard]] CRUCIBLE_INLINE ::fixy::View<const crucible::TensorMeta> records() const& noexcept {
+    // The run of the records of the operation: the inputs and then the
+    // outputs.  The Recording gives up its one writer of the slots, so the
+    // mint of the op takes it, and no code writes the records after the mint.
+    // The adds keep the total count at most Capacity, so the run holds each
+    // record.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::ViewMut<crucible::TensorMeta, typename Storage::brand_type>
+    take_records() noexcept {
         const uint32_t count = counts.total();
         [[assume(count <= Capacity)]];
-        return read_slots().window(0, count).expect("the records fit the slots");
+        return ::foundation::core::take_prefix_up_to(std::move(metas), count);
     }
 
     // The slot at a position below Capacity.  Each caller tests the position
@@ -1022,21 +1010,13 @@ struct Recording {
     // of a tensor into its slot in place, and sets each_tensor_description to
     // refused when fill_meta refuses the tensor.  A lent slot is an element of
     // the ViewMut of a window, and fill_meta writes it through
-    // with_frame_slot.  The list of the home SlotsOwned builds its slot
-    // through its value door build_at, which lends no borrow of the list, so
-    // the tensor and the description go to make_described_meta as arguments of
-    // the door.
+    // with_frame_slot.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a Recording takes the tensors of an operator of PyTorch")
     void add_input(const at::Tensor& tensor) {
         if (tensor.defined() && counts.inputs < Capacity) {
-            if constexpr (kIsLent) {
-                if (!with_frame_slot(metas, slot_at(counts.inputs), [&tensor](crucible::TensorMeta& slot) noexcept {
-                        return fill_meta(slot, tensor);
-                    })) {
-                    each_tensor_description = TensorDescription::refused;
-                }
-            } else {
-                metas.build_at(slot_at(counts.inputs), make_described_meta, tensor, each_tensor_description);
+            if (!with_frame_slot(metas, slot_at(counts.inputs),
+                                 [&tensor](crucible::TensorMeta& slot) noexcept { return fill_meta(slot, tensor); })) {
+                each_tensor_description = TensorDescription::refused;
             }
             counts.inputs++;
         } else if constexpr (MayOverflow) {
@@ -1058,14 +1038,9 @@ struct Recording {
     // append and every reader of it expect.
     void add_output(const at::Tensor& tensor) {
         if (tensor.defined() && counts.total() < Capacity) {
-            if constexpr (kIsLent) {
-                if (!with_frame_slot(metas, slot_at(counts.total()), [&tensor](crucible::TensorMeta& slot) noexcept {
-                        return fill_meta(slot, tensor);
-                    })) {
-                    each_tensor_description = TensorDescription::refused;
-                }
-            } else {
-                metas.build_at(slot_at(counts.total()), make_described_meta, tensor, each_tensor_description);
+            if (!with_frame_slot(metas, slot_at(counts.total()),
+                                 [&tensor](crucible::TensorMeta& slot) noexcept { return fill_meta(slot, tensor); })) {
+                each_tensor_description = TensorDescription::refused;
             }
             counts.outputs++;
         }
@@ -1376,7 +1351,7 @@ void write_recorded_scalars(crucible::TraceRing::Entry& entry,
 // place of the one copy of each family.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the dispatch keys of PyTorch give the flags of the entry")
 template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, class Home>
-[[gnu::noinline]] void append_trace_entry(const Recording<Capacity, MayOverflow, Home>& recording,
+[[gnu::noinline]] void append_trace_entry(Recording<Capacity, MayOverflow, Home>& recording,
                                           crucible::SchemaHash schema_hash, c10::DispatchKeySet dispatch_keys,
                                           crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
                                           crucible::ScopeHash scope_hash, crucible::OpDepth depth) {
@@ -1392,11 +1367,10 @@ template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, c
     entry.op_flags = entry_op_flags<IsMutable, IsForeach>(dispatch_keys);
     write_recorded_scalars(entry, recording);
 
-    // The View of the records and the two counts of the entry come from one
-    // read of the counts, after each call that takes the entry or reads the
-    // Recording.  So the count check of mint_validated_op always passes.  GCC
-    // keeps the compare, because it reads the counts back from the entry.
-    const ::fixy::View<const crucible::TensorMeta> records = recording.records();
+    // The run of the records and the two counts of the entry come from the
+    // counts of the Recording, after each call that takes the entry or reads
+    // the Recording.  So the count check of mint_validated_op always passes.
+    // GCC keeps the compare, because it reads the counts back from the entry.
     entry.num_inputs = recording.counts.inputs;
     entry.num_outputs = recording.counts.outputs;
 
@@ -1429,15 +1403,21 @@ template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, c
     // Vigil's producer claim. recording_vigil confirmed that this thread can
     // take the claim. A kernel reached from an init, background or test
     // context has no such context, so its call does not compile.
-    const auto op = crucible::mint_validated_op(std::move(binding).value(), records);
-    for (const crucible::ValidatedOp& certified : op) {
-        const crucible::DispatchResult result =
-            vigil.dispatch_op_pure(fg, certified, scope_hash, crucible::CallsiteHash{}, depth);
-        // A region entry comes once for each iteration of a region, so the
-        // read of the eager word is a cold call.
-        if (result.enters_region) [[unlikely]]
-            observe_eager_numerics(vigil, fg);
-    }
+    //
+    // The mint takes the one writer of the records from the Recording, so no
+    // code writes them after the mint.  The arm inlines, so the op stays in
+    // this frame and the dispatch inlines here as before.
+    crucible::mint_validated_op(std::move(binding).value(), recording.take_records())
+        .match(
+            [&] [[gnu::always_inline]] (crucible::ValidatedOp certified) {
+                const crucible::DispatchResult result =
+                    vigil.dispatch_op_pure(fg, certified, scope_hash, crucible::CallsiteHash{}, depth);
+                // A region entry comes once for each iteration of a region, so
+                // the read of the eager word is a cold call.
+                if (result.enters_region) [[unlikely]]
+                    observe_eager_numerics(vigil, fg);
+            },
+            [] noexcept {});
 }
 
 // =====================================================================
@@ -1540,10 +1520,11 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         schema_name_registered.store_release(true);
     }
 
-    using OwnedRecording = Recording<kCapacity, kMayOverflow, SlotsOwned>;
+    // The Recording of the kernel, on a window whose brand its caller erased.
+    using LentRecording = Recording<kCapacity, kMayOverflow, SlotsLent<::foundation::brand::DefaultBrand>>;
 
     // The count of the slots of a Recording of the kernel.
-    static constexpr uint32_t kSlots = OwnedRecording::kSlots;
+    static constexpr uint32_t kSlots = LentRecording::kSlots;
 
     // True when the operator has no exact bound of its records: a tensor-list
     // argument, or a result that is a list.  Then the records go into a frame
@@ -1596,47 +1577,54 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
                 },
                 [&]() -> Ret { return call_recording_on_stack(vigil, fg, dispatch_keys, nest.depth(), args...); });
         } else {
-            // The Recording holds its slots inline, on the stack of this call,
-            // and writes them across the redispatch.
-            OwnedRecording recording{};
-            return record_operation(vigil, fg, dispatch_keys, nest.depth(), recording, args...);
+            // The Recording writes its slots across the redispatch, in the
+            // window of a list on the stack of this call.
+            return record_on_list(vigil, fg, dispatch_keys, nest.depth(), args...);
         }
     }
 
-    // The record of an operator with no exact bound, into the slots of a frame
-    // or of the list of the cold path.  Each caller erases the brand of its
-    // window, so the two paths take one instance.  The body is inline in each
-    // caller, because the ABI passes a ViewMut by value in memory.  The path of
-    // the frame then has no call, and the copy of the list is cold code.
+    // The record of an operator, into the slots of a frame or of a list.  Each
+    // caller erases the brand of its window, so each path takes one instance.
+    // The body is inline in each caller, because the ABI passes a ViewMut by
+    // value in memory.  The path of the frame then has no call, and the copy
+    // of the list is in the code of its caller.
     template <class Brand>
-    CRUCIBLE_INLINE static Ret record_in_slots(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
-                                               c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
-                                               ::fixy::ViewMut<crucible::TensorMeta, Brand, kSlots> metas, Args... args)
-        requires kRecordsInFrame
-    {
+    CRUCIBLE_INLINE static Ret
+    record_in_slots(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg, c10::DispatchKeySet dispatch_keys,
+                    crucible::OpDepth depth, ::fixy::ViewMut<crucible::TensorMeta, Brand, kSlots> metas, Args... args) {
         Recording<kCapacity, kMayOverflow, SlotsLent<Brand>> recording{std::move(metas)};
         return record_operation(vigil, fg, dispatch_keys, depth, recording, args...);
     }
 
-    // Records the operation through a list on the stack of this call.  The
-    // kernel takes this path only when the record stack of the Vigil has
-    // fewer free slots than kCapacity, which a deep nest of operations needs.
-    // The list costs a fill of each of its slots.  The list is in this
-    // function, so the frame of call_recording holds no list.  The list is a
-    // window stack, and its foreign door lends its slots to the Recording of a
-    // lent window, so this path and the frame path share one body of the
-    // record.  A new list holds no window, so the window of kSlots fits.
-    CRUCIBLE_COLD static Ret call_recording_on_stack(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
-                                                     c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
-                                                     Args... args)
-        requires kRecordsInFrame
-    {
+    // Records the operation through a list on the stack of its caller.  The
+    // list is a window stack, and its foreign door lends its slots to the
+    // Recording of a lent window, so each path shares one body of the record,
+    // and the mint of the op takes the one writer of the slots.  The list
+    // costs a fill of each of its slots.  A new list holds no window, so the
+    // window of kSlots fits.  An operator with an exact bound records here
+    // with each call.
+    CRUCIBLE_INLINE static Ret record_on_list(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
+                                              c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
+                                              Args... args) {
         ::foundation::core::WindowStack<crucible::TensorMeta, kSlots> list{};
         return list.template with_foreign_window<kSlots>(
             [&](auto slots) -> Ret {
                 return record_in_slots(vigil, fg, dispatch_keys, depth, ::fixy::erase_brand(std::move(slots)), args...);
             },
             []() -> Ret { ::fixy::unreachable(); });
+    }
+
+    // Records the operation through a list on the stack of this call.  The
+    // kernel takes this path only when the record stack of the Vigil has
+    // fewer free slots than kCapacity, which a deep nest of operations needs.
+    // The list is in this function, so the frame of call_recording holds no
+    // list.
+    CRUCIBLE_COLD static Ret call_recording_on_stack(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
+                                                     c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
+                                                     Args... args)
+        requires kRecordsInFrame
+    {
+        return record_on_list(vigil, fg, dispatch_keys, depth, args...);
     }
 
     // Records each argument with the role of its position (kArgumentRole), in

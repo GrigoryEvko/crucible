@@ -36,8 +36,7 @@ void test_record_op_claims_the_producer_role() {
 
     std::thread claimer([&vigil] {
         auto first = divrig::op_at(0, 0);
-        CRUCIBLE_TEST_ASSERT(
-            kTest, vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas)));
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::test::record_synthetic(vigil, first.entry, first.metas, first.n_metas));
         CRUCIBLE_TEST_ASSERT(kTest, vigil.is_producer_thread() && "the thread that claimed the role holds it");
     });
     claimer.join();
@@ -56,8 +55,7 @@ void test_counters_count_the_recorded_op() {
     const uint64_t ring_before = vigil.ring_total_produced();
     const uint64_t log_before = vigil.meta_log_total_produced().raw();
     auto first = divrig::op_at(0, 0);
-    CRUCIBLE_TEST_ASSERT(
-        kTest, vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas)));
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::test::record_synthetic(vigil, first.entry, first.metas, first.n_metas));
 
     CRUCIBLE_TEST_ASSERT(kTest, vigil.ring_total_produced() == ring_before + 1 && "the recorded op reached the ring");
     CRUCIBLE_TEST_ASSERT(kTest, vigil.meta_log_total_produced().raw() == log_before + first.n_metas
@@ -80,8 +78,8 @@ void test_each_record_moves_the_head_by_one_op() {
     for (uint32_t round = 0; round < kRounds; ++round) {
         for (uint32_t op = 0; op < 2; ++op) {
             auto recorded = divrig::op_at(round, op);
-            CRUCIBLE_TEST_ASSERT(kTest, vigil.record_op(crucible::test::certify_synthetic_op(
-                                            recorded.entry, recorded.metas, recorded.n_metas)));
+            CRUCIBLE_TEST_ASSERT(
+                kTest, crucible::test::record_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas));
         }
     }
 

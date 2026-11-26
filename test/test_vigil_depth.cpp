@@ -48,9 +48,8 @@ constexpr ::fixy::FixedArray<uint16_t, NUM_OPS> DEPTH{1, 0, 2, 1, 0, 0, 1, 0};
 
 void dispatch_with_depth(crucible::Vigil& vigil, uint32_t iter, uint32_t op_idx) {
     const divrig::OpData made = divrig::op_at(iter, op_idx);
-    const crucible::DispatchResult result =
-        vigil.dispatch_op(crucible::test::certify_synthetic_op(made.entry, made.metas, made.n_metas),
-                          crucible::ScopeHash{}, crucible::CallsiteHash{}, depth_of(op_idx));
+    const crucible::DispatchResult result = crucible::test::dispatch_synthetic(
+        vigil, made.entry, made.metas, made.n_metas, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth_of(op_idx));
     CRUCIBLE_TEST_ASSERT(kTest, result.action == crucible::DispatchResult::Action::RECORD);
 }
 
@@ -347,8 +346,8 @@ public:
 
 private:
     void give_op(const divrig::OpData& made, crucible::OpDepth depth) {
-        (void)vigil.dispatch_op(crucible::test::certify_synthetic_op(made.entry, made.metas, made.n_metas),
-                                crucible::ScopeHash{}, crucible::CallsiteHash{}, depth);
+        (void)crucible::test::dispatch_synthetic(vigil, made.entry, made.metas, made.n_metas, crucible::ScopeHash{},
+                                                 crucible::CallsiteHash{}, depth);
     }
 
     uint32_t iteration_ = 0;

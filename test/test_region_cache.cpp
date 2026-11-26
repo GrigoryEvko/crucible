@@ -86,14 +86,14 @@ OpData make_op(const ShapeHash* shapes, uint32_t variant, uint32_t iter, uint32_
 void feed_record(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_op(d.entry, d.metas, d.n_metas));
+        (void)crucible::test::record_synthetic(vigil, d.entry, d.metas, d.n_metas);
     }
 }
 
 void feed_trigger(Vigil& vigil, const ShapeHash* shapes, uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_op(d.entry, d.metas, d.n_metas));
+        (void)crucible::test::record_synthetic(vigil, d.entry, d.metas, d.n_metas);
     }
 }
 

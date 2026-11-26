@@ -85,14 +85,14 @@ OpData make_op(uint32_t iter, uint32_t op_idx) {
 void feed_record(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_op(d.entry, d.metas, d.n_metas));
+        (void)crucible::test::record_synthetic(vigil, d.entry, d.metas, d.n_metas);
     }
 }
 
 void feed_trigger(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(crucible::test::certify_synthetic_op(d.entry, d.metas, d.n_metas));
+        (void)crucible::test::record_synthetic(vigil, d.entry, d.metas, d.n_metas);
     }
 }
 

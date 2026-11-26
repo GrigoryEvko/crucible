@@ -85,8 +85,7 @@ divrig::OpData op_with_parameter(uint32_t iter, uint32_t op_idx) {
 
 void record(crucible::Vigil& vigil, uint32_t iter, uint32_t op_idx) {
     const divrig::OpData recorded = op_with_parameter(iter, op_idx);
-    const bool was_recorded =
-        vigil.record_op(crucible::test::certify_synthetic_op(recorded.entry, recorded.metas, recorded.n_metas));
+    const bool was_recorded = crucible::test::record_synthetic(vigil, recorded.entry, recorded.metas, recorded.n_metas);
     CRUCIBLE_TEST_ASSERT(kTest, was_recorded);
 }
 
@@ -101,8 +100,10 @@ void write_over_each_slot(crucible::Vigil& vigil) {
     constexpr uint16_t kRecords = 16;
     constexpr uint64_t kBatch = 4096;
     constexpr uint64_t kMaxOps = uint64_t{4} * crucible::MetaLog::CAPACITY / kRecords;
-    const ::fixy::HeapArray<crucible::TensorMeta> chunk =
-        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, kRecords, meta_at(overwrite_ptr(), 3));
+    ::fixy::FixedList<crucible::TensorMeta, kRecords> records{};
+    for (uint16_t record_index = 0; record_index < kRecords; ++record_index)
+        (void)records.append(meta_at(overwrite_ptr(), 3)).expect("the list holds kRecords records");
+    const crucible::SealedRecords<kRecords> chunk{std::move(records)};
     const uint64_t first = vigil.meta_log_total_produced().raw();
     uint64_t op = 0;
     while (vigil.meta_log_total_produced().raw() - first < crucible::MetaLog::CAPACITY) {
@@ -111,7 +112,7 @@ void write_over_each_slot(crucible::Vigil& vigil) {
         entry.schema_hash = crucible::SchemaHash{0xF000000 + op};
         entry.shape_hash = crucible::ShapeHash{0xF800000 + op};
         entry.num_outputs = kRecords;
-        const bool was_recorded = vigil.record_op(crucible::test::certify_synthetic_op(entry, chunk.view()));
+        const bool was_recorded = vigil.record_op(crucible::test::certify_synthetic_op(entry, chunk));
         if (was_recorded) ++op;
         if (!was_recorded || op % kBatch == 0) CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     }

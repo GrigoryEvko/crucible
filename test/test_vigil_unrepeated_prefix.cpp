@@ -73,7 +73,7 @@ bool record(Vigil& vigil, uint64_t schema, uint64_t shape, uint64_t input_addres
     entry.num_inputs = 1;
     entry.num_outputs = 1;
     const ::fixy::FixedArray<crucible::TensorMeta, 2> metas{make_meta(input_address), make_meta(output_address)};
-    return vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, 2));
+    return crucible::test::record_synthetic(vigil, entry, metas, 2);
 }
 
 // The records of each op of a long prefix that fills the metadata log: one
@@ -93,7 +93,7 @@ bool record_wide(Vigil& vigil, uint64_t schema, uint64_t shape, uint64_t address
     for (auto const index : metas.indices())
         metas.set(index, make_meta(address + uint64_t{index.raw()} * 0x40));
     const uint64_t head_before = vigil.meta_log_total_produced().raw();
-    (void)vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, kWideRecords));
+    (void)crucible::test::record_synthetic(vigil, entry, metas, kWideRecords);
     return vigil.meta_log_total_produced().raw() == head_before;
 }
 

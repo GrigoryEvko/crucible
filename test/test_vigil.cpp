@@ -403,7 +403,7 @@ int main() {
     for (int iter = 0; iter < 3; iter++) {
         for (int j = 0; j < 5; j++) {
             auto e = make_entry(schemas[j]);
-            const bool ok = vigil.record_op(crucible::test::certify_synthetic_op(e, io_metas, 2));
+            const bool ok = crucible::test::record_synthetic(vigil, e, io_metas, 2);
             CRUCIBLE_TEST_ASSERT(kTest, ok && "record_op must succeed (ring not full)");
         }
     }

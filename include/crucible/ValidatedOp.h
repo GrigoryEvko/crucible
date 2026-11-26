@@ -11,6 +11,11 @@
 // when the two counts disagree.  Vigil::record_op and Vigil::dispatch_op take
 // only a ValidatedOp, so no caller gives them a count that the door did not
 // check.
+//
+// No code writes the entry or the records of an op after its mint.  The op
+// holds a copy of the entry.  The records come from a source that has no
+// writer for the life of the op: the one writer of the run of a frame, which
+// the mint takes by move, or a Sealed list, which no code changes.
 
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
@@ -19,9 +24,12 @@
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Sealed.h>
 #include <foundation/core/WindowStack.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace crucible {
 
@@ -219,8 +227,11 @@ class ValidatedOpDoor;
 
 // An entry that passed the trust ladder, with a View of its metadata
 // records.  The count of the records is the size of the View, and it is the
-// input count plus the output count of the entry.  The entry and the records
-// live in the caller, so an op lives no longer than the call that made it.
+// input count plus the output count of the entry.  The entry lives in the
+// caller, so an op lives no longer than the call that made it.  The records
+// live in the caller too, in a source that no code writes while the op lives
+// (the doors below).  So an op lives no longer than the frame or the sealed
+// list of its records.
 class ValidatedOp {
 public:
     [[nodiscard]] constexpr const TraceRing::Entry& entry() const noexcept { return *entry_.value(); }
@@ -238,36 +249,116 @@ private:
     ::fixy::View<const TensorMeta> metas_{};
 };
 
-// The one door to a ValidatedOp.  It gives no op when the count of the
-// records is not the input count plus the output count of the entry.
-[[nodiscard]] constexpr ::fixy::Option<ValidatedOp> mint_validated_op(TraceRing::ValidatedEntryPtr entry,
-                                                                      ::fixy::View<const TensorMeta> metas) noexcept;
+// The sealed records of an op: a list that no code changes from its
+// construction to its end (foundation/core/Sealed.h).  A Sealed does not
+// copy, move or take an assignment, so a View of its list names the same
+// records until the list ends.
+template <std::size_t N>
+using SealedRecords = ::fixy::Sealed<::fixy::FixedList<TensorMeta, N>>;
+
+// The extent of a sealed list that the mint takes: at least one slot, and no
+// more slots than the records that the ladder admits for one op.
+template <std::size_t N>
+concept OpRecordExtent = N > 0 && N <= kMaxOpRecords;
+
+// The three doors to a ValidatedOp.  Each one gives no op when the count of
+// the records is not the input count plus the output count of the entry.
+//
+//   mint_validated_op(entry, std::move(records))
+//                       the records of the run of a frame.  The mint takes
+//                       the ViewMut, the one writer of the run, by move.  So
+//                       the name of the caller gives up its run, and no code
+//                       writes the records while the frame lends them.  The
+//                       op holds a View, so a checked frame refuses an op as
+//                       its result (FrameResult of foundation/core/Choice.h)
+//   mint_validated_op(entry, sealed)
+//                       the records of a sealed list.  The op keeps a View of
+//                       the list, so the op must not outlive the list.  The
+//                       twin below refuses a temporary list.  No rule refuses
+//                       an op that a function gives back past the end of a
+//                       list that it holds as a local
+//   mint_validated_op(entry)
+//                       an op with no records
+//
+// A View of records gives no op: other code can hold a writer of the same
+// records.  O(1).
+template <::foundation::brand::IsBrand Brand, std::size_t Extent>
+[[nodiscard]] constexpr ::fixy::Option<ValidatedOp>
+mint_validated_op(TraceRing::ValidatedEntryPtr entry, ::fixy::ViewMut<TensorMeta, Brand, Extent>&& records) noexcept;
+template <std::size_t N>
+    requires OpRecordExtent<N>
+[[nodiscard]] constexpr ::fixy::Option<ValidatedOp>
+mint_validated_op(TraceRing::ValidatedEntryPtr entry, SealedRecords<N> const& records CRUCIBLE_LIFETIMEBOUND) noexcept;
+[[nodiscard]] constexpr ::fixy::Option<ValidatedOp> mint_validated_op(TraceRing::ValidatedEntryPtr entry) noexcept;
 
 namespace detail {
 
 // The key of the private constructor of ValidatedOp.  Its one member is
-// private, and mint_validated_op is its one friend.  The return type of the
-// mint names an Option of a ValidatedOp, and that Option needs a complete
-// class.  So the class itself cannot name the mint as its friend.
+// private, and the three doors of mint_validated_op are its friends.  The
+// return type of a mint names an Option of a ValidatedOp, and that Option
+// needs a complete class.  So the class itself cannot name a mint as its
+// friend.
 class ValidatedOpDoor {
-    [[nodiscard]] static constexpr ValidatedOp open_(TraceRing::ValidatedEntryPtr entry,
-                                                     ::fixy::View<const TensorMeta> metas) noexcept {
-        return ValidatedOp{entry, metas};
+    // The op of an entry and its records, or no op when the count of the
+    // records is not the input count plus the output count of the entry.
+    [[nodiscard]] static constexpr ::fixy::Option<ValidatedOp> mint_(TraceRing::ValidatedEntryPtr entry,
+                                                                     ::fixy::View<const TensorMeta> records) noexcept {
+        CRUCIBLE_PRE(entry.value() != nullptr);
+        const TraceRing::Entry& fields = *entry.value();
+        const uint64_t expected = uint64_t{fields.num_inputs} + uint64_t{fields.num_outputs};
+        if (records.size() != expected) return ::fixy::none;
+        return ::fixy::Option<ValidatedOp>::some(ValidatedOp{entry, records});
     }
 
+    template <::foundation::brand::IsBrand Brand, std::size_t Extent>
     friend constexpr ::fixy::Option<ValidatedOp>
-    crucible::mint_validated_op(TraceRing::ValidatedEntryPtr entry, ::fixy::View<const TensorMeta> metas) noexcept;
+    crucible::mint_validated_op(TraceRing::ValidatedEntryPtr entry,
+                                ::fixy::ViewMut<TensorMeta, Brand, Extent>&& records) noexcept;
+    template <std::size_t N>
+        requires OpRecordExtent<N>
+    friend constexpr ::fixy::Option<ValidatedOp> crucible::mint_validated_op(TraceRing::ValidatedEntryPtr entry,
+                                                                             SealedRecords<N> const& records) noexcept;
+    friend constexpr ::fixy::Option<ValidatedOp>
+    crucible::mint_validated_op(TraceRing::ValidatedEntryPtr entry) noexcept;
 };
 
 }  // namespace detail
 
-[[nodiscard]] constexpr ::fixy::Option<ValidatedOp> mint_validated_op(TraceRing::ValidatedEntryPtr entry,
-                                                                      ::fixy::View<const TensorMeta> metas) noexcept {
-    CRUCIBLE_PRE(entry.value() != nullptr);
-    const TraceRing::Entry& fields = *entry.value();
-    const uint64_t expected = uint64_t{fields.num_inputs} + uint64_t{fields.num_outputs};
-    if (metas.size() != expected) return ::fixy::none;
-    return ::fixy::Option<ValidatedOp>::some(detail::ValidatedOpDoor::open_(entry, metas));
+template <::foundation::brand::IsBrand Brand, std::size_t Extent>
+[[nodiscard]] constexpr ::fixy::Option<ValidatedOp>
+mint_validated_op(TraceRing::ValidatedEntryPtr entry, ::fixy::ViewMut<TensorMeta, Brand, Extent>&& records) noexcept {
+    ::fixy::ViewMut<TensorMeta, Brand, Extent> const held{std::move(records)};
+    return detail::ValidatedOpDoor::mint_(entry, ::fixy::View<const TensorMeta>{held.view()});
 }
+
+template <std::size_t N>
+    requires OpRecordExtent<N>
+[[nodiscard]] constexpr ::fixy::Option<ValidatedOp>
+mint_validated_op(TraceRing::ValidatedEntryPtr entry, SealedRecords<N> const& records CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return detail::ValidatedOpDoor::mint_(entry, records->view());
+}
+
+[[nodiscard]] constexpr ::fixy::Option<ValidatedOp> mint_validated_op(TraceRing::ValidatedEntryPtr entry) noexcept {
+    return detail::ValidatedOpDoor::mint_(entry, ::fixy::View<const TensorMeta>{});
+}
+
+// The refused forms.  A named ViewMut stays the writer of the records with
+// its caller, so the caller could write them after the mint.  A temporary
+// sealed list ends before the op.  A View has no proof that no code writes
+// its records.
+template <class Brand, std::size_t Extent>
+void mint_validated_op(TraceRing::ValidatedEntryPtr, ::fixy::ViewMut<TensorMeta, Brand, Extent>&) =
+    delete("the mint takes the one writer of the records, so no name of the caller writes them after the mint: pass "
+           "std::move(records)");
+template <class Brand, std::size_t Extent>
+void mint_validated_op(TraceRing::ValidatedEntryPtr, ::fixy::ViewMut<TensorMeta, Brand, Extent> const&) =
+    delete("a const ViewMut stays the writer of the records with its holder: pass the ViewMut by move");
+template <std::size_t N>
+void mint_validated_op(TraceRing::ValidatedEntryPtr, SealedRecords<N> const&&) =
+    delete("the op keeps a View of the sealed list, and a temporary list ends at the end of the full expression: "
+           "seal the records under a name");
+void mint_validated_op(TraceRing::ValidatedEntryPtr, ::fixy::View<const TensorMeta>) = delete(
+    "a View has no proof that no code writes its records after the mint: give the ViewMut of a frame by move, "
+    "or a Sealed list (SealedRecords)");
 
 }  // namespace crucible
