@@ -65,8 +65,9 @@
 //   double is refused: long double holds padding bits on x86_64.
 //
 //   A class with its own == that holds a float or a double at a depth of its
-//   parts compares that float by the == of IEEE 754, as a defaulted == does:
-//   +0 equals -0, and a NaN equals nothing.  Such a class is no Equatable
+//   parts, a member of a union part too, compares that float by the == of
+//   IEEE 754, as a defaulted == does: +0 equals -0, and a NaN equals nothing.
+//   A union with its own == is such a class too.  Such a class is no Equatable
 //   type, with or without derive_protocol, so equal, find and the sums of the
 //   base refuse it.  A class with derive_protocol and no own == compares its
 //   parts by the float rule.  The mark ieee_equality keeps an own == and
@@ -216,20 +217,26 @@ enum class CompareKind : std::uint8_t {
 // the mark equal_parts, whose == compares its parts by the float rule, and it
 // reads a class with the mark ieee_equality as such a compare.  A class
 // outside the base can state equal_parts with an == that compares a float by
-// IEEE 754, so the walk reads its parts as if it had no mark.  A union is no
-// walked part.  A class cannot hold itself by value, so the walk ends.  The
-// walk reads the list of parts of each class one time, so it is linear in
-// the number of parts that it reaches.
+// IEEE 754, so the walk reads its parts as if it had no mark.  The walk reads
+// each member of a union too, because an own == can read a float member of a
+// union part.  Option, Result and OneOf keep their unions inside a class of
+// the base with the mark, so the walk stops before them.  A class cannot hold
+// itself by value, so the walk ends.  The walk reads the list of parts of
+// each class one time, so it is linear in the number of parts that it
+// reaches.
 [[nodiscard]] consteval bool compares_float_by_ieee_at(std::meta::info spelled) {
     std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
     if (std::meta::is_floating_point_type(type)) return true;
     if (std::meta::is_array_type(type)) return compares_float_by_ieee_at(std::meta::remove_all_extents(type));
-    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return false;
+    bool const is_union = std::meta::is_union_type(type);
+    if ((!std::meta::is_class_type(type) && !is_union) || !std::meta::is_complete_type(type)) return false;
     if (carries_mark_at(type, ^^equal_parts) && ::foundation::reflect::is_class_of_the_base_(type)) return false;
     if (carries_mark_at(type, ^^ieee_equality)) return true;
-    auto const bases = std::meta::bases_of(type, std::meta::access_context::unchecked());
-    for (std::size_t index = 0; index < bases.size(); ++index) {
-        if (compares_float_by_ieee_at(std::meta::type_of(bases[index]))) return true;
+    if (!is_union) {
+        auto const bases = std::meta::bases_of(type, std::meta::access_context::unchecked());
+        for (std::size_t index = 0; index < bases.size(); ++index) {
+            if (compares_float_by_ieee_at(std::meta::type_of(bases[index]))) return true;
+        }
     }
     auto const members = std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked());
     for (std::size_t index = 0; index < members.size(); ++index) {
@@ -240,19 +247,20 @@ enum class CompareKind : std::uint8_t {
     return false;
 }
 
-// True for a class with the mark ieee_equality whose own == gives bool and
-// does not throw: a PartialEquatable class that is no Equatable type.
+// True for a class or a union with the mark ieee_equality whose own == gives
+// bool and does not throw: a PartialEquatable type that is no Equatable type.
 [[nodiscard]] consteval bool states_ieee_equality_at(std::meta::info spelled) {
     std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
-    return std::meta::is_class_type(type) && std::meta::is_complete_type(type) && carries_mark_at(type, ^^ieee_equality)
+    return (std::meta::is_class_type(type) || std::meta::is_union_type(type)) && std::meta::is_complete_type(type)
+        && carries_mark_at(type, ^^ieee_equality)
         && std::meta::extract<bool>(std::meta::substitute(^^HasOwnEquality, {type}));
 }
 
 // True when the type is a leaf, an array or a class that the compare of the
 // kind takes.  The concept of an own operator is read only for a class with
-// no annotation.  A class whose own == compares a float by IEEE 754 is no
-// type of the equality (the float rule).  Linear in the number of parts that
-// the walk reaches.
+// no annotation.  A class or a union whose own == compares a float by IEEE
+// 754 is no type of the equality (the float rule).  Linear in the number of
+// parts that the walk reaches.
 [[nodiscard]] consteval bool compares_at(std::meta::info spelled, CompareKind kind, int depth) {
     if (depth > max_protocol_depth) return false;
     std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
@@ -268,7 +276,7 @@ enum class CompareKind : std::uint8_t {
         return std::meta::is_bounded_array_type(type)
             && compares_at(std::meta::remove_all_extents(type), kind, depth + 1);
     }
-    if (kind == CompareKind::equality && std::meta::is_class_type(type)
+    if (kind == CompareKind::equality && (std::meta::is_class_type(type) || std::meta::is_union_type(type))
         && std::meta::extract<bool>(std::meta::substitute(^^HasOwnEquality, {type}))
         && compares_float_by_ieee_at(type)) {
         return false;

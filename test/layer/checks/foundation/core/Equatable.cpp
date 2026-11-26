@@ -150,6 +150,69 @@ enum class PinFault : std::uint8_t {
     lost,
 };
 
+// An own == can read a float member of a union part, so the walk reads each
+// member of a union: a double in a named union, in an unnamed union, or in a
+// union with its own ==.  Each == is the == of IEEE 754, written as two
+// orders.  A union of integers stays Equatable.
+struct HoldsUnionDouble {
+    union Cell {
+        double value;
+        std::uint64_t word;
+    };
+    Cell cell{.value = 0.0};
+    friend constexpr bool operator==(HoldsUnionDouble const& left, HoldsUnionDouble const& right) noexcept {
+        return left.cell.value <= right.cell.value && right.cell.value <= left.cell.value;
+    }
+};
+
+struct HoldsUnnamedUnion {
+    union {
+        double value = 0.0;
+        std::uint64_t word;
+    };
+    friend constexpr bool operator==(HoldsUnnamedUnion const& left, HoldsUnnamedUnion const& right) noexcept {
+        return left.value <= right.value && right.value <= left.value;
+    }
+};
+
+union ComparesOwnDouble {
+    double value;
+    std::uint64_t word;
+    friend constexpr bool operator==(ComparesOwnDouble const& left, ComparesOwnDouble const& right) noexcept {
+        return left.value <= right.value && right.value <= left.value;
+    }
+};
+
+struct HoldsUnionWords {
+    union Cell {
+        std::uint32_t low;
+        std::uint64_t word;
+    };
+    Cell cell{.word = 0};
+    friend constexpr bool operator==(HoldsUnionWords const& left, HoldsUnionWords const& right) noexcept {
+        return left.cell.word == right.cell.word;
+    }
+};
+
+// The same union under the mark ieee_equality: a PartialEquatable union.
+union[[= ieee_equality{}]] StatesOwnDouble {
+    double value;
+    std::uint64_t word;
+    friend constexpr bool operator==(StatesOwnDouble const& left, StatesOwnDouble const& right) noexcept {
+        return left.value <= right.value && right.value <= left.value;
+    }
+};
+
+// Option, Result and OneOf keep their storage unions inside a class of the
+// base with the mark equal_parts, so the walk of the float rule stops at the
+// sum before it reads the union.
+struct HoldsFloatSums {
+    Option<double> maybe{};
+    Result<double, PinFault> outcome{0.0};
+    OneOf<double, int> either{0.0};
+    friend constexpr bool operator==(HoldsFloatSums const&, HoldsFloatSums const&) noexcept = default;
+};
+
 // A class whose == can throw.
 struct ThrowingEqual {
     int value = 0;
@@ -222,6 +285,13 @@ static_assert(std::is_lt(order(min_subnormal_of<double>, min_normal_of<double>))
 // The mark equal_parts on a class of the base: the walk stops at it, and its
 // == compares the double by the float rule.
 static_assert(Equatable<StatesEqualParts>);
+static_assert(Equatable<Option<double>> && Equatable<Result<double, PinFault>> && Equatable<OneOf<double, int>>);
+static_assert(Equatable<HoldsFloatSums>);
+
+// The walk reads each member of a union part, and a union with its own ==.
+static_assert(!Equatable<HoldsUnionDouble> && !Equatable<HoldsUnnamedUnion> && !Equatable<ComparesOwnDouble>);
+static_assert(Equatable<HoldsUnionWords>);
+static_assert(!Equatable<StatesOwnDouble> && PartialEquatable<StatesOwnDouble>);
 static_assert(StatesEqualParts{0.0} != StatesEqualParts{-0.0});
 static_assert(StatesEqualParts{quiet_nan_of<double>} == StatesEqualParts{quiet_nan_of<double>});
 

@@ -3321,6 +3321,11 @@ foundation_neg_compile_test(neg_core_equal_ieee_class_find
 foundation_neg_compile_test(neg_core_equal_ieee_class_option
   "no match for .operator==. \\(operand types are .const foundation::core::Option<\\{anonymous\\}::Rate>. and"
   "CompareKind::equality, 0\\) \\[with T = <unnamed>::Rate\\]. evaluated to .false.")
+# The walk reads each member of a union part, so a class whose own == reads a
+# double of a union member is refused.
+foundation_neg_compile_test(neg_core_equal_ieee_union_option
+  "no match for .operator==. \\(operand types are .const foundation::core::Option<\\{anonymous\\}::Rate>. and"
+  "CompareKind::equality, 0\\) \\[with T = <unnamed>::Rate\\]. evaluated to .false.")
 # The walk trusts the mark equal_parts only on a class of the base, so a class
 # outside the base with the mark and a defaulted == over a double is refused.
 foundation_neg_compile_test(neg_core_equal_parts_outside_base
