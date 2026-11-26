@@ -15,9 +15,10 @@ using namespace crucible;
 
 static constexpr auto A = ::foundation::effects::testing::bg().alloc;
 
-// Each input and the output of each op have one metadata.
-static ::fixy::HeapArray<TraceEntry> make_ops(::fixy::BumpArena<DagArena>& arena, uint32_t count, uint8_t ndim,
-                                              uint16_t num_inputs) {
+// Each input and the output of each op have one metadata.  One frame on the
+// arena builds the ops and their arrays, which live as long as the arena.
+static ::fixy::ArenaRun<TraceEntry const, DagArena> make_ops(::fixy::BumpArena<DagArena>& arena, uint32_t count,
+                                                             uint8_t ndim, uint16_t num_inputs) {
     TensorMeta meta{};
     meta.ndim = ndim;
     meta.dtype = ScalarType::Float;
@@ -26,22 +27,18 @@ static ::fixy::HeapArray<TraceEntry> make_ops(::fixy::BumpArena<DagArena>& arena
         meta.sizes[d] = tensor_dim((d == ndim - 1) ? 128 : 32);
         meta.strides[d] = tensor_dim((d == ndim - 1) ? 1 : 128);
     }
-    ::fixy::HeapArray<TraceEntry> ops = ::fixy::mint_heap_array(A, count, TraceEntry{});
-    auto const& meta_read = meta;
-    ops = ::fixy::with_mut(std::move(ops), [&arena, &meta_read, count, num_inputs](auto run) noexcept {
+    return ::foundation::core::with_arena_frame(arena, [&meta, count, num_inputs](auto& frame) noexcept {
+        auto ops_run = make_op_run(A, frame, count);
         for (uint32_t i = 0; i < count; i++) {
-            auto te = run.get_mut(i).expect("i is below count");
-            te->schema_hash = SchemaHash{0xAAAA000000000000ULL ^ i};
-            const auto input_metas_run = arena.array(A, num_inputs, meta_read);
-            const auto producers_run = arena.array(A, num_inputs, OpIndex{});
-            const auto input_slots_run = arena.array(A, num_inputs, SlotId{});
-            te->set_inputs(input_metas_run, producers_run, input_slots_run);
-            const auto output_metas_run = arena.array(A, 1, meta_read);
-            const auto output_slots_run = arena.array(A, 1, SlotId{});
-            te->set_outputs(output_metas_run, output_slots_run);
+            const auto op = hold_op(ops_run, i);
+            op->schema_hash = SchemaHash{0xAAAA000000000000ULL ^ i};
+            TraceEntry::set_inputs(frame, op, frame.array(A, num_inputs, meta), frame.array(A, num_inputs, OpIndex{}),
+                                   frame.array(A, num_inputs, SlotId{}));
+            TraceEntry::set_outputs(frame, op, frame.array(A, 1, meta), frame.array(A, 1, SlotId{}));
         }
+        const auto& built = ops_run;
+        return built.weaken();
     });
-    return ops;
 }
 
 int main() {

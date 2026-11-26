@@ -85,7 +85,7 @@ inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaB
         const auto alloc = test_alloc();
         constexpr std::uint32_t kOps = 2;
         const bool has_plan = seed_plan == SeedPlan::two_slots;
-        auto ops_run = frame.template array<TraceEntry>(alloc, kOps, TraceEntry{});
+        auto ops_run = make_op_run(alloc, frame, kOps);
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TraceEntry> ops = ops_run.view();
         for (std::uint32_t i = 0; i < kOps; ++i) {
@@ -99,10 +99,11 @@ inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaB
             const auto input_metas_run = frame.array(alloc, 1, meta);
             const auto producers_run = frame.array(alloc, 1, OpIndex{});
             const auto input_slots_run = frame.array(alloc, 1, has_plan ? SlotId{0} : SlotId{});
-            op.set_inputs(input_metas_run.weaken(), producers_run.weaken(), input_slots_run.weaken());
+            const auto holder = hold_op(ops_run, i);
+            TraceEntry::set_inputs(frame, holder, input_metas_run, producers_run, input_slots_run);
             const auto output_metas_run = frame.array(alloc, 1, meta);
             const auto output_slots_run = frame.array(alloc, 1, SlotId{i});
-            op.set_outputs(output_metas_run.weaken(), output_slots_run.weaken());
+            TraceEntry::set_outputs(frame, holder, output_metas_run, output_slots_run);
         }
         const auto region = make_region(alloc, frame, ops_run);
         if (has_plan) {

@@ -51,52 +51,50 @@ using crucible::TraceEntry;
 // The capabilities of the test: the arena of each region takes its alloc.
 auto g_test = ::foundation::effects::testing::test();
 
-// The arrays of one region of three ops: op 0 and op 1 each write one output
-// of the extent of their slot, and op 2 reads the two outputs in the order of
-// first_read and second_read.  The ops keep the Views of their inputs and
-// their outputs, so these are runs of the arena of the region.
+// One region of three ops: op 0 and op 1 each write one output of the extent
+// of their slot, and op 2 reads the two outputs in the order of first_read and
+// second_read.  One frame on the arena of the region builds the ops and their
+// arrays, so the arrays of each op are in the arena of the op.
 struct Region {
     ::fixy::BumpArena<crucible::DagArena> arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
-    ::fixy::ArenaRun<TensorMeta, crucible::DagArena> out_a =
-        ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4));
-    ::fixy::ArenaRun<SlotId, crucible::DagArena> slot_a = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{0});
-    ::fixy::ArenaRun<TensorMeta, crucible::DagArena> out_b =
-        ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4));
-    ::fixy::ArenaRun<SlotId, crucible::DagArena> slot_b = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{1});
-    ::fixy::ArenaRun<TensorMeta, crucible::DagArena> in_c =
-        ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4), vector_meta(4));
-    ::fixy::ArenaRun<OpIndex, crucible::DagArena> producers_c{};
-    ::fixy::ArenaRun<SlotId, crucible::DagArena> slots_c{};
-    ::fixy::FixedArray<TraceEntry, 3> ops{};
+    ::fixy::ArenaRun<TraceEntry const, crucible::DagArena> ops;
 
-    Region(uint32_t first_read, uint32_t second_read, int64_t extent_a, OpDepth depth_a) {
-        *out_a.view().get(0).expect("the run holds one output") = vector_meta(extent_a);
-        producers_c = ::fixy::check::run_of(kTest, g_test.alloc, arena, OpIndex{first_read}, OpIndex{second_read});
-        slots_c = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{first_read}, SlotId{second_read});
-        ops.update(::fixy::index<0>(), [outputs = ::fixy::ArenaRun<TensorMeta const, crucible::DagArena>{out_a},
-                                        output_slots = slot_a, depth_a](TraceEntry& op_a) mutable noexcept {
-            op_a.schema_hash = SchemaHash{0xA};
-            op_a.set_outputs(outputs, output_slots);
-            op_a.depth = depth_a;
-        });
-        ops.update(::fixy::index<1>(), [outputs = ::fixy::ArenaRun<TensorMeta const, crucible::DagArena>{out_b},
-                                        output_slots = slot_b](TraceEntry& op_b) mutable noexcept {
-            op_b.schema_hash = SchemaHash{0xB};
-            op_b.set_outputs(outputs, output_slots);
-        });
-        ops.update(::fixy::index<2>(),
-                   [inputs = ::fixy::ArenaRun<TensorMeta const, crucible::DagArena>{in_c}, producers = producers_c,
-                    input_slots = slots_c](TraceEntry& op_c) mutable noexcept {
-                       op_c.schema_hash = SchemaHash{0xC};
-                       op_c.set_inputs(inputs, producers, input_slots);
-                   });
-    }
+    Region(uint32_t first_read, uint32_t second_read, int64_t extent_a, OpDepth depth_a)
+        : ops{build_ops_(arena, first_read, second_read, extent_a, depth_a)} {}
 
     Region(const Region&) = delete("the ops of a region point into its arrays");
     Region& operator=(const Region&) = delete("the ops of a region point into its arrays");
 
     [[nodiscard]] ContentHash hash() const { return crucible::compute_content_hash(ops.view()); }
+
+private:
+    [[nodiscard]] static ::fixy::ArenaRun<TraceEntry const, crucible::DagArena>
+    build_ops_(::fixy::BumpArena<crucible::DagArena>& arena, uint32_t first_read, uint32_t second_read,
+               int64_t extent_a, OpDepth depth_a) {
+        return ::foundation::core::with_arena_frame(
+            arena, [first_read, second_read, extent_a, depth_a](auto& frame) noexcept {
+                const auto alloc = g_test.alloc;
+                auto ops_run = crucible::make_op_run(alloc, frame, 3);
+                const auto op_a = crucible::hold_op(ops_run, 0);
+                op_a->schema_hash = SchemaHash{0xA};
+                op_a->depth = depth_a;
+                TraceEntry::set_outputs(frame, op_a, ::fixy::check::run_of(kTest, alloc, frame, vector_meta(extent_a)),
+                                        ::fixy::check::run_of(kTest, alloc, frame, SlotId{0}));
+                const auto op_b = crucible::hold_op(ops_run, 1);
+                op_b->schema_hash = SchemaHash{0xB};
+                TraceEntry::set_outputs(frame, op_b, ::fixy::check::run_of(kTest, alloc, frame, vector_meta(4)),
+                                        ::fixy::check::run_of(kTest, alloc, frame, SlotId{1}));
+                const auto op_c = crucible::hold_op(ops_run, 2);
+                op_c->schema_hash = SchemaHash{0xC};
+                TraceEntry::set_inputs(
+                    frame, op_c, ::fixy::check::run_of(kTest, alloc, frame, vector_meta(4), vector_meta(4)),
+                    ::fixy::check::run_of(kTest, alloc, frame, OpIndex{first_read}, OpIndex{second_read}),
+                    ::fixy::check::run_of(kTest, alloc, frame, SlotId{first_read}, SlotId{second_read}));
+                const auto& built = ops_run;
+                return built.weaken();
+            });
+    }
 };
 
 void test_swapped_wiring_hashes_apart() {

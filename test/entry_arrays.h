@@ -6,46 +6,40 @@
 // their metadata, their producers and their slot ids together, and the
 // outputs take their metadata and their slot ids together.  A test of the
 // replay or of the pool reads only the slot ids.  These helpers give the
-// other arrays of the count as zero values in the DAG arena of the test, as
-// runs of that arena, because each array of an entry is a run of a DAG arena.
+// other arrays of the count as zero values in the arena of the frame of the
+// op, because only a store of that frame fills the arrays of the op.
 
 #include <crucible/MerkleDag.h>
 #include <fixy/Core.h>
 
 namespace crucible::test {
 
-// The inputs of op: slot_ids, with the zero metadata and no producer for
-// each input.  Complexity: O(count).
-template <class Marker>
-void set_input_slots(Marker alloc, ::fixy::BumpArena<DagArena>& arena, TraceEntry& op,
-                     ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
-    op.set_inputs(arena.array(alloc, slot_ids.size(), TensorMeta{}), arena.array(alloc, slot_ids.size(), OpIndex{}),
-                  slot_ids);
-}
-
-// The outputs of op: slot_ids, with the zero metadata for each output.
-// Complexity: O(count).
-template <class Marker>
-void set_output_slots(Marker alloc, ::fixy::BumpArena<DagArena>& arena, TraceEntry& op,
-                      ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
-    op.set_outputs(arena.array(alloc, slot_ids.size(), TensorMeta{}), slot_ids);
-}
-
-// The inputs of op, as above, with the zero metadata and the producers in the
-// arena of a frame.  Complexity: O(count).
+// A copy of the slot ids in a run of the frame, for a test that keeps the
+// slot ids of its ops outside the frame.  Complexity: O(count).
 template <class Marker, class Fresh>
-void set_input_slots(Marker alloc, DagFrame<Fresh>& frame, TraceEntry& op,
-                     ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
-    op.set_inputs(frame.array(alloc, slot_ids.size(), TensorMeta{}).weaken(),
-                  frame.array(alloc, slot_ids.size(), OpIndex{}).weaken(), slot_ids);
+[[nodiscard]] DagFrameRun<SlotId, Fresh> slot_run_of(Marker alloc, DagFrame<Fresh>& frame,
+                                                     ::fixy::View<SlotId const> slot_ids) noexcept {
+    return frame.template build_array<SlotId>(
+        alloc, ::fixy::ElementCount{slot_ids.size()}, [slot_ids](::fixy::RunStart at) noexcept {
+            return *slot_ids.get(at.value().raw()).expect("a position is below the count of the slot ids");
+        });
 }
 
-// The outputs of op, as above, with the zero metadata in the arena of a frame.
-// Complexity: O(count).
-template <class Marker, class Fresh>
-void set_output_slots(Marker alloc, DagFrame<Fresh>& frame, TraceEntry& op,
-                      ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
-    op.set_outputs(frame.array(alloc, slot_ids.size(), TensorMeta{}).weaken(), slot_ids);
+// The inputs of the op that op holds: slot_ids, with the zero metadata and no
+// producer for each input, in the arena of the frame.  Complexity: O(count).
+template <class Marker, class Fresh, class Holder>
+void set_input_slots(Marker alloc, DagFrame<Fresh>& frame, Holder const& op,
+                     std::type_identity_t<DagFrameRun<SlotId const, Fresh>> slot_ids) noexcept {
+    TraceEntry::set_inputs(frame, op, frame.array(alloc, slot_ids.size(), TensorMeta{}),
+                           frame.array(alloc, slot_ids.size(), OpIndex{}), slot_ids);
+}
+
+// The outputs of the op that op holds: slot_ids, with the zero metadata for
+// each output, in the arena of the frame.  Complexity: O(count).
+template <class Marker, class Fresh, class Holder>
+void set_output_slots(Marker alloc, DagFrame<Fresh>& frame, Holder const& op,
+                      std::type_identity_t<DagFrameRun<SlotId const, Fresh>> slot_ids) noexcept {
+    TraceEntry::set_outputs(frame, op, frame.array(alloc, slot_ids.size(), TensorMeta{}), slot_ids);
 }
 
 }  // namespace crucible::test

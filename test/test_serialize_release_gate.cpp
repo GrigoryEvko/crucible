@@ -41,7 +41,7 @@ template <class Brand, std::size_t Extent>
         ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
     const crucible::DagRef<crucible::RegionNode> region =
         ::foundation::core::with_arena_frame(dag_arena, [alloc = bg.alloc](auto& frame) noexcept {
-            auto ops_run = frame.template array<crucible::TraceEntry>(alloc, 1, crucible::TraceEntry{});
+            auto ops_run = crucible::make_op_run(alloc, frame, 1);
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
             crucible::TraceEntry& op = *ops.get(0).expect("the region holds one op");
@@ -60,9 +60,10 @@ template <class Brand, std::size_t Extent>
             in_meta.device_type = crucible::DeviceType::CPU;
             in_meta.device_idx = -1;
             in_meta.layout = crucible::Layout::Strided;
-            op.set_inputs(::fixy::check::run_of(kTest, alloc, frame, in_meta).weaken(),
-                          ::fixy::check::run_of(kTest, alloc, frame, crucible::OpIndex{0}).weaken(),
-                          ::fixy::check::run_of(kTest, alloc, frame, crucible::SlotId{}).weaken());
+            crucible::TraceEntry::set_inputs(frame, crucible::hold_op(ops_run, 0),
+                                             ::fixy::check::run_of(kTest, alloc, frame, in_meta),
+                                             ::fixy::check::run_of(kTest, alloc, frame, crucible::OpIndex{0}),
+                                             ::fixy::check::run_of(kTest, alloc, frame, crucible::SlotId{}));
             return crucible::make_region(alloc, frame, ops_run).weaken();
         });
     return crucible::serialize_region(::fixy::to(*region), std::move(out_buf));

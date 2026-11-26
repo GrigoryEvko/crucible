@@ -111,7 +111,7 @@ static StoreRoot tmp_root_for(::fixy::TextView tag) {
 // instead of colliding with a sibling's.
 static crucible::DagRef<RegionNode> mint_region(::fixy::BumpArena<DagArena>& arena, uint64_t hash_seed) {
     return ::foundation::core::with_arena_frame(arena, [hash_seed](auto& frame) noexcept {
-        auto ops_run = frame.template array<crucible::TraceEntry>(g_test.alloc, 1, crucible::TraceEntry{});
+        auto ops_run = crucible::make_op_run(g_test.alloc, frame, 1);
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
         crucible::TraceEntry& op = *ops.get(0).expect("the region holds one op");

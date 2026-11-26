@@ -224,9 +224,10 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
     // The ops of the region, one for each entry of the trace.  The column of
     // the ops takes the brand of the scope, so one index of an op reads it
     // with no check.  Each run of the region is a run of the frame, which
-    // the seal at the end takes.  The fill below writes through the family
-    // form of each run.
-    auto op_frame_run = frame.array(a, count, TraceEntry{});
+    // the seal at the end takes.  The fill below writes the fields of an op
+    // through the family form of its run, and stores the arrays of the op
+    // through the frame.
+    auto op_frame_run = make_op_run(a, frame, count);
     ::fixy::ArenaRun<TraceEntry, DagArena> op_arena_run = op_frame_run.weaken();
     const auto op_data = trace_data.parallel(op_arena_run.view()).expect("the op run holds one op for each entry");
 
@@ -240,14 +241,11 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
     // The other runs of the ops: the scalars, the producer of each input,
     // and the slot ids of the inputs and then the outputs of each op.  Each
     // op takes its windows in order, so a cursor for each run gives the
-    // start of the next window.  Each window is a run of the region arena,
-    // which the entry of the op takes.
+    // start of the next window.  Each window is a run of the frame, which a
+    // store of the frame gives to the entry of the op.
     auto scalar_frame_run = frame.array(a, total_scalars, int64_t{0});
     auto producer_frame_run = frame.array(a, total_inputs, OpIndex{});
     auto slot_frame_run = frame.array(a, total_inputs + total_outputs, SlotId{});
-    ::fixy::ArenaRun<int64_t, DagArena> scalar_arena_run = scalar_frame_run.weaken();
-    ::fixy::ArenaRun<OpIndex, DagArena> producer_arena_run = producer_frame_run.weaken();
-    ::fixy::ArenaRun<SlotId, DagArena> slot_arena_run = slot_frame_run.weaken();
     size_t scalar_cursor = 0;
     size_t producer_cursor = 0;
     size_t slot_cursor = 0;
@@ -309,6 +307,8 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
         const TraceRing::Entry& re = trace_data.at(index);
         MetaIndex ms = meta_data.at(index);
         TraceEntry& te = op_data.at(index);
+        // The same op as the holder of the stores of its arrays.
+        const auto op = hold_op(op_frame_run, i);
 
         te.schema_hash = re.schema_hash;
         te.shape_hash = re.shape_hash;
@@ -336,15 +336,15 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
 
         // The scalars of each op go into its entry, also for an op with no
         // tensors, so they fold into the content hash.
-        ::fixy::ArenaRun<int64_t, DagArena> scalars =
-            scalar_arena_run
+        auto scalars =
+            scalar_frame_run
                 .window(::fixy::RunStart{::fixy::ElementCount{scalar_cursor}}, ::fixy::ElementCount{n_scalars})
                 .expect("the scan counted the scalars of each op");
         scalar_cursor += n_scalars;
         ::fixy::copy(scalars.view(),
                      re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
             .expect("the two runs hold the scalars of the op");
-        te.set_scalar_args(scalars);
+        TraceEntry::set_scalar_args(frame, op, scalars);
         // The tags and the data slots of the copied slots.
         te.scalar_kinds = re.scalar_kinds();
 
@@ -362,30 +362,35 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
             uint16_t n_out = re.num_outputs;
 
             const uint64_t meta_offset = ms.raw() - first_meta.raw();
-            input_meta_window =
-                meta_arena_run.window(::fixy::RunStart{::fixy::ElementCount{meta_offset}}, ::fixy::ElementCount{n_in})
+            auto input_meta_run =
+                meta_frame_run.window(::fixy::RunStart{::fixy::ElementCount{meta_offset}}, ::fixy::ElementCount{n_in})
                     .expect("the copied run holds the metadata of each op");
-            output_meta_window =
-                meta_arena_run
+            auto output_meta_run =
+                meta_frame_run
                     .window(::fixy::RunStart{::fixy::ElementCount{meta_offset + n_in}}, ::fixy::ElementCount{n_out})
                     .expect("the copied run holds the metadata of each op");
 
-            producer_window =
-                producer_arena_run
+            auto producer_run =
+                producer_frame_run
                     .window(::fixy::RunStart{::fixy::ElementCount{producer_cursor}}, ::fixy::ElementCount{n_in})
                     .expect("the scan counted the inputs of each op");
             producer_cursor += n_in;
-            input_slot_window =
-                slot_arena_run.window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_in})
+            auto input_slot_run =
+                slot_frame_run.window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_in})
                     .expect("the scan counted the inputs of each op");
             slot_cursor += n_in;
-            output_slot_window =
-                slot_arena_run.window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_out})
+            auto output_slot_run =
+                slot_frame_run.window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_out})
                     .expect("the scan counted the outputs of each op");
             slot_cursor += n_out;
 
-            te.set_inputs(input_meta_window, producer_window, input_slot_window);
-            te.set_outputs(output_meta_window, output_slot_window);
+            TraceEntry::set_inputs(frame, op, input_meta_run, producer_run, input_slot_run);
+            TraceEntry::set_outputs(frame, op, output_meta_run, output_slot_run);
+            input_meta_window = input_meta_run.weaken();
+            output_meta_window = output_meta_run.weaken();
+            producer_window = producer_run.weaken();
+            input_slot_window = input_slot_run.weaken();
+            output_slot_window = output_slot_run.weaken();
         }
         const ::fixy::View<TensorMeta> input_metas = input_meta_window.view();
         const ::fixy::View<TensorMeta> output_metas = output_meta_window.view();

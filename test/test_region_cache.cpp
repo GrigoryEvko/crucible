@@ -189,7 +189,7 @@ void test_find_alternate_tracks_live_plan() {
     // One frame on the arena builds the region and, after the insert, its
     // plan.
     ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, &cache](auto& frame) noexcept {
-        auto ops_run = frame.array(alloc, std::size_t{2}, TraceEntry{});
+        auto ops_run = crucible::make_op_run(alloc, frame, 2);
         // A plain View of an arena run: the View carries no brand of its arena.
         ::fixy::View<TraceEntry, 2> const ops = ops_run.view().template window<2>(0).expect("the run holds two ops");
         TraceEntry& op0 = ops.at(::foundation::core::index<0>());

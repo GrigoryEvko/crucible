@@ -38,7 +38,7 @@ using RegionIndex = ::fixy::Index<NUM_REGIONS>;
 [[nodiscard]] DagRef<RegionNode> make_fixture_region(::foundation::effects::Test const& test,
                                                      ::fixy::BumpArena<DagArena>& arena, RegionIndex r) {
     return ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, r](auto& frame) noexcept {
-        auto ops_run = frame.template array<TraceEntry>(alloc, NUM_OPS, TraceEntry{});
+        auto ops_run = make_op_run(alloc, frame, NUM_OPS);
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TraceEntry> ops = ops_run.view();
         for (uint32_t i = 0; i < NUM_OPS; i++) {

@@ -144,6 +144,7 @@ inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::foundation::core::HeapArray,  // the elements; the alignment holds no row
     ^^::foundation::core::RunSet,  // the element of each run; the counts hold no row
     ^^::foundation::core::ArenaRunSet,  // as a RunSet; the brand holds no row
+    ^^::foundation::core::FrameRunSetSlot,  // as its ArenaRunSet; only a store of a frame fills it
     ^^::foundation::core::ArenaRun,  // the elements of one run of an arena; the brand holds no row
     ^^::foundation::core::ArenaParcel,  // the elements of each run; the arena and the family hold no row
     ^^::foundation::core::Box,  // the one object that the Box owns

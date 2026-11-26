@@ -65,7 +65,7 @@ static auto g_test = ::foundation::effects::testing::test();
 static crucible::DagRef<RegionNode> make_test_region(::fixy::BumpArena<crucible::DagArena>& dag_arena, uint32_t seed) {
     return ::foundation::core::with_arena_frame(dag_arena, [seed](auto& frame) noexcept {
         constexpr uint32_t NUM_OPS = 1;
-        auto ops_run = frame.template array<TraceEntry>(g_test.alloc, NUM_OPS, TraceEntry{});
+        auto ops_run = crucible::make_op_run(g_test.alloc, frame, NUM_OPS);
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TraceEntry> ops = ops_run.view();
         TraceEntry& op = *ops.get(0).expect("the region holds one op");
@@ -75,11 +75,12 @@ static crucible::DagRef<RegionNode> make_test_region(::fixy::BumpArena<crucible:
         meta.sizes[0] = ::crucible::tensor_dim(16);
         meta.strides[0] = ::crucible::tensor_dim(1);
         meta.dtype = ScalarType::Float;
-        op.set_inputs(::fixy::check::run_of(kTest, g_test.alloc, frame, meta).weaken(),
-                      ::fixy::check::run_of(kTest, g_test.alloc, frame, OpIndex{}).weaken(),
-                      ::fixy::check::run_of(kTest, g_test.alloc, frame, SlotId{}).weaken());
-        op.set_outputs(::fixy::check::run_of(kTest, g_test.alloc, frame, meta).weaken(),
-                       ::fixy::check::run_of(kTest, g_test.alloc, frame, SlotId{seed}).weaken());
+        const auto holder = crucible::hold_op(ops_run, 0);
+        TraceEntry::set_inputs(frame, holder, ::fixy::check::run_of(kTest, g_test.alloc, frame, meta),
+                               ::fixy::check::run_of(kTest, g_test.alloc, frame, OpIndex{}),
+                               ::fixy::check::run_of(kTest, g_test.alloc, frame, SlotId{}));
+        TraceEntry::set_outputs(frame, holder, ::fixy::check::run_of(kTest, g_test.alloc, frame, meta),
+                                ::fixy::check::run_of(kTest, g_test.alloc, frame, SlotId{seed}));
         return crucible::make_region(g_test.alloc, frame, ops_run).weaken();
     });
 }

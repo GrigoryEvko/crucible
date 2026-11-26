@@ -45,7 +45,7 @@ make_two_arm_branch(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh
 // branch, each node in the arena of the frame.
 template <class Fresh>
 void check_links(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& frame) noexcept {
-    auto ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    auto ops_run = crucible::make_op_run(alloc, frame, 1);
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry, 1> const ops =
         ops_run.view().template window<1>(0).expect("the run holds one op");
@@ -97,12 +97,12 @@ void check_links(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     CRUCIBLE_TEST_ASSERT(kTest, terminal.as_loop().is_none());
 
     // ── The arms of a branch ──────────────────────────────────────────
-    auto ops_a_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    auto ops_a_run = crucible::make_op_run(alloc, frame, 1);
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry, 1> const ops_a =
         ops_a_run.view().template window<1>(0).expect("the run holds one op");
     ops_a.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xA1};
-    auto ops_b_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    auto ops_b_run = crucible::make_op_run(alloc, frame, 1);
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry, 1> const ops_b =
         ops_b_run.view().template window<1>(0).expect("the run holds one op");
@@ -281,7 +281,7 @@ void check_add_branch(::foundation::effects::Alloc alloc, ::foundation::effects:
     using TraceRef = std::remove_const_t<decltype(divergence)>;
 
     // The suffix: one region of the op 0xB2, then the end.
-    auto suffix_ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    auto suffix_ops_run = crucible::make_op_run(alloc, frame, 1);
     suffix_ops_run.view().get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xB2};
     auto const suffix_region = crucible::make_region(alloc, frame, suffix_ops_run);
     auto const suffix_end = crucible::make_terminal(alloc, frame);
@@ -289,7 +289,7 @@ void check_add_branch(::foundation::effects::Alloc alloc, ::foundation::effects:
     TraceRef const suffix = suffix_region;
 
     // The new ops end with the op of the suffix.
-    auto new_ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    auto new_ops_run = crucible::make_op_run(alloc, frame, 1);
     new_ops_run.view().get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xB2};
     auto const branch = crucible::add_branch(alloc, nondet, frame, cache, divergence, new_ops_run, 7, 3,
                                              crucible::Guard{}, ::fixy::Option<TraceRef>::some(suffix), ::fixy::none);
@@ -308,7 +308,7 @@ void check_add_branch(::foundation::effects::Alloc alloc, ::foundation::effects:
     CRUCIBLE_TEST_ASSERT(kTest, branch->merkle_hash.raw() != 0);
 
     // A suffix that shares no tail with the new ops gives no merge point.
-    auto other_ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    auto other_ops_run = crucible::make_op_run(alloc, frame, 1);
     other_ops_run.view().get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xC3};
     auto const apart = crucible::add_branch(alloc, nondet, frame, cache, divergence, other_ops_run, 1, 2,
                                             crucible::Guard{}, ::fixy::Option<TraceRef>::some(suffix), ::fixy::none);
@@ -325,11 +325,11 @@ void check_add_branch(::foundation::effects::Alloc alloc, ::foundation::effects:
     // A suffix whose shared tail starts at its second region: the region of
     // the op 0xD4, then the region of the op 0xB2.  The new ops end with 0xB2
     // and not with 0xD4, so the walk follows one link to the merge point.
-    auto head_ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    auto head_ops_run = crucible::make_op_run(alloc, frame, 1);
     head_ops_run.view().get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xD4};
     auto const head_region = crucible::make_region(alloc, frame, head_ops_run);
     frame.store(head_region, &crucible::TraceNode::next, suffix_region);
-    auto deep_ops_run = frame.array(alloc, std::size_t{2}, crucible::TraceEntry{});
+    auto deep_ops_run = crucible::make_op_run(alloc, frame, 2);
     deep_ops_run.view().get(0).expect("the run holds two ops")->schema_hash = crucible::SchemaHash{0xE5};
     deep_ops_run.view().get(1).expect("the run holds two ops")->schema_hash = crucible::SchemaHash{0xB2};
     TraceRef const head = head_region;

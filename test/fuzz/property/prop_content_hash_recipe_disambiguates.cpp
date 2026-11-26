@@ -35,13 +35,16 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
     const Config cfg = parse_args(arguments);
+    // The most ops of a triple.
+    static constexpr unsigned MAX = 8;
 
     return run(
         "compute_content_hash recipe disambiguation", cfg,
         [](Rng& rng) {
-            constexpr unsigned MAX = 8;
+            // The schema hash of each op.  An op does not copy, so the triple
+            // holds the hashes, and the property builds the ops.
             struct Triple {
-                ::foundation::core::FixedArray<TraceEntry, MAX> ops;
+                ::foundation::core::FixedArray<SchemaHash, MAX> schemas;
                 uint8_t count;
                 NumericalRecipe recipe_a;
                 NumericalRecipe recipe_b;
@@ -49,11 +52,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             Triple t{};
             t.count = static_cast<uint8_t>(rng.next_below(MAX) + 1);
             for (uint8_t i = 0; i < t.count; ++i) {
-                t.ops.update(::fixy::Index<MAX>::check(i).expect("the count is at most MAX"),
-                             [&rng](TraceEntry& op) noexcept {
-                                 op = TraceEntry{};
-                                 op.schema_hash = SchemaHash{rng.next64()};
-                             });
+                t.schemas.set(::fixy::Index<MAX>::check(i).expect("the count is at most MAX"),
+                              SchemaHash{rng.next64()});
             }
             t.recipe_a = hashed(random_recipe(rng));
             // Generate recipe_b until it semantically differs from
@@ -65,8 +65,19 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             return t;
         },
         [](const auto& t) {
-            const ::fixy::View<const TraceEntry> ops_span =
-                t.ops.view().window(0, t.count).expect("the count is at most MAX");
+            // One frame on an arena of the check builds the ops.
+            ::fixy::BumpArena<DagArena> arena =
+                ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{4096});
+            const ::fixy::ArenaRun<TraceEntry const, DagArena> ops =
+                ::foundation::core::with_arena_frame(arena, [&t](auto& frame) noexcept {
+                    auto made = make_op_run(::foundation::effects::testing::test().alloc, frame, t.count);
+                    for (uint8_t i = 0; i < t.count; ++i) {
+                        hold_op(made, i)->schema_hash = *t.schemas.view().get(i).expect("the count is at most MAX");
+                    }
+                    const auto& built = made;
+                    return built.weaken();
+                });
+            const ::fixy::View<const TraceEntry> ops_span = ops.view();
 
             const auto h_none = compute_content_hash(ops_span);
             const auto h_a = compute_content_hash(ops_span, t.recipe_a);

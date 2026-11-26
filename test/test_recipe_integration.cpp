@@ -107,7 +107,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
             registry.by_name(kPure, names::kF32Strict).expect("the starter is present");
 
         ::foundation::core::with_arena_frame(arena, [&rec_tc, &rec_strict](auto& frame) noexcept {
-            auto ops_run = frame.array(alloc_cap(), std::size_t{kOpsCount}, TraceEntry{});
+            auto ops_run = crucible::make_op_run(alloc_cap(), frame, kOpsCount);
             // A plain View of an arena run: the View carries no brand of its arena.
             ::fixy::View<TraceEntry> const ops = ops_run.view();
             mk_ops(ops);
@@ -148,7 +148,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
             &*registry.by_name(kPure, names::kBf16F32AccumTc).expect("the starter is present");
 
         ::foundation::core::with_arena_frame(arena, [&registry, recipe_orig](auto& frame) noexcept {
-            auto ops_run = frame.array(alloc_cap(), std::size_t{kOpsCount}, TraceEntry{});
+            auto ops_run = crucible::make_op_run(alloc_cap(), frame, kOpsCount);
             // A plain View of an arena run: the View carries no brand of its arena.
             ::fixy::View<TraceEntry> const ops = ops_run.view();
             mk_ops(ops);
@@ -192,7 +192,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
 
         const ContentHash hash_in_proc_a =
             ::foundation::core::with_arena_frame(arena_a, [&rec_a](auto& frame) noexcept {
-                auto ops_a_run = frame.array(alloc_cap(), std::size_t{kOpsCount}, TraceEntry{});
+                auto ops_a_run = crucible::make_op_run(alloc_cap(), frame, kOpsCount);
                 // A plain View of an arena run: the View carries no brand of its arena.
                 ::fixy::View<TraceEntry> const ops_a = ops_a_run.view();
                 mk_ops(ops_a);
@@ -214,7 +214,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
 
         const ContentHash hash_in_proc_b =
             ::foundation::core::with_arena_frame(arena_b, [&rec_b](auto& frame) noexcept {
-                auto ops_b_run = frame.array(alloc_cap(), std::size_t{kOpsCount}, TraceEntry{});
+                auto ops_b_run = crucible::make_op_run(alloc_cap(), frame, kOpsCount);
                 // A plain View of an arena run: the View carries no brand of its arena.
                 ::fixy::View<TraceEntry> const ops_b = ops_b_run.view();
                 mk_ops(ops_b);
@@ -244,7 +244,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
             registry.by_name(kPure, names::kBf16F32AccumTc).expect("the starter is present");
 
         ::foundation::core::with_arena_frame(arena, [&rec_tc, &rec_ord, &rec_bf16_tc](auto& frame) noexcept {
-            auto ops_run = frame.array(alloc_cap(), std::size_t{kOpsCount}, TraceEntry{});
+            auto ops_run = crucible::make_op_run(alloc_cap(), frame, kOpsCount);
             // A plain View of an arena run: the View carries no brand of its arena.
             ::fixy::View<TraceEntry> const ops = ops_run.view();
             mk_ops(ops);
@@ -319,7 +319,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
             .hash = {},
         };
         ::foundation::core::with_arena_frame(arena, [&pool, &zero_bytes](auto& frame) noexcept {
-            auto entry_run = frame.array(alloc_cap(), std::size_t{1}, TraceEntry{});
+            auto entry_run = crucible::make_op_run(alloc_cap(), frame, 1);
             // A plain View of an arena run: the View carries no brand of its arena.
             ::fixy::View<TraceEntry> const entry = entry_run.view();
             entry.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0xAA01};

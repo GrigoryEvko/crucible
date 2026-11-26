@@ -216,15 +216,16 @@ void test_input_past_the_limit_reaches_the_digest() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<crucible::DagArena> arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
-    const auto metas = ::fixy::check::run_of(kTest, test.alloc, arena, meta);
-    const auto producers = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::OpIndex{});
-    const auto slot_ids = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::SlotId{});
-    ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};
-    ops.update(::fixy::index<0>(), [&metas, &producers, &slot_ids](crucible::TraceEntry& op) noexcept {
-        op.schema_hash = crucible::SchemaHash{42};
-        op.set_inputs(metas, producers, slot_ids);
+    // One frame on the arena builds the op and its arrays.
+    return ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, &meta](auto& frame) noexcept {
+        auto ops_run = crucible::make_op_run(alloc, frame, 1);
+        const auto op = crucible::hold_op(ops_run, 0);
+        op->schema_hash = crucible::SchemaHash{42};
+        crucible::TraceEntry::set_inputs(frame, op, ::fixy::check::run_of(kTest, alloc, frame, meta),
+                                         ::fixy::check::run_of(kTest, alloc, frame, crucible::OpIndex{}),
+                                         ::fixy::check::run_of(kTest, alloc, frame, crucible::SlotId{}));
+        return crucible::compute_content_hash(ops_run.view());
     });
-    return crucible::compute_content_hash(ops.view());
 }
 
 // The content hash of a region of one op with the one scalar of the bits and
@@ -233,16 +234,17 @@ void test_input_past_the_limit_reaches_the_digest() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<crucible::DagArena> arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
-    const auto scalars = ::fixy::check::run_of(kTest, test.alloc, arena, bits);
     const crucible::ScalarSlotKinds kinds =
         crucible::ScalarSlotKinds::from_bits(scalar_kinds).expect("the test gives a word of the kinds");
-    ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};
-    ops.update(::fixy::index<0>(), [&scalars, kinds](crucible::TraceEntry& op) noexcept {
-        op.schema_hash = crucible::SchemaHash{42};
-        op.set_scalar_args(scalars);
-        op.scalar_kinds = kinds;
+    // One frame on the arena builds the op and its scalars.
+    return ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, bits, kinds](auto& frame) noexcept {
+        auto ops_run = crucible::make_op_run(alloc, frame, 1);
+        const auto op = crucible::hold_op(ops_run, 0);
+        op->schema_hash = crucible::SchemaHash{42};
+        crucible::TraceEntry::set_scalar_args(frame, op, ::fixy::check::run_of(kTest, alloc, frame, bits));
+        op->scalar_kinds = kinds;
+        return crucible::compute_content_hash(ops_run.view());
     });
-    return crucible::compute_content_hash(ops.view());
 }
 
 // alpha=1 and alpha=4.9e-324 have one bit pattern, and their regions hash

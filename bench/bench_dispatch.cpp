@@ -343,7 +343,7 @@ private:
         return ::foundation::core::with_arena_frame(
             dag_arena, [alloc = test.alloc, schemas, shapes](auto& frame) noexcept {
                 const auto n_ops = static_cast<uint32_t>(schemas.size());
-                auto ops_run = frame.template array<TraceEntry>(alloc, n_ops, TraceEntry{});
+                auto ops_run = make_op_run(alloc, frame, n_ops);
                 // A plain View of an arena run: the View carries no brand of its arena.
                 const ::fixy::View<TraceEntry> ops = ops_run.view();
                 for (uint32_t i = 0; i < n_ops; i++) {
@@ -355,15 +355,16 @@ private:
                     meta.sizes[0] = tensor_dim(1024);
                     meta.strides[0] = tensor_dim(1);
                     meta.dtype = ScalarType::Float;
+                    const auto holder = hold_op(ops_run, i);
                     if (i > 0) {
                         const auto input_metas_run = frame.array(alloc, 1, meta);
                         const auto producers_run = frame.array(alloc, 1, OpIndex{});
                         const auto input_slots_run = frame.array(alloc, 1, SlotId{i - 1});
-                        op.set_inputs(input_metas_run.weaken(), producers_run.weaken(), input_slots_run.weaken());
+                        TraceEntry::set_inputs(frame, holder, input_metas_run, producers_run, input_slots_run);
                     }
                     const auto output_metas_run = frame.array(alloc, 1, meta);
                     const auto output_slots_run = frame.array(alloc, 1, SlotId{i});
-                    op.set_outputs(output_metas_run.weaken(), output_slots_run.weaken());
+                    TraceEntry::set_outputs(frame, holder, output_metas_run, output_slots_run);
                 }
                 const auto made = make_region(alloc, frame, ops_run);
 
@@ -841,7 +842,7 @@ int main() {
             // One frame on the arena builds the ops, the region and its plan.
             const DagRef<RegionNode> region =
                 ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, r](auto& frame) noexcept {
-                    auto ops_run = frame.template array<TraceEntry>(alloc, NUM_OPS, TraceEntry{});
+                    auto ops_run = make_op_run(alloc, frame, NUM_OPS);
                     // A plain View of an arena run: the View carries no brand of its arena.
                     const ::fixy::View<TraceEntry> ops = ops_run.view();
                     for (OpSlot const i : ::fixy::IndexRange<NUM_OPS>{}) {

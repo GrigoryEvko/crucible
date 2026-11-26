@@ -23,14 +23,14 @@ using crucible::SchemaHash;
 // The checks of the loops, each node in the arena of the frame.
 template <class Fresh>
 void check_loops(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& frame) noexcept {
-    auto body_ops1_run = frame.array(alloc, std::size_t{2}, crucible::TraceEntry{});
+    auto body_ops1_run = crucible::make_op_run(alloc, frame, 2);
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry> const body_ops1 = body_ops1_run.view();
     body_ops1.get(0).expect("the run holds two ops")->schema_hash = SchemaHash{0x1111};
     body_ops1.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x2222};
     auto const body_r1 = crucible::make_region(alloc, frame, body_ops1_run);
 
-    auto body_ops2_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    auto body_ops2_run = crucible::make_op_run(alloc, frame, 1);
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry> const body_ops2 = body_ops2_run.view();
     body_ops2.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x3333};
@@ -66,7 +66,7 @@ void check_loops(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     static_assert(sizeof(crucible::LoopNode) == 72);
     static_assert(sizeof(crucible::FeedbackEdge) == 4);
 
-    auto final_ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    auto final_ops_run = crucible::make_op_run(alloc, frame, 1);
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry> const final_ops = final_ops_run.view();
     final_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x4444};
@@ -149,7 +149,7 @@ void check_loops(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     CRUCIBLE_TEST_ASSERT(kTest, zero_ok);
     CRUCIBLE_TEST_ASSERT(kTest, zero_count == 1);  // the continuation region alone
 
-    auto alt_body_ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+    auto alt_body_ops_run = crucible::make_op_run(alloc, frame, 1);
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry> const alt_body_ops = alt_body_ops_run.view();
     alt_body_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x9999};
@@ -168,7 +168,7 @@ void check_loops(::foundation::effects::Alloc alloc, crucible::DagFrame<Fresh>& 
     // that dropped epsilon from the hash would let two loops with different
     // thresholds share a compiled kernel.
     {
-        auto loop_body_ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+        auto loop_body_ops_run = crucible::make_op_run(alloc, frame, 1);
         // A plain View of an arena run: the View carries no brand of its arena.
         ::fixy::View<crucible::TraceEntry> const loop_body_ops = loop_body_ops_run.view();
         loop_body_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x5EED};

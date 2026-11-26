@@ -163,41 +163,31 @@ struct CopiedOps {
     uint32_t copied = 0;
 };
 
-// Copies the fields of each op of one branded scope over the entries into new
-// runs of the arena of the region, as build_trace_columns_ of
-// src/BackgroundThreadTraceBuild.cpp does: the columns come as parameters, and
-// the runs that the copy fills come from the arena here.  So the body of the
-// scope captures no run that it fills (StoresNoBorrowOutside of
-// foundation/core/CaptureStore.h).  started takes the time after the runs and
-// the copy of the metadata, so the phase times the copy of the fields alone.
-template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn, class DepthColumn>
-CopiedOps copy_ops_(::fixy::BumpArena<DagArena>& region_arena, crucible::test::OpenLog const& meta_log,
-                    MetaIndex first_meta, OpCounts counts, uint64_t& started, TraceColumn trace_data,
-                    MetaColumn meta_data, ScopeColumn scope_data, CallsiteColumn callsite_data,
-                    DepthColumn depth_data) noexcept {
+// The body of copy_ops_ below, in the frame on the arena of the region.
+template <class Fresh, class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn, class DepthColumn>
+CopiedOps copy_ops_in_frame_(DagFrame<Fresh>& frame, crucible::test::OpenLog const& meta_log, MetaIndex first_meta,
+                             OpCounts counts, uint64_t& started, TraceColumn trace_data, MetaColumn meta_data,
+                             ScopeColumn scope_data, CallsiteColumn callsite_data, DepthColumn depth_data) noexcept {
     const uint32_t count = static_cast<uint32_t>(trace_data.size());
-    auto ops_arena_run = region_arena.array(A, count, TraceEntry{});
-    auto meta_arena_run = region_arena.array(A, counts.metas, TensorMeta{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<TraceEntry> ops = ops_arena_run.view();
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<TensorMeta> meta_run = meta_arena_run.view();
-    meta_log.copy_run(first_meta.raw(), meta_run);
-    auto scalar_arena_run = region_arena.array(A, counts.scalars, int64_t{0});
-    const auto producer_arena_run = region_arena.array(A, counts.inputs, OpIndex{});
-    const auto slot_arena_run = region_arena.array(A, counts.inputs + counts.outputs, SlotId{});
+    auto ops_run = make_op_run(A, frame, count);
+    auto meta_frame_run = frame.array(A, counts.metas, TensorMeta{});
+    meta_log.copy_run(first_meta.raw(), meta_frame_run.view());
+    auto scalar_frame_run = frame.array(A, counts.scalars, int64_t{0});
+    auto producer_frame_run = frame.array(A, counts.inputs, OpIndex{});
+    auto slot_frame_run = frame.array(A, counts.inputs + counts.outputs, SlotId{});
     size_t scalar_cursor = 0;
     size_t producer_cursor = 0;
     size_t slot_cursor = 0;
 
     started = bench::rdtsc_start();
 
-    const auto op_data = trace_data.parallel(ops).expect("the op buffer holds one op for each entry");
+    const auto op_data = trace_data.parallel(ops_run.view()).expect("the op buffer holds one op for each entry");
     uint32_t copied_ops = 0;
     for (const auto index : trace_data.indices()) {
         const TraceRing::Entry& re = trace_data.at(index);
         const MetaIndex ms = meta_data.at(index);
         TraceEntry& te = op_data.at(index);
+        const auto op = hold_op(ops_run, index.raw());
         ++copied_ops;
 
         te.schema_hash = re.schema_hash;
@@ -217,39 +207,62 @@ CopiedOps copy_ops_(::fixy::BumpArena<DagArena>& region_arena, crucible::test::O
         te.kernel_id = CKernelId::OPAQUE;
         const uint32_t n_scalars = ::fixy::min(uint32_t{re.num_scalar_args}, kScalarSlots);
         auto scalars =
-            scalar_arena_run
+            scalar_frame_run
                 .window(::fixy::RunStart{::fixy::ElementCount{scalar_cursor}}, ::fixy::ElementCount{n_scalars})
                 .expect("the scan counted the scalars");
         scalar_cursor += n_scalars;
         ::fixy::copy(scalars.view(),
                      re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
             .expect("the two runs hold the scalars of the op");
-        te.set_scalar_args(scalars);
+        TraceEntry::set_scalar_args(frame, op, scalars);
 
         // An op with no metadata index has no tensors.
         if (!ms.is_valid()) continue;
         const uint16_t n_in = re.num_inputs;
         const uint16_t n_out = re.num_outputs;
         const uint64_t meta_offset = ms.raw() - first_meta.raw();
-        te.set_inputs(
-            meta_arena_run.window(::fixy::RunStart{::fixy::ElementCount{meta_offset}}, ::fixy::ElementCount{n_in})
+        TraceEntry::set_inputs(
+            frame, op,
+            meta_frame_run.window(::fixy::RunStart{::fixy::ElementCount{meta_offset}}, ::fixy::ElementCount{n_in})
                 .expect("the copied run holds each op"),
-            producer_arena_run
+            producer_frame_run
                 .window(::fixy::RunStart{::fixy::ElementCount{producer_cursor}}, ::fixy::ElementCount{n_in})
                 .expect("the scan counted the inputs"),
-            slot_arena_run.window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_in})
+            slot_frame_run.window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_in})
                 .expect("the scan counted the inputs"));
         producer_cursor += n_in;
         slot_cursor += n_in;
-        te.set_outputs(
-            meta_arena_run
+        TraceEntry::set_outputs(
+            frame, op,
+            meta_frame_run
                 .window(::fixy::RunStart{::fixy::ElementCount{meta_offset + n_in}}, ::fixy::ElementCount{n_out})
                 .expect("the copied run holds each op"),
-            slot_arena_run.window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_out})
+            slot_frame_run.window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_out})
                 .expect("the scan counted the outputs"));
         slot_cursor += n_out;
     }
-    return CopiedOps{.ops = ops_arena_run, .copied = copied_ops};
+    return CopiedOps{.ops = ops_run.weaken(), .copied = copied_ops};
+}
+
+// Copies the fields of each op of one branded scope over the entries into new
+// runs of the arena of the region, as build_trace_columns_ of
+// src/BackgroundThreadTraceBuild.cpp does: the columns come as parameters, and
+// the runs that the copy fills come from one frame on the arena here.  So the
+// body of the scope captures no run that it fills (StoresNoBorrowOutside of
+// foundation/core/CaptureStore.h), and the frame stores the arrays of each
+// op.  started takes the time after the runs and the copy of the metadata, so
+// the phase times the copy of the fields alone.
+template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn, class DepthColumn>
+CopiedOps copy_ops_(::fixy::BumpArena<DagArena>& region_arena, crucible::test::OpenLog const& meta_log,
+                    MetaIndex first_meta, OpCounts counts, uint64_t& started, TraceColumn trace_data,
+                    MetaColumn meta_data, ScopeColumn scope_data, CallsiteColumn callsite_data,
+                    DepthColumn depth_data) noexcept {
+    return ::foundation::core::with_arena_frame(region_arena, [&meta_log, first_meta, counts, &started, trace_data,
+                                                               meta_data, scope_data, callsite_data,
+                                                               depth_data](auto& frame) noexcept {
+        return copy_ops_in_frame_(frame, meta_log, first_meta, counts, started, trace_data, meta_data, scope_data,
+                                  callsite_data, depth_data);
+    });
 }
 
 // build_trace gives an op with no metadata no arrays and zero tensor counts.
@@ -522,7 +535,8 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
                                + (size_t{total_inputs} + total_outputs) * sizeof(SlotId);
         ::fixy::Box<::fixy::BumpArena<DagArena>> region_arena =
             ::fixy::mint_box<::fixy::BumpArena<DagArena>>(A, kRunAlignments.plus(Bytes{run_bytes}));
-        const auto op_arena_run = region_arena->array(A, count, TraceEntry{});
+        const auto op_arena_run = region_arena->build_array<TraceEntry>(
+            A, ::fixy::ElementCount{count}, [](::fixy::RunStart) noexcept { return TraceEntry{}; });
         const auto scalar_arena_run = region_arena->array(A, total_scalars, int64_t{0});
         const auto producer_arena_run = region_arena->array(A, total_inputs, OpIndex{});
         const auto slot_arena_run = region_arena->array(A, total_inputs + total_outputs, SlotId{});

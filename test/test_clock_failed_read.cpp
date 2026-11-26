@@ -300,13 +300,14 @@ private:
 // The place of the last event of a transaction.
 [[nodiscard]] std::uint64_t place_of(crucible::Transaction const& tx) noexcept { return tx.event_order.get(); }
 
-// Makes a region of a copy of one operation and calculates its merkle root.
-// The copy and the region are in the arena.
+// Makes a region of one operation of the schema and calculates its merkle
+// root.  The operation and the region are in the arena.
 [[nodiscard]] crucible::RegionNode*
-committed_region(eff::Test const& test, ::fixy::BumpArena<crucible::DagArena>& arena, crucible::TraceEntry& op) {
+committed_region(eff::Test const& test, ::fixy::BumpArena<crucible::DagArena>& arena, crucible::SchemaHash schema) {
     const crucible::DagRef<crucible::RegionNode> region =
-        ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, &op](auto& frame) noexcept {
-            const auto ops_run = frame.template array<crucible::TraceEntry>(alloc, 1, op);
+        ::foundation::core::with_arena_frame(arena, [alloc = test.alloc, schema](auto& frame) noexcept {
+            auto ops_run = crucible::make_op_run(alloc, frame, 1);
+            crucible::hold_op(ops_run, 0)->schema_hash = schema;
             return crucible::make_region(alloc, frame, ops_run).weaken();
         });
     crucible::recompute_merkle(*region);
@@ -325,12 +326,9 @@ void transaction_stamps_read_no_clock(Tally& tally) {
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
         ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
 
-    crucible::TraceEntry ops[3]{};
-    ops[0].schema_hash = crucible::SchemaHash{0xFEED};
-    ops[1].schema_hash = crucible::SchemaHash{0xBEEF};
-    ops[2].schema_hash = crucible::SchemaHash{0xCAFE};
-    crucible::RegionNode* regions[3] = {committed_region(test, arena, ops[0]), committed_region(test, arena, ops[1]),
-                                        committed_region(test, arena, ops[2])};
+    crucible::RegionNode* regions[3] = {committed_region(test, arena, crucible::SchemaHash{0xFEED}),
+                                        committed_region(test, arena, crucible::SchemaHash{0xBEEF}),
+                                        committed_region(test, arena, crucible::SchemaHash{0xCAFE})};
     for (crucible::RegionNode const* region : regions) {
         if (region == nullptr || region->merkle_hash.raw() == 0) {
             ::fixy::report(::fixy::Sink::Err, "the test could not build a region with a merkle root\n");

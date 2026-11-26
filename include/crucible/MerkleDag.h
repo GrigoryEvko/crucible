@@ -169,12 +169,26 @@ compute_storage_nbytes_det(ExternalTensorMeta meta) {
         compute_storage_nbytes(meta));
 }
 
+// The frame of one DAG arena, and an object and a run that it makes, with the
+// scope brand Fresh of the call site of its door (foundation/core/ArenaFrame.h).
+// Each builder below takes the frame, so each node that it makes is in the
+// arena of the frame.  weaken() of an object or a run gives its DagRef or its
+// run of the arena family.
+template <class Fresh>
+using DagFrame = ::foundation::core::ArenaFrame<DagArena, Fresh>;
+template <class T, class Fresh>
+using DagFrameRef = ::foundation::core::FrameRef<T, DagArena, Fresh>;
+template <class T, class Fresh>
+using DagFrameRun = ::foundation::core::FrameRun<T, DagArena, Fresh>;
+
 // The record of one op.  Its arrays are runs of a DAG arena, and the entry
-// only borrows them: each door takes a run of the DagArena brand.  Three
-// counts give their lengths: the inputs, the outputs and the scalar
-// arguments.  One door sets each count together with each array of that
-// count, so each array holds its count, and no array is absent at a count
-// above zero.
+// only borrows them.  The arrays are a run-set slot of a frame
+// (foundation/core/ArenaFrame.h).  Only a store of the frame of the op fills
+// the slot, with runs of the same frame, so the arrays are in the arena of the
+// op.  Three counts give their lengths: the inputs, the outputs and the
+// scalar arguments.  One door sets each count together with each array of
+// that count, so each array holds its count, and no array is absent at a
+// count above zero.  An op does not copy or move.
 struct TraceEntry {
     SchemaHash schema_hash;
     ShapeHash shape_hash;
@@ -198,8 +212,9 @@ private:
     // TraceEntry stays 96 bytes with the tags of its scalars.
     //
     // An entry only reads its arrays, so each run holds const elements.  The
-    // set takes only a run of a DAG arena, and its type names the brand.
-    [[no_unique_address]] ::fixy::ArenaRunSet<
+    // slot takes only runs of the frame of the op, and its type names the
+    // family of the DAG arenas.
+    [[no_unique_address]] ::foundation::core::FrameRunSetSlot<
         uint16_t, DagArena, ::fixy::RunOf<SlotId const, kOutputCount>, ::fixy::RunOf<SlotId const, kInputCount>,
         ::fixy::RunOf<OpIndex const, kInputCount>, ::fixy::RunOf<TensorMeta const, kInputCount>,
         ::fixy::RunOf<TensorMeta const, kOutputCount>, ::fixy::RunOf<int64_t const, kScalarCount>> arrays_{};
@@ -242,38 +257,39 @@ public:
     [[nodiscard]] ::fixy::View<const SlotId> input_slot_ids() const noexcept { return arrays_.view<kInputSlotIds>(); }
     [[nodiscard]] ::fixy::View<const SlotId> output_slot_ids() const noexcept { return arrays_.view<kOutputSlotIds>(); }
 
-    // The inputs: the metadata, the producer op and the slot of each input,
-    // each a run of a DAG arena.  The three runs hold one count, or the
-    // process ends.  An op with no inputs passes three empty runs.
-    void set_inputs(::fixy::ArenaRun<TensorMeta const, DagArena> metas,
-                    ::fixy::ArenaRun<OpIndex const, DagArena> producers,
-                    ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
-        arrays_.set_count<kInputCount>(count_of_(metas.size()));
-        arrays_.set<kInputMetas>(metas);
-        arrays_.set<kInputTraceIndices>(producers);
-        arrays_.set<kInputSlotIds>(slot_ids);
+    // The inputs of the op that op holds: the metadata, the producer op and
+    // the slot of each input.  The op and each run are of the frame.  The
+    // three runs hold one count of at most 65535, or the process ends.  A new
+    // op has no inputs.
+    template <class Fresh, class Holder>
+        requires ::foundation::core::FrameHolder<Holder, DagArena, Fresh>
+    static void set_inputs(DagFrame<Fresh>& frame, Holder const& op,
+                           std::type_identity_t<DagFrameRun<TensorMeta const, Fresh>> metas,
+                           std::type_identity_t<DagFrameRun<OpIndex const, Fresh>> producers,
+                           std::type_identity_t<DagFrameRun<SlotId const, Fresh>> slot_ids) noexcept {
+        frame.template store_runs<kInputCount, kInputMetas, kInputTraceIndices, kInputSlotIds>(
+            op, &TraceEntry::arrays_, metas, producers, slot_ids);
     }
 
-    // The outputs: the metadata and the slot of each output, each a run of a
-    // DAG arena.  The two runs hold one count, or the process ends.
-    void set_outputs(::fixy::ArenaRun<TensorMeta const, DagArena> metas,
-                     ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
-        arrays_.set_count<kOutputCount>(count_of_(metas.size()));
-        arrays_.set<kOutputMetas>(metas);
-        arrays_.set<kOutputSlotIds>(slot_ids);
+    // The outputs of the op that op holds: the metadata and the slot of each
+    // output.  The op and each run are of the frame.  The two runs hold one
+    // count of at most 65535, or the process ends.
+    template <class Fresh, class Holder>
+        requires ::foundation::core::FrameHolder<Holder, DagArena, Fresh>
+    static void set_outputs(DagFrame<Fresh>& frame, Holder const& op,
+                            std::type_identity_t<DagFrameRun<TensorMeta const, Fresh>> metas,
+                            std::type_identity_t<DagFrameRun<SlotId const, Fresh>> slot_ids) noexcept {
+        frame.template store_runs<kOutputCount, kOutputMetas, kOutputSlotIds>(op, &TraceEntry::arrays_, metas,
+                                                                              slot_ids);
     }
 
-    // The scalar arguments, a run of a DAG arena.
-    void set_scalar_args(::fixy::ArenaRun<int64_t const, DagArena> scalars) noexcept {
-        arrays_.set_count<kScalarCount>(count_of_(scalars.size()));
-        arrays_.set<kScalarArgs>(scalars);
-    }
-
-private:
-    // An entry keeps each count in 16 bits, and a larger count ends the
-    // process.
-    [[nodiscard]] static uint16_t count_of_(size_t count) noexcept {
-        return ::fixy::narrow<uint16_t>(count).expect("an op holds at most 65535 elements of one kind");
+    // The scalar arguments of the op that op holds.  The op and the run are
+    // of the frame.  The run holds at most 65535 scalars, or the process ends.
+    template <class Fresh, class Holder>
+        requires ::foundation::core::FrameHolder<Holder, DagArena, Fresh>
+    static void set_scalar_args(DagFrame<Fresh>& frame, Holder const& op,
+                                std::type_identity_t<DagFrameRun<int64_t const, Fresh>> scalars) noexcept {
+        frame.template store_runs<kScalarCount, kScalarArgs>(op, &TraceEntry::arrays_, scalars);
     }
 };
 
@@ -321,18 +337,6 @@ struct LoopNode;
 // A Ref of a node or a plan of the DAG, with the brand of the DAG arenas.
 template <class T>
 using DagRef = ::fixy::Ref<T, DagArena>;
-
-// The frame of one DAG arena, and an object and a run that it makes, with the
-// scope brand Fresh of the call site of its door (foundation/core/ArenaFrame.h).
-// Each builder below takes the frame, so each node that it makes is in the
-// arena of the frame.  weaken() of an object or a run gives its DagRef or its
-// run of the arena family.
-template <class Fresh>
-using DagFrame = ::foundation::core::ArenaFrame<DagArena, Fresh>;
-template <class T, class Fresh>
-using DagFrameRef = ::foundation::core::FrameRef<T, DagArena, Fresh>;
-template <class T, class Fresh>
-using DagFrameRun = ::foundation::core::FrameRun<T, DagArena, Fresh>;
 
 // A link to one node of the DAG, or no node.  The node is in a DAG arena, and
 // the link only borrows it with the brand of the arena.  The empty link is
@@ -1121,6 +1125,26 @@ template <DagNodeType Node, class... Refused, class Fresh>
     requires(sizeof...(Refused) == 0)
 [[nodiscard]] DagFrameRef<Node, Fresh> mint_dag_node(::foundation::effects::Alloc a, DagFrame<Fresh>& frame) noexcept {
     return frame.template make<Node>(a);
+}
+
+// A run of count ops in the arena of the frame, each with each field at its
+// default.  The run builds each op in place, with no copy of an op.
+// Complexity: O(count).
+template <class Marker, class Fresh>
+[[nodiscard]] DagFrameRun<TraceEntry, Fresh> make_op_run(Marker alloc, DagFrame<Fresh>& frame,
+                                                         std::size_t count) noexcept {
+    return frame.template build_array<TraceEntry>(alloc, ::fixy::ElementCount{count},
+                                                  [](::fixy::RunStart) noexcept { return TraceEntry{}; });
+}
+
+// The op at position of a run of a frame, as the holder of a store of the
+// frame: the doors of the arrays of an op take it.  A position at or past the
+// count of the run ends the process.  Complexity: one compare.
+template <class Fresh>
+[[nodiscard]] ::foundation::core::FrameElement<TraceEntry, DagArena, Fresh> hold_op(DagFrameRun<TraceEntry, Fresh>& ops,
+                                                                                    std::size_t position) noexcept {
+    return ops.element(::fixy::RunStart{::fixy::ElementCount{position}})
+        .expect("the run of the ops holds the op at the position");
 }
 
 // The ops are stored, not copied: they are a run of a DAG arena, which lives

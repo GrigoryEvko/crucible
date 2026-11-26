@@ -742,10 +742,13 @@ read_region_(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image
     if (!r.has_remaining(num_ops, kTraceEntryMinWireBytes)) {
         return ::fixy::err(r.reason_or(LoadError::truncated));
     }
-    DagFrameRun<TraceEntry, Fresh> ops_run = frame.template array<TraceEntry>(a, num_ops, TraceEntry{});
+    DagFrameRun<TraceEntry, Fresh> ops_run = make_op_run(a, frame, num_ops);
     const ::fixy::View<TraceEntry> ops = ops_run.view();
 
-    for (TraceEntry& te : ops) {
+    for (std::size_t position = 0; position < num_ops; ++position) {
+        // The op, as the holder of the stores of its arrays.
+        const auto op = hold_op(ops_run, position);
+        TraceEntry& te = *op;
         te.schema_hash = SchemaHash{r.r<uint64_t>()};
         te.shape_hash = ShapeHash{r.r<uint64_t>()};
         te.scope_hash = ScopeHash{r.r<uint64_t>()};
@@ -822,7 +825,7 @@ read_region_(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image
         for (int64_t& value : scalar_args_run.view()) {
             value = r.r<int64_t>();
         }
-        te.set_scalar_args(scalar_args_run.weaken());
+        TraceEntry::set_scalar_args(frame, op, scalar_args_run);
 
         DagFrameRun<OpIndex, Fresh> producers_run = frame.template array<OpIndex>(a, num_inputs, OpIndex{});
         for (OpIndex& producer : producers_run.view()) {
@@ -845,7 +848,7 @@ read_region_(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image
             }
             slot_id = sid;
         }
-        te.set_inputs(input_metas_run.weaken(), producers_run.weaken(), input_slot_ids_run.weaken());
+        TraceEntry::set_inputs(frame, op, input_metas_run, producers_run, input_slot_ids_run);
 
         DagFrameRun<SlotId, Fresh> output_slot_ids_run = frame.template array<SlotId>(a, num_outputs, SlotId{});
         for (SlotId& slot_id : output_slot_ids_run.view()) {
@@ -856,7 +859,7 @@ read_region_(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image
             }
             slot_id = sid;
         }
-        te.set_outputs(output_metas_run.weaken(), output_slot_ids_run.weaken());
+        TraceEntry::set_outputs(frame, op, output_metas_run, output_slot_ids_run);
     }
 
     for (const LoadError refusal : r.refusal)

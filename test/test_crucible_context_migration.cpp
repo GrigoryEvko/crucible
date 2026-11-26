@@ -88,27 +88,26 @@ crucible::DagFrameRef<MemoryPlan, Fresh> make_plan(::foundation::effects::Alloc 
     return plan;
 }
 
-// The metadata of the outputs are runs of this arena, which lives as long as
-// the process.  Each function takes its runs in its own body, so no object of
-// static storage holds a run.
 auto g_test = ::foundation::effects::testing::test();
 using Bytes = ::fixy::Quantity<::fixy::unit::Byte, std::size_t>;
-::fixy::BumpArena<crucible::DagArena> g_runs = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{std::size_t{1} << 17});
 
 // Two operations with the same hashes in each region, so the first one is
 // the shared prefix of a switch at position 1.  The metadata of their outputs
-// is zero, and the switch reads none of it.
-void make_ops(::fixy::View<TraceEntry> ops, ::fixy::ArenaRun<SlotId const, crucible::DagArena> outputs) {
-    ::fixy::ArenaRun<TensorMeta, crucible::DagArena> const output_metas_run =
-        g_runs.array(g_test.alloc, 2, TensorMeta{});
+// is zero, in the arena of the frame, and the switch reads none of it.
+template <class Fresh>
+void make_ops(crucible::DagFrame<Fresh>& frame, crucible::DagFrameRun<TraceEntry, Fresh>& ops_run,
+              std::type_identity_t<crucible::DagFrameRun<SlotId const, Fresh>> outputs) {
+    auto output_metas_run = frame.array(g_test.alloc, 2, TensorMeta{});
     for (std::uint32_t index = 0; index < 2; index++) {
-        TraceEntry& op = *ops.get(index).expect("a test region holds two ops");
-        op.schema_hash = SchemaHash{100 + index};
-        op.shape_hash = ShapeHash{200 + index};
-        op.set_outputs(output_metas_run.window(::fixy::RunStart{::fixy::ElementCount{index}}, ::fixy::ElementCount{1})
-                           .expect("a test region has one output for each op"),
-                       outputs.window(::fixy::RunStart{::fixy::ElementCount{index}}, ::fixy::ElementCount{1})
-                           .expect("a test region has one output for each op"));
+        const auto op = crucible::hold_op(ops_run, index);
+        op->schema_hash = SchemaHash{100 + index};
+        op->shape_hash = ShapeHash{200 + index};
+        TraceEntry::set_outputs(
+            frame, op,
+            output_metas_run.window(::fixy::RunStart{::fixy::ElementCount{index}}, ::fixy::ElementCount{1})
+                .expect("a test region has one output for each op"),
+            outputs.window(::fixy::RunStart{::fixy::ElementCount{index}}, ::fixy::ElementCount{1})
+                .expect("a test region has one output for each op"));
     }
 }
 
@@ -141,18 +140,14 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
     const crucible::DagRef<RegionNode> old_region =
         build_region(test.alloc, arena, [&test](auto& frame, auto& old_ops_run) noexcept {
-            // A plain View of an arena run: the View carries no brand of its arena.
-            make_ops(old_ops_run.view(),
-                     ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{0}, SlotId{1}).weaken());
+            make_ops(frame, old_ops_run, ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{0}, SlotId{1}));
             auto old_slots_run = frame.array(test.alloc, std::size_t{2}, TensorSlot{});
             return make_plan(test.alloc, frame, old_slots_run);
         });
 
     const crucible::DagRef<RegionNode> new_region =
         build_region(test.alloc, arena, [&test, new_slot, new_count](auto& frame, auto& new_ops_run) noexcept {
-            // A plain View of an arena run: the View carries no brand of its arena.
-            make_ops(new_ops_run.view(),
-                     ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{new_slot}, SlotId{0}).weaken());
+            make_ops(frame, new_ops_run, ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{new_slot}, SlotId{0}));
             auto new_slots_run = frame.array(test.alloc, std::size_t{new_count}, TensorSlot{});
             return make_plan(test.alloc, frame, new_slots_run);
         });
@@ -199,8 +194,7 @@ void test_smaller_new_slot_takes_its_own_size() {
     // of two times the bytes of the slot of the new region.
     const crucible::DagRef<RegionNode> old_region =
         build_region(test.alloc, arena, [&test](auto& frame, auto& ops_run) noexcept {
-            // A plain View of an arena run: the View carries no brand of its arena.
-            make_ops(ops_run.view(), ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{0}, SlotId{0}).weaken());
+            make_ops(frame, ops_run, ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{0}, SlotId{0}));
             auto wide_slot_run = frame.array(test.alloc, std::size_t{1}, TensorSlot{});
             // A plain View of an arena run: the View carries no brand of its arena.
             ::fixy::View<TensorSlot, 1> const wide_slot =
@@ -213,8 +207,7 @@ void test_smaller_new_slot_takes_its_own_size() {
 
     const crucible::DagRef<RegionNode> new_region =
         build_region(test.alloc, arena, [&test](auto& frame, auto& ops_run) noexcept {
-            // A plain View of an arena run: the View carries no brand of its arena.
-            make_ops(ops_run.view(), ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{0}, SlotId{0}).weaken());
+            make_ops(frame, ops_run, ::fixy::check::run_of(kTest, test.alloc, frame, SlotId{0}, SlotId{0}));
             auto narrow_slot_run = frame.array(test.alloc, std::size_t{1}, TensorSlot{});
             return make_plan(test.alloc, frame, narrow_slot_run);
         });

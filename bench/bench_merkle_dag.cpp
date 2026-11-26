@@ -70,9 +70,14 @@ TensorMeta make_synthetic_meta(uint8_t ndim) {
 
 using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
 
-TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, ::fixy::BumpArena<DagArena>& arena, uint16_t n_in,
-                                uint16_t n_out, uint16_t n_scalar, uint8_t ndim) {
-    TraceEntry te{};
+// Fills the op at position of the run with random hashes, and with n_in
+// inputs, n_out outputs and n_scalar scalars in the arena of the frame.
+template <class Fresh>
+void fill_synthetic_entry(::foundation::effects::Alloc a, DagFrame<Fresh>& frame,
+                          DagFrameRun<TraceEntry, Fresh>& ops_run, std::size_t position, uint16_t n_in, uint16_t n_out,
+                          uint16_t n_scalar, uint8_t ndim) {
+    const auto op = hold_op(ops_run, position);
+    TraceEntry& te = *op;
     te.schema_hash = SchemaHash{bench_rand()};
     te.shape_hash = ShapeHash{bench_rand()};
     te.scope_hash = ScopeHash{bench_rand()};
@@ -80,28 +85,18 @@ TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, ::fixy::BumpAren
     te.grad_enabled = true;
     te.kernel_id = CKernelId::OPAQUE;
 
-    auto input_metas_run = arena.array(a, n_in, TensorMeta{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<TensorMeta> input_metas = input_metas_run.view();
-    for (TensorMeta& m : input_metas)
+    auto input_metas_run = frame.array(a, n_in, TensorMeta{});
+    for (TensorMeta& m : input_metas_run.view())
         m = make_synthetic_meta(ndim);
-    const auto producers_run = arena.array(a, n_in, OpIndex{});
-    const auto input_slots_run = arena.array(a, n_in, SlotId{});
-    te.set_inputs(input_metas_run, producers_run, input_slots_run);
-    auto output_metas_run = arena.array(a, n_out, TensorMeta{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<TensorMeta> output_metas = output_metas_run.view();
-    for (TensorMeta& m : output_metas)
+    TraceEntry::set_inputs(frame, op, input_metas_run, frame.array(a, n_in, OpIndex{}), frame.array(a, n_in, SlotId{}));
+    auto output_metas_run = frame.array(a, n_out, TensorMeta{});
+    for (TensorMeta& m : output_metas_run.view())
         m = make_synthetic_meta(ndim);
-    const auto output_slots_run = arena.array(a, n_out, SlotId{});
-    te.set_outputs(output_metas_run, output_slots_run);
-    auto scalars_run = arena.array(a, n_scalar, int64_t{0});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<int64_t> scalars = scalars_run.view();
-    for (int64_t& value : scalars)
+    TraceEntry::set_outputs(frame, op, output_metas_run, frame.array(a, n_out, SlotId{}));
+    auto scalars_run = frame.array(a, n_scalar, int64_t{0});
+    for (int64_t& value : scalars_run.view())
         value = static_cast<int64_t>(bench_rand());
-    te.set_scalar_args(scalars_run);
-    return te;
+    TraceEntry::set_scalar_args(frame, op, scalars_run);
 }
 
 // The bench with the arguments of main: the paths of the trace files after
@@ -126,30 +121,41 @@ int run_bench(::fixy::os::Args const& arguments) {
         auto test = ::foundation::effects::testing::test();
         ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         constexpr uint32_t N = 8;
-        ::foundation::core::FixedArray<TraceEntry, N> ops{};
         bench_rng_state = 0xDEADBEEFCAFEBABEULL;
-        for (::fixy::Index<N> const index : ops.indices())
-            ops.set(index, make_synthetic_entry(test.alloc, arena, 2, 1, 2, 4));
+        // One frame on the arena builds the ops and their arrays.
+        const ::fixy::ArenaRun<TraceEntry const, DagArena> ops_run =
+            ::foundation::core::with_arena_frame(arena, [&test](auto& frame) noexcept {
+                auto made = make_op_run(test.alloc, frame, N);
+                for (uint32_t i = 0; i < N; i++)
+                    fill_synthetic_entry(test.alloc, frame, made, i, 2, 1, 2, 4);
+                const auto& built = made;
+                return built.weaken();
+            });
+        const ::fixy::View<TraceEntry const> ops = ops_run.view();
         return bench::run("content_hash (8 ops, 2in/1out, 4d)", [&] {
-            auto h = compute_content_hash(ops.view());
+            auto h = compute_content_hash(ops);
             bench::do_not_optimize(h);
         });
     }());
 
     bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         ::fixy::BumpArena<DagArena> ops_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 481;
-        auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TraceEntry> ops = ops_run.view();
         bench_rng_state = 0x12345678ABCDEF01ULL;
-        for (uint32_t i = 0; i < N; i++) {
-            const uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 3));
-            const uint16_t n_out = static_cast<uint16_t>(1 + (bench_rand() % 2));
-            *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, n_in, n_out, 1, 4);
-        }
+        // One frame on the arena builds the ops and their arrays.
+        const ::fixy::ArenaRun<TraceEntry const, DagArena> ops_run =
+            ::foundation::core::with_arena_frame(ops_arena, [&test](auto& frame) noexcept {
+                auto made = make_op_run(test.alloc, frame, N);
+                for (uint32_t i = 0; i < N; i++) {
+                    const uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 3));
+                    const uint16_t n_out = static_cast<uint16_t>(1 + (bench_rand() % 2));
+                    fill_synthetic_entry(test.alloc, frame, made, i, n_in, n_out, 1, 4);
+                }
+                const auto& built = made;
+                return built.weaken();
+            });
+        const ::fixy::View<TraceEntry const> ops = ops_run.view();
         return bench::run("content_hash (481 ops, ResNet-like)", [&] {
             auto h = compute_content_hash(ops);
             bench::do_not_optimize(h);
@@ -158,18 +164,22 @@ int run_bench(::fixy::os::Args const& arguments) {
 
     bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         ::fixy::BumpArena<DagArena> ops_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 1110;
-        auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TraceEntry> ops = ops_run.view();
         bench_rng_state = 0xABCDEF0123456789ULL;
-        for (uint32_t i = 0; i < N; i++) {
-            const uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 4));
-            const uint16_t n_out = static_cast<uint16_t>(1 + (bench_rand() % 2));
-            *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, n_in, n_out, 2, 4);
-        }
+        // One frame on the arena builds the ops and their arrays.
+        const ::fixy::ArenaRun<TraceEntry const, DagArena> ops_run =
+            ::foundation::core::with_arena_frame(ops_arena, [&test](auto& frame) noexcept {
+                auto made = make_op_run(test.alloc, frame, N);
+                for (uint32_t i = 0; i < N; i++) {
+                    const uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 4));
+                    const uint16_t n_out = static_cast<uint16_t>(1 + (bench_rand() % 2));
+                    fill_synthetic_entry(test.alloc, frame, made, i, n_in, n_out, 2, 4);
+                }
+                const auto& built = made;
+                return built.weaken();
+            });
+        const ::fixy::View<TraceEntry const> ops = ops_run.view();
         return bench::run("content_hash (1110 ops, GPT-like)", [&] {
             auto h = compute_content_hash(ops);
             bench::do_not_optimize(h);
@@ -179,18 +189,15 @@ int run_bench(::fixy::os::Args const& arguments) {
     // ── make_region (481 ops) ────────────────────────────────────────
     bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena<DagArena> data_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         ::fixy::BumpArena<DagArena> ops_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 481;
         // One frame on the arena of the ops builds each region of the row, so
         // each region takes the ops of its own arena.
-        return ::foundation::core::with_arena_frame(ops_arena, [&test, &data_arena](auto& frame) noexcept {
-            auto ops_run = frame.template array<TraceEntry>(test.alloc, N, TraceEntry{});
-            // A plain View of an arena run: the View carries no brand of its arena.
-            const ::fixy::View<TraceEntry> ops = ops_run.view();
+        return ::foundation::core::with_arena_frame(ops_arena, [&test](auto& frame) noexcept {
+            auto ops_run = make_op_run(test.alloc, frame, N);
             bench_rng_state = 0x12345678ABCDEF01ULL;
             for (uint32_t i = 0; i < N; i++)
-                *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, data_arena, 2, 1, 1, 4);
+                fill_synthetic_entry(test.alloc, frame, ops_run, i, 2, 1, 1, 4);
             return bench::run("make_region (481 ops)", [&] {
                 const DagRef<RegionNode> r = make_region(test.alloc, frame, ops_run).weaken();
                 bench::do_not_optimize(r);
@@ -201,17 +208,14 @@ int run_bench(::fixy::os::Args const& arguments) {
     // ── compute_merkle_hash ──────────────────────────────────────────
     bench::add_report(reports, [] {
         auto test = ::foundation::effects::testing::test();
-        ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 481;
         const DagRef<RegionNode> region =
-            ::foundation::core::with_arena_frame(dag_arena, [&test, &arena](auto& frame) noexcept {
-                auto ops_run = frame.template array<TraceEntry>(test.alloc, N, TraceEntry{});
-                // A plain View of an arena run: the View carries no brand of its arena.
-                const ::fixy::View<TraceEntry> ops = ops_run.view();
+            ::foundation::core::with_arena_frame(dag_arena, [&test](auto& frame) noexcept {
+                auto ops_run = make_op_run(test.alloc, frame, N);
                 bench_rng_state = 0xAAAABBBBCCCCDDDDULL;
                 for (uint32_t i = 0; i < N; i++)
-                    *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4);
+                    fill_synthetic_entry(test.alloc, frame, ops_run, i, 2, 1, 1, 4);
                 return make_region(test.alloc, frame, ops_run).weaken();
             });
         return bench::run("compute_merkle_hash (RegionNode)", [&] {
@@ -288,8 +292,7 @@ int run_bench(::fixy::os::Args const& arguments) {
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TensorSlot> copy = copy_run.view();
             ::fixy::copy(copy, slots.view()).expect("the copy holds one entry for each slot");
-            // The plan is in the arena of the slots that it borrows, so it
-            // ends with them.
+            // The plan is in the arena of the slots, so it ends with them.
             const DagRef<MemoryPlan> plan_storage = slot_arena.make<MemoryPlan>(test.alloc);
             BackgroundThread::PlanTarget const target{};
             sweep_scratch.arena.with_epoch(

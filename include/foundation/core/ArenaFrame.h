@@ -227,6 +227,11 @@ public:
     operator=(FrameRunSetSlot const&) = delete("a slot takes its runs only through a store of a frame");
     constexpr ~FrameRunSetSlot() = default;
 
+    // What the slot borrows, for the payload walk of
+    // fixy/concurrent/PayloadRow.h: the value_type of its set, which names
+    // each element type of the set.
+    using value_type = typename ArenaRunSet<Count, Family, Runs...>::value_type;
+
     // The count at the slot of counts.
     template <std::size_t Slot>
     [[nodiscard]] constexpr Count count() const noexcept {
@@ -352,9 +357,10 @@ public:
         return ArenaRun<T const, Family>{run_};
     }
 
-    // The element at start, or no value at or past the count.  Complexity:
-    // one compare.
-    [[nodiscard]] constexpr Option<FrameElement<T, Family, Fresh>> element(RunStart start) noexcept {
+    // The element at start, or no value at or past the count.  A build loop
+    // takes an element for each store, so the door always inlines.
+    // Complexity: one compare.
+    [[nodiscard]] CRUCIBLE_INLINE constexpr Option<FrameElement<T, Family, Fresh>> element(RunStart start) noexcept {
         std::size_t const position = start.value().raw();
         if (position >= run_.size()) {
             return Option<FrameElement<T, Family, Fresh>>{};
@@ -367,9 +373,10 @@ public:
     // they do not fit in this run (window of an ArenaRun).  A window holds
     // elements of this run, so it is in the arena of the frame too.  A const
     // run gives a run of const elements.  The result is an Option<FrameRun>,
-    // which the class cannot name before it is complete.  Complexity: one
+    // which the class cannot name before it is complete.  A build loop takes
+    // windows for each store, so the door always inlines.  Complexity: one
     // compare.
-    [[nodiscard]] constexpr auto window(RunStart start, ElementCount count) & noexcept {
+    [[nodiscard]] CRUCIBLE_INLINE constexpr auto window(RunStart start, ElementCount count) & noexcept {
         Option<ArenaRun<T, Family>> part = run_.window(start, count);
         if (part.is_none()) {
             return Option<FrameRun>{};
@@ -377,7 +384,7 @@ public:
         return Option<FrameRun>::some(
             FrameRun{static_cast<Option<ArenaRun<T, Family>>&&>(part).expect("the test above found the window")});
     }
-    [[nodiscard]] constexpr auto window(RunStart start, ElementCount count) const& noexcept {
+    [[nodiscard]] CRUCIBLE_INLINE constexpr auto window(RunStart start, ElementCount count) const& noexcept {
         using ConstRun = FrameRun<T const, Family, Fresh>;
         Option<ArenaRun<T const, Family>> part = run_.window(start, count);
         if (part.is_none()) {

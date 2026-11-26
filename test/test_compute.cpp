@@ -265,17 +265,17 @@ int main() {
     const ::fixy::View<TensorSlot const> planned_slots = slots_run.view();
     const DagRef<RegionNode> region = ::foundation::core::with_arena_frame(runs, [alloc = test.alloc,
                                                                                   planned_slots](auto& frame) noexcept {
-        auto op0_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_X}, SlotId{SL_W1}).weaken();
-        auto op0_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM1}).weaken();
+        auto op0_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_X}, SlotId{SL_W1});
+        auto op0_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM1});
 
-        auto op1_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM1}).weaken();
-        auto op1_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_REL}).weaken();
+        auto op1_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM1});
+        auto op1_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_REL});
 
-        auto op2_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_REL}, SlotId{SL_W2}).weaken();
-        auto op2_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM2}).weaken();
+        auto op2_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_REL}, SlotId{SL_W2});
+        auto op2_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM2});
 
-        auto op3_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM2}).weaken();
-        auto op3_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_SM}).weaken();
+        auto op3_in = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_MM2});
+        auto op3_out = ::fixy::check::run_of(kTest, alloc, frame, SlotId{SL_SM});
 
         auto ops_run = frame.template build_array<TraceEntry>(alloc, ::fixy::ElementCount{N_OPS},
                                                               [](::fixy::RunStart) noexcept { return TraceEntry{}; });
@@ -285,23 +285,23 @@ int main() {
 
         ops.at(::fixy::index<0>()).schema_hash = H_MM1;
         ops.at(::fixy::index<0>()).shape_hash = S_MM1;
-        crucible::test::set_input_slots(alloc, frame, ops.at(::fixy::index<0>()), op0_in);
-        crucible::test::set_output_slots(alloc, frame, ops.at(::fixy::index<0>()), op0_out);
+        crucible::test::set_input_slots(alloc, frame, crucible::hold_op(ops_run, 0), op0_in);
+        crucible::test::set_output_slots(alloc, frame, crucible::hold_op(ops_run, 0), op0_out);
 
         ops.at(::fixy::index<1>()).schema_hash = H_RELU;
         ops.at(::fixy::index<1>()).shape_hash = S_RELU;
-        crucible::test::set_input_slots(alloc, frame, ops.at(::fixy::index<1>()), op1_in);
-        crucible::test::set_output_slots(alloc, frame, ops.at(::fixy::index<1>()), op1_out);
+        crucible::test::set_input_slots(alloc, frame, crucible::hold_op(ops_run, 1), op1_in);
+        crucible::test::set_output_slots(alloc, frame, crucible::hold_op(ops_run, 1), op1_out);
 
         ops.at(::fixy::index<2>()).schema_hash = H_MM2;
         ops.at(::fixy::index<2>()).shape_hash = S_MM2;
-        crucible::test::set_input_slots(alloc, frame, ops.at(::fixy::index<2>()), op2_in);
-        crucible::test::set_output_slots(alloc, frame, ops.at(::fixy::index<2>()), op2_out);
+        crucible::test::set_input_slots(alloc, frame, crucible::hold_op(ops_run, 2), op2_in);
+        crucible::test::set_output_slots(alloc, frame, crucible::hold_op(ops_run, 2), op2_out);
 
         ops.at(::fixy::index<3>()).schema_hash = H_SOFTMAX;
         ops.at(::fixy::index<3>()).shape_hash = S_SOFTMAX;
-        crucible::test::set_input_slots(alloc, frame, ops.at(::fixy::index<3>()), op3_in);
-        crucible::test::set_output_slots(alloc, frame, ops.at(::fixy::index<3>()), op3_out);
+        crucible::test::set_input_slots(alloc, frame, crucible::hold_op(ops_run, 3), op3_in);
+        crucible::test::set_output_slots(alloc, frame, crucible::hold_op(ops_run, 3), op3_out);
 
         const auto plan =
             crucible::test::plan_in_frame(alloc, frame, planned_slots).expect("the slots of the test fit in 64 bits");

@@ -107,12 +107,14 @@ constexpr uint32_t kNumSlots = 12;
 
 // `data_ptr_base` is the only thing that differs between the two builds.
 // It stands for the run-to-run variation the allocator produces, and the
-// hashes must not see it.
-void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena<crucible::DagArena>& arena,
-               ::fixy::View<TraceEntry> ops, uint64_t data_ptr_base) noexcept {
+// hashes must not see it.  The arrays of each op are in the arena of the
+// frame of the ops.
+template <class Fresh>
+void build_ops(::foundation::effects::Test ctx, crucible::DagFrame<Fresh>& frame,
+               crucible::DagFrameRun<TraceEntry, Fresh>& ops_run, uint64_t data_ptr_base) noexcept {
     for (uint32_t op_index = 0; op_index < kNumOps; op_index++) {
-        TraceEntry& entry = *ops.get(op_index).expect("op_index is below kNumOps");
-        entry = TraceEntry{};
+        const auto op = crucible::hold_op(ops_run, op_index);
+        TraceEntry& entry = *op;
         const uint64_t seed = mix(op_index);
 
         entry.schema_hash = SchemaHash{seed | 1u};
@@ -123,7 +125,7 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena<crucible::DagA
         const uint16_t num_scalars = static_cast<uint16_t>(seed % 3);
         entry.grad_enabled = ((seed & 0x100) != 0);
 
-        auto metas_run = arena.array<TensorMeta>(ctx.alloc, num_inputs, TensorMeta{});
+        auto metas_run = frame.template array<TensorMeta>(ctx.alloc, num_inputs, TensorMeta{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TensorMeta> metas = metas_run.view();
         for (uint16_t input_index = 0; input_index < num_inputs; input_index++) {
@@ -143,21 +145,21 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena<crucible::DagA
             const std::uintptr_t address = data_ptr_base + (uint64_t{op_index} * 64 + input_index) * 4096;
             meta.data_ptr = crucible::external_data_ptr(std::bit_cast<void*>(address));
         }
-        const auto producers_run = arena.array<OpIndex>(ctx.alloc, num_inputs, OpIndex{});
-        const auto input_slots_run = arena.array<SlotId>(ctx.alloc, num_inputs, SlotId{});
-        entry.set_inputs(metas_run, producers_run, input_slots_run);
-        const auto output_metas_run = arena.array<TensorMeta>(ctx.alloc, 1, TensorMeta{});
-        const auto output_slots_run = arena.array<SlotId>(ctx.alloc, 1, SlotId{});
-        entry.set_outputs(output_metas_run, output_slots_run);
+        const auto producers_run = frame.template array<OpIndex>(ctx.alloc, num_inputs, OpIndex{});
+        const auto input_slots_run = frame.template array<SlotId>(ctx.alloc, num_inputs, SlotId{});
+        TraceEntry::set_inputs(frame, op, metas_run, producers_run, input_slots_run);
+        const auto output_metas_run = frame.template array<TensorMeta>(ctx.alloc, 1, TensorMeta{});
+        const auto output_slots_run = frame.template array<SlotId>(ctx.alloc, 1, SlotId{});
+        TraceEntry::set_outputs(frame, op, output_metas_run, output_slots_run);
 
-        auto scalars_run = arena.array<int64_t>(ctx.alloc, num_scalars, int64_t{0});
+        auto scalars_run = frame.template array<int64_t>(ctx.alloc, num_scalars, int64_t{0});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<int64_t> scalars = scalars_run.view();
         for (uint16_t scalar_index = 0; scalar_index < num_scalars; scalar_index++) {
             *scalars.get(scalar_index).expect("a test reads an element at or past the count of its View") =
                 static_cast<int64_t>(mix(seed ^ (uint64_t{scalar_index} << 32)) % 4096);
         }
-        entry.set_scalar_args(scalars_run);
+        TraceEntry::set_scalar_args(frame, op, scalars_run);
     }
 }
 
@@ -208,10 +210,8 @@ struct Built {
     // One frame on the arena of the regions builds the ops, the two regions
     // and the plan.
     return ::foundation::core::with_arena_frame(dag_arena, [ctx, &arena, data_ptr_base](auto& frame) noexcept {
-        auto ops_run = frame.template array<TraceEntry>(ctx.alloc, kNumOps, TraceEntry{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TraceEntry> ops = ops_run.view();
-        build_ops(ctx, arena, ops, data_ptr_base);
+        auto ops_run = crucible::make_op_run(ctx.alloc, frame, kNumOps);
+        build_ops(ctx, frame, ops_run, data_ptr_base);
 
         constexpr uint32_t kSplit = kNumOps / 2;
         const auto head = crucible::make_region(

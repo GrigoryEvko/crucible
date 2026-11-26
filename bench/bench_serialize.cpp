@@ -34,7 +34,7 @@ static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, u
     meta.dtype = ScalarType::Float;
 
     return ::foundation::core::with_arena_frame(dag_arena, [num_ops, &meta](auto& frame) noexcept {
-        auto ops_run = frame.template array<TraceEntry>(A, num_ops, TraceEntry{});
+        auto ops_run = make_op_run(A, frame, num_ops);
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TraceEntry> ops = ops_run.view();
 
@@ -55,10 +55,11 @@ static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, u
             const ::fixy::View<SlotId> input_slots = input_slots_run.view();
             *input_slots.get(1).expect("the op has two inputs") = SlotId{100 + i};
             const auto input_metas_run = frame.array(A, 2, meta);
-            te.set_inputs(input_metas_run.weaken(), producers_run.weaken(), input_slots_run.weaken());
+            const auto op = hold_op(ops_run, i);
+            TraceEntry::set_inputs(frame, op, input_metas_run, producers_run, input_slots_run);
             const auto output_metas_run = frame.array(A, 1, meta);
             const auto output_slots_run = frame.array(A, 1, SlotId{200 + i});
-            te.set_outputs(output_metas_run.weaken(), output_slots_run.weaken());
+            TraceEntry::set_outputs(frame, op, output_metas_run, output_slots_run);
         }
 
         return make_region(A, frame, ops_run).weaken();

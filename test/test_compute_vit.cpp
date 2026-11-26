@@ -174,11 +174,18 @@ int main() {
                                                               [](::fixy::RunStart) noexcept { return TraceEntry{}; });
         ::fixy::View<TraceEntry, N_OPS> const ops =
             ops_run.view().template window<N_OPS>(0).expect("the run holds N_OPS ops");
+        std::size_t position = 0;
         for (auto [op, def] : ops.walk().zip(defs.view().walk())) {
             op->schema_hash = def->schema;
             op->shape_hash = def->shape;
-            crucible::test::set_input_slots(alloc, frame, *op, def->in);
-            crucible::test::set_output_slots(alloc, frame, *op, def->out);
+            // The arrays of an op are in the arena of the frame of the op, so
+            // the slot ids of each op are copied into the frame.
+            const auto holder = crucible::hold_op(ops_run, position);
+            crucible::test::set_input_slots(alloc, frame, holder,
+                                            crucible::test::slot_run_of(alloc, frame, def->in.view()));
+            crucible::test::set_output_slots(alloc, frame, holder,
+                                             crucible::test::slot_run_of(alloc, frame, def->out.view()));
+            ++position;
         }
 
         const auto plan =

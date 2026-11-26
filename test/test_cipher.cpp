@@ -55,7 +55,7 @@ static crucible::DagRef<crucible::RegionNode> make_test_region(::fixy::BumpArena
                                                                std::uint64_t salt = 0) {
     return ::foundation::core::with_arena_frame(dag_arena, [salt](auto& frame) noexcept {
         constexpr uint32_t NUM_OPS = 2;
-        auto ops_run = frame.template array<crucible::TraceEntry>(g_test.alloc, NUM_OPS, crucible::TraceEntry{});
+        auto ops_run = crucible::make_op_run(g_test.alloc, frame, NUM_OPS);
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
 
@@ -68,11 +68,12 @@ static crucible::DagRef<crucible::RegionNode> make_test_region(::fixy::BumpArena
             meta.sizes[0] = ::crucible::tensor_dim(16);
             meta.strides[0] = ::crucible::tensor_dim(1);
             meta.dtype = crucible::ScalarType::Float;
-            op.set_inputs(::fixy::check::run_of(kTest, g_test.alloc, frame, meta).weaken(),
-                          ::fixy::check::run_of(kTest, g_test.alloc, frame, crucible::OpIndex{}).weaken(),
-                          ::fixy::check::run_of(kTest, g_test.alloc, frame, crucible::SlotId{}).weaken());
-            op.set_outputs(::fixy::check::run_of(kTest, g_test.alloc, frame, meta).weaken(),
-                           ::fixy::check::run_of(kTest, g_test.alloc, frame, crucible::SlotId{i}).weaken());
+            const auto holder = crucible::hold_op(ops_run, i);
+            crucible::TraceEntry::set_inputs(frame, holder, ::fixy::check::run_of(kTest, g_test.alloc, frame, meta),
+                                             ::fixy::check::run_of(kTest, g_test.alloc, frame, crucible::OpIndex{}),
+                                             ::fixy::check::run_of(kTest, g_test.alloc, frame, crucible::SlotId{}));
+            crucible::TraceEntry::set_outputs(frame, holder, ::fixy::check::run_of(kTest, g_test.alloc, frame, meta),
+                                              ::fixy::check::run_of(kTest, g_test.alloc, frame, crucible::SlotId{i}));
         }
 
         return crucible::make_region(g_test.alloc, frame, ops_run).weaken();

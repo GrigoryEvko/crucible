@@ -53,12 +53,17 @@ static_assert(
     !std::is_assignable_v<decltype((std::declval<MemoryPlan&>().slots)), ::fixy::ArenaRun<TensorSlot const, DagArena>>,
     "only a store of a frame fills the slots of a plan");
 
-// The arrays of an entry are one ArenaRunSet of six pointers and three counts,
-// so the entry takes 96 bytes.  The set refuses a byte copy, as a View does,
-// so an entry is not trivially copyable.  An arena ends no entry.
+// The arrays of an entry are a run-set slot of a frame: one ArenaRunSet of six
+// pointers and three counts, so the entry takes 96 bytes.  The slot does not
+// copy or move, so an entry does not copy or move, and a run of entries
+// builds each entry in place.  Only a store of the frame of the entry fills
+// the slot, so the doors of the arrays take the frame and a holder of the
+// entry, and a plain entry is no holder.  An arena ends no entry.
 static_assert(sizeof(TraceEntry) == 96, "TraceEntry must be 96 bytes: the replay reads one entry for each op");
 static_assert(std::is_trivially_destructible_v<TraceEntry>, "an arena ends no TraceEntry");
-static_assert(std::is_nothrow_copy_constructible_v<TraceEntry>, "a TraceEntry copies with no throw");
+static_assert(std::is_nothrow_default_constructible_v<TraceEntry>, "a run of entries builds each entry in place");
+static_assert(!std::is_copy_constructible_v<TraceEntry> && !std::is_move_constructible_v<TraceEntry>
+              && !std::is_copy_assignable_v<TraceEntry> && !std::is_move_assignable_v<TraceEntry>);
 
 static_assert(sizeof(Guard) == 12, "Guard must be 12 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(Guard);

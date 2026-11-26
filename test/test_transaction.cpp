@@ -158,7 +158,7 @@ template <class LogType>
 region_of_schema(::foundation::effects::Alloc alloc, ::fixy::BumpArena<DagArena>& arena, crucible::SchemaHash schema) {
     const crucible::DagRef<crucible::RegionNode> region =
         ::foundation::core::with_arena_frame(arena, [alloc, schema](auto& frame) noexcept {
-            auto ops_run = frame.array(alloc, std::size_t{1}, crucible::TraceEntry{});
+            auto ops_run = crucible::make_op_run(alloc, frame, 1);
             // A plain View of an arena run: the View carries no brand of its arena.
             ::fixy::View<crucible::TraceEntry> const ops = ops_run.view();
             ops.get(0).expect("the run holds one op")->schema_hash = schema;
