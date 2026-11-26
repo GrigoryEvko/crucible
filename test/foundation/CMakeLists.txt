@@ -4860,6 +4860,15 @@ foundation_neg_compile_test(neg_core_mint_keyed_owner_linear_maker
 foundation_neg_compile_test(neg_core_keyed_mint_proof_private
   "static constexpr foundation::core::MintedBrand<Brand> foundation::core::KeyedMintFrameKeyDoor::proof_\\(\\) \\[with Brand = NamedBrand\\]. is private within this context"
   "neg_core_keyed_mint_proof_private\\.cpp:[0-9]+:[0-9]+: error")
+# The fixtures of mint_held_key (foundation/core/KeyedMint.h): a unit that is no
+# holder builds the private proof of a held brand, and a holder names a dispatch
+# brand, whose keys only the dispatch door mints.
+foundation_neg_compile_test(neg_core_mint_held_key_proof_private
+  "constexpr HeldBrand::key_proof::key_proof\\(\\). is private within this context"
+  "neg_core_mint_held_key_proof_private\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_mint_held_key_dispatch_brand
+  "no matching function for call to .mint_held_key<DispatchBrand>\\(DispatchBrand::key_proof\\)."
+  "the expression .!\\(IsDispatchBrand<Brand>\\) \\[with Brand = DispatchBrand\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_fixed_array_owner_no_default
   "no matching function for call to .mint_keyed_owner\\(const foundation::core::FixedArrayOwner<.anonymous.::NoDefault, 4>&\\)."
   "the expression .is_nothrow_default_constructible_v<T> \\[with T = <unnamed>::NoDefault\\]. evaluated to .false.")

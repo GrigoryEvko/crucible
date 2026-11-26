@@ -172,6 +172,42 @@ enum class ExternalRefusal : uint8_t {
     PooledSlot,  // the plan puts the slot in the pool, which owns its bytes
 };
 
+class Vigil;
+
+// Key of a context
+//   A change of the mode of a context, an activation, a deactivation or a
+//   switch of region, takes the key of the context, LoanKey<ContextKeyBrand>
+//   (the loan key of foundation/core/Frame.h).  The brand is a held brand
+//   (foundation/core/KeyedMint.h): its proof has a private constructor, and
+//   its friends are the two holders of a key.  The Vigil mints the key of its
+//   own context and keeps it private, and mint_context_key gives a test the
+//   key of its fixture.  One key opens each context, because the brand names
+//   no context.  So a holder opens only its own context with its key.
+struct ContextKeyBrand final {
+    class key_proof final {
+        friend class ::crucible::Vigil;
+        friend constexpr ::foundation::core::LoanKey<ContextKeyBrand>
+        mint_context_key(::foundation::effects::Test const& test) noexcept;
+
+        constexpr key_proof() noexcept {}
+
+    public:
+        key_proof(key_proof const&) = delete("a proof of the key of a context stays with the holder that made it");
+        key_proof&
+        operator=(key_proof const&) = delete("a proof of the key of a context stays with the holder that made it");
+    };
+};
+
+// The key of a context.
+using ContextKey = ::foundation::core::LoanKey<ContextKeyBrand>;
+
+// The key of a context for a test, which keeps it in its fixture beside its
+// context.  The capability of a test keeps product code out, so in product
+// code only the Vigil mints a key of a context.
+[[nodiscard]] constexpr ContextKey mint_context_key(::foundation::effects::Test const& /*test*/) noexcept {
+    return ::foundation::core::mint_held_key<ContextKeyBrand>(ContextKeyBrand::key_proof{});
+}
+
 struct CrucibleContext {
     // The caller gives the allocation capability of its context.  The pool
     // of each region that the context activates allocates through it.
@@ -183,13 +219,15 @@ struct CrucibleContext {
     CrucibleContext& operator=(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
 
     // Replays region from its first op.  A region with no memory plan cannot
-    // replay, so the context stays as it is and the call returns false.
-    [[nodiscard]] bool activate(const RegionNode& region) CRUCIBLE_NO_THREAD_SAFETY {
+    // replay, so the context stays as it is and the call returns false.  The
+    // four doors that change the mode take the key of the context (the key of
+    // a context).
+    [[nodiscard]] bool activate(ContextKey& key, const RegionNode& region) CRUCIBLE_NO_THREAD_SAFETY {
         if (region.plan.is_none()) [[unlikely]]
             return false;
         const DagRef<MemoryPlan const> plan = PlanLink{region.plan}.expect("the test above found the plan");
 
-        if (mode_ == ContextMode::COMPILED) deactivate();
+        if (mode_ == ContextMode::COMPILED) deactivate(key);
 
         pool_.init(allocation_, *plan);
         engine_.init_(region, pool_);
@@ -204,7 +242,7 @@ struct CrucibleContext {
         return true;
     }
 
-    void deactivate() {
+    void deactivate(ContextKey& /*key*/) {
         mode_ = ContextMode::RECORD;
         drop_external_reads_();
         // The slot table of the engine is a View of the column of the pool, so
@@ -224,10 +262,10 @@ struct CrucibleContext {
     // Stops the replay at a divergence that no guard of an op saw, such as
     // a change of the numerics of the run, and counts the divergence as an
     // advance that gives DIVERGED does.
-    void deactivate_on_divergence() {
+    void deactivate_on_divergence(ContextKey& key) {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         diverged_count_.bump();
-        deactivate();
+        deactivate(key);
     }
 
     [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStep advance(SchemaHash schema_hash, ShapeHash shape_hash) {
@@ -260,13 +298,14 @@ struct CrucibleContext {
     // Safe to call part-way through an iteration.  A region with no memory
     // plan cannot replay, so the context stays as it is and the call returns
     // false.
-    [[nodiscard]] bool switch_region(const RegionNode& alt, uint32_t div_pos) CRUCIBLE_NO_THREAD_SAFETY {
+    [[nodiscard]] bool switch_region(ContextKey& key, const RegionNode& alt, uint32_t div_pos)
+        CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         if (alt.plan.is_none()) [[unlikely]]
             return false;
         const DagRef<MemoryPlan const> new_plan = PlanLink{alt.plan}.expect("the test above found the plan");
 
-        if (div_pos == 0) return activate(alt);
+        if (div_pos == 0) return activate(key, alt);
 
         // Armed in a release build. A compiled context replays a region that
         // has a plan, and the migration reads the slots of the two plans. The

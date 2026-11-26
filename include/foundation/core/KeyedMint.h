@@ -28,6 +28,23 @@
 // owner only inside a mint.
 //
 // Complexity: the cost of the maker.
+//
+// Held key
+//   A class that holds a keyed owner as a member, such as the replay context of
+//   a Vigil, names the brand of the owner in the type of the member.  No class
+//   names a fresh brand, so the brand of such an owner is a named class, and a
+//   key of it comes from mint_held_key:
+//     key_{mint_held_key<HeldBrand>(HeldBrand::key_proof{})}
+//   The brand names an empty class key_proof that no code builds with no
+//   argument and that does not copy or move (HeldKeyBrand).  Its constructor is
+//   private, and its friends are the holders of the brand, so only a holder
+//   mints a key of the brand.  One key opens each owner of its brand (the brand
+//   of a key of foundation/core/Frame.h).  So a holder keeps its key private and
+//   opens only its own owner with it, as the holder of a held split keeps its
+//   split private (fixy/concurrent/SpscEnds.h).  The gate of each keyed door
+//   refuses a body that reaches a key of the brand, so no code in a body opens
+//   a second frame of an owner of the brand.  A dispatch brand is no held brand:
+//   only the dispatch door mints its keys.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
@@ -96,18 +113,40 @@ template <class... Refused, class Make, class... Arguments, ::foundation::brand:
                                LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
 mint_keyed_owner(Make const& make, Arguments&&... arguments) noexcept;
 
+// A held brand (the held key): a named key brand that is no dispatch brand, and
+// that names an empty class key_proof that no code builds with no argument and
+// that does not copy or move.
+template <class Brand>
+concept HeldKeyBrand = IsKeyBrand<Brand> && !IsDispatchBrand<Brand> && requires { typename Brand::key_proof; }
+                    && std::is_class_v<typename Brand::key_proof> && std::is_empty_v<typename Brand::key_proof>
+                    && !std::is_default_constructible_v<typename Brand::key_proof>
+                    && !std::is_copy_constructible_v<typename Brand::key_proof>
+                    && !std::is_move_constructible_v<typename Brand::key_proof>;
+
+// The mint of a held key (the definition below).  KeyedMintFrameKeyDoor names it
+// as a friend, so this declaration stands before the door.
+template <class Brand>
+    requires HeldKeyBrand<Brand>
+[[nodiscard]] constexpr LoanKey<Brand> mint_held_key(typename Brand::key_proof const& proof) noexcept;
+
 // The door of the mint of a keyed owner to the key of the frame doors (the
 // doors of the owners above foundation/core/Frame.h).  Its members are private,
-// and mint_keyed_owner is its one friend.  The invariant: the mint gives the
-// one key of the fresh brand of its call, beside the owner of that brand that
-// the maker builds from the proof of the brand.  A home owner row of
-// utils/rule-table.txt keeps this definition in this header.
+// and mint_keyed_owner and mint_held_key are its friends.  The invariant:
+// mint_keyed_owner gives the one key of the fresh brand of its call, beside the
+// owner of that brand that the maker builds from the proof of the brand, and
+// mint_held_key gives a key of a held brand only for its proof, which only a
+// holder of the brand builds.  A home owner row of utils/rule-table.txt keeps
+// this definition in this header.
 class KeyedMintFrameKeyDoor final : ::foundation::NoObject<KeyedMintFrameKeyDoor> {
     template <class... Refused, class Make, class... Arguments, ::foundation::brand::IsBrand Fresh>
         requires(sizeof...(Refused) == 0) && KeyedOwnerMake<Make, Fresh, Arguments...>
     friend constexpr auto ::foundation::core::mint_keyed_owner(Make const& make, Arguments&&... arguments) noexcept
         -> Record<keyed_owner_t<Make, ::foundation::brand::undeducible_brand_t<Fresh>, Arguments...>,
                   LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>;
+    template <class Brand>
+        requires HeldKeyBrand<Brand>
+    friend constexpr auto ::foundation::core::mint_held_key(typename Brand::key_proof const& proof) noexcept
+        -> LoanKey<Brand>;
 
     // The key of the frame doors, for the key of a mint.
     [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
@@ -131,6 +170,15 @@ template <class... Refused, class Make, class... Arguments, ::foundation::brand:
 mint_keyed_owner(Make const& make, Arguments&&... arguments) noexcept {
     return {make(KeyedMintFrameKeyDoor::proof_<Fresh>(), static_cast<Arguments&&>(arguments)...),
             LoanKey<Fresh>{KeyedMintFrameKeyDoor::key_()}};
+}
+
+// A key of a held brand, for the holder that builds the proof of the brand (the
+// held key).  The holder keeps the key as a member beside its owner.
+// Complexity: O(1), and the key costs no byte.
+template <class Brand>
+    requires HeldKeyBrand<Brand>
+[[nodiscard]] constexpr LoanKey<Brand> mint_held_key(typename Brand::key_proof const& /*proof*/) noexcept {
+    return LoanKey<Brand>{KeyedMintFrameKeyDoor::key_()};
 }
 
 // A maker that holds a linear value by value binds to this overload, so the

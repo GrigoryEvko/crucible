@@ -78,6 +78,90 @@ consteval bool mints_pair_one_brand() {
 }
 static_assert(mints_pair_one_brand());
 
+// A held brand and its holder: the proof has a private constructor, its one
+// friend is the holder, and the holder keeps its key beside its owner.
+class CheckHolder;
+
+struct CheckHeldBrand final {
+    class key_proof final {
+        friend class CheckHolder;
+
+        constexpr key_proof() noexcept {}
+
+    public:
+        key_proof(key_proof const&) = delete("a proof of a held key stays with its holder");
+        key_proof& operator=(key_proof const&) = delete("a proof of a held key stays with its holder");
+    };
+};
+
+class CheckHolder final {
+public:
+    [[nodiscard]] constexpr int fill_and_read() noexcept {
+        array_.with_mut(key_, [](auto run) noexcept {
+            for (int& element : run) {
+                element = 5;
+            }
+        });
+        return array_.at(index<2>());
+    }
+
+private:
+    FixedArray<int, 4, CheckHeldBrand> array_{};
+    [[no_unique_address]] LoanKey<CheckHeldBrand> key_{mint_held_key<CheckHeldBrand>(CheckHeldBrand::key_proof{})};
+};
+
+// A brand with no proof, a proof with a public constructor, a proof that
+// copies, a proof with a member, and a dispatch brand are no held brands.
+struct NoProofBrand final {};
+
+struct PublicProofBrand final {
+    struct key_proof final {
+        constexpr key_proof() noexcept {}
+        key_proof(key_proof const&) = delete("a proof of a held key stays with its holder");
+    };
+};
+
+struct CopiedProofBrand final {
+    class key_proof final {
+        constexpr key_proof() noexcept {}
+    };
+};
+
+struct FullProofBrand final {
+    class key_proof final {
+        constexpr key_proof() noexcept {}
+        int value_ = 0;
+
+    public:
+        key_proof(key_proof const&) = delete("a proof of a held key stays with its holder");
+    };
+};
+
+struct[[= dispatch_brand{}]] DispatchHeldBrand final {
+    class key_proof final {
+        constexpr key_proof() noexcept {}
+
+    public:
+        key_proof(key_proof const&) = delete("a proof of a held key stays with its holder");
+    };
+};
+
+static_assert(HeldKeyBrand<CheckHeldBrand>);
+static_assert(!HeldKeyBrand<NoProofBrand>);
+static_assert(!HeldKeyBrand<PublicProofBrand>);
+static_assert(!HeldKeyBrand<CopiedProofBrand>);
+static_assert(!HeldKeyBrand<FullProofBrand>);
+static_assert(!HeldKeyBrand<DispatchHeldBrand>);
+static_assert(!HeldKeyBrand<Unkeyed>);
+
+// The key of the holder costs no byte, and it opens the frame of its owner.
+static_assert(sizeof(CheckHolder) == sizeof(FixedArray<int, 4, CheckHeldBrand>));
+consteval bool holder_opens_its_owner() {
+    CheckHolder holder{};
+    return holder.fill_and_read() == 5;
+}
+static_assert(holder_opens_its_owner());
+
 }  // namespace detail::keyed_mint_checks
 
 }  // namespace foundation::core

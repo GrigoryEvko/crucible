@@ -34,7 +34,8 @@ constexpr std::size_t kTensorBytes = 4096;
 void check_data_flow(crucible::test::TraceRig& /*rig*/, BackgroundThread const& /*bt*/,
                      DagRef<const RegionNode> region) noexcept {
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     // The byte that the next write of an output writes, and that the next
@@ -81,7 +82,7 @@ void check_data_flow(crucible::test::TraceRig& /*rig*/, BackgroundThread const& 
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
-    ctx.deactivate();
+    ctx.deactivate(context_key);
 }
 
 // The outputs and the inputs of each op are inside the pool.
@@ -91,7 +92,8 @@ void check_data_flow(crucible::test::TraceRig& /*rig*/, BackgroundThread const& 
 void check_pool_bounds(crucible::test::TraceRig& /*rig*/, BackgroundThread const& /*bt*/,
                        DagRef<const RegionNode> region) noexcept {
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().pool_base().is_some());
     CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().pool_bytes() > 0);
 
@@ -132,7 +134,7 @@ void check_pool_bounds(crucible::test::TraceRig& /*rig*/, BackgroundThread const
         }
     }
 
-    ctx.deactivate();
+    ctx.deactivate(context_key);
 }
 
 }  // namespace

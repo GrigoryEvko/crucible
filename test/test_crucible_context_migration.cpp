@@ -157,8 +157,9 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
         build_region(test.alloc, arena, new_ops_run, crucible::make_plan_link(new_plan));
 
     CrucibleContext context{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, context.activate(*old_region));
-    const bool was_switched = context.switch_region(*new_region, 1);
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, context.activate(context_key, *old_region));
+    const bool was_switched = context.switch_region(context_key, *new_region, 1);
     return was_switched && ::fixy::same_target(context.active_region(), ::fixy::some(new_region));
 }
 
@@ -218,7 +219,8 @@ void test_smaller_new_slot_takes_its_own_size() {
         build_region(test.alloc, arena, new_ops_run, crucible::make_plan_link(new_plan));
 
     CrucibleContext context{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, context.activate(*old_region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, context.activate(context_key, *old_region));
     // The output of the first op holds each byte of the old slot.
     const auto compiled = context.mint_compiled_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, context.advance(SchemaHash{100}, ShapeHash{200}, compiled).status()
@@ -236,7 +238,7 @@ void test_smaller_new_slot_takes_its_own_size() {
     CRUCIBLE_TEST_ASSERT(kTest,
                          context.with_output_views<std::uint8_t>(compiled, fill_outputs)
                              .is_ok_and([](std::size_t const& count) noexcept { return count == 2 * kSlotBytes; }));
-    CRUCIBLE_TEST_ASSERT(kTest, context.switch_region(*new_region, 1));
+    CRUCIBLE_TEST_ASSERT(kTest, context.switch_region(context_key, *new_region, 1));
     CRUCIBLE_TEST_ASSERT(kTest, context.pool().bytes().size() == kSlotBytes);
     for (const std::uint8_t byte : context.pool().bytes()) {
         CRUCIBLE_TEST_ASSERT(kTest, byte == 0x5A);

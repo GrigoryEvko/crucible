@@ -447,7 +447,8 @@ int main() {
     bench::add_report(reports, [&] {
         BenchRegion br{SCHEMA.view(), SHAPE.view()};
         CrucibleContext engine_owner{br.test.alloc};
-        (void)engine_owner.activate(*br.region);
+        auto context_key = crucible::mint_context_key(br.test);
+        (void)engine_owner.activate(context_key, *br.region);
         ReplayEngine& engine = engine_owner.engine(br.test);
         auto av = engine.mint_active_view(kVigilForeground);
 
@@ -467,7 +468,8 @@ int main() {
     bench::add_report(reports, [&] {
         BenchRegion br{SCHEMA.view(), SHAPE.view()};
         CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-        (void)ctx.activate(*br.region);
+        auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+        (void)ctx.activate(context_key, *br.region);
 
         OpSlot slot = ::fixy::index<0>();
         auto cv = ctx.mint_compiled_view(kVigilForeground);
@@ -477,7 +479,7 @@ int main() {
             bench::do_not_optimize(s);
             slot = next_in_cycle(slot);
         });
-        ctx.deactivate();
+        ctx.deactivate(context_key);
         return r;
     }());
 
@@ -492,7 +494,8 @@ int main() {
         }
         BenchRegion br{big_sch.view(), big_shp.view()};
         CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-        (void)ctx.activate(*br.region);
+        auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+        (void)ctx.activate(context_key, *br.region);
 
         BigSlot slot = ::fixy::index<0>();
         auto cv = ctx.mint_compiled_view(kVigilForeground);
@@ -502,7 +505,7 @@ int main() {
             bench::do_not_optimize(s);
             slot = next_in_cycle(slot);
         });
-        ctx.deactivate();
+        ctx.deactivate(context_key);
         return r;
     }());
 

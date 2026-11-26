@@ -10,8 +10,9 @@ int main() {
     auto const test = ::foundation::effects::testing::test();
     crucible::CrucibleContext ctx{test.alloc};
     auto const cv = ctx.mint_compiled_view(::foundation::effects::testing::foreground<crucible::Vigil>());
-    auto given = ctx.with_external_blocks(crucible::ExternalBlocks{}, cv,
-                                          [&ctx](crucible::CrucibleContext&) noexcept { ctx.deactivate(); });
+    auto given = ctx.with_external_blocks(crucible::ExternalBlocks{}, cv, [&ctx](crucible::CrucibleContext&) noexcept {
+        static_cast<void>(ctx.is_compiled());
+    });
     static_cast<void>(given);
     return 0;
 }

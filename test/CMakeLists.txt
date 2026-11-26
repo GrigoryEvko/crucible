@@ -4602,6 +4602,23 @@ crucible_neg_compile_test(neg_crucible_context_register_external_unread_refusal
   "ignoring return value of .*crucible::CrucibleContext::register_external\\(crucible::SlotId, crucible::TensorData"
   "neg_crucible_context_register_external_unread_refusal\\.cpp:16:")
 
+# A key of a context opens each context, so only its holders mint one: the
+# Vigil, for its own context, and a test through mint_context_key.
+#   * neg_crucible_context_key_of_init_context and
+#     neg_crucible_context_key_of_foreground: mint_context_key takes the
+#     capability of a test, and no context of product code.
+#   * neg_crucible_context_key_proof_private: the proof of the brand has a
+#     private constructor, so no other code mints a key with mint_held_key.
+crucible_neg_compile_test(neg_crucible_context_key_of_init_context
+  "invalid initialization of reference of type .const foundation::effects::Test&. from expression of type .const foundation::effects::Init."
+  "neg_crucible_context_key_of_init_context\\.cpp:13:")
+crucible_neg_compile_test(neg_crucible_context_key_of_foreground
+  "invalid initialization of reference of type .const foundation::effects::Test&. from expression of type .const foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<crucible::Vigil>"
+  "neg_crucible_context_key_of_foreground\\.cpp:12:")
+crucible_neg_compile_test(neg_crucible_context_key_proof_private
+  "constexpr crucible::ContextKeyBrand::key_proof::key_proof\\(\\). is private within this context"
+  "neg_crucible_context_key_proof_private\\.cpp:11:")
+
 # The bytes of an external slot are in the pool only for the time of a body, and
 # the scope owns their blocks for that time, so no read reads ended memory.
 #   * neg_crucible_context_external_blocks_named: the door takes the blocks by

@@ -171,11 +171,12 @@ int main() {
         BenchRegion br{n};
         const ::foundation::effects::Test test = ::foundation::effects::testing::test();
         CrucibleContext engine_owner{test.alloc};
-        (void)engine_owner.activate(*br.region);
+        auto context_key = crucible::mint_context_key(test);
+        (void)engine_owner.activate(context_key, *br.region);
         ReplayEngine& engine = engine_owner.engine(test);
 
         CrucibleContext ctx{test.alloc};
-        (void)ctx.activate(*br.region);
+        (void)ctx.activate(context_key, *br.region);
 
         // The ops of the region, which each walk reads.
         const ::fixy::View<const TraceEntry> region_ops = br.region->ops.view();

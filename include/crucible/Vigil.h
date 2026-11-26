@@ -1573,6 +1573,12 @@ private:
     // numerics, so a region of other numerics computes other bits.  The two
     // doors of a replay, the activation and the switch, refuse such a region.
     // The check runs once for each activation or switch, never for each op.
+    //
+    // The key of the context (the key of a context of crucible/CrucibleContext.h)
+    // is a private member beside the context, so a change of the mode costs no
+    // instruction to reach it.  A key of the brand opens each context, and it
+    // does not prove which one.  So the Vigil reaches a door that takes the key
+    // only through this class, with its own key and its own context.
     class ReplayState {
     public:
         // The context allocates the pool of each region that it activates,
@@ -1588,7 +1594,7 @@ private:
         // region has no memory plan, or when its numerics are not the
         // numerics of the run.  Returns true when the context replays.
         [[nodiscard]] bool activate(const RegionNode& region) {
-            if (!(region.numerics == numerics_) || !ctx_.activate(region)) {
+            if (!(region.numerics == numerics_) || !ctx_.activate(key_, region)) {
                 deactivate();
                 return false;
             }
@@ -1599,7 +1605,7 @@ private:
         // Records from the next op.
         void deactivate() {
             if (!ctx_.is_compiled()) return;
-            ctx_.deactivate();
+            ctx_.deactivate(key_);
             mode_.publish_recording_after_divergence(mode_writer_);
         }
 
@@ -1608,7 +1614,7 @@ private:
         // false, and the context stays on its region.
         [[nodiscard]] bool switch_region(const RegionNode& alt, uint32_t div_pos) {
             if (!(alt.numerics == numerics_)) return false;
-            return ctx_.switch_region(alt, div_pos);
+            return ctx_.switch_region(key_, alt, div_pos);
         }
 
         // The numerics of the run become numerics.  A region that replays
@@ -1618,7 +1624,7 @@ private:
         bool change_numerics(NumericsHash numerics) {
             numerics_ = numerics;
             if (!ctx_.is_compiled()) return false;
-            ctx_.deactivate_on_divergence();
+            ctx_.deactivate_on_divergence(key_);
             mode_.publish_recording_after_divergence(mode_writer_);
             return true;
         }
@@ -1650,6 +1656,10 @@ private:
 
     private:
         CrucibleContext ctx_;
+        // The one key of ctx_ (the key of a context).  The key is empty, so it
+        // takes no byte.
+        [[no_unique_address]] ContextKey key_{
+            ::foundation::core::mint_held_key<ContextKeyBrand>(ContextKeyBrand::key_proof{})};
         NumericsHash numerics_{};
         // The one writer of the mode cell.  The producer thread holds it, so
         // only the producer thread publishes a mode.  It stands before the

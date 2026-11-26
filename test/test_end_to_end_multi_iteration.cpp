@@ -61,7 +61,8 @@ void check_second_region(crucible::test::TraceRig& rig, BackgroundThread const& 
     CRUCIBLE_TEST_ASSERT(kTest, region2->plan.is_some());
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region2));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region2));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         const ReplayStatus s = ctx.advance(SCHEMA[i], SHAPE[i], cv).status();
@@ -73,7 +74,7 @@ void check_second_region(crucible::test::TraceRig& rig, BackgroundThread const& 
     }
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
-    ctx.deactivate();
+    ctx.deactivate(context_key);
 }
 
 }  // namespace

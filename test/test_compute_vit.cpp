@@ -190,7 +190,8 @@ int main() {
     region->plan = make_plan_link(plan_storage);
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
     // The view is const, so a body that captures it by reference writes no part

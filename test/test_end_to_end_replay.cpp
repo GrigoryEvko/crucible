@@ -56,8 +56,9 @@ void check_replay(crucible::test::TraceRig& /*rig*/, BackgroundThread const& /*b
     }
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(ctx.active_region(), ::fixy::some(region)));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().is_initialized());
@@ -87,14 +88,15 @@ void check_replay(crucible::test::TraceRig& /*rig*/, BackgroundThread const& /*b
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 2);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 0);
 
-    ctx.deactivate();
+    ctx.deactivate(context_key);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
 }
 
 void check_divergence(crucible::test::TraceRig& /*rig*/, BackgroundThread const& /*bt*/,
                       DagRef<const RegionNode> region) noexcept {
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     for (uint32_t i = 0; i < 3; i++) {
@@ -112,7 +114,7 @@ void check_divergence(crucible::test::TraceRig& /*rig*/, BackgroundThread const&
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SCHEMA[3], ShapeHash{0xBAD}, cv).status() == ReplayStatus::DIVERGED);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 2);
 
-    ctx.deactivate();
+    ctx.deactivate(context_key);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
 }
 

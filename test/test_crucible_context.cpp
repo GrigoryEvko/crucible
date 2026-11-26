@@ -134,7 +134,8 @@ static void test_activate() {
         build_region(test.alloc, arena, ops_run, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.mode() == ContextMode::COMPILED);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
@@ -155,7 +156,8 @@ static void test_activate_no_plan() {
     const crucible::DagRef<RegionNode> region = build_region(test.alloc, arena, ops_run, crucible::PlanLink{});
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, !ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, !ctx.activate(context_key, *region));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
 
     ::fixy::check::pass(kTest, "  test_activate_no_plan: PASSED\n");
@@ -185,7 +187,8 @@ static void test_full_replay() {
         build_region(test.alloc, arena, ops_run, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
@@ -236,7 +239,8 @@ static void test_divergence() {
         build_region(test.alloc, arena, ops_run, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{100}, ShapeHash{200}, cv).status() == ReplayStatus::MATCH);
@@ -247,7 +251,7 @@ static void test_divergence() {
     // decision, which the deactivate below stands in for.
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
-    ctx.deactivate();
+    ctx.deactivate(context_key);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
     CRUCIBLE_TEST_ASSERT(kTest, ctx.active_region().is_none());
 
@@ -294,8 +298,9 @@ static void test_reactivate() {
         build_region(test.alloc, arena, ops_b_run, crucible::make_plan_link(plan_b));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region_a));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region_a));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv).status() == ReplayStatus::COMPLETE);
@@ -305,7 +310,7 @@ static void test_reactivate() {
     // Activating the second region deactivates the first implicitly.
     // Each activation needs a fresh view, which is why the replays sit in
     // scopes that end before the next activation.
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region_b));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region_b));
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(ctx.active_region(), ::fixy::some(region_b)));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
@@ -370,7 +375,8 @@ static void test_external_slots() {
         build_region(test.alloc, arena, ops_run, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
@@ -433,7 +439,8 @@ static void test_register_external_refusals() {
     const crucible::TensorData data{given, crucible::kHostDevice};
 
     CrucibleContext ctx{g_test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*external_region));
+    auto context_key = crucible::mint_context_key(g_test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *external_region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         const auto refusal_of = [&ctx, &cv, data](SlotId sid) noexcept {
@@ -447,7 +454,7 @@ static void test_register_external_refusals() {
         CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().slot_ptr(SlotId{1}, pv) == ::fixy::some(given));
     }
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*pooled_region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *pooled_region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
@@ -489,7 +496,8 @@ static void test_external_reads_follow_the_region() {
     const crucible::ValidatedOp second_op = crucible::test::certify_synthetic_op(entry, second_records, 1);
 
     CrucibleContext ctx{g_test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*external_region));
+    auto context_key = crucible::mint_context_key(g_test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *external_region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
@@ -526,25 +534,25 @@ static void test_external_reads_follow_the_region() {
         ctx.bind_external_reads(OpIndex{0}, first_op, cv);
         CRUCIBLE_TEST_ASSERT(kTest, planned.is_some() && ctx.pool().slot_ptr(SlotId{1}, pv) == planned);
     };
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.switch_region(*pooled_alternate, 1));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.switch_region(context_key, *pooled_alternate, 1));
     check_pooled_region();
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*external_region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *external_region));
     ctx.list_external_reads(OpIndex{0}, ctx.mint_compiled_view(kVigilForeground));
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*pooled_region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *pooled_region));
     check_pooled_region();
 
     // A deactivation ends the pool of the region, and it drops the list with
     // it, so the next activation starts with no read of the old plan.
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*external_region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *external_region));
     ctx.list_external_reads(OpIndex{0}, ctx.mint_compiled_view(kVigilForeground));
-    ctx.deactivate();
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*pooled_region));
+    ctx.deactivate(context_key);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *pooled_region));
     check_pooled_region();
 
     // The activation of the external region again starts with an empty list,
     // and a new list gives its read.
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*external_region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *external_region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
     ctx.bind_external_reads(OpIndex{0}, first_op, cv);
@@ -639,7 +647,8 @@ static void test_integration_sweep_line() {
         build_region(test.alloc, arena, ops_run, crucible::make_plan_link(plan_storage));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
@@ -671,7 +680,7 @@ static void test_integration_sweep_line() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xFF}, ShapeHash{0xFF}, cv).status() == ReplayStatus::DIVERGED);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 1);
 
-    ctx.deactivate();
+    ctx.deactivate(context_key);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
 
     ::fixy::check::pass(kTest, "  test_integration_sweep_line: PASSED\n");
@@ -701,27 +710,28 @@ static void test_divergence_counter() {
         build_region(test.alloc, arena, ops_run, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv).status() == ReplayStatus::MATCH);
         CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{99}, ShapeHash{99}, cv).status() == ReplayStatus::DIVERGED);
     }
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 1);
-    ctx.deactivate();
+    ctx.deactivate(context_key);
 
     // Each activation mints its own view, so every replay sits in a scope
     // that ends before the next activation.
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{99}, ShapeHash{20}, cv).status() == ReplayStatus::DIVERGED);
     }
     CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 2);
-    ctx.deactivate();
+    ctx.deactivate(context_key);
 
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     {
         auto cv = ctx.mint_compiled_view(kVigilForeground);
         CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{10}, ShapeHash{20}, cv).status() == ReplayStatus::MATCH);
@@ -817,7 +827,8 @@ static void test_slot_views() {
         build_region(test.alloc, arena, ops_run, crucible::make_plan_link(plan));
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     // The view is const, so a body that captures it by reference writes no part
     // of it.
     const auto cv = ctx.mint_compiled_view(kVigilForeground);
@@ -998,7 +1009,8 @@ static void test_external_blocks_live_for_their_scope() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const crucible::DagRef<RegionNode> region = make_region_of_two_externals(arena);
     CrucibleContext ctx{g_test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(g_test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     const auto cv = ctx.mint_compiled_view(kVigilForeground);
     const auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{50}, ShapeHash{60}, cv).status() == ReplayStatus::COMPLETE);
@@ -1135,7 +1147,7 @@ static void test_external_blocks_live_for_their_scope() {
     CRUCIBLE_TEST_ASSERT(kTest, refused.err() == ::fixy::some(ViewRefusal::PooledSlot) && refused_views.size() == 2);
     CRUCIBLE_TEST_ASSERT(kTest, has_no_external() && runs == 0);
 
-    ctx.deactivate();
+    ctx.deactivate(context_key);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
     ::fixy::check::pass(kTest, "  test_external_blocks_live_for_their_scope: PASSED\n");
 }
@@ -1146,7 +1158,8 @@ static void change_in_a_block_scope(Change const& change) noexcept {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const crucible::DagRef<RegionNode> region = make_region_of_two_externals(arena);
     CrucibleContext ctx{g_test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(g_test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     const auto cv = ctx.mint_compiled_view(kVigilForeground);
     ::foundation::AlignedBytes block = make_external_block();
     const crucible::ExternalWindow slot_one = make_window(SlotId{1}, ::fixy::ByteCount{std::size_t{0}});
@@ -1154,19 +1167,27 @@ static void change_in_a_block_scope(Change const& change) noexcept {
 }
 
 // The plan of a context stays for the time of a scope of external slots: a
-// change of it in the body ends the process.
+// change of it in the body, with a second key that the body mints, ends the
+// process.
 static void test_external_blocks_keep_the_plan() {
     constexpr ::fixy::TextView refusal{
         "foundation: fatal: an init, a detach or the end of a PoolAllocator while a body door lends it"};
     ::fixy::check::expect_dies(
-        kTest, [] noexcept { change_in_a_block_scope([](CrucibleContext& scoped) noexcept { scoped.deactivate(); }); },
+        kTest,
+        [] noexcept {
+            change_in_a_block_scope([](CrucibleContext& scoped) noexcept {
+                auto second_key = crucible::mint_context_key(::foundation::effects::testing::test());
+                scoped.deactivate(second_key);
+            });
+        },
         refusal);
     ::fixy::check::expect_dies(
         kTest,
         [] noexcept {
             change_in_a_block_scope([](CrucibleContext& scoped) noexcept {
+                auto second_key = crucible::mint_context_key(::foundation::effects::testing::test());
                 ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
-                static_cast<void>(scoped.activate(*make_region_of_two_externals(arena)));
+                static_cast<void>(scoped.activate(second_key, *make_region_of_two_externals(arena)));
             });
         },
         refusal);
@@ -1182,10 +1203,11 @@ static void read_through_a_stale_proof(Read const& read) noexcept {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const crucible::DagRef<RegionNode> region = make_region_reading_slot_one(arena, false, SchemaHash{51});
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     const auto stale = ctx.mint_compiled_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{50}, ShapeHash{60}, stale).status() == ReplayStatus::MATCH);
-    ctx.deactivate();
+    ctx.deactivate(context_key);
     static_cast<void>(read(ctx, stale));
 }
 
@@ -1233,7 +1255,8 @@ template <class Change>
 static void change_the_lent_context(Change const& change) noexcept {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const crucible::DagRef<RegionNode> region = make_region_reading_slot_one(arena, false, SchemaHash{51});
-    CRUCIBLE_TEST_ASSERT(kTest, g_lent_context.activate(*region));
+    auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+    CRUCIBLE_TEST_ASSERT(kTest, g_lent_context.activate(context_key, *region));
     const auto cv = g_lent_context.mint_compiled_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest,
                          g_lent_context.advance(SchemaHash{50}, ShapeHash{60}, cv).status() == ReplayStatus::MATCH);
@@ -1242,26 +1265,21 @@ static void change_the_lent_context(Change const& change) noexcept {
         return views.size();
     });
     CRUCIBLE_TEST_ASSERT(kTest, written.is_ok_and([](std::size_t const& count) noexcept { return count == 1; }));
-    g_lent_context.deactivate();
+    g_lent_context.deactivate(context_key);
 }
 
 // The outputs of an op are lent for the time of the body, so a change of the
-// plan through a second name of the context ends the process in the body.  The
-// deactivation after the body is the control.
+// plan through a second name of the context and a second key ends the process
+// in the body.  The deactivation after the body is the control.
 static void test_lent_outputs_refuse_a_change_of_the_plan() {
     constexpr ::fixy::TextView refusal{
         "foundation: fatal: an init, a detach or the end of a PoolAllocator while a body door lends it"};
     ::fixy::check::expect_dies(
-        kTest, [] noexcept { change_the_lent_context([] noexcept { g_lent_context.deactivate(); }); }, refusal);
-    ::fixy::check::expect_dies(
-        kTest, [] noexcept { change_the_lent_context([] noexcept { g_lent_context.deactivate_on_divergence(); }); },
-        refusal);
-    ::fixy::check::expect_dies(
         kTest,
         [] noexcept {
             change_the_lent_context([] noexcept {
-                ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
-                static_cast<void>(g_lent_context.activate(*make_region_reading_slot_one(arena, false, SchemaHash{52})));
+                auto second_key = crucible::mint_context_key(::foundation::effects::testing::test());
+                g_lent_context.deactivate(second_key);
             });
         },
         refusal);
@@ -1269,9 +1287,30 @@ static void test_lent_outputs_refuse_a_change_of_the_plan() {
         kTest,
         [] noexcept {
             change_the_lent_context([] noexcept {
+                auto second_key = crucible::mint_context_key(::foundation::effects::testing::test());
+                g_lent_context.deactivate_on_divergence(second_key);
+            });
+        },
+        refusal);
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            change_the_lent_context([] noexcept {
+                auto second_key = crucible::mint_context_key(::foundation::effects::testing::test());
                 ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
                 static_cast<void>(
-                    g_lent_context.switch_region(*make_region_reading_slot_one(arena, false, SchemaHash{52}), 1));
+                    g_lent_context.activate(second_key, *make_region_reading_slot_one(arena, false, SchemaHash{52})));
+            });
+        },
+        refusal);
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            change_the_lent_context([] noexcept {
+                auto second_key = crucible::mint_context_key(::foundation::effects::testing::test());
+                ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
+                static_cast<void>(g_lent_context.switch_region(
+                    second_key, *make_region_reading_slot_one(arena, false, SchemaHash{52}), 1));
             });
         },
         refusal);

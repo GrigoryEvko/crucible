@@ -122,7 +122,8 @@ static void test_linear_match() {
     auto slots_run = arena.array(test.alloc, 3, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
@@ -184,7 +185,8 @@ static void test_schema_divergence() {
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine& engine = ctx.engine(test);
@@ -224,7 +226,8 @@ static void test_shape_divergence() {
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine& engine = ctx.engine(test);
@@ -260,7 +263,8 @@ static void test_reset() {
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine& engine = ctx.engine(test);
@@ -313,7 +317,8 @@ static void test_input_ptr() {
     auto slots_run = arena.array(test.alloc, 2, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine& engine = ctx.engine(test);
@@ -348,7 +353,8 @@ static void test_invalid_slot() {
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine& engine = ctx.engine(test);
@@ -382,7 +388,8 @@ static void test_current_entry() {
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
     ReplayEngine& engine = ctx.engine(test);
@@ -418,7 +425,8 @@ static void test_matched_index_after_reset() {
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     for (uint32_t i = 0; i < 3; i++) {
@@ -465,7 +473,8 @@ static void test_matched_index_follows_the_cursor() {
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
     CrucibleContext ctx{test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     for (uint32_t round = 0; round < 2; round++) {
@@ -508,7 +517,8 @@ static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx
     auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(source.alloc, arena, slots_run));
     CrucibleContext ctx{source.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(source);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     ReplayEngine& engine = ctx.engine(source);
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{700}, ShapeHash{800}, av).status() == ReplayStatus::MATCH);
@@ -546,7 +556,8 @@ static void test_diverged_step_has_no_matched_position(::fixy::TestRunnerCtx con
     auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(source.alloc, arena, slots_run));
     CrucibleContext ctx{source.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(source);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     ReplayEngine& engine = ctx.engine(source);
     auto av = engine.mint_active_view(kVigilForeground);
     const ReplayStep diverged = engine.advance(SchemaHash{999}, ShapeHash{910}, av);
@@ -576,7 +587,8 @@ static void test_advance_after_the_end_guards_the_first_op() {
     auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
     region->plan = crucible::make_plan_link(make_simple_plan(source.alloc, arena, slots_run));
     CrucibleContext ctx{source.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(source);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     ReplayEngine& engine = ctx.engine(source);
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{70}, ShapeHash{71}, av).status() == ReplayStatus::COMPLETE);
@@ -615,7 +627,8 @@ static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const&
         test,
         [region] noexcept {
             CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-            static_cast<void>(ctx.activate(*region));
+            auto context_key = crucible::mint_context_key(::foundation::effects::testing::test());
+            static_cast<void>(ctx.activate(context_key, *region));
         },
         ::fixy::TextView{"op 1 has the input slot id 5"});
 
@@ -705,7 +718,8 @@ static void test_integration_with_pool() {
     region->plan = crucible::make_plan_link(plan_storage);
 
     CrucibleContext ctx{test.alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    auto context_key = crucible::mint_context_key(test);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *region));
     alignas(256) char fake_param[128];
     ctx.register_external(SlotId{2}, crucible::test::host_data(fake_param), ctx.mint_compiled_view(kVigilForeground))
         .expect("the plan marks slot 2 external");
