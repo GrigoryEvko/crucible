@@ -76,10 +76,13 @@ Builds
     (assay.loop.gate, the counted rules).  A rule of VESSEL_COUNTED_RULES of
     the gate also takes the vessel build.  The write then lowers each row to
     the largest count over the builds.  A row of a path with a unit that a
-    configured build of the presets lists and no build of the write lists
-    keeps its value, so a reduce with no vessel build keeps the rows of
-    vessel/torch (known_builds(), the unread units of
-    assay.guard.engines.plugin.runner).  The landing gate makes this write.
+    configured build of the presets lists and no build of the target all in
+    the write lists keeps its value, so a reduce with no vessel build, or
+    with a vessel build of named targets, keeps the rows of vessel/torch
+    (known_builds(), the unread units of assay.guard.engines.plugin.runner).
+    A rule of the engine elf with one set keeps the rows of a group whose
+    units only a build that the write did not read lists (kept_rows of
+    assay.guard.engines.elf.artifacts).  The landing gate makes this write.
     The command exits 77 when the rule does not apply to a build.
 
     --target names a target of the --build-dir before it, for a build that
@@ -390,7 +393,9 @@ def main(argv: list[str]) -> int:
     if rule.engine == rule_registry.Engine.ELF:
         from assay.guard.engines.elf import runner as elf_runner
 
-        return elf_runner.write(rule, elf_runner.WriteRequest(root, build_dir, mode, options.reason, tuple(builds[1:])))
+        known = known_builds(root) if len(builds) > 1 else ()
+        elf_request = elf_runner.WriteRequest(root, build_dir, mode, options.reason, tuple(builds[1:]), known)
+        return elf_runner.write(rule, elf_request)
     if is_build_write:
         from assay.guard.engines.plugin import runner as plugin_runner
 

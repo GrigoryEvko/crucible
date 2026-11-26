@@ -10,6 +10,7 @@ and the reduce over two planted builds.  The tests of the rules
 artifact-symbols and artifacts hold the write on planted builds.
 """
 
+import dataclasses
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -251,6 +252,29 @@ def reduce_cases(expect: testing.Expect, root: Path, policy: one_set.WritePolicy
         status == 0
         and after.expected() == {key("@build/a", "fact", "new"): 1, key("@build/a", "count", "helper"): 2}
         and after.admits().keys() == before.admits().keys(),
+    )
+    ledger_file = rule_ledger.ledger_path(RULE, root)
+    kept_before = ledger_file.read_text(encoding="utf-8")
+    ledger_file.write_text(f"{kept_before}@build/b | fact | 1 | unread-only | -\n", encoding="utf-8")
+    keeps_group_b = dataclasses.replace(policy, kept_rows=lambda _request: lambda row: row.path == "@build/b")
+    request = runner.WriteRequest(root, first, rule_ledger.WriteMode.LOWER, more_builds=(second,))
+    status, _ = quiet(lambda: one_set.writer(examine, keeps_group_b)(rule, request))
+    kept = rule_ledger.read(rule, root).expected()
+    expect(
+        f"the reduce keeps a row that the test of the policy names, although no build of the reduce gives its fact, "
+        f"and it lowers each other row: {kept}",
+        status == 0
+        and kept
+        == {
+            key("@build/a", "fact", "new"): 1,
+            key("@build/a", "count", "helper"): 2,
+            key("@build/b", "fact", "unread-only"): 1,
+        },
+    )
+    status, _ = reduced()
+    expect(
+        "the reduce of a policy with no test of kept rows removes the row of a fact that no build gives",
+        status == 0 and key("@build/b", "fact", "unread-only") not in rule_ledger.read(rule, root).expected(),
     )
     planted[second] = {key("@build/a", "count", "helper"): 2, key("@build/a", "fact", "risen"): 1}
     text_before = rule_ledger.ledger_path(RULE, root).read_text(encoding="utf-8")

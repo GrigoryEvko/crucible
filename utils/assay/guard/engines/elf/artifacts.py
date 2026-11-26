@@ -107,7 +107,10 @@ Ledger
     (the policies of assay.core.ledger).  A write from one build keeps each
     row, and it gives no row to a new fact without --raise (RAISE_REASONS,
     one_set, the write).  The reduce of the landing gate removes the row of
-    a fact that no build of the gate gives (one_set, the reduce).
+    a fact that no build of the gate gives (one_set, the reduce).  It keeps
+    each row of a group whose units only a build that it did not read lists,
+    such as the group vessel when the reduce reads no vessel build
+    (kept_rows()).
 
     The ledger does not judge a missing property or a run path directory
     that the host does not give, because each one is a requirement.  Such an
@@ -139,7 +142,7 @@ protection, and in the bytes of their input files.
 """
 
 import os
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -149,7 +152,7 @@ from assay.core import registry as rule_registry
 from assay.core import report as check_report
 from assay.guard.engines.elf import one_set, runner
 from assay.readers import census as build_census
-from assay.readers import elf, linkmap
+from assay.readers import compdb, elf, linkmap
 
 RULE = "artifacts"
 GROUP_PREFIX = "@build/"
@@ -746,6 +749,67 @@ def is_row(key: rule_ledger.Key, entry: rule_ledger.Entry) -> bool:
     return key.path in groups and key.kind in FACT_KINDS and bool(key.entity) and entry.value != rule_ledger.ADMIT_VALUE
 
 
+def listed_units(build: Path, root: Path) -> frozenset[str]:
+    """Return the source of each compile of a build, relative to the root, with no source of its directory (the reduce).
+
+    A source that the build generates in its own directory, such as a unit of a layer test, is in no other build.  It
+    tells nothing about a group of the tree, so the set holds no such source.  Complexity: linear in the rows of the
+    compile database.
+
+    Raises:
+        runner.BuildError: If the compile database cannot be read
+    """
+    try:
+        rows = compdb.entries(build)
+    except compdb.CompdbError as problem:
+        raise runner.BuildError(f"the compile database of {build} cannot be read: {problem}") from None
+    directories = (build, build.resolve())
+    sources = (Path(os.path.normpath(row.file)) for row in rows)
+    return frozenset(
+        build_census.shown(source, root)
+        for source in sources
+        if not any(source.is_relative_to(directory) for directory in directories)
+    )
+
+
+def unread_groups(request: runner.WriteRequest) -> frozenset[str]:
+    """Return the row path of each group whose units a known build lists and no build of a reduce lists (the reduce).
+
+    Only the vessel build links the dispatch library, and the reduce of the landing gate reads no vessel build.  The
+    units of vessel/torch that only the vessel build compiles then give the group vessel, and its rows keep their
+    values.  Complexity: linear in the rows of the compile database of each build.
+
+    Raises:
+        runner.BuildError: If the compile database of a build cannot be read
+    """
+    read = {build.resolve() for build in request.builds}
+    unknown = [build for build in request.known_builds if build.resolve() not in read]
+    if not unknown:
+        return frozenset()
+    listed: set[str] = set()
+    for build in request.builds:
+        listed |= listed_units(build, request.root)
+    found: set[str] = set()
+    for build in unknown:
+        found |= listed_units(build, request.root) - listed
+    return frozenset(f"{GROUP_PREFIX}{group_of(unit.split('/', 1)[0])}" for unit in found if not os.path.isabs(unit))
+
+
+def kept_rows(request: runner.WriteRequest) -> Callable[[rule_ledger.Key], bool] | None:
+    """Return the test of a row of a group that a known build that the reduce did not read can give, or None.
+
+    A reduce keeps such a row at its value (WritePolicy.kept_rows of assay.guard.engines.elf.one_set).  A person
+    removes a row of the group vessel with a write from a full vessel build.
+
+    Raises:
+        runner.BuildError: If the compile database of a build cannot be read
+    """
+    groups = unread_groups(request)
+    if not groups:
+        return None
+    return lambda row: row.path in groups
+
+
 def row_problems(ledger: rule_ledger.Ledger) -> list[check_report.Finding]:
     """Return an error for each row that does not have a shape of the ledger.
 
@@ -869,7 +933,12 @@ def run(rule: rule_registry.Rule, context: runner.ElfContext, warnings_dir: Path
 
 # The facts that a write refuses with no --raise, and the reasons for --raise (the ledger).
 WRITE_POLICY = one_set.WritePolicy(
-    row_problems, FACT_KINDS, RAISE_REASONS, f"each row of {RULE} is a fact of the build", "rows of link facts"
+    row_problems,
+    FACT_KINDS,
+    RAISE_REASONS,
+    f"each row of {RULE} is a fact of the build",
+    "rows of link facts",
+    kept_rows=kept_rows,
 )
 # The write of the fact rows of the build into the set (the ledger, assay.guard.engines.elf.one_set).
 write = one_set.writer(examine, WRITE_POLICY)

@@ -33,7 +33,11 @@ Reduce
     largest count of each key over these builds, and it lowers each row to
     that count.  It removes a row of a fact that no build gives, and it keeps
     each admit row.  It refuses each count above its row, because the check
-    of each build refused it first.
+    of each build refused it first.  A configured build that the reduce does
+    not read can give a fact that no read build gives, such as a link fact of
+    the dispatch library that only the vessel build links.  The rule then
+    gives the test of the rows that such a build can give
+    (WritePolicy.kept_rows), and the reduce keeps each of them at its value.
 
 `guard selftest tests.guard.engines.elf.test_one_set` does the test of the module.
 """
@@ -75,7 +79,9 @@ class WritePolicy:
     the keys that only --raise writes, when the count of the build is above the row.  `raise_reasons` are the reasons
     for --raise, and `admit_text` tells why the mode admit does not apply.  `rows` names the rows of the build in the
     line of a written ledger.  `person_kinds` names the kinds of the keys that only a person writes, with a reason,
-    and no write writes their row: `person_text` tells the reason of each such row.
+    and no write writes their row: `person_text` tells the reason of each such row.  `kept_rows` gives the test of
+    the key of a row that a known build that the reduce did not read can give, or None when the reduce reads each
+    build that can give a row (the reduce).
     """
 
     row_problems: Callable[[rule_ledger.Ledger], list[check_report.Finding]]
@@ -85,6 +91,7 @@ class WritePolicy:
     rows: str
     person_kinds: tuple[str, ...] = ()
     person_text: str = ""
+    kept_rows: Callable[[runner.WriteRequest], Callable[[rule_ledger.Key], bool] | None] | None = None
 
 
 def read_ledger(rule: rule_registry.Rule, root: Path) -> rule_ledger.Ledger | Inspection:
@@ -264,6 +271,15 @@ def write_inspection(
         return 1
     if is_reduce:
         counts = {**largest.counts, **dict.fromkeys(ledger.admits(), 1)}
+        try:
+            is_kept = policy.kept_rows(request) if policy.kept_rows is not None else None
+        except runner.BuildError as problem:
+            check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)
+            return 1
+        if is_kept is not None:
+            for row, value in ledger.expected().items():
+                if is_kept(row):
+                    counts[row] = max(counts.get(row, 0), value)
         written = rule_ledger.write_counts(rule, ledger, counts, rule_ledger.WriteMode.LOWER, request.reason)
     else:
         written = rule_ledger.write_counts(

@@ -7,6 +7,8 @@ Cases
     The cases hold these parts of the rule:
       * The groups and the paths of the facts, the facts of planted
         programs, a link with no map, and the verdict of a planted ledger
+      * The rows of a group that a reduce keeps, because only a known
+        build that the reduce did not read lists its units
       * Each reason of a run path directory that the host does not give, and
         a planted program that names such a directory in its run path
       * The problems of the hardening facts of one artifact, for each kind
@@ -32,7 +34,7 @@ from assay.core import report as check_report
 from assay.core import rows as rows_grammar
 from assay.core import testing
 from assay.guard.engines.elf import artifacts, one_set, runner
-from assay.readers import elf, linkmap
+from assay.readers import compdb, elf, linkmap
 from assay.tests.guard.engines.elf.test_runner import raised
 
 # A program with a constructor and a call of atexit, and a program that calls the C library.
@@ -525,9 +527,50 @@ def build_cases(expect: testing.Expect, compiler: str, scratch: Path) -> None:
     expect("a build with no linked artifact does not apply", "no linked artifact" in said)
 
 
+def unread_group_cases(expect: testing.Expect) -> None:
+    """Hold the rows that a reduce keeps because a known build that it did not read can give them (the reduce).
+
+    The default build lists src/unit.cpp, and the vessel build lists vessel/torch/fallback.cpp too.  The vessel build
+    also lists a unit that it generates in its own directory.  On the old code the reduce of the landing gate read no
+    vessel build and removed each link fact of the dispatch library.
+    """
+    with TemporaryDirectory(prefix="artifacts-unread-") as work:
+        root = Path(work)
+        listed = {"default": ("src/unit.cpp",), "vessel": ("src/unit.cpp", "vessel/torch/fallback.cpp")}
+        builds = {name: root / f"build-{name}" for name in listed}
+        for name, build in builds.items():
+            build.mkdir()
+            files = [str(root / unit) for unit in listed[name]]
+            if name == "vessel":
+                files.append(str(build / "generated" / "layer.cpp"))
+            compdb.plant(
+                build,
+                [
+                    {"directory": str(build), "file": file, "command": f"c++ -c {file}", "output": "u.o"}
+                    for file in files
+                ],
+            )
+        known = tuple(builds.values())
+        unread = runner.WriteRequest(root, builds["default"], more_builds=(builds["default"],), known_builds=known)
+        is_kept = artifacts.kept_rows(unread)
+        vessel_row = rule_ledger.Key("@build/vessel", artifacts.NEEDED, "libc10.so")
+        tools_row = rule_ledger.Key("@build/tools", artifacts.NEEDED, "libgone.so")
+        expect(
+            "a reduce with no vessel build keeps each row of the group vessel, and no row of the group tools, which "
+            "only a unit in the directory of the vessel build would give",
+            is_kept is not None and is_kept(vessel_row) and not is_kept(tools_row),
+        )
+        full = runner.WriteRequest(root, builds["default"], more_builds=(builds["vessel"],), known_builds=known)
+        expect(
+            "a reduce that reads each known build keeps no row by the test, so it removes a fact that no build gives",
+            artifacts.kept_rows(full) is None,
+        )
+
+
 def cases(expect: testing.Expect) -> None:
     """Run the cases with planted facts, and the compile cases on planted builds."""
     path_cases(expect)
+    unread_group_cases(expect)
     directory_cases(expect)
     problem_cases(expect)
     input_cases(expect)

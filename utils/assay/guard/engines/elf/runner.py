@@ -198,7 +198,9 @@ class WriteRequest:
     """What one write of the ledger of a rule of the engine does.
 
     `mode` is the mode of assay.core.ledger.  `more_builds` holds the other builds of a reduce, after `build_dir`
-    (the reduce of assay.core.ledger).
+    (the reduce of assay.core.ledger).  `known_builds` holds the configured builds of the presets of the tree.  A
+    reduce that does not read one of them cannot see its facts (WritePolicy.kept_rows of
+    assay.guard.engines.elf.one_set).
     """
 
     root: Path
@@ -206,6 +208,7 @@ class WriteRequest:
     mode: rule_ledger.WriteMode = rule_ledger.WriteMode.LOWER
     reason: str | None = None
     more_builds: tuple[Path, ...] = ()
+    known_builds: tuple[Path, ...] = ()
 
     @property
     def builds(self) -> tuple[Path, ...]:
