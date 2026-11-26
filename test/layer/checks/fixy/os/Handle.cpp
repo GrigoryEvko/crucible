@@ -15,6 +15,17 @@
 #include <type_traits>
 #include <utility>
 
+namespace handle_outside {
+
+// A part of a transit outside the base.  It names an owner, so only the test
+// of the base refuses it.
+struct OwnerPart final {
+    template <class Kind, ::fixy::os::RightSet Rights>
+    using owner = Kind;
+};
+
+}  // namespace handle_outside
+
 namespace fixy::os::detail::handle_invariants {
 
 inline constexpr RightSet kReadSeek = RightSet::read | RightSet::seek;
@@ -112,6 +123,16 @@ template <class Transit>
 concept ArrivesNamed = requires(Transit& transit) { transit.arrive(); };
 static_assert(!DepartsNamed<ReadFile> && !ArrivesNamed<ReadFileTransit>,
               "a named handle departs and a named transit arrives only through std::move");
+
+// The part of a transit names the class of its owner.  Only a class of the
+// base names one, so no class outside the base forges a transit of a number.
+static_assert(TransitPart<whole_handle, kind::File, kReadSeek>
+              && std::is_same_v<ReadFileTransit, HandleInTransit<kind::File, kReadSeek, whole_handle>>);
+static_assert(!TransitPart<::handle_outside::OwnerPart, kind::File, kReadSeek>,
+              "a part outside the base names no owner of a transit");
+static_assert(!std::is_default_constructible_v<TransitKey> && !std::is_copy_constructible_v<TransitKey>
+                  && !std::is_move_constructible_v<TransitKey>,
+              "only a transit makes a key, and the key stays in the call that it opens");
 
 // The opened number: one owner, and no number of a caller.
 static_assert(!std::is_copy_constructible_v<OpenedDescriptor<OpenedType::regular_file>>

@@ -5,10 +5,11 @@
 //
 //   Handle<Kind, Rights>     owns one descriptor, and closes it at its end
 //   HandleRef<Kind, Rights>  the borrow of the descriptor of a Handle
-//   HandleInTransit<Kind, Rights>
-//                            a Handle on its way to another thread: depart()
-//                            of a Handle gives it, and its arrive() gives the
-//                            Handle on the other thread
+//   HandleInTransit<Kind, Rights, Part>
+//                            a Handle, or a half of a stream socket, on its way
+//                            to another thread: depart() of the owner gives it,
+//                            and its arrive() gives the owner on the other
+//                            thread
 //   RightSet                 the rights of a handle: a set of named bits
 //   kind::*                  the kinds of a handle: a closed list of tags
 //   mint_duplicate<Fewer>(ctx, borrow)
@@ -77,14 +78,25 @@
 //   thread.  A class that holds a Handle is thread-bound by its members, and it
 //   needs a transit form of its own to move to another thread.
 //
+//   The part of a transit names the class of the owner that departs and
+//   arrives: whole_handle for a Handle, and a part of fixy/os/Socket.h for a
+//   half of a stream socket.  One template carries each of them.  A part is a
+//   class of the base (TransitPart), so no class outside the base names an
+//   owner that forges a transit of a number.  arrive() gives the number back
+//   through from_number_ of the owner, and the end of a transit that did not
+//   arrive ends the number through end_number_ of the owner.  The two doors
+//   take a TransitKey, which only a transit makes, so no other code calls them.  Each argument of a transit is a
+//   tag or a value, so the transfer walk reads it as Sendable with no
+//   statement.
+//
 //   A transit is linear and owes a consume at its end, as a live fixy::Linear
 //   does, so it ends in arrive().  The drop door and end_unrun_body of
 //   foundation/Linear.h refuse it, so a body that holds one and whose thread did
 //   not start runs through call_once on the calling thread.  The end of a
-//   transit that did not arrive closes the number, so no descriptor leaks, and
-//   the rule must-consume reports such an end.  A transit holds no borrow, so
-//   it is SendableOwned, and run_joined, run_beside and each other door that
-//   reads the transfer walk take it.
+//   transit that did not arrive ends the number as its owner ends it, so no
+//   descriptor leaks, and the rule must-consume reports such an end.  A transit
+//   holds no borrow, so it is SendableOwned, and run_joined, run_beside and each
+//   other door that reads the transfer walk take it.
 //
 // Duplicate
 //   mint_duplicate gives a second number to the open file of a borrow, and a
@@ -384,9 +396,44 @@ template <class Kind, RightSet Rights>
     requires HandleKind<Kind>
 class HandleRef;
 
-template <class Kind, RightSet Rights>
-    requires HandleKind<Kind>
+// The part of a transit that carries a whole Handle (the transit).  A part
+// names the class of the owner that departs and arrives.  The parts of the two
+// halves of a stream socket are in fixy/os/Socket.h.
+struct whole_handle final {
+    template <class Kind, RightSet Rights>
+    using owner = Handle<Kind, Rights>;
+};
+
+// A part of a transit: a class of the base that names the class of its owner.
+// A part of a class outside the base could name an owner that forges a
+// transit of a number that a Handle owns, so the gate trusts only the base.
+template <class Part, class Kind, RightSet Rights>
+concept TransitPart =
+    ::foundation::reflect::is_class_of_the_base_(^^Part) && requires { typename Part::template owner<Kind, Rights>; };
+
+template <class Kind, RightSet Rights, class Part = whole_handle>
+    requires HandleKind<Kind> && TransitPart<Part, Kind, Rights>
 class HandleInTransit;
+
+// The key of a transit (the transit).  Only a transit makes one, and no code
+// copies or moves it.  An owner takes its number back and ends a number that
+// did not arrive only through a door that takes the key, so the owner need not
+// befriend the transit, and an owner of another header can depart.
+class TransitKey final {
+    // No start of a lifetime over bytes builds a key (foundation/ByteSeal.h).
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr TransitKey() noexcept = default;
+
+    template <class Kind, RightSet Rights, class Part>
+        requires HandleKind<Kind> && TransitPart<Part, Kind, Rights>
+    friend class HandleInTransit;
+
+public:
+    TransitKey(TransitKey const&) = delete("a key of a transit stays in the call of the transit that made it");
+    TransitKey&
+    operator=(TransitKey const&) = delete("a key of a transit stays in the call of the transit that made it");
+};
 
 namespace detail {
 
@@ -396,7 +443,9 @@ namespace detail {
 // ebadf and makes no system call.  owned_descriptor_of gives the descriptor
 // of a Handle to its owner, which keeps the Handle alive, so it reads no
 // generation.  stamp_of gives the stamp of a borrow, for a ForeignSocketRef
-// of the same socket.
+// of the same socket.  borrow_of_owned_number gives the borrow of a number
+// that an owner of the base other than a Handle holds, such as a half of a
+// stream socket of fixy/os/Socket.h.
 struct HandleDoor final : ::foundation::NoObject<HandleDoor> {
     template <class Kind, RightSet Rights>
     [[nodiscard]] static int descriptor_of(HandleRef<Kind, Rights> borrow) noexcept;
@@ -406,6 +455,9 @@ struct HandleDoor final : ::foundation::NoObject<HandleDoor> {
 
     template <class Kind, RightSet Rights>
     [[nodiscard]] static ::fixy::fs::DescriptorStamp stamp_of(HandleRef<Kind, Rights> borrow) noexcept;
+
+    template <class Kind, RightSet Rights>
+    [[nodiscard]] static HandleRef<Kind, Rights> borrow_of_owned_number(int descriptor) noexcept;
 };
 
 }  // namespace detail
@@ -471,6 +523,11 @@ template <class Kind, RightSet Rights>
     return borrow.stamp_;
 }
 
+template <class Kind, RightSet Rights>
+[[nodiscard]] HandleRef<Kind, Rights> detail::HandleDoor::borrow_of_owned_number(int descriptor) noexcept {
+    return HandleRef<Kind, Rights>{::fixy::fs::DescriptorStamp::read_now(descriptor)};
+}
+
 // Appends the number of the descriptor of borrow to path, in decimal, for a
 // path under /proc/self/fd or /dev/fd that names the open file of the
 // descriptor.  A borrow that is not open gives ebadf, and a number that does
@@ -508,7 +565,6 @@ class [[nodiscard]][[= ::foundation::transfer::thread_bound{}]] Handle final {
     friend class ::fixy::perf::PerfEventDoor;
     friend class DuplicateDoor;
     friend struct detail::HandleDoor;
-    friend class HandleInTransit<Kind, Rights>;
 
 public:
     using kind_type = Kind;
@@ -570,6 +626,16 @@ public:
         return HandleInTransit<Kind, Rights>{descriptor};
     }
 
+    // The Handle of a number that a transit carried (the transit).  The
+    // generation of the number stays.  Only a transit has the key.
+    [[nodiscard]] static Handle from_number_(TransitKey, int descriptor) noexcept { return adopt_number_(descriptor); }
+
+    // The end of a number that a transit carried and that did not arrive: the
+    // close of the descriptor.  Only a transit has the key.
+    static void end_number_(TransitKey, int descriptor) noexcept {
+        if (descriptor >= 0) ::fixy::fs::detail::close_owned_descriptor_(descriptor);
+    }
+
 private:
     // The generation advances before the close (close_owned_descriptor_ of
     // fixy/os/Fd.h), so no open of another thread takes the number first.
@@ -579,6 +645,15 @@ private:
             descriptor_ = -1;
         }
     }
+
+    // The Handle of a number that the base owns already, for the transit and
+    // for the join of the halves of a stream socket (fixy/os/Socket.h).  The
+    // generation of the number stays.
+    [[nodiscard]] static Handle adopt_number_(int descriptor) noexcept {
+        Handle handle{};
+        handle.descriptor_ = descriptor;
+        return handle;
+    }
 };
 
 template <class Kind, RightSet Rights>
@@ -586,13 +661,17 @@ template <class Kind, RightSet Rights>
     return owner.descriptor_;
 }
 
-// A Handle on its way to another thread (the transit): the number of its
-// descriptor, which depart() of the Handle made stale for each borrow of the
-// sending thread.  Its one consumer is arrive().
-template <class Kind, RightSet Rights>
-    requires HandleKind<Kind>
+// A Handle, or a half of a stream socket, on its way to another thread (the
+// transit): the number of its descriptor, which depart() of the owner made
+// stale for each borrow of the sending thread.  The part names the class of
+// the owner.  Its one consumer is arrive().
+template <class Kind, RightSet Rights, class Part>
+    requires HandleKind<Kind> && TransitPart<Part, Kind, Rights>
 class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::owes_consume{}]]
     HandleInTransit final {
+    // The class of the owner that departs and arrives.
+    using owner_type = typename Part::template owner<Kind, Rights>;
+
     // The number of the descriptor, or -1 for the transit of an empty Handle
     // and for a transit that a move emptied.
     int descriptor_ = -1;
@@ -600,13 +679,14 @@ class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear:
     // (foundation/ByteSeal.h).
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    // The one door is depart() of a Handle with the same kind and rights.
+    // The one door is depart() of the owner.
     explicit HandleInTransit(int descriptor) noexcept : descriptor_{descriptor} {}
 
-    friend class Handle<Kind, Rights>;
+    friend owner_type;
 
 public:
     using kind_type = Kind;
+    using part_type = Part;
     static constexpr RightSet rights = Rights;
 
     HandleInTransit(HandleInTransit const&) =
@@ -619,21 +699,20 @@ public:
     HandleInTransit& operator=(HandleInTransit&&) =
         delete("a transit ends in its arrive: an assignment would end the transit that it replaces");
 
-    // The end of a transit that did not arrive closes the descriptor, so no
-    // descriptor leaks.  The rule must-consume reports such an end.
-    ~HandleInTransit() noexcept {
-        if (descriptor_ >= 0) ::fixy::fs::detail::close_owned_descriptor_(descriptor_);
-    }
+    // The end of a transit that did not arrive ends the number as the owner
+    // ends it, so no descriptor leaks: a Handle and a read half close it, and
+    // a write half shuts down its direction first.  The rule must-consume
+    // reports such an end.
+    ~HandleInTransit() noexcept { owner_type::end_number_(TransitKey{}, descriptor_); }
 
-    // The Handle of the descriptor, on the calling thread.  It keeps the
+    // The owner of the descriptor, on the calling thread.  It keeps the
     // generation that depart() gave: the transit gives no borrow, so no stamp
     // of that generation exists before this call.  The transit of an empty
     // Handle gives an empty Handle.
-    [[nodiscard]] Handle<Kind, Rights> arrive() && noexcept {
-        Handle<Kind, Rights> handle{};
-        handle.descriptor_ = descriptor_;
+    [[nodiscard]] owner_type arrive() && noexcept {
+        int const descriptor = descriptor_;
         descriptor_ = -1;
-        return handle;
+        return owner_type::from_number_(TransitKey{}, descriptor);
     }
 };
 

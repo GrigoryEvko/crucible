@@ -1932,6 +1932,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::os::Handle, kDescriptor},
     {^^::fixy::os::HandleRef, kDescriptor},
     {^^::fixy::os::HandleInTransit, kDescriptor},
+    {^^::fixy::os::TransitKey, kPasskey},
+    {^^::fixy::os::whole_handle,
+     "the part of a transit that names a Handle as its owner: it is empty, and it is never a value"},
     {^^::fixy::os::message_socket,
      "the annotation of the tag of a socket kind that keeps one message for each call: it is empty and is never a "
      "value in a signature"},
