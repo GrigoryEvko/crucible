@@ -1908,6 +1908,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::io::IoRingDoor, kDescriptorDoor},
     {^^::fixy::os::Handle, kDescriptor},
     {^^::fixy::os::HandleRef, kDescriptor},
+    {^^::fixy::os::HandleInTransit, kDescriptor},
     {^^::fixy::os::DuplicateDoor, kDescriptorDoor},
     {^^::fixy::os::Args, "the arguments of main: a view of argv, which carries no claim to fold"},
     {^^::fixy::os::ArgsCursor, "the cursor of the arguments of main, which carries no claim to fold"},

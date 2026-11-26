@@ -139,11 +139,11 @@ using SocketIdentity = ::foundation::core::Id<struct SocketIdentityTag, std::uin
 //   its open, at its close and at its release to an ABI.  So a ref that
 //   outlives its Handle is not current, and each door gives ebadf for it and
 //   makes no call on the number, which the kernel can have given to a later
-//   descriptor.  abi_descriptor() gives -1 for such a ref.  The two routes
-//   that the stamp leaves open stay open here: a close of a Handle that moved
-//   to a second thread while a door of the first thread makes its call, and a
-//   foreign socket that a C library closes and a C library opens again on its
-//   number with no Handle between.  A number at or past
+//   descriptor.  abi_descriptor() gives -1 for such a ref.  The departure of a
+//   Handle to another thread (the transit of fixy/os/Handle.h) makes each ref
+//   of its number stale too.  The route that the stamp leaves open stays open
+//   here: a foreign socket that a C library closes and a C library opens again
+//   on its number with no Handle between.  A number at or past
 //   descriptor_generation_slots has no generation, so its ref is never
 //   current, and each door refuses it.  The default ref is empty, and a door
 //   gives ebadf for it.

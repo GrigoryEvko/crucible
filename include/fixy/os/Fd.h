@@ -133,17 +133,16 @@ struct OpenedDescriptorDoor;
 //   open all fail closed.  A move of a Handle keeps the generation, so a
 //   stamp of a Handle that moved stays current while the descriptor is open.
 //
-//   Both borrows stay on one thread (HandleRef and ForeignSocketRef), so a
-//   door that checks a stamp and then makes its call has no close of the same
-//   thread between the two.  A table of another thread holds a Handle of its
-//   own from mint_duplicate of fixy/os/Handle.h, and no borrow.
+//   Both borrows stay on one thread (HandleRef and ForeignSocketRef), and so
+//   does the Handle, so a door that checks a stamp and then makes its call has
+//   no close of the Handle between the two.  A Handle goes to another thread
+//   only through the transit of fixy/os/Handle.h, which advances the generation
+//   on the first thread before the move.  A table of another thread holds a
+//   Handle of its own from mint_duplicate of fixy/os/Handle.h, and no borrow.
 //
-//   Two routes stay open.  A Handle that moves to a second thread, while a
-//   borrow of it stays on the first one, can close there between the check of
-//   the generation and the call of the door.  The call then acts on the number,
-//   which the kernel can give to a later open in that time.  A C library that
-//   closes a number that a Handle owns changes no generation, so a later open
-//   of the number by the C library keeps each stamp current.
+//   One route stays open.  A C library that closes a number that a Handle owns
+//   changes no generation, so a later open of the number by the C library keeps
+//   each stamp current.
 class DescriptorStamp final {
     // The number of the descriptor, or -1 for the empty stamp.
     int number_ = -1;

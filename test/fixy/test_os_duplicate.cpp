@@ -8,11 +8,11 @@
 //
 // In the thread case, one thread holds a duplicate of a socket and reads its
 // congestion control, while the other thread closes the first handle and opens
-// later sockets, which take its number again and again.  Each read of the
-// duplicate gives the name of the first socket, and none gives ebadf.  With a
-// borrow of the first handle in place of the duplicate, the first thread could
-// act on a later socket, and the borrow stays on its thread, so that form does
-// not compile.
+// later sockets, which take its number again and again.  Each handle goes to
+// its thread through a transit.  Each read of the duplicate gives the name of
+// the first socket, and none gives ebadf.  With a borrow of the first handle in
+// place of the duplicate, the first thread could act on a later socket, and the
+// borrow stays on its thread, so that form does not compile.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -23,6 +23,7 @@
 #include <fixy/os/Path.h>
 #include <fixy/os/Socket.h>
 #include <fixy/os/ThreadTasks.h>
+#include <foundation/Linear.h>
 #include <foundation/permissions/Permission.h>
 
 #include <cstddef>
@@ -171,24 +172,39 @@ void test_a_duplicate_of_a_second_thread_keeps_its_socket() {
     TcpSocket second = duplicate_of(fixy::os::mint_duplicate<fixy::net::socket_rights>(ctx, first.ref()));
     CRUCIBLE_TEST_ASSERT(kTest, second.is_open());
     foundation::core::Atomic<std::uint32_t> wrong{0};
-    auto reader = [socket = std::move(second), &wrong]() noexcept {
+    // Each socket goes to its thread through a transit (fixy/os/Handle.h).
+    auto reader = [moving = std::move(second).depart(), &wrong]() mutable noexcept {
+        TcpSocket const socket = std::move(moving).arrive();
         IoBlockCtx const reader_ctx{eff::testing::test()};
         for (std::uint32_t turn = 0; turn < kTurns; ++turn) {
             auto const name = congestion_of(reader_ctx, socket);
             if (!(name.view() == fixy::TextView{"reno"})) static_cast<void>(wrong.fetch_add_acq_rel(1));
         }
     };
-    auto closer = [socket = std::move(first)]() mutable noexcept {
+    auto closer = [moving = std::move(first).depart()]() mutable noexcept {
+        TcpSocket socket = std::move(moving).arrive();
         IoBlockCtx const closer_ctx{eff::testing::test()};
         for (std::uint32_t turn = 0; turn < kTurns; ++turn) {
             socket = TcpSocket{};
             socket = handle_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(closer_ctx));
         }
     };
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         fixy::thread::run_joined(fixy::BgLoadCtx{eff::testing::bg()}, fixy::thread::ThreadOptions{},
-                                                  std::move(reader), std::move(closer))
-                             .is_ok());
+    // A refused start gives the two bodies back with their transits, and the
+    // test runs them on this thread, so each transit arrives.  The once door
+    // takes a local that the frame gives up.
+    using Refused = fixy::thread::RefusedStart<decltype(reader), decltype(closer)>;
+    bool const is_started = fixy::thread::run_joined(fixy::BgLoadCtx{eff::testing::bg()}, fixy::thread::ThreadOptions{},
+                                                     std::move(reader), std::move(closer))
+                                .match([](foundation::core::Unit) noexcept { return true; },
+                                       [](Refused refusal) noexcept {
+                                           auto [unrun_reader, unrun_closer] = std::move(refusal.parts);
+                                           auto reader_here = std::move(unrun_reader);
+                                           auto closer_here = std::move(unrun_closer);
+                                           foundation::linear::call_once(std::move(reader_here));
+                                           foundation::linear::call_once(std::move(closer_here));
+                                           return false;
+                                       });
+    CRUCIBLE_TEST_ASSERT(kTest, is_started);
     CRUCIBLE_TEST_ASSERT(kTest, wrong.load_acquire() == 0);
     fixy::check::pass(kTest, "  test_a_duplicate_of_a_second_thread_keeps_its_socket: PASSED\n");
 }

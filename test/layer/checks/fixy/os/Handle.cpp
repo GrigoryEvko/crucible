@@ -4,6 +4,7 @@
 
 #include <fixy/os/AtomPack.h>
 #include <fixy/os/Fd.h>
+#include <foundation/Linear.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
@@ -12,6 +13,7 @@
 #include <cstdint>
 #include <meta>
 #include <type_traits>
+#include <utility>
 
 namespace fixy::os::detail::handle_invariants {
 
@@ -81,6 +83,33 @@ static_assert(!::foundation::transfer::Sendable<ReadFileRef> && !::foundation::t
                   && !::foundation::transfer::SendableBeside<ReadFileRef>
                   && !::foundation::transfer::SendableOwned<ReadFileRef>,
               "a borrow of a descriptor stays on its thread, so no door of a second thread acts on its number");
+
+// The handle stays on its thread, and its transit moves it to another one.
+using ReadFileTransit = HandleInTransit<kind::File, kReadSeek>;
+static_assert(!::foundation::transfer::Sendable<ReadFile> && !::foundation::transfer::SendableBeside<ReadFile>
+                  && !::foundation::transfer::SendableOwned<ReadFile>,
+              "a handle stays on its thread, so no other thread closes it while a borrow of this thread is in a door");
+static_assert(::foundation::transfer::Shareable<ReadFile> && !::foundation::transfer::Synchronized<ReadFile>,
+              "a joined body can read a handle while its owner waits, and no two threads write it");
+static_assert(::foundation::transfer::Sendable<ReadFileTransit>
+                  && ::foundation::transfer::SendableBeside<ReadFileTransit>
+                  && ::foundation::transfer::SendableOwned<ReadFileTransit>,
+              "a transit holds no borrow, so each door of a thread and of a channel takes it");
+static_assert(::foundation::linear::is_linear_v<ReadFileTransit>
+                  && ::foundation::linear::owes_consume_at_end(^^ReadFileTransit),
+              "a transit ends in its arrive, and no drop door ends it");
+static_assert(!std::is_copy_constructible_v<ReadFileTransit> && !std::is_move_assignable_v<ReadFileTransit>
+              && std::is_nothrow_move_constructible_v<ReadFileTransit>);
+static_assert(!std::is_constructible_v<ReadFileTransit, int>, "a transit comes only from the departure of a handle");
+static_assert(sizeof(ReadFileTransit) == sizeof(int), "a transit is the descriptor and no more");
+static_assert(std::is_same_v<decltype(std::declval<ReadFile&&>().depart()), ReadFileTransit>
+              && std::is_same_v<decltype(std::declval<ReadFileTransit&&>().arrive()), ReadFile>);
+template <class Owner>
+concept DepartsNamed = requires(Owner& owner) { owner.depart(); };
+template <class Transit>
+concept ArrivesNamed = requires(Transit& transit) { transit.arrive(); };
+static_assert(!DepartsNamed<ReadFile> && !ArrivesNamed<ReadFileTransit>,
+              "a named handle departs and a named transit arrives only through std::move");
 
 // The opened number: one owner, and no number of a caller.
 static_assert(!std::is_copy_constructible_v<OpenedDescriptor<OpenedType::regular_file>>

@@ -35,10 +35,12 @@ namespace {
 
 // One TCP socket for each number below 256 that a case names.  The bank
 // opens the socket of a number at its first use and keeps it open to the end
-// of the process, so the pool never holds the shared ref of a closed socket.
+// of the thread, so the pool never holds the shared ref of a closed socket.
 // Two numbers give two sockets, and one number gives one socket each time.
+// Only the main thread calls this function, and a handle stays on its thread
+// (fixy/os/Handle.h), so the bank is an object of the thread.
 [[nodiscard]] cntp::SocketFd test_socket(int number) {
-    static ::foundation::core::FixedArray<crucible::test::TcpSocket, 256> bank{};
+    thread_local ::foundation::core::FixedArray<crucible::test::TcpSocket, 256> bank{};
     ::fixy::Index<256> const position =
         ::fixy::Index<256>::check(static_cast<std::size_t>(number)).expect("the number of a test socket is below 256");
     if (!bank.at(position).is_open()) {

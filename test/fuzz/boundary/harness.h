@@ -180,14 +180,16 @@ template <class E>
     return ::fixy::enum_from<E>(static_cast<std::underlying_type_t<E>>(value)).is_some();
 }
 
-// One directory for each process under the temporary directory of the host
-// (the temporary directory of fixy/os/Fs.h).  A harness that needs files on
-// disk writes them there and empties the directory at the start of each
-// input, so a persistent-mode loop does not see the files of the input
-// before.  A normal exit removes the directory.  An abort leaves it, next to
-// the crash that the fuzzer keeps.
+// One directory for each thread that runs inputs, under the temporary
+// directory of the host (the temporary directory of fixy/os/Fs.h).  A harness
+// runs its inputs on one thread, and a handle stays on its thread
+// (fixy/os/Handle.h), so the directory is an object of the thread.  A harness
+// that needs files on disk writes them there and empties the directory at the
+// start of each input, so a persistent-mode loop does not see the files of the
+// input before.  A normal exit removes the directory.  An abort leaves it,
+// next to the crash that the fuzzer keeps.
 [[nodiscard]] inline ::fixy::fs::TemporaryDirectory const& scratch_dir() noexcept {
-    static ::fixy::fs::TemporaryDirectory const directory =
+    thread_local ::fixy::fs::TemporaryDirectory const directory =
         std::move(::fixy::fs::mint_temporary_directory(kHarnessCtx).expect("the harness makes its scratch directory"))
             .consume();
     return directory;

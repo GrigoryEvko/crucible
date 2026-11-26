@@ -5,6 +5,10 @@
 //
 //   Handle<Kind, Rights>     owns one descriptor, and closes it at its end
 //   HandleRef<Kind, Rights>  the borrow of the descriptor of a Handle
+//   HandleInTransit<Kind, Rights>
+//                            a Handle on its way to another thread: depart()
+//                            of a Handle gives it, and its arrive() gives the
+//                            Handle on the other thread
 //   RightSet                 the rights of a handle: a set of named bits
 //   kind::*                  the kinds of a handle: a closed list of tags
 //   mint_duplicate<Fewer>(ctx, borrow)
@@ -42,9 +46,9 @@
 //   an ABI, so a borrow that outlives its Handle, or whose Handle a move
 //   assignment closed, is not current.  A door then gives ebadf and makes no
 //   call on the number, which the kernel can have given to a later open.  A
-//   move of a Handle keeps the generation, so a borrow taken before the move
-//   stays current while the descriptor is open.  The borrow of an empty
-//   Handle, such as one that a move emptied, holds -1.
+//   move of a Handle on its thread keeps the generation, so a borrow taken
+//   before the move stays current while the descriptor is open.  The borrow of
+//   an empty Handle, such as one that a move emptied, holds -1.
 //
 //   The borrow states refers{} of foundation/Transfer.h over its kind, so the
 //   rule view-escape refuses a return or a store of the borrow of a local
@@ -55,9 +59,32 @@
 //   closes it, so the borrow stays on its thread.  A table that stores a
 //   socket holds a ForeignSocketRef of fixy/os/Socket.h, which holds the same
 //   stamp and is no borrow of a frame, and which stays on its thread too.  A
-//   second thread that uses the open file holds a duplicate.
+//   second thread that uses the open file holds a duplicate, or the Handle
+//   itself through a transit.
 //   restrict<Fewer>() gives a borrow with fewer rights, and no form gives
 //   more rights.  A borrow of a temporary Handle does not compile.
+//
+// Transit
+//   A Handle states thread_bound{} too, so no door of the base moves it to
+//   another thread, and no object of static storage holds it.  Else the other
+//   thread could close it while a door of the first thread is between the check
+//   of a borrow and its call.  A move to another thread takes two steps.
+//   depart() on the thread of the Handle advances the generation of the number
+//   and gives a HandleInTransit, which holds the number.  arrive() on the other
+//   thread gives the Handle.  Each borrow of the first thread is stale from
+//   depart() on, so its door gives ebadf and makes no call.  No door of the
+//   first thread is in a call at that time, because a borrow stays on its
+//   thread.  A class that holds a Handle is thread-bound by its members, and it
+//   needs a transit form of its own to move to another thread.
+//
+//   A transit is linear and owes a consume at its end, as a live fixy::Linear
+//   does, so it ends in arrive().  The drop door and end_unrun_body of
+//   foundation/Linear.h refuse it, so a body that holds one and whose thread did
+//   not start runs through call_once on the calling thread.  The end of a
+//   transit that did not arrive closes the number, so no descriptor leaks, and
+//   the rule must-consume reports such an end.  A transit holds no borrow, so
+//   it is SendableOwned, and run_joined, run_beside and each other door that
+//   reads the transfer walk take it.
 //
 // Duplicate
 //   mint_duplicate gives a second number to the open file of a borrow, and a
@@ -69,11 +96,11 @@
 //   connection of a socket ends for its peer when the last handle of the socket
 //   closes.  The rights of the duplicate are rights that the borrow holds.
 //
-//   A duplicate is the form of a second thread.  A HandleRef and a
-//   ForeignSocketRef stay on their thread, because a door of a second thread
-//   can act on the number while the thread of the Handle closes it.  A second
-//   thread that uses the open file holds a duplicate of its own, so no such
-//   time exists.
+//   A duplicate is the form of a second thread that uses the open file while
+//   the first thread keeps its Handle.  A HandleRef and a ForeignSocketRef stay
+//   on their thread, because a door of a second thread can act on the number
+//   while the thread of the Handle closes it.  A second thread that uses the
+//   open file holds a duplicate of its own, so no such time exists.
 //
 //   The mint can wait, because the growth of the table of the numbers of a
 //   process with threads waits for each reader of the old table.
@@ -127,6 +154,8 @@
 //   each new use keeps that limit.  Each other caller uses a door of the base.
 
 #include <fixy/os/Fd.h>
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
@@ -314,6 +343,10 @@ template <class Kind, RightSet Rights>
     requires HandleKind<Kind>
 class HandleRef;
 
+template <class Kind, RightSet Rights>
+    requires HandleKind<Kind>
+class HandleInTransit;
+
 namespace detail {
 
 // The door of the calls of the base to the descriptor of a borrow.  No
@@ -412,10 +445,11 @@ append_descriptor_number(::foundation::os::PathText<Capacity>& path, HandleRef<K
 }
 
 // Exclusive ownership of one descriptor of the kind Kind with the rights
-// Rights, closed at the end of the Handle.
+// Rights, closed at the end of the Handle.  The Handle stays on its thread
+// (thread_bound{}), and depart() moves it to another thread (the transit).
 template <class Kind, RightSet Rights>
     requires HandleKind<Kind>
-class [[nodiscard]] Handle final {
+class [[nodiscard]][[= ::foundation::transfer::thread_bound{}]] Handle final {
     int descriptor_ = -1;
 
     // The open gave the number to this Handle, so the generation of the
@@ -433,6 +467,7 @@ class [[nodiscard]] Handle final {
     friend class ::fixy::perf::PerfEventDoor;
     friend class DuplicateDoor;
     friend struct detail::HandleDoor;
+    friend class HandleInTransit<Kind, Rights>;
 
 public:
     using kind_type = Kind;
@@ -480,6 +515,20 @@ public:
         return std::exchange(descriptor_, -1);
     }
 
+    // Gives the descriptor to a transit for another thread, and leaves this
+    // Handle empty (the transit).  The generation of the number advances
+    // first, on this thread, so each borrow and each ForeignSocketRef of the
+    // number is stale from then on.  A door that reads such a borrow after the
+    // departure gives ebadf at run time and makes no call.  The plugin does not
+    // refuse that read at compile time yet.  An empty Handle gives an empty
+    // transit.  Complexity: one atomic step.
+    [[nodiscard]] HandleInTransit<Kind, Rights> depart() && noexcept {
+        ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
+        int const descriptor = descriptor_;
+        descriptor_ = -1;
+        return HandleInTransit<Kind, Rights>{descriptor};
+    }
+
 private:
     // The generation advances before the close (close_owned_descriptor_ of
     // fixy/os/Fd.h), so no open of another thread takes the number first.
@@ -495,6 +544,57 @@ template <class Kind, RightSet Rights>
 [[nodiscard]] int detail::HandleDoor::owned_descriptor_of(Handle<Kind, Rights> const& owner) noexcept {
     return owner.descriptor_;
 }
+
+// A Handle on its way to another thread (the transit): the number of its
+// descriptor, which depart() of the Handle made stale for each borrow of the
+// sending thread.  Its one consumer is arrive().
+template <class Kind, RightSet Rights>
+    requires HandleKind<Kind>
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::owes_consume{}]]
+    HandleInTransit final {
+    // The number of the descriptor, or -1 for the transit of an empty Handle
+    // and for a transit that a move emptied.
+    int descriptor_ = -1;
+    // No start of a lifetime over bytes builds a transit
+    // (foundation/ByteSeal.h).
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    // The one door is depart() of a Handle with the same kind and rights.
+    explicit HandleInTransit(int descriptor) noexcept : descriptor_{descriptor} {}
+
+    friend class Handle<Kind, Rights>;
+
+public:
+    using kind_type = Kind;
+    static constexpr RightSet rights = Rights;
+
+    HandleInTransit(HandleInTransit const&) =
+        delete("a transit carries one descriptor: a copy would give it to two Handles");
+    HandleInTransit&
+    operator=(HandleInTransit const&) = delete("a transit carries one descriptor: a copy would give it to two Handles");
+
+    // A move takes the descriptor, and the source holds none.
+    HandleInTransit(HandleInTransit&& other) noexcept : descriptor_{other.descriptor_} { other.descriptor_ = -1; }
+    HandleInTransit& operator=(HandleInTransit&&) =
+        delete("a transit ends in its arrive: an assignment would end the transit that it replaces");
+
+    // The end of a transit that did not arrive closes the descriptor, so no
+    // descriptor leaks.  The rule must-consume reports such an end.
+    ~HandleInTransit() noexcept {
+        if (descriptor_ >= 0) ::fixy::fs::detail::close_owned_descriptor_(descriptor_);
+    }
+
+    // The Handle of the descriptor, on the calling thread.  It keeps the
+    // generation that depart() gave: the transit gives no borrow, so no stamp
+    // of that generation exists before this call.  The transit of an empty
+    // Handle gives an empty Handle.
+    [[nodiscard]] Handle<Kind, Rights> arrive() && noexcept {
+        Handle<Kind, Rights> handle{};
+        handle.descriptor_ = descriptor_;
+        descriptor_ = -1;
+        return handle;
+    }
+};
 
 // The gate of a duplicate: the context admits a call that can wait, the borrow
 // holds the rights Fewer, and the kind gives a duplicate with them.
