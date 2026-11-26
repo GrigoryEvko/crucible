@@ -66,6 +66,19 @@ Guard of a self-move
     such compare.  The control move_through_two_names assigns a handle through
     two references, so its hot part must hold one.
 
+Merge of the holder checks
+    A step in caller memory runs the holder check of the tracked policy two
+    times: in the constructor of the next handle, and in the move of that
+    handle into the memory of the caller (fixy/session/Stepping.h).  On the
+    fast path the second check sees the values of the first one, and GCC
+    merges the two when no store stands between them.  A holder compare is a
+    cmp of two 16-bit registers: the slot of a thread has 16 bits
+    (fixy/session/Watch.h).  Each steady loop of send_in_caller_memory must
+    hold no more holder compares than the steady loop of
+    send_on_a_local_handle, which runs one step with one check, and that loop
+    must hold at least one, so the check cannot pass on a loop that it does
+    not read.
+
 Verdict
     send_on_a_local_handle must have at least one steady loop, and no refusal
     in it.  send_through_a_pin must have at least one steady loop, and no
@@ -77,8 +90,10 @@ Verdict
     must have at least one: the control shows that the check sees the count.
     No steady loop holds a compare of an address of a handle, and
     move_through_two_names holds one: the control shows that the check sees
-    the guard.  Exit 0 when the six hold, 1 when one does not hold or the probe
-    does not compile, 2 on a usage error, 77 for a skip.  Complexity: one
+    the guard.  The steady loop of send_in_caller_memory holds no more holder
+    compares than the steady loop of send_on_a_local_handle, which holds at
+    least one.  Exit 0 when the seven hold, 1 when one does not hold or the
+    probe does not compile, 2 on a usage error, 77 for a skip.  Complexity: one
     compile, one disassembly, and a walk linear in the edges of each loop and
     in the instructions of the functions of the count and the guard.
 """
@@ -101,6 +116,11 @@ GUARD_CONTROL = "move_through_two_names"
 # The 64-bit general registers, whose compare can be a compare of two addresses.
 ADDRESS_REGISTERS = frozenset(
     {"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"}
+)
+# The 16-bit general registers, whose compare can be a compare of the slot of a thread (the merge of the holder
+# checks).
+SLOT_REGISTERS = frozenset(
+    {"ax", "bx", "cx", "dx", "si", "di", "bp", "sp", "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w"}
 )
 # The numbers that an add of one and a sub of minus one name, at each width of an operand.
 ONE_WORDS = frozenset({1})
@@ -290,6 +310,27 @@ def loop_address_compares(code) -> list[str]:
     return found
 
 
+def holder_compares(code) -> int:
+    """Return the most holder compares that one steady loop of a function holds (the merge of the holder checks).
+
+    A holder compare is a cmp of two 16-bit registers.  Complexity: linear in the instructions of each loop.
+    """
+    from assay.guard.engines.elf import codegen_shapes as shapes
+    from assay.readers import objdump
+
+    flow = shapes.flow_of(code)
+    most = 0
+    for body in steady_loops(code):
+        count = 0
+        for place in body:
+            item = flow.parts[0][place[1]]
+            names = [operand.name for operand in item.operands if isinstance(operand, objdump.Register)]
+            if item.mnemonic == "cmp" and len(names) == 2 == len(item.operands) and set(names) <= SLOT_REGISTERS:
+                count += 1
+        most = max(most, count)
+    return most
+
+
 def hot_address_compares(code) -> list[str]:
     """Return each compare of an address of a handle in the hot part of a function."""
     from assay.guard.engines.elf import codegen_shapes as shapes
@@ -324,6 +365,13 @@ def verdict(codes: Mapping[str, object]) -> list[str]:
                      for item in loop_address_compares(codes[name])]
     if not hot_address_compares(codes[GUARD_CONTROL]):
         problems.append(f"{GUARD_CONTROL} compares no address of a handle, so the check does not see the guard")
+    one_check = holder_compares(codes[LOCAL_FORM])
+    in_memory = holder_compares(codes[CALLER_MEMORY_FORM])
+    if one_check == 0:
+        problems.append(f"{LOCAL_FORM} holds no holder compare, so the check does not see the holder check")
+    elif in_memory > one_check:
+        problems.append(f"{CALLER_MEMORY_FORM}: a steady loop holds {in_memory} holder compares, and the loop of "
+                        f"{LOCAL_FORM} holds {one_check}: the two holder checks of a step are not merged")
     return problems
 
 
@@ -361,7 +409,9 @@ def main(arguments: Sequence[str]) -> int:
           f"of memory.  The control {CALLER_MEMORY_FORM} holds {len(control)} refusal(s).  {OUTSIDE_A_LOOP_FORM} "
           f"adds one to no count, and the control {IN_A_LOOP_FORM} adds one {len(counted)} time(s).  No steady loop "
           f"compares an address of a handle, and the control {GUARD_CONTROL} holds "
-          f"{len(hot_address_compares(codes[GUARD_CONTROL]))} such compare(s).")
+          f"{len(hot_address_compares(codes[GUARD_CONTROL]))} such compare(s).  A steady loop of "
+          f"{CALLER_MEMORY_FORM} holds {holder_compares(codes[CALLER_MEMORY_FORM])} holder compare(s), and the loop "
+          f"of {LOCAL_FORM} holds {holder_compares(codes[LOCAL_FORM])}.")
     return 0
 
 
