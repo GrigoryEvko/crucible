@@ -24,9 +24,10 @@ Facts
 
 Paths
     A directory of a run path holds the paths of one host.  The rule writes
-    {toolchain} for the prefix of the compiler, and {build} for the build
-    directory.  assay.guard.engines.elf.runner.toolchain_prefix() gives the
-    prefix.
+    {toolchain} for the prefix of the compiler, {build} for the build
+    directory, and {source} for the root of the tree.  The longest path
+    gets its word first, so a build directory in the tree gets {build}.
+    assay.guard.engines.elf.runner.toolchain_prefix() gives the prefix.
 
 Run path directories
     The loader reads each directory of DT_RUNPATH and DT_RPATH on each start
@@ -172,9 +173,10 @@ PROPERTY_KINDS = (PIE, RELRO, BIND_NOW, STACK, CONTROL_FLOW, MACHINE)
 # The kinds that a row `kinds` of a plant can name (the plants).
 KINDS = (*FACT_KINDS, *PROPERTY_KINDS)
 KINDS_ROW = "kinds"
-# The words that the paths write for the prefix of the compiler and for the build directory.
+# The words that the paths write for the prefix of the compiler, the build directory and the root of the tree.
 TOOLCHAIN_WORD = "{toolchain}"
 BUILD_WORD = "{build}"
+SOURCE_WORD = "{source}"
 MAP_SUFFIX = ".map"
 RAISE_REASONS = (
     "a new toolchain",
@@ -338,10 +340,16 @@ def group_of(directory: str) -> str:
     return GROUPS.get(directory, TOOLS)
 
 
-def path_words(compiler: str, build_dir: Path) -> tuple[tuple[str, str], ...]:
-    """Return each path that the paths replace with its word, the longest path first."""
+def path_words(compiler: str, build_dir: Path, source_root: Path) -> tuple[tuple[str, str], ...]:
+    """Return each path that the paths replace with its word, the longest path first.
+
+    A run path into the tree, such as the library directory of the Python environment of the vessel, then reads the
+    same in each work tree.
+    """
     prefix = runner.toolchain_prefix(compiler)
     pairs = {
+        str(source_root): SOURCE_WORD,
+        str(source_root.resolve()): SOURCE_WORD,
         str(prefix): TOOLCHAIN_WORD,
         str(prefix.resolve()): TOOLCHAIN_WORD,
         str(build_dir): BUILD_WORD,
@@ -688,7 +696,7 @@ def read_build(context: runner.ElfContext, build_dir: Path) -> Reading:
     unmade = sorted(build_census.shown(item.path, context.root) for item in linked if not item.path.is_file())
     if unmade:
         raise runner.NotApplicable(f"the build has not made {len(unmade)} artifacts, such as {unmade[0]}")
-    words = path_words(context.compiler(), build_dir)
+    words = path_words(context.compiler(), build_dir, Path(context.root))
     kinds = kinds_of(context)
     reader = InputReader(build_dir)
     first: dict[tuple[str, str, str], str] = {}

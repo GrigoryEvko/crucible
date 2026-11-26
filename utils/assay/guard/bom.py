@@ -307,7 +307,7 @@ def link_layer(context: runner.ElfContext, artifact: Artifact, limit: int) -> li
         said = f"a static library has no link.  It has {len(members)} members and {len(groups)} COMDAT groups"
         return [f"4. link facts: {said}"]
     build_dir = context.directory()
-    words = artifacts.path_words(context.compiler(), build_dir)
+    words = artifacts.path_words(context.compiler(), build_dir, Path(context.root))
     with elf.mapped(artifact.path) as member:
         entries = member.dynamic()
     facts = artifacts.member_facts(entries, words)

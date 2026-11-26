@@ -122,11 +122,14 @@ def path_cases(expect: testing.Expect) -> None:
         [artifacts.group_of(name) for name in ("vessel", "bench", "test", "examples", "")]
         == ["vessel", "benches", "tests", "tools", "tools"],
     )
-    words = artifacts.path_words("/opt/gcc/usr/bin/g++", Path("/work/build"))
+    words = artifacts.path_words("/opt/gcc/usr/bin/g++", Path("/work/build"), Path("/work"))
     expect(
-        "a run path gets the word of the toolchain and of the build directory, and a different path stays",
-        [artifacts.shown_path(item, words) for item in ("/opt/gcc/usr/lib64", "/work/build/test", "/usr/lib")]
-        == ["{toolchain}/usr/lib64", "{build}/test", "/usr/lib"],
+        "a run path gets the word of the toolchain, of the build directory and of the tree, and a different path stays",
+        [
+            artifacts.shown_path(item, words)
+            for item in ("/opt/gcc/usr/lib64", "/work/build/test", "/work/.venv/lib/torch", "/usr/lib")
+        ]
+        == ["{toolchain}/usr/lib64", "{build}/test", "{source}/.venv/lib/torch", "/usr/lib"],
     )
 
 
