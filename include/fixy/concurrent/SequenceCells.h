@@ -23,7 +23,10 @@
 //   copy and does not move, so a door takes it only as the value that the
 //   mint gives, and one ticket writes or reads one time.  So the cells state
 //   synchronized{} (foundation/Transfer.h): the turn words are atomic, and
-//   each door that writes a value takes a ticket.
+//   each door that writes a value takes a ticket.  No door keeps a borrow
+//   that a caller gives it, so the cells state synchronized_by_proof{} too
+//   (foundation/core/TypeParts.h), and a body that captures the cells by
+//   reference passes the store check.
 //
 // Turn word
 //   The word of a cell reads 2 * r while the cell is free for the writer of
@@ -91,7 +94,7 @@ enum class CellSpacing : std::uint8_t {
 };
 
 template <RingValue T, std::size_t Capacity, class Owner, CellSpacing Spacing = CellSpacing::line>
-class[[= ::foundation::transfer::synchronized{}]] SequenceCells
+class[[= ::foundation::transfer::synchronized{}]][[= ::foundation::core::synchronized_by_proof{}]] SequenceCells
     : public ::foundation::Pinned<SequenceCells<T, Capacity, Owner, Spacing>> {
     static_assert(Capacity != 0 && (Capacity & (Capacity - 1)) == 0,
                   "fixy::concurrent::SequenceCells<T, Capacity>: Capacity must be a power of two.  The cell of a "

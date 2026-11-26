@@ -65,9 +65,11 @@ struct Observation {
 // The writer end and the readers use the cells on their threads at the same
 // time by design.  Each member is private: the cells are snapshots, and the
 // claim is an atomic cell.  So the class states synchronized{}
-// (foundation/Transfer.h).
+// (foundation/Transfer.h).  No door keeps a borrow that a caller gives it, so
+// it states synchronized_by_proof{} too (foundation/core/TypeParts.h), and a
+// body that captures the sinks by reference passes the store check.
 template <std::size_t Count>
-class[[= ::foundation::transfer::synchronized{}]] ObservationSinks
+class[[= ::foundation::transfer::synchronized{}]][[= ::foundation::core::synchronized_by_proof{}]] ObservationSinks
     : public ::foundation::Pinned<ObservationSinks<Count>> {
 public:
     class Writer;

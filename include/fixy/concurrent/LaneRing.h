@@ -65,7 +65,10 @@
 // Writers
 //   Each part of the ring has its writer in a type, so two threads can write
 //   the ring at the same time, and the ring states synchronized{}
-//   (foundation/Transfer.h).  The producer of a lane writes the producer side
+//   (foundation/Transfer.h).  No door keeps a borrow that a caller gives it,
+//   so the ring states synchronized_by_proof{} too
+//   (foundation/core/TypeParts.h), and a body that captures the ring by
+//   reference passes the store check.  The producer of a lane writes the producer side
 //   of the SPSC ring of its lane: its head, its own copy of the head, its
 //   cache of the tail and the cells that it fills.  Each push takes the
 //   LaneProof of that lane, which only Owner mints, one time for each holder
@@ -192,7 +195,7 @@ template <class Freed, class Index>
 concept LaneFreedCall = std::is_nothrow_invocable_v<Freed&, Index>;
 
 template <RingValue T, std::size_t LaneCapacity, LaneCount Lanes, class Owner>
-class[[= ::foundation::transfer::synchronized{}]] LaneRing
+class[[= ::foundation::transfer::synchronized{}]][[= ::foundation::core::synchronized_by_proof{}]] LaneRing
     : public ::foundation::Pinned<LaneRing<T, LaneCapacity, Lanes, Owner>> {
     using lane_type = detail::LaneOf<T, LaneCapacity, LaneRing>;
 

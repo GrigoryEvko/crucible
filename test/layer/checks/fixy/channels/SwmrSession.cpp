@@ -7,6 +7,7 @@
 #include <fixy/channels/SubstrateSessionBridge.h>
 
 #include <foundation/Linear.h>
+#include <foundation/core/CaptureStore.h>
 
 namespace fixy::channels::swmr_session {
 
@@ -34,6 +35,9 @@ static_assert(SwmrSessionSurface<SmallSession>);
 // token by value, and a reader end binds a const session.
 static_assert(::foundation::transfer::Synchronized<SmallSession>);
 static_assert(!SwmrSessionSurface<int>, "an int is not a channel");
+// The session states synchronized_by_proof{}, and the check of the mark holds
+// on it: no door keeps a borrow that a caller gives it.
+static_assert(::foundation::core::detail::synchronized_by_proof_check_v<SmallSession>);
 
 // The member alias templates name the handles of the frame doors, and two
 // scope brands give two handle types.

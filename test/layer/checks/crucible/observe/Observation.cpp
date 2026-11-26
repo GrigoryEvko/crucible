@@ -2,7 +2,13 @@
 
 #include <crucible/observe/Observation.h>
 
+#include <foundation/core/CaptureStore.h>
+
 namespace crucible::observe {
+
+// The sinks state synchronized_by_proof{}, and the check of the mark holds on
+// them: no door keeps a borrow that a caller gives it.
+static_assert(::foundation::core::detail::synchronized_by_proof_check_v<ObservationSinks<2>>);
 
 static_assert(std::is_trivially_copyable_v<Observation>);
 static_assert(std::is_trivially_destructible_v<Observation>);

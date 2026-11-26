@@ -139,9 +139,11 @@ namespace detail {
 // The check reads a SoleWriterProof as no proof of a door, because the proof
 // carries no authority{}, so the key carries it.  The check reads no template
 // whose constraint needs a make that gives an element, so each template is a
-// door of LiveList, and it reaches the segments only through this class.
+// door of LiveList, and it reaches the segments only through this class.  No
+// door keeps a borrow that a caller gives it, so the class states
+// synchronized_by_proof{} too (foundation/core/TypeParts.h).
 template <class T, class Writer>
-class[[= ::foundation::transfer::synchronized{}]] LiveSegments final {
+class[[= ::foundation::transfer::synchronized{}]][[= synchronized_by_proof{}]] LiveSegments final {
     SegmentList<T> list_{};
 
 public:

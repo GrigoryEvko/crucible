@@ -16,6 +16,7 @@
 
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/TypeParts.h>
 
 #include <atomic>
 #include <cstdint>
@@ -30,8 +31,11 @@ namespace fixy::handle {
 // The count is private, each door reads or writes it atomically, and each
 // write takes the token of the one writer, so two threads can use one cell at
 // the same time, and the class states synchronized{} (foundation/Transfer.h).
+// No door keeps a borrow that a caller gives it, so the cell states
+// synchronized_by_proof{} too (foundation/core/TypeParts.h), and a body that
+// captures the cell by reference passes the store check.
 template <typename Tag, typename WriteAuth>
-class[[= ::foundation::transfer::synchronized{}]] PublishCommitCell {
+class[[= ::foundation::transfer::synchronized{}]][[= ::foundation::core::synchronized_by_proof{}]] PublishCommitCell {
     alignas(64) std::atomic<uint64_t> value_{0};
 
 public:

@@ -240,11 +240,14 @@ public:
 // the same time by design.  The snapshot cell orders each publish and each
 // load, the pool counts the shares of the readers, and the claim keeps one
 // writer.  Each member is private, and only the handles reach them, so the
-// session states synchronized{} (foundation/Transfer.h).
+// session states synchronized{} (foundation/Transfer.h).  No door keeps a
+// borrow that a caller gives it, so it states synchronized_by_proof{} too
+// (foundation/core/TypeParts.h), and a body that captures the session by
+// reference passes the store check.
 template <::fixy::concurrent::SnapshotValue T, typename WriterTag, typename ReaderTag,
           ::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsFreshBrand WriterBrand>
     requires ::foundation::transfer::SendableOwned<T>
-class[[= ::foundation::transfer::synchronized{}]] SwmrSession
+class[[= ::foundation::transfer::synchronized{}]][[= ::foundation::core::synchronized_by_proof{}]] SwmrSession
     : public ::foundation::Pinned<SwmrSession<T, WriterTag, ReaderTag, ReaderBrand, WriterBrand>> {
 public:
     using value_type = T;

@@ -9,6 +9,7 @@
 #include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Grow.h>
 #include <foundation/core/Owner.h>
@@ -216,6 +217,9 @@ static_assert(std::same_as<decltype(*std::declval<Prefix>().last().expect("an el
 // another thread.
 static_assert(::foundation::transfer::Synchronized<Live> && ::foundation::transfer::Shareable<Live>);
 static_assert(::foundation::transfer::Synchronized<LiveSegments<Event, Proof>>);
+// The segments state synchronized_by_proof{}, and the check of the mark holds
+// on them: no door keeps a borrow that a caller gives it.
+static_assert(synchronized_by_proof_check_v<LiveSegments<Event, Proof>>);
 static_assert(::foundation::transfer::SendableBeside<Live&> && ::foundation::transfer::SendableBeside<Live const&>);
 static_assert(::foundation::transfer::Sendable<Live&> && ::foundation::transfer::SendableOwned<Box<Live>>);
 static_assert(::foundation::transfer::Synchronized<LiveList<Atomic<int>, Proof>>);
