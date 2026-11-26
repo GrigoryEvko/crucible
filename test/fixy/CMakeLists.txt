@@ -392,6 +392,14 @@ fixy_neg_compile_test(neg_mutation_wide_monotonic_step_of_integer
 fixy_neg_compile_test(neg_mutation_wide_monotonic_zero_step_bound
   "required for the satisfaction of .WideStepBound<MaxStep>. \\[with MaxStep = 0\\]"
   "the expression .MaxStep >= 1 \\[with MaxStep = 0\\]. evaluated to .false.")
+# A WideStep past its bound is no constant, and a counter takes no step of
+# another bound.
+fixy_neg_compile_test(neg_mutation_wide_step_past_its_bound
+  "in .constexpr. expansion of .fixy::WideStep<4>::check_within_bound\\(5\\)."
+  "call to non-.constexpr. function .void foundation::detail::fail_invariant")
+fixy_neg_compile_test(neg_mutation_wide_step_of_another_bound
+  "neg_mutation_wide_step_of_another_bound\\.cpp:9:[0-9]+: error: cannot convert .WideStep<2>. to .WideStep<1>."
+  "initializing argument 1 of .constexpr void fixy::WideMonotonic<MaxStep>::advance\\(fixy::WideStep<MaxStep>\\).")
 
 # The door of each mutation wrapper refuses a type argument its concept
 # does not admit.  A log takes a pinned element and an element whose move can

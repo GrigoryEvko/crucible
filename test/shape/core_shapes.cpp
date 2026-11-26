@@ -202,6 +202,31 @@ struct NetError8 final {
 // the step, so the bump cannot wrap the count.
 [[gnu::used]] void wide_monotonic_bump(fixy::WideMonotonic<1>& counter) noexcept { counter.bump(); }
 
+// The owner of a counter of one writer that a wide copy publishes, as a ring
+// publishes its head and its tail.  Only the owner makes the proof of the
+// one writer.
+struct WidePublishOwner final {
+    struct Role final {};
+    using proof = fixy::SoleWriterProof<WidePublishOwner, Role>;
+    using counter = fixy::AtomicMonotonic<std::uint64_t, proof>;
+    static constexpr std::uint64_t kMaxStep = 1024;
+
+    static void publish(counter& value, fixy::WideMonotonic<kMaxStep>& own,
+                        fixy::WideStep<kMaxStep> const& step) noexcept {
+        value.advance_sole_writer_by_wide_step(proof{}, own, step);
+    }
+};
+
+// The publish of the one writer by a wide step holds no compare: the type of
+// the copy bounds its start and the type of the step bounds the step.  The
+// copy steps with one add, and the counter takes the copy with a release
+// store.
+[[gnu::used]] void wide_step_publish(WidePublishOwner::counter& counter,
+                                     fixy::WideMonotonic<WidePublishOwner::kMaxStep>& own,
+                                     fixy::WideStep<WidePublishOwner::kMaxStep> const& step) noexcept {
+    WidePublishOwner::publish(counter, own, step);
+}
+
 // A read of a cyclic cursor holds no test of the end, and its step holds one
 // compare: the test of the wrap.
 [[gnu::used]] std::uint64_t
@@ -1946,6 +1971,14 @@ struct RawColumn final {
 // The count that a WideMonotonic replaces is a plain 64-bit integer that the
 // code adds one to.
 [[gnu::used]] void wide_monotonic_bump_raw(std::uint64_t& counter) noexcept { ++counter; }
+
+// The publish that a wide step replaces: the add of the step to the copy of
+// the one writer, and a release store of the copy.
+[[gnu::used]] void wide_step_publish_raw(std::atomic<std::uint64_t>& counter, std::uint64_t& own,
+                                         std::uint64_t const& step) noexcept {
+    own += step;
+    counter.store(own, std::memory_order_release);
+}
 
 // The loop that a cyclic cursor replaces: three pointers, a read, a step and
 // the wrap to the first element at the end.

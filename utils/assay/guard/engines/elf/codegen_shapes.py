@@ -510,6 +510,11 @@ PROBES: tuple[Probe, ...] = (
         "the bump of a WideMonotonic is the add of one to a plain 64-bit integer, with no compare",
     ),
     Probe(
+        "wide_step_publish",
+        "the publish of the one writer by a wide step is the add of the step to the copy and the release store of "
+        "the copy, with no compare",
+    ),
+    Probe(
         "cyclic_cursor_read_step",
         "a read and a step of a CyclicCursor are the raw read, the step and the one compare of the wrap, with no test "
         "of the end",
