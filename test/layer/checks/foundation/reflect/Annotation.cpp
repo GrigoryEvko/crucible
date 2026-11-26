@@ -47,6 +47,18 @@ static_assert(carries_annotation(^^marked_function, ^^OtherMark)
               && !carries_annotation(^^marked_function, ^^FirstMark));
 static_assert(carries_annotation(^^marked_variable, ^^SecondMark));
 
+// The annotations of one type: their count, and the first one, whose value a
+// read gives back.
+struct CountMark final {
+    int value = 0;
+};
+struct[[= CountMark{.value = 3}]][[= SecondMark{}]][[= CountMark{.value = 5}]] MarkedWithValues {};
+static_assert(typed_annotations_of(^^Plain, ^^CountMark).count == 0);
+static_assert(typed_annotations_of(^^Plain, ^^CountMark).first == std::meta::info{});
+static_assert(typed_annotations_of(^^MarkedWithValues, ^^CountMark).count == 2);
+static_assert(std::meta::extract<CountMark>(typed_annotations_of(^^MarkedWithValues, ^^CountMark).first).value == 3);
+static_assert(typed_annotations_of(^^MarkedWithValues, ^^SecondMark).count == 1);
+
 }  // namespace detail::annotation_checks
 
 }  // namespace foundation::reflect

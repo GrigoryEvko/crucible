@@ -4552,6 +4552,12 @@ foundation_neg_compile_test(neg_transfer_statement_outside_its_seal
   "a_statement_of_transfer_facts_stands_outside_its_seal"
   "foundation::transfer::detail::statement_of"
   "non-constant condition for static assertion")
+# A class that copies from a const object holds a transfer property only when
+# its statement of refers_deep names a const target.  A const first type
+# argument names no target.
+foundation_neg_compile_test(neg_transfer_deep_copy_names_a_writable_target
+  "static assertion failed"
+  "deep_target::WritesOtherTarget<const int, int>")
 # A binding takes the key of its channel, and only the channel builds the
 # key, so code outside the channel binds nothing.
 foundation_neg_compile_test(neg_channel_binding_with_a_key_from_outside_its_channel

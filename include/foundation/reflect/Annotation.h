@@ -63,6 +63,27 @@ struct TemplateAnnotations {
     return found;
 }
 
+// The annotations of an entity whose type is one class, such as the
+// statements of refers_deep of foundation/Transfer.h: their count, and the
+// first one, whose value std::meta::extract reads.
+struct TypedAnnotations {
+    std::size_t count = 0;
+    std::meta::info first{};
+};
+
+// The annotations of the entity whose type is the class.  The read goes
+// through a constant array, so it calls no member of the container that the
+// query gives, as is_open_extension of foundation/OpenExtension.h does.  The
+// entity is complete.  Complexity: linear in the number of annotations of the
+// entity.
+[[nodiscard]] consteval TypedAnnotations typed_annotations_of(std::meta::info entity, std::meta::info annotation_type) {
+    const std::meta::info found =
+        std::meta::reflect_constant_array(std::meta::annotations_of_with_type(entity, annotation_type));
+    const std::meta::info found_type = std::meta::type_of(found);
+    if (!std::meta::is_array_type(found_type) || std::meta::extent(found_type) == 0) return TypedAnnotations{};
+    return TypedAnnotations{std::meta::extent(found_type), *std::meta::extract<std::meta::info const*>(found)};
+}
+
 // The value arguments of the specialization whose type is std::size_t and
 // whose value is below 64, one bit for each value.  Each other argument gives
 // no bit.  Complexity: linear in the number of template arguments.

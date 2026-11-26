@@ -187,6 +187,40 @@ struct[[= refers_deep{}]] CopiesFromConst {
     T& target;
 };
 static_assert(!Shareable<CopiesFromConst<int>> && !Sendable<CopiesFromConst<int>>);
+// A const first type argument names no target, so the class still refuses.
+static_assert(!Shareable<CopiesFromConst<int const>> && !Sendable<CopiesFromConst<int const>>);
+
+// A class whose statement names a const target copies from a const object
+// with no writer of the target.  It answers each property as a class that
+// states refers{} of the same target does, so the copy admits nothing that a
+// reference to const does not.  A named target that is not const refuses, also
+// when the first type argument is const.
+template <class T>
+struct[[= refers{}]] SharedBorrow {
+    T& target;
+};
+template <class T>
+struct[[= refers_deep{^^T}]] CopiesStatedTarget {
+    T& target;
+};
+template <class First, class T>
+struct[[= refers_deep{^^T}]] CopiesOtherTarget {
+    T& target;
+};
+template <class T>
+inline constexpr bool answers_as_shared_borrow_v =
+    Sendable<CopiesStatedTarget<T>> == Sendable<SharedBorrow<T>>
+    && Shareable<CopiesStatedTarget<T>> == Shareable<SharedBorrow<T>>
+    && SendableBeside<CopiesStatedTarget<T>> == SendableBeside<SharedBorrow<T>>
+    && SendableOwned<CopiesStatedTarget<T>> == SendableOwned<SharedBorrow<T>>;
+static_assert(answers_as_shared_borrow_v<int const> && answers_as_shared_borrow_v<MutableAtomic const>);
+static_assert(answers_as_shared_borrow_v<MutableCount const>);
+static_assert(Sendable<CopiesStatedTarget<int const>> && !SendableBeside<CopiesStatedTarget<int const>>);
+static_assert(!Sendable<CopiesStatedTarget<int>> && !Shareable<CopiesStatedTarget<int>>);
+static_assert(!Sendable<CopiesOtherTarget<int const, int>> && !Shareable<CopiesOtherTarget<int const, int>>);
+static_assert(Sendable<CopiesOtherTarget<int, int const>>);
+static_assert(detail::stated_deep_target(^^CopiesOtherTarget<int const, int>) == ^^int);
+static_assert(detail::stated_deep_target(^^CopiesFromConst<int const>) == std::meta::info{});
 
 // A class whose parts are Synchronized is a target that two threads can
 // write.  EndpointClaim holds one Atomic of the base.

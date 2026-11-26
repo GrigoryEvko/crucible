@@ -43,13 +43,18 @@
 //        Sendable.  It is Shareable only when two threads can write that type,
 //        because a reference to const of it can still write the object.  A
 //        class that states refers_deep{}, such as a Link, refers to the object
-//        of its first type argument as a reference does, but a const object of
-//        it gives only const access to the object, and a const object of it
-//        does not copy.  It is Shareable when that type is Shareable.  A copy
-//        of an object that is not const refers to the same object, so for
-//        each other property the class is a reference to the object.  A class
-//        that states refers_deep{} and copies from a const object holds no
-//        property, because the copy would write the object.
+//        of its target as a reference does.  The target is the type that the
+//        statement names, or else the first type argument.  A const object of
+//        the class gives only const access to the object.  It is Shareable
+//        when the target is Shareable.  A copy of an object that is not const
+//        refers to the same object, so for each other property the class is a
+//        reference to the object.  A class that states refers_deep{} and
+//        copies from a const object holds no property, because the copy would
+//        write the object, unless its statement names a const target.  Then
+//        the copy gives only const access too, and the class is a reference
+//        to const of the object, as a class that states refers{} is.  The
+//        first type argument gives no copy from a const object, because a
+//        class can take a const argument that is not its target.
 //     2. A scalar, an enumeration, nullptr_t, a pointer to a function and a
 //        pointer to a member hold each property.  A pointer to a function
 //        names code, which no thread writes.
@@ -150,7 +155,11 @@
 //     refers_unique{} states that the class refers to that object as its one
 //     writer, as a ViewMut does.  refers_deep{} states that the class refers
 //     to that object, and that a const object of the class gives only const
-//     access to it and does not copy, as a Link does.
+//     access to it and does not copy, as a Link does.  refers_deep{^^T}
+//     names the target T in place of the first type argument.  A const
+//     object of a class whose statement names a const target can copy, as a
+//     Link of a const target does.  Two statements on one class, and a named
+//     target that is no type, stop the build.
 //     refers_static{} states that each pointer that the class holds as its
 //     own data member names an object of static storage, as the pointer of a
 //     StaticText does.  No frame holds such an object, so the pointer is no
@@ -406,7 +415,11 @@ template <std::size_t... Positions>
 struct by_arguments final {};
 struct refers final {};
 struct refers_unique final {};
-struct refers_deep final {};
+// The target of the borrow, such as ^^T of a Link<T, Brand>, or a null
+// reflection when the statement names no target (the annotations).
+struct refers_deep final {
+    std::meta::info target{};
+};
 struct refers_static final {};
 struct thread_bound final {};
 struct payload_cell final {};
@@ -629,6 +642,26 @@ private:
 // True when the type states by_arguments, with each form of the positions.
 [[nodiscard]] consteval bool states_by_arguments(std::meta::info type) {
     return ::foundation::reflect::template_annotations_of(type, ^^by_arguments).count != 0;
+}
+
+// Each function below has no constant definition.  A call to one stops the
+// constant evaluation, and the diagnostic names the fault of a statement of
+// refers_deep.
+void a_class_has_two_statements_of_refers_deep() noexcept;
+void a_statement_of_refers_deep_names_no_type() noexcept;
+
+// The target that the statement of refers_deep of the class names, or a null
+// reflection when the statement names none.  Two statements on one class, and
+// a named target that is no type, stop the build.  Complexity: linear in the
+// annotations of the class.
+[[nodiscard]] consteval std::meta::info stated_deep_target(std::meta::info type) {
+    const ::foundation::reflect::TypedAnnotations statements =
+        ::foundation::reflect::typed_annotations_of(type, ^^refers_deep);
+    if (statements.count == 0) return std::meta::info{};
+    if (statements.count > 1) a_class_has_two_statements_of_refers_deep();
+    const std::meta::info target = std::meta::extract<refers_deep>(statements.first).target;
+    if (target != std::meta::info{} && !std::meta::is_type(target)) a_statement_of_refers_deep_names_no_type();
+    return target;
 }
 
 // The annotations of one complete class.  A walk asks for some of them, and a
@@ -1952,21 +1985,26 @@ struct ReferenceAnswer {
             if (!detail::is_shared_writable(target)) return bare;
             continue;
         }
-        // Rule 1, a class that refers to the object of its first argument, and
-        // that gives only const access to it through a const object.  A copy
-        // of a const object would give a writer, so such a class refuses.
+        // Rule 1, a class that refers to the object of its target, and that
+        // gives only const access to it through a const object.  The target
+        // is the type that the statement names, or else the first type
+        // argument.  A copy of a const object would give a writer, so such a
+        // class refuses, unless its statement names a const target.
         if (marks.has(^^refers_deep)) {
-            if (!is_specialization || std::meta::is_copy_constructible_type(bare)
-                || std::meta::is_copy_assignable_type(bare)) {
-                return bare;
-            }
+            if (!is_specialization) return bare;
+            const std::meta::info stated = detail::stated_deep_target(bare);
+            const bool is_stated = stated != std::meta::info{};
             const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
-            if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
+            if (!is_stated && (arguments.empty() || arguments.begin()->is_value_argument)) return bare;
+            const refl::TypeNode target = is_stated ? refl::node_reached_indirectly(stated) : *arguments.begin();
+            const bool copies_from_const =
+                std::meta::is_copy_constructible_type(bare) || std::meta::is_copy_assignable_type(bare);
+            if (copies_from_const && !(is_stated && target.was_const)) return bare;
             if (goal.property == Property::Share) {
-                pending.push(detail::Goal{arguments.begin()->type, Property::Share});
+                pending.push(detail::Goal{target.type, Property::Share});
                 continue;
             }
-            const detail::ReferenceAnswer answer = detail::answer_reference(*arguments.begin(), goal.property);
+            const detail::ReferenceAnswer answer = detail::answer_reference(target, goal.property);
             if (answer.is_refused) return bare;
             if (answer.has_next) pending.push(answer.next);
             continue;
