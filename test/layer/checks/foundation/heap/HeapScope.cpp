@@ -5,6 +5,8 @@
 #include <foundation/Brand.h>
 #include <foundation/Linear.h>
 #include <foundation/alloc/Layout.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Region.h>
 #include <foundation/permissions/Permission.h>
 
 #include <type_traits>
@@ -55,5 +57,16 @@ using HoldsBlockBody =
 using HoldsNoBlockBody = decltype([](heap_scope_check::Scope&) noexcept { return 0; });
 static_assert(CanMintHeapScope<heap_scope_check::Brand, HoldsNoBlockBody>);
 static_assert(!CanMintHeapScope<heap_scope_check::Brand, HoldsBlockBody>);
+
+// The mint refuses a body that can store a borrow outside the scope, such as a
+// body with a reference to an Option of a View, and admits the same body with a
+// reference to a count (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
+template <class Kept>
+struct KeepsByReference final {
+    Kept& kept;
+    int operator()(heap_scope_check::Scope&) const noexcept { return 0; }
+};
+static_assert(!CanMintHeapScope<heap_scope_check::Brand, KeepsByReference<core::Option<core::View<int const>>>>);
+static_assert(CanMintHeapScope<heap_scope_check::Brand, KeepsByReference<int>>);
 
 }  // namespace foundation::heap

@@ -3473,6 +3473,11 @@ foundation_neg_compile_test(neg_heap_scope_result_names_brand
 foundation_neg_compile_test(neg_heap_scope_body_can_throw
   "the expression .is_nothrow_invocable_v<Body&&, foundation::heap::HeapScope<Brand>&>"
   "neg_heap_scope_body_can_throw\\.cpp:[0-9]+:[0-9]+: error:")
+# The mint refuses a body that captures by reference an Option of a View, which
+# the caller reads after the scope, and the store twin gives the reason.
+foundation_neg_compile_test(neg_heap_scope_body_keeps_a_view
+  "use of deleted function .void foundation::heap::mint_heap_scope\\(const foundation::core::Alloc&, Body&&\\)"
+  "a body of a frame door stores no borrow outside the frame")
 foundation_neg_compile_test(neg_heap_scope_block_in_static
   "an object of static or thread storage duration holds a value of a scope brand, so the value outlives the call of its mint"
   "KeepsBlock::operator\\(\\): kept")
