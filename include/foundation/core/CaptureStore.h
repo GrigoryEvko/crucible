@@ -274,6 +274,21 @@ private:
     std::size_t next_[3]{};
 };
 
+// Which borrow a slot must not keep: each borrow, or only a borrow of the
+// bytes of an epoch (the gate of an epoch body).  An epoch gives borrows only
+// of its own brand EpochOf<Tag>, which is no arena tag, and it builds no
+// object of a class that states an arena brand.  erase_brand of
+// foundation/core/Ref.h refuses each arena brand.  So the gate of an epoch
+// reads two kinds of slot as no slot, with the readers of ArenaKeeps of
+// foundation/core/BumpArena.h: a borrow of the base whose owner is an arena
+// tag (owner_brand and is_arena_tag_ of foundation/core/TypeParts.h), and a
+// stated address (is_stated_address_).  The walk still goes into the target
+// of such a borrow.
+enum class StoreFacts : unsigned char {
+    each_borrow,
+    epoch_borrow,
+};
+
 // Pushes the bases and the members of the class in the region: a member by
 // reference in the region of its target, a mutable member of an object that
 // the body does not own in the writable region, and each other part in the
@@ -311,6 +326,7 @@ struct SlotPlan {
     SlotRead read = SlotRead::first;
     std::meta::info exempt{};
     bool trusts_proof_mark = true;
+    StoreFacts facts = StoreFacts::each_borrow;
 };
 
 // Runs the check of the mark synchronized_by_proof{} of the class one time
@@ -378,8 +394,10 @@ struct SlotPlan {
             }
             continue;
         }
+        bool const is_epoch_gate = plan.facts == StoreFacts::epoch_borrow;
         if (parts.is_borrow) {
-            if (region == writable) {
+            bool const holds_no_epoch_borrow = is_epoch_gate && is_arena_tag_(parts.owner_brand);
+            if (region == writable && !holds_no_epoch_borrow) {
                 if (plan.read == SlotRead::first) return true;
                 has_slot = true;
                 targets.push_back(::foundation::reflect::TypeNode{parts.first_argument});
@@ -391,7 +409,7 @@ struct SlotPlan {
             }
             continue;
         }
-        if (parts.keeps_own_borrows) continue;
+        if (parts.keeps_own_borrows || (is_epoch_gate && is_stated_address_(parts))) continue;
         if (!parts.is_storage_owner) push_members_(walk, parts, region);
         if (!parts.is_storage_owner && !parts.holds_bytes) continue;
         for (std::size_t index = 0; index < parts.argument_count; ++index) {
@@ -404,11 +422,11 @@ struct SlotPlan {
 
 // True when the walk from the start type in the start region reaches a
 // borrow slot in the writable region (the gate).  The start type is bare.
-[[nodiscard]] consteval bool reaches_slot_from_(std::meta::info start_type, StoreRegion start) {
+[[nodiscard]] consteval bool reaches_slot_from_(std::meta::info start_type, StoreRegion start, StoreFacts facts) {
     StoreWalk walk;
     walk.push(indirect_node_(start_type, start));
     ::foundation::reflect::TypeNodeList unused;
-    return drain_slots_(walk, SlotPlan{}, unused);
+    return drain_slots_(walk, SlotPlan{.facts = facts}, unused);
 }
 
 // Check of synchronized_by_proof
@@ -881,32 +899,40 @@ inline constexpr bool synchronized_by_proof_check_v = check_synchronized_by_proo
 //   instance of this variable template.  The bodies of one class capture
 //   this, a context or an owner of the class again and again, and each such
 //   capture then costs one lookup.
-template <class Type, StoreRegion Region>
-inline constexpr bool reaches_slot_from_v = reaches_slot_from_(^^Type, Region);
+template <class Type, StoreRegion Region, StoreFacts Facts>
+inline constexpr bool reaches_slot_from_v = reaches_slot_from_(^^Type, Region, Facts);
 
 // The class that a pointer to a type converts to when the walk from the type
 // in the region reaches no borrow slot in the writable region, and else not.
-template <StoreRegion Region>
+template <StoreRegion Region, StoreFacts Facts>
 struct NoSlotTest final {
     template <class Type>
-        requires(!reaches_slot_from_v<Type, Region>)
+        requires(!reaches_slot_from_v<Type, Region, Facts>)
     consteval NoSlotTest(Type*) noexcept {}
 };
 
 // The verdict of the type in the region, from the memo.  The read is the read
 // of is_plain_class_ of foundation/core/TypeParts.h, with the constraint of
 // NoSlotTest, so a type with no verdict refuses the body.
-[[nodiscard]] consteval bool reaches_slot_(std::meta::info type, StoreRegion region) {
-    std::meta::info const tests[] = {^^NoSlotTest<StoreRegion::owned>, ^^NoSlotTest<StoreRegion::read_only>,
-                                     ^^NoSlotTest<StoreRegion::writable>};
-    return !std::meta::is_convertible_type(std::meta::add_pointer(type), tests[static_cast<std::size_t>(region)]);
+[[nodiscard]] consteval bool reaches_slot_(std::meta::info type, StoreRegion region, StoreFacts facts) {
+    constexpr StoreFacts each = StoreFacts::each_borrow;
+    constexpr StoreFacts epoch = StoreFacts::epoch_borrow;
+    std::meta::info const each_tests[] = {^^NoSlotTest<StoreRegion::owned, each>,
+                                          ^^NoSlotTest<StoreRegion::read_only, each>,
+                                          ^^NoSlotTest<StoreRegion::writable, each>};
+    std::meta::info const epoch_tests[] = {^^NoSlotTest<StoreRegion::owned, epoch>,
+                                           ^^NoSlotTest<StoreRegion::read_only, epoch>,
+                                           ^^NoSlotTest<StoreRegion::writable, epoch>};
+    std::size_t const place = static_cast<std::size_t>(region);
+    std::meta::info const test = facts == epoch ? epoch_tests[place] : each_tests[place];
+    return !std::meta::is_convertible_type(std::meta::add_pointer(type), test);
 }
 
 // True when the walk from one capture or one base of the class of a body
 // reaches a borrow slot in the writable region: a capture by reference in the
 // region of its target, and each other one owned.  Most captures name a scalar
 // or a plain class, which holds a borrow slot in no region.
-[[nodiscard]] consteval bool stores_borrow_in_(std::meta::info declared) {
+[[nodiscard]] consteval bool stores_borrow_in_(std::meta::info declared, StoreFacts facts = StoreFacts::each_borrow) {
     std::meta::info const type = ::foundation::reflect::bare_type(declared);
     if (is_leaf_(type)) return false;
     if (is_class_or_union_(type) && std::meta::is_complete_type(type) && is_plain_class_(type)) return false;
@@ -915,7 +941,7 @@ struct NoSlotTest final {
         bool const is_const = std::meta::is_const_type(std::meta::remove_reference(declared));
         region = is_const ? StoreRegion::read_only : StoreRegion::writable;
     }
-    return reaches_slot_(type, region);
+    return reaches_slot_(type, region, facts);
 }
 
 // True when the walk from the class of a body reaches a borrow slot in the
@@ -923,12 +949,13 @@ struct NoSlotTest final {
 // class of a closure is unique to its lambda, so the walk reads its captures
 // here and asks the memo for each of them.  A named class is the start of the
 // memo itself.
-[[nodiscard]] consteval bool stores_borrow_outside_(std::meta::info body, BodyForm form) {
+[[nodiscard]] consteval bool stores_borrow_outside_(std::meta::info body, BodyForm form,
+                                                    StoreFacts facts = StoreFacts::each_borrow) {
     std::meta::info const root = ::foundation::reflect::bare_type(body);
     if (!std::meta::is_class_type(root)) return false;
     bool const is_named_class = form == BodyForm::named && std::meta::has_identifier(root)
                              && !std::meta::is_const_type(std::meta::dealias(body));
-    if (is_named_class) return reaches_slot_(root, StoreRegion::writable);
+    if (is_named_class) return reaches_slot_(root, StoreRegion::writable, facts);
     std::meta::access_context const unchecked = std::meta::access_context::unchecked();
     std::vector<std::meta::info> const bases = std::meta::bases_of(root, unchecked);
     std::vector<std::meta::info> const members = std::meta::nonstatic_data_members_of(root, unchecked);
@@ -937,10 +964,10 @@ struct NoSlotTest final {
     bool const shows_no_state = base_count == 0 && member_count == 0;
     if (shows_no_state && !std::meta::has_template_arguments(root) && !std::meta::is_empty_type(root)) return true;
     for (std::size_t index = 0; index < base_count; ++index) {
-        if (stores_borrow_in_(std::meta::type_of(bases[index]))) return true;
+        if (stores_borrow_in_(std::meta::type_of(bases[index]), facts)) return true;
     }
     for (std::size_t index = 0; index < member_count; ++index) {
-        if (stores_borrow_in_(std::meta::type_of(members[index]))) return true;
+        if (stores_borrow_in_(std::meta::type_of(members[index]), facts)) return true;
     }
     return false;
 }
@@ -956,6 +983,20 @@ concept StoresNoBorrowOutside =
     !detail::stores_borrow_outside_(^^std::remove_reference_t<Body>, std::is_lvalue_reference_v<Body>
                                                                          ? detail::BodyForm::named
                                                                          : detail::BodyForm::unnamed);
+
+// A body of an epoch that stores no borrow of the bytes of the epoch outside
+// the epoch: the walk of StoresNoBorrowOutside, which reads a borrow of the
+// base whose owner is an arena tag, and a stated address, as no slot
+// (StoreFacts above).  So a body can fill an object of an arena or a plan
+// that it captures by reference, and a View of a run of the epoch in a
+// captured place is a refusal.  ArenaKeeps of foundation/core/BumpArena.h
+// reads the same two facts with the same readers.  Only with_epoch of an
+// EpochArena asks it.
+template <class Body>
+concept StoresNoEpochBorrowOutside = !detail::stores_borrow_outside_(
+    ^^std::remove_reference_t<Body>,
+    std::is_lvalue_reference_v<Body> ? detail::BodyForm::named : detail::BodyForm::unnamed,
+    detail::StoreFacts::epoch_borrow);
 
 // The arms of a frame door of a sum, each of which stores no borrow outside
 // the frame.

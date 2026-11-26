@@ -538,6 +538,39 @@ using RefResult = decltype(std::declval<MemberEpoch&>().make<int>(std::declval<A
 static_assert(!EpochResult<RefResult, Member> && !EpochResult<ArenaRun<int, EpochOf<Member>>, Member>);
 static_assert(EpochResult<int, Member> && EpochResult<void, Member>);
 
+// The store gate of an epoch: a capture by a reference that is not const of a
+// View can keep a View of a run of the epoch, so the gate refuses it, and the
+// body is no EpochBody.  A borrow whose owner is an arena tag holds no borrow
+// of the epoch, so a capture of a place that holds a family Ref or a family
+// run passes, as ArenaKeeps reads it.  A capture by value passes.
+using KeptView = Option<View<int const>>;
+using ViewKeepingBody = decltype([](KeptView& kept) noexcept {
+    return [&kept](MemberEpoch&) noexcept { kept = none; };
+}(std::declval<KeptView&>()));
+static_assert(EpochCaptures<ViewKeepingBody, Member> && !StoresNoEpochBorrowOutside<ViewKeepingBody>);
+static_assert(!EpochBody<ViewKeepingBody, Member>);
+struct HoldsFamilyBorrows {
+    Option<Ref<int, Family>> one{};
+    ArenaRun<int const, Family> run{};
+};
+using FamilyKeepingBody = decltype([](HoldsFamilyBorrows& kept) noexcept {
+    return [&kept](MemberEpoch&) noexcept { kept.one = none; };
+}(std::declval<HoldsFamilyBorrows&>()));
+static_assert(StoresNoEpochBorrowOutside<FamilyKeepingBody> && !StoresNoBorrowOutside<FamilyKeepingBody>);
+static_assert(EpochBody<FamilyKeepingBody, Member>);
+using ViewValueBody = decltype([](View<int const> seen) noexcept {
+    return [seen](MemberEpoch&) noexcept { return seen.size(); };
+}(std::declval<View<int const>>()));
+static_assert(EpochBody<ViewValueBody, Member>);
+// A family Ref of a place that holds a View still reaches the View.
+struct HoldsSeenView {
+    View<int const> seen{};
+};
+using ViewBehindFamilyRefBody = decltype([](Ref<HoldsSeenView, Family> kept) noexcept {
+    return [kept](MemberEpoch&) noexcept { return kept->seen.size(); };
+}(std::declval<Ref<HoldsSeenView, Family>>()));
+static_assert(!StoresNoEpochBorrowOutside<ViewBehindFamilyRefBody>);
+
 // The build key.  A class that states an arena tag gives that tag to each of its
 // objects only when each constructor takes the key of the class and the tag by
 // value, and when no copy, no move and no bytes build an object.  Each plant

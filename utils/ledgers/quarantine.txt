@@ -612,6 +612,7 @@ test/foundation/ | opted-out | 16 | PROBE: a violation report blocks on a full p
 test/foundation/ | opted-out | 7 | PROBE: an attack carries a view out of its door in a std type or a raw address | -
 test/foundation/ | opted-out | 2 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | opted-out | 10 | PROBE: the address of a body or an object tells which unit of the link holds it | -
+test/foundation/ | opted-out | 3 | PROBE: the address of a value of an epoch leaves the epoch as a number | a test of the poison of an ended epoch reads a value of the epoch through its address
 test/foundation/ | opted-out | 1 | PROBE: the body reads the bytes of its block through a View from before the frame | the kind stale-borrow of the rule view-escape makes each use of a stale borrow a compile error, so a test of such a use stands in a PROBE region
 test/foundation/ | opted-out | 1 | PROBE: the child reads a reserved page that no commit opened, which faults | the test of the page source reads a reserved page that no commit opened, in a child of the child door, to show that the read faults.  A View of the base covers only bytes that a commit opened, so only a raw address gives that read
 test/foundation/ | opted-out | 3 | PROBE: the identity walk reads a pointer, a member pointer and a bfloat16 value | -
@@ -658,6 +659,7 @@ test/foundation/ | region | 1 | PROBE: an arm raises through a foreign door, as 
 test/foundation/ | region | 3 | PROBE: an attack carries a view out of its door in a std type or a raw address | -
 test/foundation/ | region | 1 | PROBE: decode walks a C array of enumerations, the array form of a quarantined type | -
 test/foundation/ | region | 5 | PROBE: the address of a body or an object tells which unit of the link holds it | -
+test/foundation/ | region | 1 | PROBE: the address of a value of an epoch leaves the epoch as a number | a test of the poison of an ended epoch reads a value of the epoch through its address
 test/foundation/ | region | 1 | PROBE: the body reads the bytes of its block through a View from before the frame | the kind stale-borrow of the rule view-escape makes each use of a stale borrow a compile error, so a test of such a use stands in a PROBE region
 test/foundation/ | region | 1 | PROBE: the child reads a reserved page that no commit opened, which faults | the test of the page source reads a reserved page that no commit opened, in a child of the child door, to show that the read faults.  A View of the base covers only bytes that a commit opened, so only a raw address gives that read
 test/foundation/ | region | 3 | PROBE: the identity walk reads a pointer, a member pointer and a bfloat16 value | -

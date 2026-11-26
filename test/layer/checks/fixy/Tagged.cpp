@@ -155,6 +155,18 @@ static_assert(
 static_assert(!core::detail::is_stated_address_(core::detail::type_parts_v<Tagged<int*, tags::source::External>>));
 static_assert(core::ArenaKeeps<Cookie, Family> && !core::ArenaKeeps<Tagged<int*, tags::source::External>, Family>);
 
+using MemberEpoch = core::Epoch<core::EpochOf<Member>>;
+using KeptCookie = core::Option<Cookie>;
+using CookieBody = decltype([](KeptCookie& kept) noexcept {
+    return [&kept](MemberEpoch&) noexcept { kept = core::none; };
+}(std::declval<KeptCookie&>()));
+static_assert(core::StoresNoEpochBorrowOutside<CookieBody> && !core::StoresNoBorrowOutside<CookieBody>);
+using KeptAddress = core::Option<void*>;
+using AddressBody = decltype([](KeptAddress& kept) noexcept {
+    return [&kept](MemberEpoch&) noexcept { kept = core::none; };
+}(std::declval<KeptAddress&>()));
+static_assert(!core::StoresNoEpochBorrowOutside<AddressBody>);
+
 }  // namespace detail::tagged_address_checks
 
 }  // namespace fixy

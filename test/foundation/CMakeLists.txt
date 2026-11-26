@@ -3943,6 +3943,12 @@ foundation_neg_compile_test(neg_core_epoch_arena_capture_const_ref
 foundation_neg_compile_test(neg_core_epoch_arena_capture_kept_ref
   "use of deleted function .void foundation::core::EpochArena<Tag>::with_epoch\\(Body&&\\) &"
   "the body of an epoch captures a writer of a type that can hold the epoch brand, or reaches the arena")
+# A View carries no brand, so the gate of the captures admits a capture of a
+# View by reference.  The store gate of the epoch refuses a body that can keep
+# a View of a run of the epoch in it.
+foundation_neg_compile_test(neg_core_epoch_body_keeps_a_view_of_a_run
+  "use of deleted function .void foundation::core::EpochArena<Tag>::with_epoch\\(Body&&\\) &"
+  "a body of a frame door stores no borrow outside the frame")
 foundation_neg_compile_test(neg_core_epoch_arena_make_outside_epoch
   "class foundation::core::EpochArena<Owner::Scratch>. has no member named .make."
   "neg_core_epoch_arena_make_outside_epoch\\.cpp:[0-9]+:[0-9]+: error")

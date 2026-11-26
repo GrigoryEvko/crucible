@@ -139,6 +139,13 @@
 //       because a body that reaches the arena could open a second epoch.  A
 //       const arena opens no epoch, because with_epoch is a door of an arena
 //       that is not const
+//     - a capture that reaches a borrow slot in a place that the caller can
+//       read after the epoch, such as a View that a body could keep
+//       (StoresNoEpochBorrowOutside of foundation/core/CaptureStore.h).  A
+//       borrow of the base whose owner is an arena tag holds no borrow of
+//       the epoch, and neither does a stated address, so the gate reads them
+//       as ArenaKeeps reads them, with the same readers of
+//       foundation/core/TypeParts.h
 //   C++ const is shallow: a const place makes const only the parts that it
 //   holds by value.  The target of a pointer, a reference or a borrow keeps
 //   its own const, so a const pointer to an owner still reaches its arena.
@@ -148,9 +155,8 @@
 //   object of static or thread storage duration, and in a member of a class
 //   that does not state it as its brand_type (a carrier of the epoch).  So a
 //   body reaches no arena and no value of an epoch through a static object.
-//   A plain View that view() of an ArenaRun gives carries no brand, so a field
-//   that stores it can outlive the epoch of its bytes.  That is the general
-//   class of a dangling View, which a brand of View would close.
+//   A plain View that view() of an ArenaRun gives carries no brand, so the
+//   store gate above keeps it inside the epoch.
 //
 //   With AddressSanitizer, a new block and the end of an epoch poison each
 //   block, and each allocation unpoisons only the bytes that it gives
@@ -1175,10 +1181,14 @@ template <class Body, class Tag>
 concept EpochCall =
     std::is_nothrow_invocable_v<Body&&, Epoch<EpochOf<Tag>>&> && ::foundation::linear::HoldsNoLinearValue<Body>;
 
-// The body of an epoch of the tag.
+// The body of an epoch of the tag.  It stores no borrow of the bytes of the
+// epoch outside the epoch (StoresNoEpochBorrowOutside of
+// foundation/core/CaptureStore.h), so a View of a run of the epoch that a
+// captured place keeps is a refusal.
 template <class Body, class Tag>
-concept EpochBody = EpochCall<Body, Tag> && EpochCaptures<Body, Tag>
-                 && EpochResult<std::invoke_result_t<Body&&, Epoch<EpochOf<Tag>>&>, Tag>;
+concept EpochBody =
+    EpochCall<Body, Tag> && EpochCaptures<Body, Tag>
+    && EpochResult<std::invoke_result_t<Body&&, Epoch<EpochOf<Tag>>&>, Tag> && StoresNoEpochBorrowOutside<Body>;
 
 // An arena of a member tag whose bytes live in epochs (epochs above).  It
 // cannot copy or move.  Only the door builds it.
@@ -1241,6 +1251,12 @@ public:
         "through a path that is not const, or captures a writer of a type too large for the gate to read: capture "
         "each value that the body needs, by value or by a const reference, and not the owner of the arena");
 
+    // A body that can store a borrow of the bytes of the epoch in a place that
+    // it captures binds to this overload, so the refusal gives its reason.
+    template <class Body>
+        requires EpochCall<Body, Tag> && EpochResult<std::invoke_result_t<Body&&, Epoch<EpochOf<Tag>>&>, Tag>
+                  && EpochCaptures<Body, Tag> && (!StoresNoEpochBorrowOutside<Body>)
+    void with_epoch(Body&&) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // A body that holds a linear value by value binds to this overload, so
     // the refusal gives its reason.

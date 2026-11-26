@@ -1,4 +1,4 @@
-// A read through a View of an ended epoch.
+// A read of a value of an ended epoch.
 //
 // The end of an epoch poisons each block of the arena in a build with
 // AddressSanitizer.  This program writes a value in an epoch, ends the epoch,
@@ -7,15 +7,16 @@
 // only in a build with AddressSanitizer, and the test passes only on the text
 // of that report.
 //
-// The result of an epoch holds no borrow, and a capture by reference of a
-// type that can hold the epoch brand is refused.  A plain View carries no
-// brand, so the View leaves the epoch through a variable that the body
-// captures.  That route is the one that the run-time check of the poison
-// covers.
+// The gate of with_epoch keeps each borrow of the epoch inside the epoch: the
+// result holds no borrow, and no capture keeps a Ref, a run or a View of the
+// epoch.  So the address of the value leaves the epoch as a number, which is
+// a probe of raw memory, in an opt-out region.  The run-time check of the
+// poison covers such a route, which no type can see.
 
 #include <foundation/core/BumpArena.h>
 
-#include <foundation/core/Region.h>
+#include <foundation/Quarantine.h>
+#include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
 #include <foundation/effects/Effect.h>
 
@@ -36,18 +37,19 @@ struct Scratch {
 
 int main() {
     Scratch scratch{};
-    ::foundation::core::View<std::uint64_t const> value{};
-    scratch.arena.with_epoch(
-        [&value](::foundation::core::Epoch<::foundation::core::EpochOf<Scratch::Arena>>& epoch) noexcept {
-            auto const run = epoch.array<std::uint64_t>(::foundation::effects::testing::test().alloc, 1, 0x5EED);
-            value = run.view();
-        });
 
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the address of a value of an epoch leaves the epoch as a number")
+    std::uintptr_t const address = scratch.arena.with_epoch(
+        [](::foundation::core::Epoch<::foundation::core::EpochOf<Scratch::Arena>>& epoch) noexcept {
+            auto const value =
+                epoch.make<std::uint64_t>(::foundation::effects::testing::test().alloc, std::uint64_t{0x5EED});
+            return __builtin_bit_cast(std::uintptr_t, __builtin_addressof(*value));
+        });
+    std::uint64_t const volatile* const ended = __builtin_bit_cast(std::uint64_t const volatile*, address);
     // The epoch ended, so this read must not return.
-    std::uint64_t total = 0;
-    for (std::uint64_t const element : value) {
-        total += element;
-    }
-    ::foundation::core::report(::foundation::core::Sink::Out, "the read after the end of the epoch gave {}\n", total);
+    std::uint64_t const read = *ended;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+    ::foundation::core::report(::foundation::core::Sink::Out, "the read after the end of the epoch gave {}\n", read);
     return 0;
 }
