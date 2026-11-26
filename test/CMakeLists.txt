@@ -734,6 +734,10 @@ crucible_test(test_vessel_entry_slots)
 # handle, on a table of two slots, and the end of a Vigil against the claims
 # and the reads of a second thread.
 crucible_test(test_vigil_handles)
+# The type facts of the proof of the GIL of the vessel, and its mint in a
+# process with no interpreter, where the weak symbol of the interpreter is
+# null.
+crucible_test(test_gil_held)
 crucible_test(test_storage_nbytes_simd)
 # The strided view of a tensor over the run of its slot: a dense matrix, a
 # transpose, a broadcast row and a scalar, and each refusal of the door.
@@ -4906,6 +4910,15 @@ crucible_neg_compile_test(neg_vessel_typed_meta_wrong_tag
 crucible_neg_compile_test(neg_vessel_meta_records_are_not_tensor_meta
     "no matching function for call to .raw_grad_fn_hash\\(const CrucibleMeta&\\)."
     "neg_vessel_meta_records_are_not_tensor_meta.cpp:22")
+
+# Only mint_gil_held makes the proof that the calling thread holds the GIL,
+# and the read of a storage by its address takes the proof.
+crucible_neg_compile_test(neg_vessel_gil_held_direct_construction
+    "constexpr crucible::vessel::GilHeld::GilHeld\\(\\). is private within this context"
+    "neg_vessel_gil_held_direct_construction.cpp:11")
+crucible_neg_compile_test(neg_vessel_storage_generation_with_no_gil
+    "invalid initialization of reference of type .const crucible::vessel::GilHeld&. from expression of type .std::nullptr_t."
+    "in passing argument 1 of .crucible::StorageGeneration crucible::vessel::storage_generation_at\\(const GilHeld&, void\\*\\).")
 
 # The data slots of an op and the data arguments of a schema key their bit
 # sets by the Side of their own role.  An Index<5> converts to an Index<32>, and

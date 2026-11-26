@@ -47,6 +47,7 @@ import enum
 import logging
 import os
 import platform
+import sys
 from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -1113,6 +1114,43 @@ def load_dispatch_library(lib_path: str | None = None) -> ctypes.CDLL:
     return library
 
 
+# The entries of the dispatch library that read a PyTorch object by its
+# address.  Each one reads the object only while the calling thread holds the
+# GIL (gil_held.h), and it gives its refusal and reads nothing with no GIL.
+GIL_ENTRIES: tuple[str, ...] = ("crucible_dispatch_storage_generation",)
+
+
+def is_gil_enabled() -> bool:
+    """Tell if the interpreter runs with a GIL, which a GIL entry needs.
+
+    A free-threaded interpreter runs Python threads at the same time, so the
+    GIL that a call holds keeps no other thread out of a read.
+    """
+    return getattr(sys, "_is_gil_enabled", lambda: True)()
+
+
+def load_gil_entries(library: ctypes.CDLL) -> ctypes.PyDLL:
+    """Load the dispatch library a second time through ctypes.PyDLL, for the entries of GIL_ENTRIES.
+
+    The dynamic loader gives the same library, so the two objects call the
+    same code and the same globals.  A call through the PyDLL object keeps the
+    GIL, and a call through the CDLL object releases it.  So the wrapper binds
+    each entry of GIL_ENTRIES only through the object that this function
+    returns.
+
+    Raises:
+        CrucibleAbiMismatchError: If the library exports no entry of a name of
+            GIL_ENTRIES
+    """
+    held = ctypes.PyDLL(library._name)
+    missing = [name for name in GIL_ENTRIES if not hasattr(held, name)]
+    if missing:
+        raise CrucibleAbiMismatchError(
+            f"{library._name} exports no entry {', '.join(missing)} of GIL_ENTRIES.  "
+            f"Build the library again:\n{VESSEL_BUILD}")
+    return held
+
+
 # =====================================================================
 # Vessel C API wrapper (Vigil lifecycle + trace export)
 # =====================================================================
@@ -1338,6 +1376,8 @@ class _DispatchLib:
         import torch._C  # noqa: F401
         # The load registers the C++ fallback (load_dispatch_library).
         self._lib = load_dispatch_library(lib_path)
+        # The entries that read a PyTorch object, which keep the GIL.
+        self._gil_lib = load_gil_entries(self._lib)
         self._setup()
 
     def _setup(self) -> None:
@@ -1394,8 +1434,10 @@ class _DispatchLib:
                      "crucible_dispatch_inner_allocator"):
             getattr(L, name).restype = ctypes.c_uint64
             getattr(L, name).argtypes = []
-        L.crucible_dispatch_storage_generation.restype = ctypes.c_uint32
-        L.crucible_dispatch_storage_generation.argtypes = [ctypes.c_void_p]
+        # The read of a storage holds the GIL, so only the PyDLL object binds it.
+        held = self._gil_lib
+        held.crucible_dispatch_storage_generation.restype = ctypes.c_uint32
+        held.crucible_dispatch_storage_generation.argtypes = [ctypes.c_void_p]
 
     def eager_numerics(self) -> int:
         """The eager word of this thread, which the Vigil folds into the hash of each region."""
@@ -1432,9 +1474,18 @@ class _DispatchLib:
         """The word of the generation of the storage of tensor that fill_meta gives it at this time.
 
         A known generation for a storage of the generation allocator, and else
-        STORAGE_GENERATION_UNKNOWN_BIT with the period of the allocator.
+        STORAGE_GENERATION_UNKNOWN_BIT with the period of the allocator.  The
+        call keeps the GIL (GIL_ENTRIES), so no other Python thread drops the
+        storage during the read.  The word 0 tells that the entry read nothing.
+
+        Raises:
+            RuntimeError: If the interpreter runs with no GIL, because then no
+                GIL keeps the other threads out of the read
         """
-        return self._lib.crucible_dispatch_storage_generation(ctypes.c_void_p(tensor.untyped_storage()._cdata))
+        if not is_gil_enabled():
+            raise RuntimeError("the interpreter runs with no GIL, so the dispatch library reads no PyTorch "
+                               "object by its address.  Use an interpreter with the GIL")
+        return self._gil_lib.crucible_dispatch_storage_generation(ctypes.c_void_p(tensor.untyped_storage()._cdata))
 
     def backward_enter(self) -> None:
         """Open a backward window on this thread."""

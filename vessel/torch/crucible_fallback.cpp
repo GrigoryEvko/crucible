@@ -16,6 +16,7 @@
 
 #include "dispatch_api.h"
 #include "eager_numerics.h"
+#include "gil_held.h"
 #include "layout_note.h"
 #include "record_kernel.h"
 #include "storage_generation.h"
@@ -1210,6 +1211,17 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // set the Vigil handle and mode without additional fork modifications.
 // =====================================================================
 
+// The read of storage_generation_at (gil_held.h).  The address is
+// UntypedStorage._cdata, which Python gives under the GIL.  The caller holds
+// the GIL during the read, so no Python thread drops the storage or gives the
+// tensor a new storage until the read ends.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the read takes the address of a StorageImpl that the C caller gives")
+crucible::StorageGeneration crucible::vessel::storage_generation_at(const GilHeld& /*gil*/, void* storage) noexcept {
+    CRUCIBLE_PRE(storage != nullptr);
+    return generation_of(static_cast<const c10::StorageImpl*>(storage)->data_ptr());
+}
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 // The C entries of dispatch_api.h, which is the whole C ABI of this library.
 // The layout note of the library holds the digest of their types
 // (layout_note.cpp).
@@ -1255,9 +1267,20 @@ CRUCIBLE_API uint64_t crucible_dispatch_generation_allocator() {
 
 CRUCIBLE_API uint64_t crucible_dispatch_inner_allocator() { return crucible::vessel::generation_inner_address(); }
 
+// The generation of the storage reads the StorageImpl only while the calling
+// thread holds the GIL (gil_held.h).  ctypes keeps the GIL only for a PyDLL
+// entry (GIL_ENTRIES of crucible_native.py).  A call with no GIL and a null
+// storage read nothing, and they give 0.  The word 0 is the generation none of
+// crucible/Types.h, and a read of a real storage never gives it: a known
+// generation is at least 1, and an unknown generation has the top bit.  So 0
+// tells the caller that the entry read nothing.
 CRUCIBLE_API uint32_t crucible_dispatch_storage_generation(void* storage) {
     if (storage == nullptr) return 0;
-    return crucible::vessel::generation_of(static_cast<c10::StorageImpl*>(storage)->data_ptr()).raw();
+    return crucible::vessel::mint_gil_held().match(
+        [storage](crucible::vessel::GilHeld gil) noexcept {
+            return crucible::vessel::storage_generation_at(gil, storage).raw();
+        },
+        [] noexcept { return 0U; });
 }
 
 // The enumerator i of c10::CrucibleMode, in the order of the declarations:
