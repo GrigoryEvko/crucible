@@ -225,11 +225,11 @@ public:
         }
     };
 
-    // The tail index is read relaxed.  The consumer permission is linear, so
-    // the thread holding it is the only writer of that index and no ordering
-    // is needed to observe the latest value.  The head index is read with get,
-    // which acquires against the producer's release and is what makes the
-    // appended records visible.
+    // The tail comes from the copy of the consumer end of the log, with no
+    // load of the counter.  The consumer permission is linear, so the thread
+    // holding it is the only writer of the tail.  The head index is read with
+    // get, which acquires against the producer's release and is what makes
+    // the appended records visible.
     class[[= ::foundation::linear::linear{}]] ConsumerEnd {
         ::foundation::ChannelBinding<PermissionedMetaLog> ch_;
         [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag, Brand> perm_;
@@ -238,6 +238,13 @@ public:
                               ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept
             : ch_{wrapper, ::foundation::BindingKey<PermissionedMetaLog>{}}, perm_{std::move(perm)} {}
         friend class PermissionedMetaLog;
+
+        // The tail, from the copy of the consumer end (MetaLog::released).
+        [[nodiscard]] ::crucible::MetaIndex released_() {
+            return ch_->log_.consumer_side().with_end(
+                ConsumerSideProof{},
+                [](::crucible::MetaLog::Consumer& end) noexcept { return ::crucible::MetaLog::released(end); });
+        }
 
     public:
         using value_type = ::crucible::TensorMeta;
@@ -248,11 +255,6 @@ public:
         // The consumer picks alone when it drains and when it stops, so a
         // session over the handle states the Local network.
         static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::Local;
-
-        // The count of the drain of one record.
-        static constexpr ::crucible::ValidMetaAppendCount kOneRecord =
-            ::fixy::mint_refined<::crucible::ValidMetaAppendCount::predicate_type{},
-                                 ::crucible::ValidMetaAppendCount::value_type>(1u);
 
         ConsumerEnd(const ConsumerEnd&) =
             delete("MetaLog ConsumerEnd owns the Consumer Permission — copy would duplicate the linear token");
@@ -278,17 +280,18 @@ public:
         // the data pointer of its tensor, and no frame gives such a value
         // out.  The consumer reads each record between the tail that only it
         // moves and the head that it acquired, so each read is of a record
-        // that the producer published and that no release freed.  Only the
-        // move of the tail opens the side.
+        // that the producer published and that no release freed.  The tail
+        // is the copy of the consumer end (released_), so the release steps
+        // from the value of that read.
         [[nodiscard, gnu::hot]] ::fixy::Option<value_type> try_drain_one() {
             const auto log = ch_->log_.consumer_side().owner_view();
-            const ::crucible::MetaIndex t = log->total_released();
+            const ::crucible::MetaIndex t = released_();
             if (t == log->total_produced()) [[unlikely]] {
                 return ::fixy::none;
             }
 
             const value_type meta = log->copy_record(t.raw());
-            advance_tail(::crucible::advance_meta_index(t, kOneRecord));
+            advance_tail(::fixy::WideStep<::crucible::MetaLog::CAPACITY>::one());
             return ::fixy::some(meta);
         }
 
@@ -296,7 +299,7 @@ public:
             requires std::is_invocable_v<Body&, const value_type&>
         [[nodiscard]] std::uint32_t drain(Body&& body, std::uint32_t max_items = ::crucible::MetaLog::CAPACITY) {
             const auto log = ch_->log_.consumer_side().owner_view();
-            const ::crucible::MetaIndex t = log->total_released();
+            const ::crucible::MetaIndex t = released_();
             const std::uint64_t available = log->total_produced().raw() - t.raw();
             const std::uint32_t count = max_items < available ? max_items : static_cast<std::uint32_t>(available);
 
@@ -308,10 +311,8 @@ public:
             }
             if (count != 0) {
                 // The log holds at most CAPACITY records, so the count of a
-                // drain is a count of an append.
-                advance_tail(::crucible::advance_meta_index(
-                    t, ::fixy::mint_refined<::crucible::ValidMetaAppendCount::predicate_type{},
-                                            ::crucible::ValidMetaAppendCount::value_type>(count)));
+                // drain is a step of the tail.
+                advance_tail(::fixy::WideStep<::crucible::MetaLog::CAPACITY>::check_within_bound(count));
             }
             return count;
         }
@@ -330,11 +331,11 @@ public:
             return log->copy_record(index.raw());
         }
 
-        void advance_tail(::crucible::MetaIndex new_tail) {
-            ch_->log_.consumer_side().with_end(ConsumerSideProof{},
-                                               [new_tail](::crucible::MetaLog::Consumer& end) noexcept {
-                                                   ::crucible::MetaLog::advance_tail(end, new_tail);
-                                               });
+        // Releases the step records after the tail (MetaLog::advance_tail).
+        void advance_tail(::fixy::WideStep<::crucible::MetaLog::CAPACITY> step) {
+            ch_->log_.consumer_side().with_end(
+                ConsumerSideProof{},
+                [step](::crucible::MetaLog::Consumer& end) noexcept { ::crucible::MetaLog::advance_tail(end, step); });
         }
 
         [[nodiscard]] ::crucible::MetaIndex head_index() const {

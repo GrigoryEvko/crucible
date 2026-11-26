@@ -15,7 +15,7 @@ void release_with_the_ring_proof(crucible::BackgroundThread::MetaLogSide& side,
 void release_with_the_ring_proof(crucible::BackgroundThread::MetaLogSide& side,
                                  crucible::BackgroundThread::DrainStage const& stage) noexcept {
     side.with_end(stage, [](crucible::MetaLog::Consumer& log) noexcept {
-        crucible::MetaLog::advance_tail(log, crucible::MetaLog::produced(log));
+        crucible::MetaLog::release_to(log, crucible::MetaLog::produced(log));
     });
 }
 

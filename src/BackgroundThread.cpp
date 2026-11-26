@@ -636,14 +636,10 @@ void BackgroundThread::apply_due_reset_() noexcept {
 // The floor is the position of a held op or the cursor of the detect stage,
 // and the detect stage read each record before the cursor after the producer
 // published it.  So a floor past the head means that the positions disagree
-// with the log, and a tail past the head would give the producer slots that
-// it did not write.
+// with the log, and release_to ends the process for it, because a tail past
+// the head would give the producer slots that it did not write.
 void BackgroundThread::release_meta_log(PublishStage const& stage, MetaIndex meta_floor) {
-    meta_log_->with_end(stage, [meta_floor](MetaLog::Consumer& log) noexcept {
-        if (is_at_or_after(MetaLog::released(log), meta_floor)) return;
-        CRUCIBLE_FATAL_INVARIANT(is_at_or_after(MetaLog::produced(log), meta_floor));
-        MetaLog::advance_tail(log, meta_floor);
-    });
+    meta_log_->with_end(stage, [meta_floor](MetaLog::Consumer& log) noexcept { MetaLog::release_to(log, meta_floor); });
 }
 
 // The node and the plan go into the arena of the parts of the region, and

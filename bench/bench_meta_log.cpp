@@ -233,7 +233,7 @@ int main() {
                 auto idx = log->try_append(meta3.view());
                 bench::do_not_optimize(idx);
                 if (++since_drain >= kD) [[unlikely]] {
-                    log->advance_tail(log->total_produced());
+                    log->release_to(log->total_produced());
                     since_drain = 0;
                 }
             });

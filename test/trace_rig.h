@@ -370,8 +370,8 @@ public:
             [&ctx, metas](MetaLog::Producer& end) noexcept { return MetaLog::try_append_pure(ctx, end, metas); });
     }
 
-    void advance_tail(MetaIndex new_tail) noexcept {
-        local_.with_consumer([new_tail](MetaLog::Consumer& end) noexcept { MetaLog::advance_tail(end, new_tail); });
+    void release_to(MetaIndex floor) noexcept {
+        local_.with_consumer([floor](MetaLog::Consumer& end) noexcept { MetaLog::release_to(end, floor); });
     }
 
     // Empties the log, with the two ends in one frame.

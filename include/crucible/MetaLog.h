@@ -40,6 +40,17 @@
 
 namespace crucible {
 
+// The order of two positions of the log, the one place that compares their
+// raw values.  A position passes 2^32 with no wrap, so the order of the raw
+// values is the order of the records.  Complexity: one compare.
+[[nodiscard]] constexpr bool is_before(MetaIndex earlier, MetaIndex later) noexcept {
+    return earlier.raw() < later.raw();
+}
+
+[[nodiscard]] constexpr bool is_at_or_after(MetaIndex position, MetaIndex bound) noexcept {
+    return position.raw() >= bound.raw();
+}
+
 // The side channel for tensor metadata.
 //
 // The recording ring keeps one cache line per operation, which is far too
@@ -80,8 +91,15 @@ struct CRUCIBLE_OWNER MetaLog {
         ::fixy::WideMonotonic<CAPACITY> own_head = ::fixy::mint_wide_monotonic<CAPACITY>();
         ::fixy::Monotonic<uint64_t> cached_tail = ::fixy::mint_monotonic<uint64_t>(0);
     };
-    // The consumer reads its own last store to tail_, so its end keeps no copy.
-    struct consumer_state {};
+    // own_tail is the copy of the tail of the consumer: the value of tail_
+    // after each release.  It is a wide counter that starts at the start of
+    // the log and steps by the records of one release, at most CAPACITY, so a
+    // release moves it forward with no compare.  Only the two writes of
+    // TailCell write tail_, each takes the consumer end, and each writes the
+    // copy too.  So the copy holds the value of tail_.
+    struct alignas(64) consumer_state {
+        ::fixy::WideMonotonic<CAPACITY> own_tail = ::fixy::mint_wide_monotonic<CAPACITY>();
+    };
 
     // The two ends of a log.  The side doors below are the only doors that
     // write a side of the log, and each takes the end of its side.
@@ -89,6 +107,49 @@ struct CRUCIBLE_OWNER MetaLog {
     using Consumer = ::fixy::concurrent::ConsumerEnd<MetaLog>;
 
 private:
+    // The counter of the tail.  Its two writes take the consumer end, and
+    // each one moves the copy of the tail of that end with the counter:
+    // publish steps the copy and stores it, and rewind puts the two back to
+    // zero.  No other code writes the counter, so the copy holds its value.
+    // The test builds check that before and after each release, as an oracle
+    // (has_test_oracles of foundation/Platform.h).  The product build holds
+    // no such check.
+    class TailCell {
+    public:
+        explicit TailCell(::fixy::WideStart start) noexcept
+            : value_{::fixy::mint_atomic_monotonic<uint64_t, tail_writer>(start.value())} {}
+
+        // The tail, with the acquire that pairs with the release store of
+        // each write.
+        [[nodiscard]] uint64_t get() const noexcept { return value_.get(); }
+
+        // The release of step records: the copy steps by the step, and the
+        // counter takes the copy with a release store, with no compare.
+        void publish(Consumer& consumer, ::fixy::WideStep<CAPACITY> step) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+            check_copy_(consumer);
+            value_.advance_sole_writer_by_wide_step(prove_tail_writer_(), consumer.state_.own_tail, step);
+            check_copy_(consumer);
+        }
+
+        // The rewind of a reset: the counter and the copy go back to zero.
+        void rewind(Consumer& consumer) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+            value_.reset_under_quiescence();
+            consumer.state_.own_tail.reset_under_quiescence(::fixy::WideStart::zero());
+        }
+
+    private:
+        // The oracle: the copy of the consumer end holds the value of the
+        // counter.  A write of the counter that does not move the copy, or a
+        // second writer, fails it.  The consumer reads its own last store.
+        void check_copy_(Consumer const& consumer) const noexcept CRUCIBLE_NO_THREAD_SAFETY {
+            if constexpr (::foundation::has_test_oracles) {
+                CRUCIBLE_FATAL_INVARIANT(value_.peek_relaxed() == consumer.state_.own_tail.get());
+            }
+        }
+
+        ::fixy::AtomicMonotonic<uint64_t, tail_writer> value_;
+    };
+
     // AtomicMonotonic carries its own alignas(64) and is 64 bytes wide, so
     // head fills bytes 0 through 63 by itself.  The line after it holds the
     // buffer owner with its base, which no thread writes after the
@@ -114,8 +175,9 @@ private:
         ::fixy::mint_atomic_monotonic<uint64_t, head_writer>(0);
 
     // The start of the log, which the split gives to the producer end as the
-    // start of its wide copy of the head (first_producer_state).  No thread
-    // writes it after the construction.
+    // start of its wide copy of the head (first_producer_state), and to the
+    // consumer end as the start of its wide copy of the tail
+    // (first_consumer_state).  No thread writes it after the construction.
     ::fixy::WideStart start_ = ::fixy::WideStart::zero();
 
     // The buffer of the CAPACITY records, at the alignment of a huge page.
@@ -127,8 +189,7 @@ private:
     // not move, and it holds its storage until the end of the log.
     ::fixy::FixedHeapArray<TensorMeta, CAPACITY, crucible::warden::kHugePageBytes> records_;
 
-    alignas(64)::fixy::AtomicMonotonic<uint64_t, tail_writer> tail_ =
-        ::fixy::mint_atomic_monotonic<uint64_t, tail_writer>(0);
+    alignas(64) TailCell tail_{::fixy::WideStart::zero()};
 
 public:
     // The caller gives the allocation capability of its context for the
@@ -145,7 +206,7 @@ public:
           start_{start},
           records_{::fixy::mint_fixed_heap_array<TensorMeta, CAPACITY, crucible::warden::kHugePageBytes>(allocation,
                                                                                                          TensorMeta{})},
-          tail_{::fixy::mint_atomic_monotonic<uint64_t, tail_writer>(start.value())} {
+          tail_{start} {
         // The allocation faults the whole buffer in here rather than one page
         // at a time under the recording thread.
         //
@@ -212,8 +273,11 @@ public:
                               .cached_tail = ::fixy::mint_monotonic<uint64_t>(log.start_.value())};
     }
 
-    // The first state of the consumer end, which keeps no copy.
-    [[nodiscard]] static consumer_state first_consumer_state(MetaLog const& /*log*/) noexcept { return {}; }
+    // The first state of the consumer end: the start of the log, where the
+    // constructor put the tail.
+    [[nodiscard]] static consumer_state first_consumer_state(MetaLog const& log) noexcept {
+        return consumer_state{.own_tail = ::fixy::mint_wide_monotonic<CAPACITY>(log.start_)};
+    }
 
     // Appends a run of metadata records and returns the index of the first,
     // or no index if the buffer is full or the run is empty.  The producer
@@ -249,10 +313,10 @@ public:
         return try_append(producer, metas);
     }
 
-    // The tail as the consumer end last stored it.  The consumer is the one
-    // writer of tail, so its relaxed load reads its own last store.
+    // The tail as the consumer end last stored it: the copy of its end, with
+    // no load.
     [[nodiscard]] static MetaIndex released(Consumer const& consumer) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return MetaIndex{consumer.owner_->tail_.peek_relaxed()};
+        return MetaIndex{consumer.state_.own_tail.get()};
     }
 
     // The head that the producer published, with the acquire that makes each
@@ -261,17 +325,31 @@ public:
         return MetaIndex{consumer.owner_->head_.get()};
     }
 
-    // Releases each record before new_tail, so the producer can write new
-    // records over their slots.  new_tail names a position of the log, not
-    // the index none.  The consumer end proves the one writer of tail, so
-    // the publish loads nothing from tail, and the step check of the publish
-    // refuses a tail that does not move forward.  A release of a run follows
-    // the copy of the run in the program order of the consumer, and the
-    // release store of tail carries that order to the producer.
-    static void advance_tail(Consumer& consumer, MetaIndex new_tail) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(new_tail.is_valid());
-        MetaLog& log = *consumer.owner_;
-        log.tail_.advance_sole_writer_by_proof_from(prove_tail_writer_(), log.tail_.peek_relaxed(), new_tail.raw());
+    // Releases the step records after the tail, so the producer can write new
+    // records over their slots.  The step is at least one record and at most
+    // CAPACITY, so the release moves the tail forward with no compare, and
+    // it loads nothing from tail (the wide counter of fixy/Mutation.h).  A
+    // release of a run follows the copy of the run in the program order of
+    // the consumer, and the release store of tail carries that order to the
+    // producer.
+    static void advance_tail(Consumer& consumer, ::fixy::WideStep<CAPACITY> step) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        consumer.owner_->tail_.publish(consumer, step);
+    }
+
+    // Releases each record before floor.  A floor at or before the tail
+    // releases nothing.  The floor is a position that another stage
+    // computed, such as the floor of a commit marker, so the door checks it
+    // against the head in each build: a tail past the head would give the
+    // producer slots that it did not write.  The step from the tail to the
+    // floor is then at least one, and at most CAPACITY, because the log
+    // holds at most CAPACITY records from the tail to the head.  No load
+    // shows that second bound to the compiler, so the door of the step
+    // checks it, one compare.  Complexity: O(1).
+    static void release_to(Consumer& consumer, MetaIndex floor) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        const MetaIndex tail = released(consumer);
+        if (is_at_or_after(tail, floor)) return;
+        CRUCIBLE_FATAL_INVARIANT(is_at_or_after(produced(consumer), floor));
+        advance_tail(consumer, ::fixy::WideStep<CAPACITY>::check_within_bound(floor.raw() - tail.raw()));
     }
 
     // Empties the log: each counter and each copy of a counter go back to
@@ -288,11 +366,12 @@ public:
         MetaLog& log = *producer.owner_;
         producer_state& state = producer.state_;
         log.head_.reset_under_quiescence();
-        log.tail_.reset_under_quiescence();
+        log.tail_.rewind(consumer);
         state.cached_tail.reset_under_quiescence();
         state.own_head.reset_under_quiescence(::fixy::WideStart::zero());
         CRUCIBLE_POST(0, log.head_.get() == 0);
         CRUCIBLE_POST(0, log.tail_.get() == 0);
+        CRUCIBLE_POST(0, consumer.state_.own_tail.get() == 0);
         CRUCIBLE_POST(0, state.cached_tail.get() == 0);
         CRUCIBLE_POST(0, state.own_head.get() == 0);
     }
@@ -385,7 +464,8 @@ public:
 private:
     // The proofs of the writers of the two counters.  The doors of a side
     // make the proof of its side, and the end of the side that each door
-    // takes proves the one writer.
+    // takes proves the one writer.  Only the two writes of TailCell make the
+    // proof of the tail, and each takes the consumer end.
     [[nodiscard]] static constexpr head_writer prove_head_writer_() noexcept { return {}; }
 
     [[nodiscard]] static constexpr tail_writer prove_tail_writer_() noexcept { return {}; }
@@ -515,17 +595,6 @@ using ValidMetaAppendCount = ::fixy::Refined<::fixy::bounded_above<MetaLog::CAPA
     MetaIndex const next{::fixy::strict_add(start.raw(), uint64_t{count.value()})};
     CRUCIBLE_POST(next, next.is_valid());
     return next;
-}
-
-// The order of two positions of the log, the one place that compares their
-// raw values.  A position passes 2^32 with no wrap, so the order of the raw
-// values is the order of the records.  Complexity: one compare.
-[[nodiscard]] constexpr bool is_before(MetaIndex earlier, MetaIndex later) noexcept {
-    return earlier.raw() < later.raw();
-}
-
-[[nodiscard]] constexpr bool is_at_or_after(MetaIndex position, MetaIndex bound) noexcept {
-    return position.raw() >= bound.raw();
 }
 
 }  // namespace crucible

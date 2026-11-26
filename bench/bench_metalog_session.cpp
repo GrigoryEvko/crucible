@@ -59,7 +59,7 @@ using RawLog = ::crucible::test::OpenLog;
         return ::fixy::none;
     }
     const ::crucible::TensorMeta meta = log.copy_record(t.raw());
-    log.advance_tail(::crucible::MetaIndex{t.raw() + 1});
+    log.release_to(::crucible::MetaIndex{t.raw() + 1});
     return ::fixy::some(meta);
 }
 
