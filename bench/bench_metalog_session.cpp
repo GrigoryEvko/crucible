@@ -54,12 +54,12 @@ using PermissionedLog = ::crucible::permissioned_metalog_t<decltype(log_root())>
 using RawLog = ::crucible::test::OpenLog;
 
 [[nodiscard]] ::fixy::Option<::crucible::TensorMeta> raw_drain_one(RawLog& log) {
-    const std::uint64_t t = log.total_released();
+    const ::crucible::MetaIndex t = log.total_released();
     if (t == log.total_produced()) {
         return ::fixy::none;
     }
-    const ::crucible::TensorMeta meta = log.copy_record(t);
-    log.advance_tail(t + 1);
+    const ::crucible::TensorMeta meta = log.copy_record(t.raw());
+    log.advance_tail(::crucible::MetaIndex{t.raw() + 1});
     return ::fixy::some(meta);
 }
 

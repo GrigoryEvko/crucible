@@ -198,7 +198,7 @@ void test_start_again_continues_the_stream() {
             record_stream(rig, 0, kOpsBeforeStop);
             wait_for_pipeline(bt, rig);
             auto stopped_again = std::move(running).stop();
-            CRUCIBLE_TEST_ASSERT(kTest, rig.log_total_released() < rig.log_total_produced()
+            CRUCIBLE_TEST_ASSERT(kTest, rig.log_total_released().raw() < rig.log_total_produced().raw()
                                             && "the first pipeline holds no op with a record of the log");
 
             record_stream(rig, kOpsBeforeStop, kOpsBeforeStop + kOpsWhileStopped);

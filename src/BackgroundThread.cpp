@@ -511,12 +511,15 @@ BackgroundThread::BackgroundThread(BackgroundThreadKey const& /*key*/, ::foundat
 // ring that refuses the entry leaves records that no op names.  A later
 // valid index is then past the cursor, and the records between the two are
 // dead.  The floor passes them with the next op.
-uint64_t BackgroundThread::take_record_start_(TraceRing::Entry const& entry, MetaIndex meta_start) noexcept {
+MetaIndex BackgroundThread::take_record_start_(TraceRing::Entry const& entry, MetaIndex meta_start) noexcept {
     if (!meta_start.is_valid()) return meta_cursor_;
-    CRUCIBLE_FATAL_INVARIANT(meta_start.raw() >= meta_cursor_);
-    meta_cursor_ = ::fixy::strict_add(::fixy::strict_add(meta_start.raw(), uint64_t{entry.num_inputs}),
-                                      uint64_t{entry.num_outputs});
-    return meta_start.raw();
+    CRUCIBLE_FATAL_INVARIANT(is_at_or_after(meta_start, meta_cursor_));
+    // Two counts of 16 bits sum to less than the capacity of the log, so the
+    // check of the refinement folds away.
+    meta_cursor_ = advance_meta_index(
+        meta_start, ::fixy::mint_refined<ValidMetaAppendCount::predicate_type{}, ValidMetaAppendCount::value_type>(
+                        uint32_t{entry.num_inputs} + uint32_t{entry.num_outputs}));
+    return meta_start;
 }
 
 // The ring grows to the next power of two, and the oldest held op moves to
@@ -529,14 +532,14 @@ void PendingOps::grow_(::foundation::effects::Alloc alloc) {
     CRUCIBLE_FATAL_INVARIANT(new_capacity <= IterationDetector::HISTORY_MAX_CAPACITY);
     ::fixy::MaskedArray<TraceRing::Entry> entries = ::fixy::mint_masked_array<TraceRing::Entry>(alloc, new_capacity);
     ::fixy::MaskedArray<MetaIndex> meta_starts = ::fixy::mint_masked_array<MetaIndex>(alloc, new_capacity);
-    ::fixy::MaskedArray<uint64_t> record_starts = ::fixy::mint_masked_array<uint64_t>(alloc, new_capacity);
+    ::fixy::MaskedArray<MetaIndex> record_starts = ::fixy::mint_masked_array<MetaIndex>(alloc, new_capacity);
     ::fixy::MaskedArray<ScopeHash> scope_hashes = ::fixy::mint_masked_array<ScopeHash>(alloc, new_capacity);
     ::fixy::MaskedArray<CallsiteHash> callsite_hashes = ::fixy::mint_masked_array<CallsiteHash>(alloc, new_capacity);
     ::fixy::MaskedArray<OpDepth> depths = ::fixy::mint_masked_array<OpDepth>(alloc, new_capacity);
     for (uint64_t index = 0; index < count_; ++index) {
         entries.with_masked(index, [held = entry(index)](TraceRing::Entry& slot) noexcept { slot = held; });
         meta_starts.with_masked(index, [held = meta_start(index)](MetaIndex& slot) noexcept { slot = held; });
-        record_starts.with_masked(index, [held = record_start(index)](uint64_t& slot) noexcept { slot = held; });
+        record_starts.with_masked(index, [held = record_start(index)](MetaIndex& slot) noexcept { slot = held; });
         scope_hashes.with_masked(index, [held = scope_hash(index)](ScopeHash& slot) noexcept { slot = held; });
         callsite_hashes.with_masked(index, [held = callsite_hash(index)](CallsiteHash& slot) noexcept { slot = held; });
         depths.with_masked(index, [held = depth(index)](OpDepth& slot) noexcept { slot = held; });
@@ -551,14 +554,14 @@ void PendingOps::grow_(::foundation::effects::Alloc alloc) {
     head_ = 0;
 }
 
-void PendingOps::push(::foundation::effects::Alloc alloc, TraceRing::Entry const& entry, MetaIndex meta_start,
-                      uint64_t record_start, ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth) {
+void PendingOps::push(::foundation::effects::Alloc alloc, TraceRing::Entry const& entry, HeldRecordPositions positions,
+                      ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth) {
     if (mask_ == 0 || count_ == mask_ + 1) [[unlikely]]
         grow_(alloc);
     const uint64_t slot = head_ + count_;
     entries_.with_masked(slot, [&entry](TraceRing::Entry& held) noexcept { held = entry; });
-    meta_starts_.with_masked(slot, [meta_start](MetaIndex& held) noexcept { held = meta_start; });
-    record_starts_.with_masked(slot, [record_start](uint64_t& held) noexcept { held = record_start; });
+    meta_starts_.with_masked(slot, [positions](MetaIndex& held) noexcept { held = positions.meta_start; });
+    record_starts_.with_masked(slot, [positions](MetaIndex& held) noexcept { held = positions.record_start; });
     scope_hashes_.with_masked(slot, [scope_hash](ScopeHash& held) noexcept { held = scope_hash; });
     callsite_hashes_.with_masked(slot, [callsite_hash](CallsiteHash& held) noexcept { held = callsite_hash; });
     depths_.with_masked(slot, [depth](OpDepth& held) noexcept { held = depth; });
@@ -635,10 +638,10 @@ void BackgroundThread::apply_due_reset_() noexcept {
 // published it.  So a floor past the head means that the positions disagree
 // with the log, and a tail past the head would give the producer slots that
 // it did not write.
-void BackgroundThread::release_meta_log(PublishStage const& stage, uint64_t meta_floor) {
+void BackgroundThread::release_meta_log(PublishStage const& stage, MetaIndex meta_floor) {
     meta_log_->with_end(stage, [meta_floor](MetaLog::Consumer& log) noexcept {
-        if (meta_floor <= MetaLog::released(log)) return;
-        CRUCIBLE_FATAL_INVARIANT(meta_floor <= MetaLog::produced(log));
+        if (is_at_or_after(MetaLog::released(log), meta_floor)) return;
+        CRUCIBLE_FATAL_INVARIANT(is_at_or_after(MetaLog::produced(log), meta_floor));
         MetaLog::advance_tail(log, meta_floor);
     });
 }
@@ -973,8 +976,10 @@ void BackgroundThread::Pipeline::DetectIterationFn(Input&& in, Output&& out, ::f
             owner.apply_due_reset_();
             ++owner.stream_ops_;
 
-            owner.pending_ops_.push(alloc, entry, ops.meta_starts.at(slot),
-                                    owner.take_record_start_(entry, ops.meta_starts.at(slot)),
+            const MetaIndex meta_start = ops.meta_starts.at(slot);
+            owner.pending_ops_.push(alloc, entry,
+                                    HeldRecordPositions{.meta_start = meta_start,
+                                                        .record_start = owner.take_record_start_(entry, meta_start)},
                                     ops.scope_hashes.at(slot), ops.callsite_hashes.at(slot), ops.depths.at(slot));
 
             if (owner.detector_.check(alloc, entry.schema_hash, entry.shape_hash)) {

@@ -260,7 +260,8 @@ static void check_overflow_build_leaves_tail(crucible::test::RigLog& metalog, St
     };
     stopped.with_trace_build_state(
         [&expect_overflow, &overflowing](BuildState& state) noexcept { expect_overflow(state, overflowing); });
-    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == 0u && "the build stage moved the tail of the metadata log");
+    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == MetaIndex{0}
+                                    && "the build stage moved the tail of the metadata log");
 
     // The overflow at the first op reads no metadata.
     Work overflowing_at_start;
@@ -269,7 +270,7 @@ static void check_overflow_build_leaves_tail(crucible::test::RigLog& metalog, St
     stopped.with_trace_build_state([&expect_overflow, &overflowing_at_start](BuildState& state) noexcept {
         expect_overflow(state, overflowing_at_start);
     });
-    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == MetaIndex{0});
 }
 
 void test_overflow_build_leaves_tail() {
@@ -377,26 +378,27 @@ static void check_publish_stage_releases_in_order(crucible::test::RigLog& log, S
         });
     };
     stopped.with_trace_build_state(build);
-    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == MetaIndex{0});
 
     BuiltRegion first_region = std::move(first_built).expect("the first epoch built the region");
     stopped.run_on_publish_stage(
         [&](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
             owner.publish_region(bg, stage, std::move(first_region), StreamPoint{});
         });
-    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == 0u && "the publish of a region moved the tail");
-    const auto release_to = [&stopped](uint64_t meta_floor) {
+    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == MetaIndex{0} && "the publish of a region moved the tail");
+    const auto release_to = [&stopped](MetaIndex meta_floor) {
         stopped.run_on_publish_stage([meta_floor](BackgroundThread::PublishStageView& owner,
                                                   BackgroundThread::PublishStage const& stage) noexcept {
             owner.release_meta_log(stage, meta_floor);
         });
     };
-    release_to(first_end);
-    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == first_end);
-    release_to(1);
-    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == first_end && "a floor before the tail moved the tail");
-    release_to(overflow_end);
-    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == overflow_end);
+    release_to(MetaIndex{first_end});
+    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == MetaIndex{first_end});
+    release_to(MetaIndex{1});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         log.total_released() == MetaIndex{first_end} && "a floor before the tail moved the tail");
+    release_to(MetaIndex{overflow_end});
+    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == MetaIndex{overflow_end});
 }
 
 void test_publish_stage_releases_in_order() {
@@ -480,7 +482,7 @@ void test_pipeline_releases_after_overflow() {
         });
 
     ::fixy::check::pass(kTest, "  pipeline_releases_after_overflow:          PASSED (tail={})\n",
-                        static_cast<unsigned long long>(rig.log_total_released()));
+                        static_cast<unsigned long long>(rig.log_total_released().raw()));
 }
 
 // The ops of the region of a built graph hold a copy of the run of the metadata
@@ -539,12 +541,12 @@ static void check_built_graph_owns_its_metadata(crucible::test::RigLog& metalog,
     stopped.run_on_publish_stage(
         [&](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
             owner.publish_region(bg, stage, std::move(parts), StreamPoint{});
-            owner.release_meta_log(stage, OPS);
+            owner.release_meta_log(stage, MetaIndex{OPS});
         });
     const crucible::DagRef<const crucible::RegionNode> region =
         bt.active_region().expect("the publish gives the active region");
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::address_of(::fixy::to(region->op_at(0))) == first_op_address);
-    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == OPS);
+    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == MetaIndex{OPS});
 }
 
 void test_built_graph_owns_its_metadata() {
@@ -603,9 +605,10 @@ static void check_build_and_release_pass_two_to_the_32(crucible::test::RigLog& m
     stopped.run_on_publish_stage(
         [&](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
             owner.publish_region(bg, stage, std::move(parts), StreamPoint{});
-            owner.release_meta_log(stage, run_end);
+            owner.release_meta_log(stage, MetaIndex{run_end});
         });
-    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == run_end && "the release did not move the tail past 2^32");
+    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == MetaIndex{run_end}
+                                    && "the release did not move the tail past 2^32");
 }
 
 void test_build_and_release_pass_two_to_the_32() {

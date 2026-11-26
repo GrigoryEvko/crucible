@@ -92,9 +92,9 @@ bool record_wide(Vigil& vigil, uint64_t schema, uint64_t shape, uint64_t address
     ::fixy::FixedArray<crucible::TensorMeta, kWideRecords> metas{};
     for (auto const index : metas.indices())
         metas.set(index, make_meta(address + uint64_t{index.raw()} * 0x40));
-    const uint64_t head_before = vigil.meta_log_total_produced();
+    const uint64_t head_before = vigil.meta_log_total_produced().raw();
     (void)vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, kWideRecords));
-    return vigil.meta_log_total_produced() == head_before;
+    return vigil.meta_log_total_produced().raw() == head_before;
 }
 
 // Records the eight-op loop until it publishes a region or until 400

@@ -758,9 +758,9 @@ public:
     [[nodiscard]] ::fixy::Stale<uint32_t> meta_log_size() const noexcept {
         return meta_log_.with_owner([](MetaLog const& log) noexcept { return log.size(); });
     }
-    // The count of the records that the record path put into the metadata
-    // log, from the first record of the log.
-    [[nodiscard]] uint64_t meta_log_total_produced() const noexcept {
+    // The position past the last record that the record path put into the
+    // metadata log.
+    [[nodiscard]] MetaIndex meta_log_total_produced() const noexcept {
         return meta_log_.with_owner([](MetaLog const& log) noexcept { return log.total_produced(); });
     }
 

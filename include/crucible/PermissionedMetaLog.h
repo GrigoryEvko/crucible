@@ -249,6 +249,11 @@ public:
         // session over the handle states the Local network.
         static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::Local;
 
+        // The count of the drain of one record.
+        static constexpr ::crucible::ValidMetaAppendCount kOneRecord =
+            ::fixy::mint_refined<::crucible::ValidMetaAppendCount::predicate_type{},
+                                 ::crucible::ValidMetaAppendCount::value_type>(1u);
+
         ConsumerEnd(const ConsumerEnd&) =
             delete("MetaLog ConsumerEnd owns the Consumer Permission — copy would duplicate the linear token");
         ConsumerEnd& operator=(const ConsumerEnd&) =
@@ -277,13 +282,13 @@ public:
         // move of the tail opens the side.
         [[nodiscard, gnu::hot]] ::fixy::Option<value_type> try_drain_one() {
             const auto log = ch_->log_.consumer_side().owner_view();
-            const std::uint64_t t = log->total_released();
+            const ::crucible::MetaIndex t = log->total_released();
             if (t == log->total_produced()) [[unlikely]] {
                 return ::fixy::none;
             }
 
-            const value_type meta = log->copy_record(t);
-            advance_tail(t + 1);
+            const value_type meta = log->copy_record(t.raw());
+            advance_tail(::crucible::advance_meta_index(t, kOneRecord));
             return ::fixy::some(meta);
         }
 
@@ -291,18 +296,22 @@ public:
             requires std::is_invocable_v<Body&, const value_type&>
         [[nodiscard]] std::uint32_t drain(Body&& body, std::uint32_t max_items = ::crucible::MetaLog::CAPACITY) {
             const auto log = ch_->log_.consumer_side().owner_view();
-            const std::uint64_t t = log->total_released();
-            const std::uint64_t available = log->total_produced() - t;
+            const ::crucible::MetaIndex t = log->total_released();
+            const std::uint64_t available = log->total_produced().raw() - t.raw();
             const std::uint32_t count = max_items < available ? max_items : static_cast<std::uint32_t>(available);
 
             // The body gets a copy of each record, and no reference into a
             // slot that the producer writes again after the release.
             for (std::uint32_t i = 0; i < count; ++i) {
-                const value_type meta = log->copy_record(t + i);
+                const value_type meta = log->copy_record(t.raw() + i);
                 body(meta);
             }
             if (count != 0) {
-                advance_tail(t + count);
+                // The log holds at most CAPACITY records, so the count of a
+                // drain is a count of an append.
+                advance_tail(::crucible::advance_meta_index(
+                    t, ::fixy::mint_refined<::crucible::ValidMetaAppendCount::predicate_type{},
+                                            ::crucible::ValidMetaAppendCount::value_type>(count)));
             }
             return count;
         }
@@ -316,22 +325,23 @@ public:
         [[nodiscard]] value_type copy_at(::crucible::MetaIndex index) const {
             CRUCIBLE_PRE(index.is_valid());
             const auto log = ch_->log_.consumer_side().owner_view();
-            CRUCIBLE_FATAL_INVARIANT(index.raw() >= log->total_released() && index.raw() < log->total_produced());
+            CRUCIBLE_FATAL_INVARIANT(::crucible::is_at_or_after(index, log->total_released())
+                                     && ::crucible::is_before(index, log->total_produced()));
             return log->copy_record(index.raw());
         }
 
-        void advance_tail(std::uint64_t new_tail) {
+        void advance_tail(::crucible::MetaIndex new_tail) {
             ch_->log_.consumer_side().with_end(ConsumerSideProof{},
                                                [new_tail](::crucible::MetaLog::Consumer& end) noexcept {
                                                    ::crucible::MetaLog::advance_tail(end, new_tail);
                                                });
         }
 
-        [[nodiscard]] std::uint64_t head_index() const {
+        [[nodiscard]] ::crucible::MetaIndex head_index() const {
             return ch_->log_.with_owner([](::crucible::MetaLog const& log) noexcept { return log.total_produced(); });
         }
 
-        [[nodiscard]] std::uint64_t tail_index() const {
+        [[nodiscard]] ::crucible::MetaIndex tail_index() const {
             return ch_->log_.with_owner([](::crucible::MetaLog const& log) noexcept { return log.total_released(); });
         }
 

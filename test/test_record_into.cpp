@@ -80,7 +80,7 @@ constexpr uint32_t kFillRecords = 4096;
 }
 
 [[nodiscard]] uint64_t log_produced(LocalLog const& log) {
-    return log.with_owner([](MetaLog const& owner) noexcept { return owner.total_produced(); });
+    return log.with_owner([](MetaLog const& owner) noexcept { return owner.total_produced().raw(); });
 }
 
 void test_full_ring_leaves_no_record_in_the_log() {

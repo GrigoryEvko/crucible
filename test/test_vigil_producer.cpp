@@ -54,13 +54,13 @@ void test_record_op_claims_the_producer_role() {
 void test_counters_count_the_recorded_op() {
     crucible::Vigil vigil;
     const uint64_t ring_before = vigil.ring_total_produced();
-    const uint64_t log_before = vigil.meta_log_total_produced();
+    const uint64_t log_before = vigil.meta_log_total_produced().raw();
     auto first = divrig::op_at(0, 0);
     CRUCIBLE_TEST_ASSERT(
         kTest, vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas)));
 
     CRUCIBLE_TEST_ASSERT(kTest, vigil.ring_total_produced() == ring_before + 1 && "the recorded op reached the ring");
-    CRUCIBLE_TEST_ASSERT(kTest, vigil.meta_log_total_produced() == log_before + first.n_metas
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.meta_log_total_produced().raw() == log_before + first.n_metas
                                     && "the records of the op reached the log");
 
     ::fixy::check::pass(kTest, "  test_counters_count_the_recorded_op: PASSED\n");

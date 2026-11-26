@@ -96,7 +96,7 @@ static void test_tail_advance_frees_capacity() {
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     auto idx = log.try_append(record.view());
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
-    log.advance_tail(idx.raw() + 1);
+    log.advance_tail(::crucible::MetaIndex{idx.raw() + 1});
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
     // Freeing capacity does not rewind the index.  Indices keep
     // counting, so the next append is 1 and not 0.
@@ -111,7 +111,7 @@ static void test_reset_zeroes_both_pointers() {
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     for (int i = 0; i < 10; ++i)
         (void)log.try_append(record.view());
-    log.advance_tail(5);
+    log.advance_tail(::crucible::MetaIndex{5});
     log.reset();
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
     // A reset does rewind the index, where advancing the tail does not.
@@ -200,9 +200,9 @@ static void test_counters_pass_two_to_the_32() {
     CRUCIBLE_TEST_ASSERT(kTest, read_below.data_ptr.value() == run.at(::fixy::index<15>()).data_ptr.value());
     CRUCIBLE_TEST_ASSERT(kTest, read_across.data_ptr.value() == run.at(::fixy::index<16>()).data_ptr.value());
 
-    log.advance_tail(across.raw() + 16);
+    log.advance_tail(::crucible::MetaIndex{across.raw() + 16});
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == (uint64_t{1} << 32) + 16);
+    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == ::crucible::MetaIndex{(uint64_t{1} << 32) + 16});
     ::fixy::check::pass(kTest, "  test_counters_pass_2_to_the_32: PASSED\n");
 }
 
@@ -222,6 +222,23 @@ static void test_copy_run_refuses_a_run_longer_than_the_buffer(::fixy::TestRunne
         },
         ::fixy::TextView{"foundation: contract violation: dst.size() <= CAPACITY"});
     ::fixy::check::pass(test, "  test_copy_run_refuses_long_run: PASSED\n");
+}
+
+// advance_meta_index gives a position past a run only from a position of the
+// log.  The index none is no position, and a sum past the width of a counter
+// is no position either.  Each refusal runs in a child.
+static void test_advance_meta_index_refuses_no_position(::fixy::TestRunnerCtx const& test) {
+    constexpr crucible::ValidMetaAppendCount kThree =
+        ::fixy::mint_refined<crucible::ValidMetaAppendCount::predicate_type{},
+                             crucible::ValidMetaAppendCount::value_type>(3u);
+    CRUCIBLE_TEST_ASSERT(test, crucible::advance_meta_index(crucible::MetaIndex{4}, kThree) == crucible::MetaIndex{7});
+    ::fixy::check::expect_dies(
+        test, [] noexcept { (void)crucible::advance_meta_index(crucible::MetaIndex::none(), kThree); },
+        ::fixy::TextView{"foundation: contract violation: start.is_valid()"});
+    ::fixy::check::expect_dies(
+        test, [] noexcept { (void)crucible::advance_meta_index(crucible::MetaIndex{~uint64_t{0} - 1}, kThree); },
+        ::fixy::TextView{"foundation: fatal: strict_add got 18446744073709551614 and 3"});
+    ::fixy::check::pass(test, "  test_advance_meta_index_refuses_no_position: PASSED\n");
 }
 
 // The producer reads its own head relaxed and publishes with a release
@@ -283,7 +300,7 @@ static void test_spsc_concurrent_integrity() {
                 CRUCIBLE_TEST_ASSERT(kTest, m.dtype == ScalarType::Float);
                 CRUCIBLE_TEST_ASSERT(kTest, m.device_type == DeviceType::CUDA);
             }
-            log.advance_tail(next + avail);
+            log.advance_tail(::crucible::MetaIndex{next + avail});
             next += avail;
         }
         CRUCIBLE_TEST_ASSERT(kTest, next == N);  // nothing was lost and nothing repeated
@@ -424,7 +441,7 @@ static void test_try_append_pure_concurrent() {
                 CRUCIBLE_TEST_ASSERT(kTest, m.dtype == ScalarType::Float);
                 CRUCIBLE_TEST_ASSERT(kTest, m.device_type == DeviceType::CUDA);
             }
-            log.advance_tail(next + avail);
+            log.advance_tail(::crucible::MetaIndex{next + avail});
             next += avail;
         }
         CRUCIBLE_TEST_ASSERT(kTest, next == N);
@@ -445,6 +462,7 @@ int main() {
     // First, while the test process has one thread: the refused copy runs in
     // a child process.
     test_copy_run_refuses_a_run_longer_than_the_buffer(test);
+    test_advance_meta_index_refuses_no_position(test);
     test_empty_state();
     test_single_append_returns_index_zero();
     test_batch_append_and_monotonic();
@@ -455,6 +473,6 @@ int main() {
     test_spsc_concurrent_integrity();
     test_try_append_pure();
     test_try_append_pure_concurrent();
-    ::fixy::check::pass(test, "test_meta_log: 11 groups, all passed\n");
+    ::fixy::check::pass(test, "test_meta_log: 12 groups, all passed\n");
     return 0;
 }

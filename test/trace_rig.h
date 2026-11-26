@@ -135,10 +135,10 @@ public:
     [[nodiscard]] BackgroundThread::MetaLogSide& side() & noexcept { return log_.consumer_side(); }
 
     // The counters, which any thread reads.
-    [[nodiscard]] uint64_t total_produced() const noexcept {
+    [[nodiscard]] MetaIndex total_produced() const noexcept {
         return log_.with_owner([](MetaLog const& log) noexcept { return log.total_produced(); });
     }
-    [[nodiscard]] uint64_t total_released() const noexcept {
+    [[nodiscard]] MetaIndex total_released() const noexcept {
         return log_.with_owner([](MetaLog const& log) noexcept { return log.total_released(); });
     }
     [[nodiscard]] ::fixy::Stale<uint32_t> size() const noexcept {
@@ -369,7 +369,7 @@ public:
             [&ctx, metas](MetaLog::Producer& end) noexcept { return MetaLog::try_append_pure(ctx, end, metas); });
     }
 
-    void advance_tail(uint64_t new_tail) noexcept {
+    void advance_tail(MetaIndex new_tail) noexcept {
         local_.with_consumer([new_tail](MetaLog::Consumer& end) noexcept { MetaLog::advance_tail(end, new_tail); });
     }
 
@@ -395,10 +395,10 @@ public:
     [[nodiscard]] ::fixy::Stale<uint32_t> size() const noexcept {
         return local_.with_owner([](MetaLog const& log) noexcept { return log.size(); });
     }
-    [[nodiscard]] uint64_t total_produced() const noexcept {
+    [[nodiscard]] MetaIndex total_produced() const noexcept {
         return local_.with_owner([](MetaLog const& log) noexcept { return log.total_produced(); });
     }
-    [[nodiscard]] uint64_t total_released() const noexcept {
+    [[nodiscard]] MetaIndex total_released() const noexcept {
         return local_.with_owner([](MetaLog const& log) noexcept { return log.total_released(); });
     }
 
@@ -449,8 +449,8 @@ public:
 
     [[nodiscard]] uint64_t ring_total_produced() const noexcept { return ring_.total_produced(); }
     [[nodiscard]] ::fixy::Stale<uint32_t> ring_size() const noexcept { return ring_.size(); }
-    [[nodiscard]] uint64_t log_total_produced() const noexcept { return log_.total_produced(); }
-    [[nodiscard]] uint64_t log_total_released() const noexcept { return log_.total_released(); }
+    [[nodiscard]] MetaIndex log_total_produced() const noexcept { return log_.total_produced(); }
+    [[nodiscard]] MetaIndex log_total_released() const noexcept { return log_.total_released(); }
     [[nodiscard]] ::fixy::Stale<uint32_t> log_size() const noexcept { return log_.size(); }
     [[nodiscard]] ::fixy::Ref<MetaLog const, ::fixy::concurrent::SpscSplitBrand<MetaLog>> log_view() & noexcept {
         return log_.view();

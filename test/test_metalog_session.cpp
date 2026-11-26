@@ -187,7 +187,7 @@ void test_permissioned_bulk_drain() {
                     same_meta(*drained.get(i).expect("a test reads an element at or past the count of its array"),
                               *records.get(i).expect("a test reads an element at or past the count of its array")));
             }
-            CRUCIBLE_TEST_ASSERT(kTest, consumer.tail_index() == records.size());
+            CRUCIBLE_TEST_ASSERT(kTest, consumer.tail_index().raw() == records.size());
             ::foundation::linear::drop(std::move(producer).release());
             ::foundation::linear::drop(std::move(consumer).release());
         });
@@ -307,8 +307,8 @@ void test_empty_drain() {
         CRUCIBLE_TEST_ASSERT(kTest, count == 0);
         CRUCIBLE_TEST_ASSERT(kTest, visited == 0);
         CRUCIBLE_TEST_ASSERT(kTest, consumer.size_approx(kSnapshot) == 0);
-        CRUCIBLE_TEST_ASSERT(kTest, consumer.tail_index() == 0);
-        CRUCIBLE_TEST_ASSERT(kTest, consumer.head_index() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, consumer.tail_index() == ::crucible::MetaIndex{0});
+        CRUCIBLE_TEST_ASSERT(kTest, consumer.head_index() == ::crucible::MetaIndex{0});
         ::foundation::linear::drop(std::move(producer).release());
         ::foundation::linear::drop(std::move(consumer).release());
     });
@@ -377,7 +377,7 @@ void test_typed_session_round_trip() {
                 });
             }
             auto back = std::move(head).take().template select<1>(::fixy::session::no_label).close();
-            const int has_handle_back = back.tail_index() == static_cast<std::uint32_t>(kCount) ? 1 : 0;
+            const int has_handle_back = back.tail_index().raw() == static_cast<std::uint32_t>(kCount) ? 1 : 0;
             ::foundation::linear::drop(std::move(back).release());
             return ConsumerResult{.matched = matched, .has_handle_back = has_handle_back};
         };
@@ -515,7 +515,8 @@ void test_moved_from_handles_end_the_process(::fixy::TestRunnerCtx const& test) 
                                ::fixy::TextView{"two live consumer handles of one MetaLog"});
     ::fixy::check::expect_dies(
         test, copy_of_a_released_record,
-        ::fixy::TextView{"foundation: fatal invariant failed: index.raw() >= log->total_released()"});
+        ::fixy::TextView{
+            "foundation: fatal invariant failed: ::crucible::is_at_or_after(index, log->total_released())"});
     ::fixy::check::pass(test, "  moved_from_handles_end_the_process ... OK\n");
 }
 

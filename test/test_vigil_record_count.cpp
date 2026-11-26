@@ -46,7 +46,7 @@ void test_count_that_disagrees_with_the_entry_is_refused() {
 
     // A count that agrees records the op, and claims this thread.
     CRUCIBLE_TEST_ASSERT(kTest, vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, 2)));
-    const uint64_t head_before = vigil.meta_log_total_produced();
+    const uint64_t head_before = vigil.meta_log_total_produced().raw();
     const uint64_t ring_before = vigil.ring_total_produced();
 
     // One record too many, one too few, and no record for an op with two
@@ -54,13 +54,13 @@ void test_count_that_disagrees_with_the_entry_is_refused() {
     CRUCIBLE_TEST_ASSERT(kTest, is_refused(entry, crucible::test::records_of(metas, 3)));
     CRUCIBLE_TEST_ASSERT(kTest, is_refused(entry, crucible::test::records_of(metas, 1)));
     CRUCIBLE_TEST_ASSERT(kTest, is_refused(entry, ::fixy::View<const crucible::TensorMeta>{}));
-    CRUCIBLE_TEST_ASSERT(kTest, vigil.meta_log_total_produced() == head_before
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.meta_log_total_produced().raw() == head_before
                                     && "a refused op put records in the metadata log");
     CRUCIBLE_TEST_ASSERT(kTest, vigil.ring_total_produced() == ring_before && "a refused op reached the trace ring");
 
     // The op with a count that agrees records again.
     CRUCIBLE_TEST_ASSERT(kTest, vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, 2)));
-    CRUCIBLE_TEST_ASSERT(kTest, vigil.meta_log_total_produced() == head_before + 2);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.meta_log_total_produced().raw() == head_before + 2);
 }
 
 void test_op_with_no_tensors_takes_no_records() {

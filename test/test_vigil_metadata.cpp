@@ -103,9 +103,9 @@ void write_over_each_slot(crucible::Vigil& vigil) {
     constexpr uint64_t kMaxOps = uint64_t{4} * crucible::MetaLog::CAPACITY / kRecords;
     const ::fixy::HeapArray<crucible::TensorMeta> chunk =
         ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, kRecords, meta_at(overwrite_ptr(), 3));
-    const uint64_t first = vigil.meta_log_total_produced();
+    const uint64_t first = vigil.meta_log_total_produced().raw();
     uint64_t op = 0;
-    while (vigil.meta_log_total_produced() - first < crucible::MetaLog::CAPACITY) {
+    while (vigil.meta_log_total_produced().raw() - first < crucible::MetaLog::CAPACITY) {
         CRUCIBLE_TEST_ASSERT(kTest, op < kMaxOps && "the log took too few records over the ops");
         crucible::TraceRing::Entry entry{};
         entry.schema_hash = crucible::SchemaHash{0xF000000 + op};

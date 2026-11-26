@@ -160,6 +160,17 @@ struct PublishedRegion {
     StreamPoint reset_point{};
 };
 
+// The two positions of the records of an op that the detect stage holds.
+// meta_start is the index that the ring entry names, and it is the index
+// none for an op whose records the log refused.  record_start is the
+// position of the op in the stream of records, which is always a position of
+// the log.  The two are one type with two meanings, so a push takes them as
+// one value with named fields, and each call names each field.
+struct HeldRecordPositions {
+    MetaIndex meta_start = MetaIndex::none();
+    MetaIndex record_start = MetaIndex{0};
+};
+
 // The ops that the detect stage holds, from the oldest op that a future
 // iteration can hold to the newest op.  It is a ring of six parallel arrays
 // that grows by doubling.  The detect stage drops each op that
@@ -169,12 +180,11 @@ struct PublishedRegion {
 // 49 MiB.
 class PendingOps {
 public:
-    // Adds the newest op.  record_start is the position of the op in the
-    // stream of records of the metadata log.  The ring grows with the
-    // allocation capability of the detect stage.  Complexity: O(1), and O(n)
-    // when the ring grows.
-    void push(::foundation::effects::Alloc alloc, TraceRing::Entry const& entry, MetaIndex meta_start,
-              uint64_t record_start, ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth);
+    // Adds the newest op with the two positions of its records.  The ring
+    // grows with the allocation capability of the detect stage.  Complexity:
+    // O(1), and O(n) when the ring grows.
+    void push(::foundation::effects::Alloc alloc, TraceRing::Entry const& entry, HeldRecordPositions positions,
+              ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth);
 
     // Drops the count oldest ops.  A count past size() drops each op.
     void drop_oldest(uint64_t count) noexcept {
@@ -195,7 +205,7 @@ public:
         return entries_.at_masked(head_ + index);
     }
     [[nodiscard]] MetaIndex meta_start(uint64_t index) const noexcept { return meta_starts_.at_masked(head_ + index); }
-    [[nodiscard]] uint64_t record_start(uint64_t index) const noexcept {
+    [[nodiscard]] MetaIndex record_start(uint64_t index) const noexcept {
         return record_starts_.at_masked(head_ + index);
     }
     [[nodiscard]] ScopeHash scope_hash(uint64_t index) const noexcept { return scope_hashes_.at_masked(head_ + index); }
@@ -211,7 +221,7 @@ private:
 
     ::fixy::MaskedArray<TraceRing::Entry> entries_;
     ::fixy::MaskedArray<MetaIndex> meta_starts_;
-    ::fixy::MaskedArray<uint64_t> record_starts_;
+    ::fixy::MaskedArray<MetaIndex> record_starts_;
     ::fixy::MaskedArray<ScopeHash> scope_hashes_;
     ::fixy::MaskedArray<CallsiteHash> callsite_hashes_;
     ::fixy::MaskedArray<OpDepth> depths_;
@@ -536,7 +546,7 @@ struct BgBuildWork {
     NumericsHash numerics{};
     // On a commit-only marker, the oldest record that a later work can hold
     // (meta_floor_() when the detect stage made the marker).
-    uint64_t meta_floor = 0;
+    MetaIndex meta_floor = MetaIndex{0};
     // The ops of the iteration, one element of each buffer for each op, each
     // built from the held op.  An iteration has at most
     // IterationDetector::MAX_PERIOD ops, so the five buffers take at most 90
@@ -580,7 +590,7 @@ struct BgGraphPublish {
     BuiltRegion region{};
     uint32_t commit_count = 0;
     // The release floor of the metadata log.  Only a commit marker sets it.
-    uint64_t meta_floor = 0;
+    MetaIndex meta_floor = MetaIndex{0};
     // Carried through from the BgBuildWork this came from, so a reset that
     // lands while the build stage is mid-graph is still caught here, one stage
     // later.
@@ -1099,7 +1109,7 @@ private:
     // The position in the stream of records after the records of the last
     // op that the detect stage read with a metadata index.  The detect stage
     // owns it.  The first start sets it to the tail of the metadata log.
-    uint64_t meta_cursor_ = 0;
+    MetaIndex meta_cursor_ = MetaIndex{0};
 
     // The numerics hash of the run at its start: the hash of the default
     // policy until the owner sets one before start.
@@ -1116,11 +1126,11 @@ private:
     // moves the cursor past the records of the op.  A valid index before the
     // cursor ends the process, because a later release would then pass the
     // records of that op before its build copies them.
-    [[nodiscard]] uint64_t take_record_start_(TraceRing::Entry const& entry, MetaIndex meta_start) noexcept;
+    [[nodiscard]] MetaIndex take_record_start_(TraceRing::Entry const& entry, MetaIndex meta_start) noexcept;
 
     // The oldest record that a later work can hold: the position of the
     // oldest held op, or the cursor when the detect stage holds no op.
-    [[nodiscard]] uint64_t meta_floor_() const noexcept {
+    [[nodiscard]] MetaIndex meta_floor_() const noexcept {
         return pending_ops_.size() == 0 ? meta_cursor_ : pending_ops_.record_start(0);
     }
 
@@ -1618,7 +1628,7 @@ public:
     // before the floor back to the foreground.  A floor at or before the tail
     // changes nothing, and a floor past the head ends the process.  The proof
     // shows that the caller is the publish stage, the one writer of the tail.
-    void release_meta_log(PublishStage const& stage, uint64_t meta_floor) CRUCIBLE_NO_THREAD_SAFETY;
+    void release_meta_log(PublishStage const& stage, MetaIndex meta_floor) CRUCIBLE_NO_THREAD_SAFETY;
 
     // Makes the RegionNode and the memory plan of the region, publishes the
     // region and gives its memory to the region store.  The background
@@ -1779,7 +1789,7 @@ public:
             owner_.publish_region(bg, stage, std::move(parts), reset_point);
         }
 
-        void release_meta_log(PublishStage const& stage, uint64_t meta_floor) CRUCIBLE_NO_THREAD_SAFETY {
+        void release_meta_log(PublishStage const& stage, MetaIndex meta_floor) CRUCIBLE_NO_THREAD_SAFETY {
             owner_.release_meta_log(stage, meta_floor);
         }
 
