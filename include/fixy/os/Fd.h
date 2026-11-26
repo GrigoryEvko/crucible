@@ -69,7 +69,8 @@ void close_descriptor_(int descriptor) noexcept;
 // thread of the process starts a program (F_DUPFD_CLOEXEC).  The result is the
 // number, or the error of the kernel.  The call can wait, because the growth of
 // the table of the numbers of a process with threads waits for each reader of
-// the old table.  The duplicate of fixy/os/Handle.h is the one caller.
+// the old table.  The duplicate of fixy/os/Handle.h and the split of a stream
+// socket into its halves (fixy/os/Socket.h) are the callers.
 [[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno> duplicate_descriptor_(int descriptor) noexcept;
 
 // Sends the ioctl request to descriptor, with the address argument

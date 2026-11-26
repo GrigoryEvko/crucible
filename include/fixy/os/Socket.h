@@ -27,9 +27,14 @@
 #include <fixy/os/Fd.h>
 #include <fixy/os/Handle.h>
 #include <fixy/os/SocketCalls.h>
+#include <foundation/Brand.h>
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Record.h>
@@ -364,6 +369,356 @@ filled_part_(::foundation::core::ViewMut<std::byte, Brand, Extent>&& buffer,
 
 }  // namespace detail
 
+// Halves of a stream
+//   Two threads divide a stream socket by direction (the shape of a socket kind
+//   of fixy/os/Handle.h).  with_stream_halves takes the Handle of a stream
+//   socket with the rights read and write, and gives its body a read half and
+//   a write half of the socket.  The read half keeps the number of the Handle
+//   with no write right, and the write half is a duplicate of it with no read
+//   right.  The door advances the generation of the number first, so each
+//   borrow and each ForeignSocketRef of the Handle from before the split gives
+//   ebadf: none of them writes beside the write half.
+//
+//   Each half is linear and owes a consume, and it stays on its thread.  It
+//   moves to another thread through a transit (depart() and arrive(), the
+//   parts stream_read_part and stream_write_part).  It ends at a named door or
+//   at the end of the frame.  close() of the read half closes its number.
+//   shut_down_and_close() of the write half ends the write direction of the
+//   socket first, so the peer reads the end of the stream while the read half
+//   lives.  The end of a write half that no door ended does the same, as a
+//   backstop of a path that the rule must-consume reports.
+//
+//   The body gives back a Record of the read part, the write part and at most
+//   one value.  A part is the half or the token of its end (StreamReadEnded,
+//   StreamWriteEnded), each of the brand of the frame.  The value names no
+//   brand of the frame and is no linear value, so it holds no half.  The door
+//   reads the shape at compile time.  Two halves are the join: the door closes
+//   the number of the write half, advances the generation of the first number,
+//   and gives the Handle with its rights.  One half gives the Handle of its
+//   number with its rights.  Two ends give Unit.  The value follows in a
+//   Record.  A duplicate that the kernel refuses gives the Handle back with
+//   the error (StreamHalvesRefused).
+//
+//   The brand of a frame is a scope brand (CRUCIBLE_SCOPE_BRAND of
+//   foundation/Brand.h) in the last template parameter, after a pack that
+//   takes each explicit argument, so no caller names it.  So a part of another
+//   frame does not fit the body of this frame, and a join takes only the two
+//   halves of its own split.  A recursion that gives a half of an outer frame
+//   to an inner frame at the same site names the type of the half in its
+//   parameters, so the inner frame is in another instantiation, with another
+//   brand.  The halves can go to two threads inside the body, as run_joined
+//   and the fork mints join each thread before the body returns.
+
+template <class Kind, ::fixy::os::RightSet Rights, class Brand>
+    requires ::fixy::os::StreamSocketKind<Kind> && ::foundation::brand::IsBrand<Brand>
+class StreamReadHalf;
+
+template <class Kind, ::fixy::os::RightSet Rights, class Brand>
+    requires ::fixy::os::StreamSocketKind<Kind> && ::foundation::brand::IsBrand<Brand>
+class StreamWriteHalf;
+
+// The parts of a transit of a half (the transit of fixy/os/Handle.h).
+template <class Brand>
+struct stream_read_part final {
+    template <class Kind, ::fixy::os::RightSet Rights>
+    using owner = StreamReadHalf<Kind, Rights, Brand>;
+};
+
+template <class Brand>
+struct stream_write_part final {
+    template <class Kind, ::fixy::os::RightSet Rights>
+    using owner = StreamWriteHalf<Kind, Rights, Brand>;
+};
+
+// The token of the end of the read half of a frame.  Only close() of the
+// read half makes one.
+template <class Brand>
+class [[nodiscard]] StreamReadEnded final {
+    // No copy of bytes builds a token (foundation/ByteSeal.h).
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr StreamReadEnded() noexcept = default;
+
+    template <class Kind, ::fixy::os::RightSet Rights, class HalfBrand>
+        requires ::fixy::os::StreamSocketKind<Kind> && ::foundation::brand::IsBrand<HalfBrand>
+    friend class StreamReadHalf;
+
+public:
+    using brand_type = Brand;
+};
+
+// The token of the end of the write half of a frame.  Only
+// shut_down_and_close() of the write half makes one.
+template <class Brand>
+class [[nodiscard]] StreamWriteEnded final {
+    // No copy of bytes builds a token (foundation/ByteSeal.h).
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr StreamWriteEnded() noexcept = default;
+
+    template <class Kind, ::fixy::os::RightSet Rights, class HalfBrand>
+        requires ::fixy::os::StreamSocketKind<Kind> && ::foundation::brand::IsBrand<HalfBrand>
+    friend class StreamWriteHalf;
+
+public:
+    using brand_type = Brand;
+};
+
+// The read half of a stream socket of a frame (halves of a stream).
+template <class Kind, ::fixy::os::RightSet Rights, class Brand>
+    requires ::fixy::os::StreamSocketKind<Kind> && ::foundation::brand::IsBrand<Brand>
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::owes_consume{}]]
+                   [[= ::foundation::transfer::thread_bound{}]] StreamReadHalf final {
+    // The number of the socket, or -1 for a half that a move emptied.
+    int descriptor_ = -1;
+    // No start of a lifetime over bytes builds a half (foundation/ByteSeal.h).
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    explicit StreamReadHalf(int descriptor) noexcept : descriptor_{descriptor} {}
+
+    // The end of a number that no door ended: the close.
+    static void close_number_(int descriptor) noexcept {
+        if (descriptor >= 0) ::fixy::fs::detail::close_owned_descriptor_(descriptor);
+    }
+
+    // Gives the number to the door of the frame, which owns it from then on.
+    [[nodiscard]] int release_number_() && noexcept {
+        int const descriptor = descriptor_;
+        descriptor_ = -1;
+        return descriptor;
+    }
+
+    friend class SocketDoor;
+
+public:
+    // The half of a number that a transit carried.  The generation stays.
+    // Only a transit has the key (TransitKey of fixy/os/Handle.h).
+    [[nodiscard]] static StreamReadHalf from_number_(::fixy::os::TransitKey, int descriptor) noexcept {
+        return StreamReadHalf{descriptor};
+    }
+
+    // The end of a number that a transit carried and that did not arrive.
+    // Only a transit has the key.
+    static void end_number_(::fixy::os::TransitKey, int descriptor) noexcept { close_number_(descriptor); }
+
+    using kind_type = Kind;
+    using brand_type = Brand;
+    static constexpr ::fixy::os::RightSet rights = ::fixy::os::rights_without<Rights, ::fixy::os::RightSet::write>;
+
+    StreamReadHalf(StreamReadHalf const&) = delete("a half carries one descriptor: a copy would give it two owners");
+    StreamReadHalf&
+    operator=(StreamReadHalf const&) = delete("a half carries one descriptor: a copy would give it two owners");
+
+    // A move takes the descriptor, and the source holds none.
+    StreamReadHalf(StreamReadHalf&& other) noexcept : descriptor_{other.descriptor_} { other.descriptor_ = -1; }
+    StreamReadHalf&
+    operator=(StreamReadHalf&&) = delete("a half ends at its door: an assignment would end the half that it replaces");
+
+    ~StreamReadHalf() noexcept { close_number_(descriptor_); }
+
+    // The borrow of the socket with the rights of the read half, so each door
+    // of a write refuses it at compile time.  Complexity: one acquire load.
+    [[nodiscard]] ::fixy::os::HandleRef<Kind, rights> ref() const& noexcept {
+        return ::fixy::os::detail::HandleDoor::borrow_of_owned_number<Kind, rights>(descriptor_);
+    }
+    void ref() const&& = delete("the borrow of a temporary half dangles at the end of the full expression");
+
+    // Closes the number of the half, and gives the token of its end.
+    [[nodiscard]] StreamReadEnded<Brand> close() && noexcept {
+        close_number_(descriptor_);
+        descriptor_ = -1;
+        return StreamReadEnded<Brand>{};
+    }
+
+    // Gives the number to a transit for another thread (the transit of
+    // fixy/os/Handle.h).  The generation advances first, so each borrow of the
+    // half on this thread is stale from then on.  Complexity: one atomic step.
+    [[nodiscard]] ::fixy::os::HandleInTransit<Kind, Rights, stream_read_part<Brand>> depart() && noexcept {
+        ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
+        int const descriptor = descriptor_;
+        descriptor_ = -1;
+        return ::fixy::os::HandleInTransit<Kind, Rights, stream_read_part<Brand>>{descriptor};
+    }
+};
+
+// The write half of a stream socket of a frame (halves of a stream).
+template <class Kind, ::fixy::os::RightSet Rights, class Brand>
+    requires ::fixy::os::StreamSocketKind<Kind> && ::foundation::brand::IsBrand<Brand>
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::owes_consume{}]]
+                   [[= ::foundation::transfer::thread_bound{}]] StreamWriteHalf final {
+    // The number of the duplicate, or -1 for a half that a move emptied.
+    int descriptor_ = -1;
+    // No start of a lifetime over bytes builds a half (foundation/ByteSeal.h).
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    explicit StreamWriteHalf(int descriptor) noexcept : descriptor_{descriptor} {}
+
+    // The end of a number that no door ended: the end of the write direction
+    // of the socket, so the peer reads the end of the stream, and the close.
+    // A socket with no connection refuses the shutdown, and the close follows.
+    static void shut_down_number_(int descriptor) noexcept {
+        if (descriptor < 0) return;
+        static_cast<void>(detail::shut_down_writes_(descriptor));
+        ::fixy::fs::detail::close_owned_descriptor_(descriptor);
+    }
+
+    // Gives the number to the door of the frame, which owns it from then on.
+    [[nodiscard]] int release_number_() && noexcept {
+        int const descriptor = descriptor_;
+        descriptor_ = -1;
+        return descriptor;
+    }
+
+    friend class SocketDoor;
+
+public:
+    // The half of a number that a transit carried.  The generation stays.
+    // Only a transit has the key (TransitKey of fixy/os/Handle.h).
+    [[nodiscard]] static StreamWriteHalf from_number_(::fixy::os::TransitKey, int descriptor) noexcept {
+        return StreamWriteHalf{descriptor};
+    }
+
+    // The end of a number that a transit carried and that did not arrive: the
+    // end of the write direction and the close.  Only a transit has the key.
+    static void end_number_(::fixy::os::TransitKey, int descriptor) noexcept { shut_down_number_(descriptor); }
+
+    using kind_type = Kind;
+    using brand_type = Brand;
+    static constexpr ::fixy::os::RightSet rights = ::fixy::os::rights_without<Rights, ::fixy::os::RightSet::read>;
+
+    StreamWriteHalf(StreamWriteHalf const&) = delete("a half carries one descriptor: a copy would give it two owners");
+    StreamWriteHalf&
+    operator=(StreamWriteHalf const&) = delete("a half carries one descriptor: a copy would give it two owners");
+
+    // A move takes the descriptor, and the source holds none.
+    StreamWriteHalf(StreamWriteHalf&& other) noexcept : descriptor_{other.descriptor_} { other.descriptor_ = -1; }
+    StreamWriteHalf&
+    operator=(StreamWriteHalf&&) = delete("a half ends at its door: an assignment would end the half that it replaces");
+
+    // The end of a live write half ends the write direction, as
+    // shut_down_and_close() does, so no path closes it in silence.
+    ~StreamWriteHalf() noexcept { shut_down_number_(descriptor_); }
+
+    // The borrow of the socket with the rights of the write half, so each
+    // door of a read refuses it at compile time.  Complexity: one acquire load.
+    [[nodiscard]] ::fixy::os::HandleRef<Kind, rights> ref() const& noexcept {
+        return ::fixy::os::detail::HandleDoor::borrow_of_owned_number<Kind, rights>(descriptor_);
+    }
+    void ref() const&& = delete("the borrow of a temporary half dangles at the end of the full expression");
+
+    // Ends the write direction of the socket and closes the number, and gives
+    // the token of the end.  The peer then reads the end of the stream, also
+    // while the read half lives.
+    [[nodiscard]] StreamWriteEnded<Brand> shut_down_and_close() && noexcept {
+        shut_down_number_(descriptor_);
+        descriptor_ = -1;
+        return StreamWriteEnded<Brand>{};
+    }
+
+    // Gives the number to a transit for another thread (the transit of
+    // fixy/os/Handle.h).  The generation advances first, so each borrow of the
+    // half on this thread is stale from then on.  Complexity: one atomic step.
+    [[nodiscard]] ::fixy::os::HandleInTransit<Kind, Rights, stream_write_part<Brand>> depart() && noexcept {
+        ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
+        int const descriptor = descriptor_;
+        descriptor_ = -1;
+        return ::fixy::os::HandleInTransit<Kind, Rights, stream_write_part<Brand>>{descriptor};
+    }
+};
+
+// The refusal of a split (halves of a stream): the error of the duplicate,
+// and the Handle back.  It is a linear error of a Result, which gives the
+// resource back to the caller.  The end of its scope closes the Handle, so it
+// is the door of the refusal.
+template <class Kind, ::fixy::os::RightSet Rights>
+struct [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::scope_end_door{}]]
+    StreamHalvesRefused final {
+    ::foundation::os::Errno error{};
+    ::fixy::os::Handle<Kind, Rights> socket{};
+    // No start of a lifetime over bytes builds a refusal (foundation/ByteSeal.h).
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+
+// The gate of a split: the context admits a call that can wait (the duplicate
+// of fixy/os/Handle.h), the kind is a stream socket, and the Handle holds the
+// two directions.
+template <class Ctx, class Kind, ::fixy::os::RightSet Rights>
+concept CtxFitsStreamHalves = ::fixy::fs::CtxAdmitsFs<Ctx> && ::fixy::os::StreamSocketKind<Kind>
+                           && ::fixy::os::HoldsRights<Rights, ::fixy::os::RightSet::read | ::fixy::os::RightSet::write>;
+
+namespace detail {
+
+// The read part, the write part and the value of the Record that a body of a
+// frame gives back (halves of a stream).  A type that is no Record of two or
+// three parts has no shape.
+template <class Back>
+struct halves_back_ {
+    static constexpr bool is_record = false;
+};
+
+template <class ReadPart, class WritePart>
+struct halves_back_<::foundation::core::Record<ReadPart, WritePart>> {
+    static constexpr bool is_record = true;
+    static constexpr bool has_value = false;
+    using read_part = ReadPart;
+    using write_part = WritePart;
+};
+
+template <class ReadPart, class WritePart, class Value>
+struct halves_back_<::foundation::core::Record<ReadPart, WritePart, Value>> {
+    static constexpr bool is_record = true;
+    static constexpr bool has_value = true;
+    using read_part = ReadPart;
+    using write_part = WritePart;
+    using value = Value;
+};
+
+// True when Back is the Record of a frame of the brand Brand: a read part, a
+// write part, each the half or the token of its end, and at most one value
+// that names no brand of the frame and is no linear value.
+template <class Back, class Kind, ::fixy::os::RightSet Rights, class Brand>
+[[nodiscard]] consteval bool is_halves_back_() noexcept {
+    using Shape = halves_back_<Back>;
+    if constexpr (!Shape::is_record) {
+        return false;
+    } else {
+        using ReadPart = typename Shape::read_part;
+        using WritePart = typename Shape::write_part;
+        bool const has_parts = (std::same_as<ReadPart, StreamReadHalf<Kind, Rights, Brand>>
+                                || std::same_as<ReadPart, StreamReadEnded<Brand>>)
+                            && (std::same_as<WritePart, StreamWriteHalf<Kind, Rights, Brand>>
+                                || std::same_as<WritePart, StreamWriteEnded<Brand>>);
+        if constexpr (Shape::has_value) {
+            using Value = typename Shape::value;
+            return has_parts && !::foundation::core::detail::names_brand(^^Value, ^^Brand)
+                && !::foundation::linear::is_linear_type(^^Value);
+        } else {
+            return has_parts;
+        }
+    }
+}
+
+}  // namespace detail
+
+// A body of a frame of halves (halves of a stream): it takes the two halves
+// with no throw, holds no linear value by value, and stores no borrow outside
+// the frame.  The door reads the shape of the Record that the body gives back
+// in a static_assert, so a wrong shape gives its reason.
+template <class Body, class Kind, ::fixy::os::RightSet Rights, class Brand>
+concept StreamHalvesBody =
+    ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>
+    && std::is_nothrow_invocable_v<Body&&, StreamReadHalf<Kind, Rights, Brand>&&,
+                                   StreamWriteHalf<Kind, Rights, Brand>&&>;
+
+// The frame of the two halves of a stream socket (halves of a stream).
+// Declared here and defined below SocketDoor, because SocketDoor names it as
+// its friend.
+template <class... Refused, class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0
+             && CtxFitsStreamHalves<Ctx, Kind, Rights> && StreamHalvesBody<Body, Kind, Rights, Fresh>)
+[[nodiscard]] auto with_stream_halves(Ctx const&, ::fixy::os::Handle<Kind, Rights>&& socket, Body&& body) noexcept;
+
 // The Kind parameter precedes Ctx because the caller names it explicitly
 // and Ctx deduces from the argument.
 //
@@ -395,6 +750,94 @@ class SocketDoor final : ::foundation::NoObject<SocketDoor> {
         requires CtxFitsSocketPairMint<FriendCtx, FriendKind>
     friend auto mint_socket_pair(FriendCtx const&) noexcept
         -> ::foundation::core::Result<SocketPair<FriendKind>, ::foundation::os::Errno>;
+
+    template <class... Refused, class FriendKind, ::fixy::os::RightSet FriendRights, eff::IsExecCtx FriendCtx,
+              class FriendBody, ::foundation::brand::IsBrand FriendFresh>
+        requires(sizeof...(Refused) == 0 && CtxFitsStreamHalves<FriendCtx, FriendKind, FriendRights>
+                 && StreamHalvesBody<FriendBody, FriendKind, FriendRights, FriendFresh>)
+    friend auto with_stream_halves(FriendCtx const&, ::fixy::os::Handle<FriendKind, FriendRights>&& socket,
+                                   FriendBody&& body) noexcept;
+
+    // The Handle of the parts that a body of a frame gives back (halves of a
+    // stream).  Two halves are the join: the number of the write half closes,
+    // and the generation of the first number advances, so no borrow of a half
+    // is current after the frame.  One half gives the Handle of its number
+    // with its rights, and its generation advances too.  Two ends give Unit.
+    template <class Kind, ::fixy::os::RightSet Rights, class Brand, class ReadPart, class WritePart>
+    [[nodiscard]] static auto handle_of_parts_(ReadPart&& read_part, WritePart&& write_part) noexcept {
+        constexpr bool keeps_read = std::same_as<ReadPart, StreamReadHalf<Kind, Rights, Brand>>;
+        constexpr bool keeps_write = std::same_as<WritePart, StreamWriteHalf<Kind, Rights, Brand>>;
+        if constexpr (keeps_read && keeps_write) {
+            int const read_number = std::move(read_part).release_number_();
+            int const write_number = std::move(write_part).release_number_();
+            ::fixy::fs::detail::close_owned_descriptor_(write_number);
+            ::fixy::fs::detail::advance_descriptor_generation_(read_number);
+            return ::fixy::os::Handle<Kind, Rights>::adopt_number_(read_number);
+        } else if constexpr (keeps_read) {
+            static_cast<void>(write_part);
+            int const read_number = std::move(read_part).release_number_();
+            ::fixy::fs::detail::advance_descriptor_generation_(read_number);
+            return ::fixy::os::Handle<
+                Kind, ::fixy::os::rights_without<Rights, ::fixy::os::RightSet::write>>::adopt_number_(read_number);
+        } else if constexpr (keeps_write) {
+            static_cast<void>(read_part);
+            int const write_number = std::move(write_part).release_number_();
+            ::fixy::fs::detail::advance_descriptor_generation_(write_number);
+            return ::fixy::os::Handle<
+                Kind, ::fixy::os::rights_without<Rights, ::fixy::os::RightSet::read>>::adopt_number_(write_number);
+        } else {
+            static_cast<void>(read_part);
+            static_cast<void>(write_part);
+            return ::foundation::core::Unit{};
+        }
+    }
+
+    // The value of a frame: the Handle of the parts, and the value of the body
+    // when the body gives one.
+    template <class Kind, ::fixy::os::RightSet Rights, class Brand, class Back>
+    [[nodiscard]] static auto value_of_back_(Back&& back) noexcept {
+        if constexpr (detail::halves_back_<Back>::has_value) {
+            auto [read_part, write_part, value] = std::move(back);
+            auto handle = handle_of_parts_<Kind, Rights, Brand>(std::move(read_part), std::move(write_part));
+            return ::foundation::core::Record<decltype(handle), typename detail::halves_back_<Back>::value>{
+                std::move(handle), std::move(value)};
+        } else {
+            auto [read_part, write_part] = std::move(back);
+            return handle_of_parts_<Kind, Rights, Brand>(std::move(read_part), std::move(write_part));
+        }
+    }
+
+    // The split of a frame (halves of a stream).  The duplicate comes first,
+    // so a refusal gives the Handle back as it was.  An empty Handle gives
+    // ebadf and makes no call.  Then the generation of each number advances:
+    // the first one ends each borrow of the Handle, and the second one starts
+    // the ownership of the write half, as the open of a Handle does.  The body
+    // gets the two halves.
+    template <class Kind, ::fixy::os::RightSet Rights, class Brand, class Body>
+    [[nodiscard]] static auto run_stream_halves_(::fixy::os::Handle<Kind, Rights>&& socket, Body&& body) noexcept {
+        using ReadHalf = StreamReadHalf<Kind, Rights, Brand>;
+        using WriteHalf = StreamWriteHalf<Kind, Rights, Brand>;
+        using Back = std::invoke_result_t<Body&&, ReadHalf&&, WriteHalf&&>;
+        using Value = decltype(value_of_back_<Kind, Rights, Brand>(std::declval<Back&&>()));
+        using Refused = StreamHalvesRefused<Kind, Rights>;
+        using Split = ::foundation::core::Result<Value, Refused>;
+        int const first = socket.descriptor_;
+        if (first < 0) {
+            return Split{::foundation::core::err(Refused{::foundation::os::Errno::ebadf, std::move(socket)})};
+        }
+        ::foundation::core::Result<int, ::foundation::os::Errno> duplicated =
+            ::fixy::fs::detail::admit_opened_number_(::fixy::fs::detail::duplicate_descriptor_(first));
+        if (duplicated.is_err()) {
+            ::foundation::os::Errno const error = std::move(duplicated).err().value_or(::foundation::os::Errno::ebadf);
+            return Split{::foundation::core::err(Refused{error, std::move(socket)})};
+        }
+        int const second = std::move(duplicated).value_or(-1);
+        ::fixy::fs::detail::advance_descriptor_generation_(first);
+        ::fixy::fs::detail::advance_descriptor_generation_(second);
+        socket.descriptor_ = -1;
+        Back back = static_cast<Body&&>(body)(ReadHalf{first}, WriteHalf{second});
+        return Split{value_of_back_<Kind, Rights, Brand>(std::move(back))};
+    }
 
     // The open door of src/fixy/os/Socket.cpp adds SOCK_CLOEXEC, because a
     // descriptor that survives execve leaks into each child process.  It
@@ -457,6 +900,46 @@ template <typename Kind, eff::IsExecCtx Ctx>
 mint_socket(Ctx const&) noexcept {
     return SocketDoor::open_<Kind>();
 }
+
+// The frame of the two halves of a stream socket (halves of a stream).  The
+// result is the value of the shape that the body gives back, or the refusal
+// of the duplicate with the Handle.  Complexity: one duplicate call and one
+// generation step for the split, one close and one generation step for the
+// join, and the body.
+template <class... Refused, class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx, class Body,
+          ::foundation::brand::IsBrand Fresh>
+    requires(sizeof...(Refused) == 0
+             && CtxFitsStreamHalves<Ctx, Kind, Rights> && StreamHalvesBody<Body, Kind, Rights, Fresh>)
+[[nodiscard]] auto with_stream_halves(Ctx const&, ::fixy::os::Handle<Kind, Rights>&& socket, Body&& body) noexcept {
+    constexpr bool is_shaped = detail::is_halves_back_<
+        std::invoke_result_t<Body&&, StreamReadHalf<Kind, Rights, Fresh>&&, StreamWriteHalf<Kind, Rights, Fresh>&&>,
+        Kind, Rights, Fresh>();
+    static_assert(is_shaped,
+                  "with_stream_halves: the body gives back a Record of the read part, the write part and at most one "
+                  "value.  Each part is the half of this frame or the token of its end, and the value names no brand "
+                  "of the frame and is no linear value");
+    // A body of another shape stops at the static_assert, and the door then
+    // makes no split, so the compile gives no second error.
+    if constexpr (is_shaped) {
+        return SocketDoor::run_stream_halves_<Kind, Rights, Fresh>(std::move(socket), static_cast<Body&&>(body));
+    }
+}
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (StreamHalvesBody).
+template <class... Refused, class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx, class Body>
+    requires(sizeof...(Refused) == 0
+             && CtxFitsStreamHalves<Ctx, Kind, Rights> && !::foundation::linear::HoldsNoLinearValue<Body>)
+void with_stream_halves(Ctx const&, ::fixy::os::Handle<Kind, Rights>&& socket,
+                        Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A body that can store a borrow outside the frame binds to this overload, so
+// the refusal gives its reason (StreamHalvesBody).
+template <class... Refused, class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx, class Body>
+    requires(sizeof...(Refused) == 0 && CtxFitsStreamHalves<Ctx, Kind, Rights>
+             && ::foundation::linear::HoldsNoLinearValue<Body> && !::foundation::core::StoresNoBorrowOutside<Body>)
+void with_stream_halves(Ctx const&, ::fixy::os::Handle<Kind, Rights>&& socket,
+                        Body&& body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 // The two connected ends of one stream socket of the local domain (the socket
 // pair).  The kernel answers socketpair(2) at once.  A process with no free

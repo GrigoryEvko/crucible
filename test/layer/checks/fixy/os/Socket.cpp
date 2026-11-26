@@ -1,7 +1,11 @@
 // The compile-time checks of fixy/os/Socket.h.
 
 #include <fixy/os/Socket.h>
+#include <foundation/Brand.h>
+#include <foundation/Linear.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/Record.h>
 #include <foundation/core/Scalar.h>
 
 #include <linux/net_tstamp.h>
@@ -66,6 +70,73 @@ static_assert(::fixy::os::DuplicatesWith<::fixy::os::kind::Socket<socket_kind::N
               && !::fixy::os::DuplicatesWith<::fixy::os::kind::Socket<socket_kind::TcpStream>, socket_rights>);
 static_assert(sizeof(detail::SocketPairNumbers) == 2 * sizeof(int), "socketpair writes two ints");
 
+// The halves of a stream (with_stream_halves).  A half is one number with the
+// rights of one direction.  It is linear, it owes a consume, and it stays on its
+// thread.  Its transit holds no borrow, so each door of a thread takes it.
+using UnixKind = ::fixy::os::kind::Socket<socket_kind::UnixStream>;
+using NetlinkKind = ::fixy::os::kind::Socket<socket_kind::NetlinkRoute>;
+using PinBrand = ::foundation::brand::DefaultBrand;
+using ReadHalf = StreamReadHalf<UnixKind, socket_rights, PinBrand>;
+using WriteHalf = StreamWriteHalf<UnixKind, socket_rights, PinBrand>;
+using ReadTransit = ::fixy::os::HandleInTransit<UnixKind, socket_rights, stream_read_part<PinBrand>>;
+using WriteTransit = ::fixy::os::HandleInTransit<UnixKind, socket_rights, stream_write_part<PinBrand>>;
+static_assert(ReadHalf::rights == (::fixy::os::RightSet::read | ::fixy::os::RightSet::ioctl_socket)
+                  && WriteHalf::rights == (::fixy::os::RightSet::write | ::fixy::os::RightSet::ioctl_socket),
+              "each half holds one direction, and the two keep the control calls");
+static_assert(sizeof(ReadHalf) == sizeof(int) && sizeof(WriteHalf) == sizeof(int), "a half is its number");
+static_assert(::foundation::linear::is_linear_v<ReadHalf> && ::foundation::linear::owes_consume_at_end(^^ReadHalf)
+                  && ::foundation::linear::is_linear_v<WriteHalf>
+                  && ::foundation::linear::owes_consume_at_end(^^WriteHalf),
+              "a half ends at its door or at the end of its frame, and no drop door ends it");
+static_assert(!::foundation::transfer::Sendable<ReadHalf> && !::foundation::transfer::SendableOwned<ReadHalf>
+                  && !::foundation::transfer::Sendable<WriteHalf> && !::foundation::transfer::SendableOwned<WriteHalf>,
+              "a half stays on its thread, and its transit moves it");
+static_assert(::foundation::transfer::SendableOwned<ReadTransit> && ::foundation::transfer::SendableOwned<WriteTransit>,
+              "the transit of a half holds no borrow");
+static_assert(std::is_same_v<decltype(std::declval<ReadHalf&&>().depart()), ReadTransit>
+              && std::is_same_v<decltype(std::declval<ReadTransit&&>().arrive()), ReadHalf>
+              && std::is_same_v<decltype(std::declval<WriteTransit&&>().arrive()), WriteHalf>);
+static_assert(!std::is_constructible_v<ReadHalf, int> && !std::is_constructible_v<WriteHalf, int>,
+              "a half comes only from the door of the frame and from its transit");
+static_assert(!std::is_copy_constructible_v<ReadHalf> && !std::is_move_assignable_v<WriteHalf>);
+static_assert(std::is_empty_v<StreamReadEnded<PinBrand>> && std::is_empty_v<StreamWriteEnded<PinBrand>>
+                  && !std::is_default_constructible_v<StreamReadEnded<PinBrand>>
+                  && !std::is_default_constructible_v<StreamWriteEnded<PinBrand>>,
+              "a token of an end comes only from the door that ends the half");
+static_assert(
+    std::is_same_v<decltype(std::declval<ReadHalf&&>().close()), StreamReadEnded<PinBrand>>
+    && std::is_same_v<decltype(std::declval<WriteHalf&&>().shut_down_and_close()), StreamWriteEnded<PinBrand>>);
+
+// The gate of a split: a stream socket with its two directions, and a context
+// that admits a call that can wait.
+static_assert(CtxFitsStreamHalves<IoBlockCtx, UnixKind, socket_rights>);
+static_assert(!CtxFitsStreamHalves<IoOnlyCtx, UnixKind, socket_rights>, "the duplicate of the split can wait");
+static_assert(!CtxFitsStreamHalves<IoBlockCtx, NetlinkKind, socket_rights>, "a message socket has no stream to divide");
+static_assert(!CtxFitsStreamHalves<IoBlockCtx, UnixKind, ReadHalf::rights>, "a split needs the two directions");
+
+// The shape of the Record of a body: two parts of the brand of the frame, and
+// at most one value that names no brand of the frame and is no linear value.
+struct OtherBrand final {};
+static_assert(
+    detail::is_halves_back_<::foundation::core::Record<ReadHalf, WriteHalf>, UnixKind, socket_rights, PinBrand>());
+static_assert(detail::is_halves_back_<
+              ::foundation::core::Record<StreamReadEnded<PinBrand>, StreamWriteEnded<PinBrand>, std::uint32_t>,
+              UnixKind, socket_rights, PinBrand>());
+static_assert(
+    !detail::is_halves_back_<::foundation::core::Record<ReadHalf, WriteHalf>, UnixKind, socket_rights, OtherBrand>(),
+    "a part of another frame does not fit");
+static_assert(
+    !detail::is_halves_back_<::foundation::core::Record<WriteHalf, ReadHalf>, UnixKind, socket_rights, PinBrand>(),
+    "the read part comes first");
+static_assert(!detail::is_halves_back_<::foundation::core::Record<ReadHalf, WriteHalf, StreamReadEnded<PinBrand>>,
+                                       UnixKind, socket_rights, PinBrand>(),
+              "the value names no brand of the frame");
+static_assert(!detail::is_halves_back_<::foundation::core::Record<ReadHalf, WriteHalf, ReadTransit>, UnixKind,
+                                       socket_rights, PinBrand>(),
+              "the value is no linear value");
+static_assert(!detail::is_halves_back_<ReadHalf, UnixKind, socket_rights, PinBrand>(),
+              "the body gives back a Record of the two parts");
+
 // The foreign socket: a ref by value of one int and the generation of its
 // number, which no number converts to, and which the doors take beside the
 // borrow of a Handle.
@@ -114,6 +185,7 @@ static_assert(offsetof(NetlinkAddress, family) == offsetof(::sockaddr_nl, nl_fam
               && offsetof(NetlinkAddress, groups) == offsetof(::sockaddr_nl, nl_groups));
 static_assert(send_no_signal_flag == MSG_NOSIGNAL);
 static_assert(socket_close_on_exec_flag == SOCK_CLOEXEC);
+static_assert(shut_down_write_direction == SHUT_WR);
 static_assert(timestamping_option == SO_TIMESTAMPING && timestamping_option == SCM_TIMESTAMPING);
 static_assert(receive_timestamping_flags
               == (SOF_TIMESTAMPING_RX_HARDWARE | SOF_TIMESTAMPING_RX_SOFTWARE | SOF_TIMESTAMPING_SOFTWARE

@@ -7231,6 +7231,52 @@ fixy_neg_compile_test(neg_os_socket_pair_ctx_lacks_block
   "no matching function for call"
   "mint_socket_pair<fixy::net::socket_kind::UnixStream>\\(\\{anonymous\\}::IoOnlyCtx&\\)")
 
+# The frame of the two halves of a stream socket: the directions of the split,
+# the stale borrows before the split and after the join, the end of the write
+# half while the read half lives, the transit of a half, and the halves on two
+# threads beside an echo of the peer.
+fixy_test(test_os_stream_halves)
+# The gate of the frame: a socket of the message shape, a context without
+# Block, a spelled brand, and the shape of the Record that a body gives back.
+fixy_neg_compile_test(neg_os_stream_halves_of_a_message_socket
+  "no matching function for call to .with_stream_halves"
+  "required for the satisfaction of .StreamSocketKind<Kind>.")
+fixy_neg_compile_test(neg_os_stream_halves_ctx_lacks_block
+  "no matching function for call to .with_stream_halves"
+  "with_stream_halves\\(const \\{anonymous\\}::IoOnlyCtx&")
+fixy_neg_compile_test(neg_os_stream_halves_spelled_brand
+  "no matching function for call to .with_stream_halves<\\{anonymous\\}::SpelledBrand>"
+  "the expression .sizeof ... \\(Refused ...\\) == 0 \\[with Refused = \\{<unnamed>::SpelledBrand\\}\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_os_stream_halves_of_two_frames
+  "static assertion failed: with_stream_halves: the body gives back a Record of the read part, the write part"
+  "required from .main\\(\\)::<lambda\\(auto:13, auto:14\\)> \\[with auto:13 = fixy::net::StreamReadHalf<")
+fixy_neg_compile_test(neg_os_stream_halves_recursive_frame
+  "static assertion failed: with_stream_halves: the body gives back a Record of the read part, the write part"
+  "required from .auto \\{anonymous\\}::split_again\\(const IoBlockCtx&, Outer& ...\\) \\[with Outer = \\{fixy::net::StreamReadHalf<")
+fixy_neg_compile_test(neg_os_stream_halves_value_names_the_brand
+  "static assertion failed: with_stream_halves: the body gives back a Record of the read part, the write part"
+  "the value names no brand of the frame and is no linear value")
+fixy_neg_compile_test(neg_os_stream_halves_linear_value
+  "static assertion failed: with_stream_halves: the body gives back a Record of the read part, the write part"
+  "the value names no brand of the frame and is no linear value")
+fixy_neg_compile_test(neg_os_stream_halves_body_holds_a_linear
+  "use of deleted function .void fixy::net::with_stream_halves"
+  "the body holds a linear value by value")
+fixy_neg_compile_test(neg_os_stream_halves_body_keeps_a_text
+  "use of deleted function .void fixy::net::with_stream_halves"
+  "a body of a frame door stores no borrow outside the frame")
+# A half: a write through the read half, a drop of a half, and a half that a
+# thread body takes by move.
+fixy_neg_compile_test(neg_os_stream_read_half_writes
+  "no matching function for call to .write_full"
+  "required for the satisfaction of .HoldsRights<Held, Needed>. \\[with Held = \\(fixy::os::RightSet\\)8589934593; Needed = fixy::os::RightSet::write\\]")
+fixy_neg_compile_test(neg_os_stream_half_dropped
+  "use of deleted function"
+  "the drop door ends no class that owes a consume at its end")
+fixy_neg_compile_test(neg_os_stream_half_to_a_thread
+  "the body captures .moved. \\(field __moved, type fixy::net::StreamWriteHalf<"
+  "The value moves to another thread, and its type is not Sendable")
+
 # A ref of a socket stays on its thread, so no body of a second thread carries
 # one.
 fixy_neg_compile_test(neg_net_foreign_socket_on_a_second_thread
