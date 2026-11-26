@@ -41,6 +41,13 @@ constexpr std::uint64_t kSharedLayoutDigest = ::foundation::reflect::combine_ids
                                             VigilHandleTable<kVigilSlots>>(),
     ::foundation::reflect::c_entry_digest<^^::>("crucible_"));
 
+// ctypes calls each C entry of the two libraries with no C++ unwind, so an
+// exception that leaves an entry ends the process.  Each entry is noexcept,
+// and an entry that calls PyTorch code that can throw catches its error at
+// its boundary (run_foreign_call of crucible_fallback.cpp).
+static_assert(::foundation::reflect::is_each_c_entry_noexcept<^^::>("crucible_"),
+              "each C entry of vessel_api.h and dispatch_api.h is noexcept, because ctypes has no C++ unwind");
+
 [[gnu::section(".note.crucible"), gnu::used, gnu::retain]] alignas(kLayoutNoteAlignment) constinit LayoutNote const
     kLayoutNoteOfLibrary = layout_note_of(kSharedLayoutDigest);
 

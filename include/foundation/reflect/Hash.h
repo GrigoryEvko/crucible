@@ -801,6 +801,18 @@ template <typename... Ts>
     return state;
 }
 
+namespace detail {
+
+// True when member is a function with C linkage whose name starts with the
+// text of prefix: a C entry of a library.
+template <std::size_t Size>
+[[nodiscard]] consteval bool is_c_entry_named(std::meta::info member, char const (&prefix)[Size]) {
+    return std::meta::is_function(member) && std::meta::has_c_language_linkage(member)
+        && std::meta::identifier_of(member).starts_with({prefix, Size - 1});
+}
+
+}  // namespace detail
+
 // The digest of the C entries of the namespace Scope whose names start with
 // the text of prefix, such as c_entry_digest<^^::>("crucible_").  Scope is a
 // template argument, so only a unit that names the digest walks the
@@ -812,14 +824,27 @@ template <std::meta::info Scope, std::size_t Size>
     // member.
     static_cast<void>(
         find_member(Scope, std::meta::access_context::current(), [&state, &prefix](std::meta::info member) {
-            if (!std::meta::is_function(member) || !std::meta::has_c_language_linkage(member)) return false;
-            if (!std::meta::identifier_of(member).starts_with({prefix, Size - 1})) return false;
+            if (!detail::is_c_entry_named(member, prefix)) return false;
             state = combine_ids(state, detail::layout_mark_entry);
             state = combine_ids(state, detail::hash_name(std::meta::identifier_of(member)));
             state = combine_ids(state, detail::layout_name_of(std::meta::type_of(member)));
             return false;
         }));
     return state;
+}
+
+// True when each C entry of the namespace Scope whose name starts with the
+// text of prefix is noexcept.  The foreign caller of a C entry has no C++
+// unwind, so an exception that leaves the entry ends the process with no
+// text.  A library pins its entries with a static_assert on the result in one
+// of its units.  Complexity: linear in the members of the namespace.
+template <std::meta::info Scope, std::size_t Size>
+[[nodiscard]] consteval bool is_each_c_entry_noexcept(char const (&prefix)[Size]) {
+    const std::meta::info thrower =
+        find_member(Scope, std::meta::access_context::current(), [&prefix](std::meta::info member) {
+            return detail::is_c_entry_named(member, prefix) && !std::meta::is_noexcept(member);
+        });
+    return thrower == std::meta::info{};
 }
 
 }  // namespace foundation::reflect

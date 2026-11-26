@@ -374,6 +374,7 @@ struct RawShapes {
 
 extern "C" int layout_test_entry_first(int value) noexcept;
 extern "C" int layout_test_entry_second(double value) noexcept;
+extern "C" int layout_test_thrower_entry(int value);
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 [[nodiscard]] consteval std::uint64_t digest_of_member(std::meta::info member) {
@@ -408,6 +409,12 @@ static_assert(layout_digest_of<layout_test::Inner, layout_test::InnerSigned>()
 static_assert(c_entry_digest<^^layout_test>("layout_test_entry_")
               != c_entry_digest<^^layout_test>("layout_test_entry_first"));
 static_assert(c_entry_digest<^^layout_test>("layout_test_none_") == c_entry_digest<^^layout_test>("no_entry_"));
+// The noexcept of the C entries: the two entries are noexcept, the third one
+// is not, and a prefix with no entry gives true.
+static_assert(is_each_c_entry_noexcept<^^layout_test>("layout_test_entry_"));
+static_assert(!is_each_c_entry_noexcept<^^layout_test>("layout_test_"));
+static_assert(!is_each_c_entry_noexcept<^^layout_test>("layout_test_thrower_"));
+static_assert(is_each_c_entry_noexcept<^^layout_test>("no_entry_"));
 
 }  // namespace detail::stable_name_self_test
 

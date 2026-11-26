@@ -95,6 +95,10 @@ class SchemaNameResult(enum.IntEnum):
 # no generation, and each other word is a known generation.
 STORAGE_GENERATION_UNKNOWN_BIT = 1 << 31
 
+# The bytes of the buffer of _DispatchLib.last_error_text: more than the 224
+# bytes of text that the dispatch library keeps for one thread, and its zero.
+FOREIGN_ERROR_BUFFER_BYTES = 256
+
 
 class AbiStamp(NamedTuple):
     """The ABI stamp of the level probe, and the version that this module reads.
@@ -248,6 +252,8 @@ class HandleStatus(enum.IntEnum):
     REFUSED = 5
     # The Vigil records and replays no compiled region, so it has no address of an output or an input.
     NOT_REPLAYING = 6
+    # PyTorch raised an error in an entry of the dispatch library, and crucible_dispatch_last_error gives its text.
+    FOREIGN_ERROR = 7
 
 
 class TlsMode(enum.IntEnum):
@@ -342,6 +348,8 @@ def check_handle_status(status: int, entry: str) -> None:
         raise CrucibleNotReplayingError(f"{entry} gives an address only while the Vigil replays a compiled "
                                         f"region, and the Vigil records.  Call it after a dispatch that gave "
                                         f"COMPILED")
+    if named == HandleStatus.FOREIGN_ERROR:
+        raise RuntimeError(f"{entry}: PyTorch raised an error.  _DispatchLib.last_error_text gives its text")
     raise _HANDLE_ERRORS[named](f"{entry} refused the handle of the Vigil: {named.name}")
 
 
@@ -1481,7 +1489,10 @@ class _DispatchLib:
         # The eager word of this thread: the float32 matmul precision, the two
         # TF32 bits and the flush of denormal floats.
         L.crucible_dispatch_eager_numerics.restype = ctypes.c_uint32
-        L.crucible_dispatch_eager_numerics.argtypes = []
+        L.crucible_dispatch_eager_numerics.argtypes = [ctypes.POINTER(ctypes.c_uint32)]
+        # The text of the last error of PyTorch on this thread (FOREIGN_ERROR).
+        L.crucible_dispatch_last_error.restype = ctypes.c_uint32
+        L.crucible_dispatch_last_error.argtypes = [ctypes.c_char_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)]
 
         # The generation allocator (storage_generation.h): the attach, the
         # detach, and the reads of the chain and of a storage.
@@ -1499,8 +1510,43 @@ class _DispatchLib:
         held.crucible_dispatch_storage_generation.argtypes = [ctypes.c_void_p]
 
     def eager_numerics(self) -> int:
-        """The eager word of this thread, which the Vigil folds into the hash of each region."""
-        return self._lib.crucible_dispatch_eager_numerics()
+        """The eager word of this thread, which the Vigil folds into the hash of each region.
+
+        Raises:
+            RuntimeError: If PyTorch raised an error in the read, such as for a mix of the legacy and the new API of
+                the TF32 bits.  The text is the text of PyTorch (last_error_text)
+            ValueError: If the context of PyTorch gives a float32 matmul precision that the vessel does not name
+        """
+        bits = ctypes.c_uint32(0)
+        self._check(self._lib.crucible_dispatch_eager_numerics(ctypes.byref(bits)), "crucible_dispatch_eager_numerics")
+        return bits.value
+
+    def last_error_text(self) -> str:
+        """The text of the last error of PyTorch on this thread, which an entry of the library gave as FOREIGN_ERROR.
+
+        The library keeps at most 224 bytes of the text.  A longer text ends with a cut mark that gives the full
+        length of the text of PyTorch.
+        """
+        buffer = ctypes.create_string_buffer(FOREIGN_ERROR_BUFFER_BYTES)
+        length = ctypes.c_uint32(0)
+        status = self._lib.crucible_dispatch_last_error(buffer, FOREIGN_ERROR_BUFFER_BYTES, ctypes.byref(length))
+        check_handle_status(status, "crucible_dispatch_last_error")
+        kept = buffer.value
+        text = kept.decode("utf-8", errors="replace")
+        if length.value > len(kept):
+            text += f" [cut: {len(kept)} of {length.value} bytes]"
+        return text
+
+    def _check(self, status: int, entry: str) -> None:
+        """Raise the error of the status that the entry ENTRY of this library gave, and return for LIVE.
+
+        Raises:
+            RuntimeError: For FOREIGN_ERROR, with the text of the error of PyTorch
+            CrucibleHandleError, ValueError: For the other statuses, as check_handle_status gives them
+        """
+        if status == HandleStatus.FOREIGN_ERROR:
+            raise RuntimeError(f"{entry}: PyTorch raised an error: {self.last_error_text()}")
+        check_handle_status(status, entry)
 
     def attach_allocator(self) -> bool:
         """Count one more session of the generation allocator, which then follows the mode of each Vigil.

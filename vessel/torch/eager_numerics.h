@@ -33,9 +33,12 @@ namespace crucible::vessel {
 // The word of the calling thread.  The FP control register belongs to the
 // thread, and the recording thread is the producer thread of the Vigil, so
 // the word is the word that its ops run with.  A flush of the results or a
-// flush of the inputs each sets FLUSH_DENORMAL.
+// flush of the inputs each sets FLUSH_DENORMAL.  A precision that the vessel
+// does not name gives none, because the precision comes from PyTorch, which is
+// outside the program.  The getters of PyTorch raise c10::Error for a mix of
+// the legacy and the new API of the TF32 bits, so the read can raise.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the reader asks the context of PyTorch for the precision and the TF32 bits")
-[[nodiscard]] inline crucible::EagerNumerics read_eager_numerics() {
+[[nodiscard]] inline ::fixy::Option<crucible::EagerNumerics> read_eager_numerics() {
     // The ordinal of a precision of PyTorch is the value of the field
     // MATMUL_PRECISION_MASK.
     static_assert(static_cast<uint32_t>(at::Float32MatmulPrecision::HIGHEST) == 0);
@@ -48,8 +51,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the reader asks the context of PyTorch for t
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
     if (precision >= crucible::EagerNumerics::MATMUL_PRECISION_MASK) [[unlikely]]
-        ::fixy::fatal("the context of PyTorch gives the float32 matmul precision {}, which the vessel does not name",
-                      precision);
+        return ::fixy::none;
     uint32_t bits = precision;
     if (is_matmul_tf32) bits |= crucible::EagerNumerics::MATMUL_TF32;
     if (is_cudnn_tf32) bits |= crucible::EagerNumerics::CUDNN_TF32;
@@ -58,15 +60,24 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the reader asks the context of PyTorch for t
     const bool is_flushed = mode.ftz == ::foundation::core::FpFtz::FlushToZero
                          || mode.denormal_input == ::foundation::core::FpDenormalInput::DenormalsAreZero;
     if (is_flushed) bits |= crucible::EagerNumerics::FLUSH_DENORMAL;
-    return crucible::EagerNumerics{.bits = bits};
+    return ::fixy::Option<crucible::EagerNumerics>::some(crucible::EagerNumerics{.bits = bits});
 }
 
 // The read of a region entry.  A dispatch reports a region entry once for
 // each iteration of a region, so the read is cold, and the body stays out of
-// the record path of each op.
+// the record path of each op.  An error of PyTorch in the read unwinds to the
+// dispatcher of PyTorch, which gives it to Python.  The attach refuses a
+// precision that the vessel does not name (crucible_dispatch_eager_numerics),
+// so such a precision here was set after the attach.  The region would then
+// fold a word that does not tell its numerics, so the process ends.
 [[gnu::cold, gnu::noinline]] inline void observe_eager_numerics(crucible::Vigil& vigil,
                                                                 crucible::VigilFgCtx const& fg) {
-    vigil.observe_eager_numerics(fg, read_eager_numerics());
+    read_eager_numerics().match(
+        [&vigil, &fg](crucible::EagerNumerics eager) noexcept { vigil.observe_eager_numerics(fg, eager); },
+        [] noexcept {
+            ::fixy::fatal("the context of PyTorch gives a float32 matmul precision that the vessel does "
+                          "not name");
+        });
 }
 
 }  // namespace crucible::vessel

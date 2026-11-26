@@ -1234,6 +1234,80 @@ crucible::StorageGeneration crucible::vessel::storage_generation_at(const GilHel
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+// ── The error of a foreign call ─────────────────────────────────────
+//
+// PyTorch reports an error with a C++ exception, such as the TORCH_CHECK of
+// the TF32 getters of at::Context.  ctypes calls each C entry with no C++
+// unwind, so each entry is noexcept, and an exception that leaves one ends the
+// process.  An entry that calls PyTorch code that can throw runs that call in
+// run_foreign_call, which holds the one try and catch of the tree.  The catch
+// writes the text of the error into the slot of the calling thread and gives
+// CRUCIBLE_HANDLE_FOREIGN_ERROR, and crucible_dispatch_last_error gives the
+// text to the caller.  The record paths of an op run under the dispatcher of
+// PyTorch, which catches the errors of PyTorch itself, so they need no catch.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: PyTorch reports an error with a C++ exception, and a C entry gives a status")
+namespace crucible::vessel {
+
+// The most bytes of the text of the slot.  The slot lives in the static TLS
+// of the library, whose limit is 256 bytes (the rule static-tls), beside the
+// counter of the backward window.
+inline constexpr std::size_t kForeignErrorBytes = 224;
+
+// The last error of PyTorch on one thread: the first kForeignErrorBytes bytes
+// of its text, and the full length of the text that PyTorch gave.  Only the
+// catch arms of run_foreign_call write it, so no hot path writes it.
+struct ForeignErrorSlot {
+    ::fixy::FixedText<kForeignErrorBytes> text{};
+    uint32_t full_length = 0;
+};
+
+// One slot for each thread of the process (CRUCIBLE_PROCESS_WIDE): only this
+// library writes and reads it.
+CRUCIBLE_PROCESS_WIDE inline constinit thread_local ForeignErrorSlot foreign_error{};
+
+}  // namespace crucible::vessel
+
+namespace {
+
+using crucible::vessel::foreign_error;
+using crucible::vessel::ForeignErrorSlot;
+
+// The text of an exception, which ends at its zero.
+[[nodiscard]] ::fixy::TextView text_of_exception(const char* text) noexcept {
+    return ::fixy::mint_foreign_text(text, __builtin_strlen(text)).characters();
+}
+
+// Keeps the text of an error in the slot of the calling thread, cut to
+// kForeignErrorBytes bytes, with the full length of the text.  Linear in the
+// bytes that the slot keeps.
+void remember_foreign_error(::fixy::TextView text) noexcept {
+    ForeignErrorSlot& slot = foreign_error;
+    slot.text.clear();
+    for (const char character : text) {
+        if (slot.text.append(character).is_err()) break;
+    }
+    slot.full_length = static_cast<uint32_t>(::fixy::min(text.size(), std::size_t{UINT32_MAX}));
+}
+
+// The status that body gives, or FOREIGN_ERROR when PyTorch raised an error
+// in body.  body gives a CRUCIBLE_HANDLE_* status.
+template <class Body>
+[[nodiscard]] uint32_t run_foreign_call(Body&& body) noexcept {
+    try {
+        return body();
+    } catch (const c10::Error& error) {
+        remember_foreign_error(text_of_exception(error.what_without_backtrace()));
+    } catch (const std::exception& error) {
+        remember_foreign_error(text_of_exception(error.what()));
+    } catch (...) {
+        remember_foreign_error(::fixy::mint_static_text("an exception that is not a std::exception"));
+    }
+    return CRUCIBLE_HANDLE_FOREIGN_ERROR;
+}
+
+}  // namespace
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 // The C entries of dispatch_api.h, which is the whole C ABI of this library.
 // The layout note of the library holds the digest of their types
 // (layout_note.cpp).
@@ -1245,13 +1319,40 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the C entries give ctypes the TLS state of P
 
 // The layout digest of the library, which its layout note holds too.  The
 // loader calls it after the load, as the second guard of the note.
-CRUCIBLE_API uint64_t crucible_dispatch_layout_digest() { return crucible::vessel::library_layout_digest(); }
+CRUCIBLE_API uint64_t crucible_dispatch_layout_digest() noexcept { return crucible::vessel::library_layout_digest(); }
 
 // The eager word of the calling thread (EagerNumerics of
 // crucible/NumericalRecipe.h): the bits that read_eager_numerics of
 // eager_numerics.h gives.  The attach reads it, and gives it to
-// crucible_create of the vessel library.
-CRUCIBLE_API uint32_t crucible_dispatch_eager_numerics() { return crucible::vessel::read_eager_numerics().bits; }
+// crucible_create of the vessel library.  The getters of the TF32 bits of
+// PyTorch raise an error for a mix of the legacy and the new API, so the read
+// runs in run_foreign_call.
+CRUCIBLE_API uint32_t crucible_dispatch_eager_numerics(uint32_t* out_bits) noexcept {
+    if (out_bits == nullptr) return CRUCIBLE_HANDLE_REFUSED;
+    return run_foreign_call([out_bits] {
+        return crucible::vessel::read_eager_numerics().match(
+            [out_bits](crucible::EagerNumerics eager) noexcept -> uint32_t {
+                *out_bits = eager.bits;
+                return CRUCIBLE_HANDLE_LIVE;
+            },
+            [] noexcept -> uint32_t { return CRUCIBLE_HANDLE_REFUSED; });
+    });
+}
+
+// The text of the last error of PyTorch on the calling thread
+// (dispatch_api.h).
+CRUCIBLE_API uint32_t crucible_dispatch_last_error(char* out, uint32_t capacity, uint32_t* out_length) noexcept {
+    if (out == nullptr || out_length == nullptr || capacity == 0) return CRUCIBLE_HANDLE_REFUSED;
+    const ForeignErrorSlot& slot = foreign_error;
+    std::size_t written = 0;
+    for (const char character : slot.text.view()) {
+        if (written + 1 == capacity) break;
+        out[written++] = character;
+    }
+    out[written] = '\0';
+    *out_length = slot.full_length;
+    return CRUCIBLE_HANDLE_LIVE;
+}
 
 // ── The generation allocator (storage_generation.h) ─────────────────
 //
@@ -1268,7 +1369,7 @@ CRUCIBLE_API uint32_t crucible_dispatch_eager_numerics() { return crucible::vess
 // storage at that time: a known generation, or the top bit and the period for
 // a storage that the generation allocator did not make.
 
-CRUCIBLE_API uint32_t crucible_dispatch_attach_allocator(uint32_t* out_follows) {
+CRUCIBLE_API uint32_t crucible_dispatch_attach_allocator(uint32_t* out_follows) noexcept {
     if (out_follows == nullptr) return CRUCIBLE_HANDLE_REFUSED;
     return crucible::vessel::attach_generation_allocator().match(
         [out_follows](bool is_following) noexcept -> uint32_t {
@@ -1278,19 +1379,23 @@ CRUCIBLE_API uint32_t crucible_dispatch_attach_allocator(uint32_t* out_follows) 
         [](crucible::vessel::SessionRefusal) noexcept -> uint32_t { return CRUCIBLE_HANDLE_WRONG_THREAD; });
 }
 
-CRUCIBLE_API uint32_t crucible_dispatch_detach_allocator() {
+CRUCIBLE_API uint32_t crucible_dispatch_detach_allocator() noexcept {
     return crucible::vessel::detach_generation_allocator().match(
         [](::fixy::Unit) noexcept -> uint32_t { return CRUCIBLE_HANDLE_LIVE; },
         [](crucible::vessel::SessionRefusal) noexcept -> uint32_t { return CRUCIBLE_HANDLE_WRONG_THREAD; });
 }
 
-CRUCIBLE_API uint64_t crucible_dispatch_cpu_allocator() { return std::bit_cast<uint64_t>(c10::GetCPUAllocator()); }
+CRUCIBLE_API uint64_t crucible_dispatch_cpu_allocator() noexcept {
+    return std::bit_cast<uint64_t>(c10::GetCPUAllocator());
+}
 
-CRUCIBLE_API uint64_t crucible_dispatch_generation_allocator() {
+CRUCIBLE_API uint64_t crucible_dispatch_generation_allocator() noexcept {
     return crucible::vessel::generation_allocator_address();
 }
 
-CRUCIBLE_API uint64_t crucible_dispatch_inner_allocator() { return crucible::vessel::generation_inner_address(); }
+CRUCIBLE_API uint64_t crucible_dispatch_inner_allocator() noexcept {
+    return crucible::vessel::generation_inner_address();
+}
 
 // The generation of the storage reads the StorageImpl only while the calling
 // thread holds the GIL (gil_held.h).  ctypes keeps the GIL only for a PyDLL
@@ -1299,7 +1404,7 @@ CRUCIBLE_API uint64_t crucible_dispatch_inner_allocator() { return crucible::ves
 // crucible/Types.h, and a read of a real storage never gives it: a known
 // generation is at least 1, and an unknown generation has the top bit.  So 0
 // tells the caller that the entry read nothing.
-CRUCIBLE_API uint32_t crucible_dispatch_storage_generation(void* storage) {
+CRUCIBLE_API uint32_t crucible_dispatch_storage_generation(void* storage) noexcept {
     if (storage == nullptr) return 0;
     return crucible::vessel::mint_gil_held().match(
         [storage](crucible::vessel::GilHeld gil) noexcept {
@@ -1312,7 +1417,7 @@ CRUCIBLE_API uint32_t crucible_dispatch_storage_generation(void* storage) {
 // its value and its name, a C text with a terminating zero.  Gives 1 for an
 // enumerator, and 0 with no write when i is past the last one.  The loader
 // compares the modes with TlsMode of crucible_native.py.
-CRUCIBLE_API uint32_t crucible_dispatch_mode_entry(uint32_t i, uint8_t* out_value, const char** out_name) {
+CRUCIBLE_API uint32_t crucible_dispatch_mode_entry(uint32_t i, uint8_t* out_value, const char** out_name) noexcept {
     if (i >= kModeCount) return 0;
     const ModeEnumerator& mode = kModeEnumerators.at(::fixy::Index<kModeCount>::check(i).expect("the test above"));
     if (out_value != nullptr) *out_value = mode.value;
@@ -1323,7 +1428,7 @@ CRUCIBLE_API uint32_t crucible_dispatch_mode_entry(uint32_t i, uint8_t* out_valu
 // Sets the mode of the TLS state of the calling thread and gives 1, or gives
 // 0 and keeps the mode when the value names no enumerator of
 // c10::CrucibleMode.
-CRUCIBLE_API uint32_t crucible_dispatch_set_tls_mode(uint8_t mode) {
+CRUCIBLE_API uint32_t crucible_dispatch_set_tls_mode(uint8_t mode) noexcept {
     if (!is_named_mode(mode)) return 0;
     c10::CrucibleState::get_tls_state().set_mode(static_cast<c10::CrucibleMode>(mode));
     return 1;
@@ -1334,7 +1439,7 @@ CRUCIBLE_API uint32_t crucible_dispatch_set_tls_mode(uint8_t mode) {
 // LIVE.  Each other handle must name a live Vigil that the calling thread
 // holds, or claims here, and a refused handle keeps the context.  The context
 // keeps the handle as its bits, and no code reads them as an address.
-CRUCIBLE_API uint32_t crucible_dispatch_set_tls_context(uint64_t handle) {
+CRUCIBLE_API uint32_t crucible_dispatch_set_tls_context(uint64_t handle) noexcept {
     c10::CrucibleState& state = c10::CrucibleState::get_tls_state();
     if (handle == 0) {
         state.set_context(nullptr);
@@ -1350,20 +1455,22 @@ CRUCIBLE_API uint32_t crucible_dispatch_set_tls_context(uint64_t handle) {
             [](crucible::vessel::HandleRefusal refused) noexcept { return crucible::vessel::handle_code_of(refused); });
 }
 
-CRUCIBLE_API uint8_t crucible_dispatch_get_tls_mode() {
+CRUCIBLE_API uint8_t crucible_dispatch_get_tls_mode() noexcept {
     return static_cast<uint8_t>(c10::CrucibleState::get_tls_state().mode());
 }
 
 // The handle of the TLS state of the calling thread, or 0.
-CRUCIBLE_API uint64_t crucible_dispatch_get_tls_context() {
+CRUCIBLE_API uint64_t crucible_dispatch_get_tls_context() noexcept {
     return std::bit_cast<uint64_t>(c10::CrucibleState::get_tls_state().context());
 }
 
-CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash) {
+CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash) noexcept {
     c10::CrucibleState::get_tls_state().set_scope_hash(scope_hash);
 }
 
-CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() { return c10::CrucibleState::get_tls_state().scope_hash(); }
+CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() noexcept {
+    return c10::CrucibleState::get_tls_state().scope_hash();
+}
 
 // ── The backward window ─────────────────────────────────────────────
 //
@@ -1383,17 +1490,17 @@ CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() { return c10::CrucibleSt
 // Not atomic: the counter is thread-local, one thread writes it, and that same
 // thread is the only reader.
 
-CRUCIBLE_API void crucible_dispatch_backward_enter() {
+CRUCIBLE_API void crucible_dispatch_backward_enter() noexcept {
     if (backward_depth != UINT32_MAX) [[likely]]
         backward_depth++;
 }
 
-CRUCIBLE_API void crucible_dispatch_backward_exit() {
+CRUCIBLE_API void crucible_dispatch_backward_exit() noexcept {
     if (backward_depth != 0) [[likely]]
         backward_depth--;
 }
 
-CRUCIBLE_API uint32_t crucible_dispatch_backward_depth() { return backward_depth; }
+CRUCIBLE_API uint32_t crucible_dispatch_backward_depth() noexcept { return backward_depth; }
 
 // ── Schema table accessors ──────────────────────────────────────────
 //
@@ -1404,13 +1511,13 @@ CRUCIBLE_API uint32_t crucible_dispatch_backward_depth() { return backward_depth
 // hash registered before the seal and again after it is listed two times.
 // Call these on the thread that records, or after it stops.
 
-CRUCIBLE_API uint32_t crucible_dispatch_schema_count() {
+CRUCIBLE_API uint32_t crucible_dispatch_schema_count() noexcept {
     return crucible::global_schema_table().count() + crucible::late_schema_table().count();
 }
 
 // Get the schema hash and name for the i-th entry.
 // Returns 0 if i >= count.  Writes hash and name pointer.
-CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name) {
+CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name) noexcept {
     const auto global_entries = crucible::global_schema_table().entries();
     const auto late_entries = crucible::late_schema_table().entries();
     const auto write_entry = [out_hash, out_name](const crucible::SchemaEntry& entry) noexcept {

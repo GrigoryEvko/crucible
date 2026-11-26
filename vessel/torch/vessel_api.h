@@ -134,7 +134,10 @@ enum {
     CRUCIBLE_HANDLE_REFUSED = 5,
     // The Vigil records, and it does not replay a compiled region, so
     // crucible_output_ptr and crucible_input_ptr have no address to give.
-    CRUCIBLE_HANDLE_NOT_REPLAYING = 6
+    CRUCIBLE_HANDLE_NOT_REPLAYING = 6,
+    // PyTorch raised an error in an entry of the dispatch library, and
+    // crucible_dispatch_last_error gives its text.  The entry wrote no value.
+    CRUCIBLE_HANDLE_FOREIGN_ERROR = 7
 };
 
 // Binary-compatible with crucible::TensorMeta (176 bytes).
