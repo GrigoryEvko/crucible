@@ -46,12 +46,12 @@ that the axis does not apply to the row.
 | `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h` | Y | - | Y | · | member | · | HS14: 5 |
 | `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h` | Y | · | Y | · | member | · | HS14: 2 |
 | `Cipher::mint_open_view` | `include/crucible/Cipher.h` | Y | · | Y | Y | member | · | HS14: 15 |
-| `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | member | · | HS14: 12 |
 | `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | Y | Y | · | member | · | HS14: 4 |
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | HS14: 4 |
 | `SchemaTableOf::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 10 |
 | `SchemaTableOf::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | HS14: 2 |
 | `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 3 |
+| `mint_context_key` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | token | · | HS14: 16 |
 | `mint_dag_node(foundation::effects::Alloc, foundation::core::Box<foundation::core::BumpArena<crucible::DagArena> >&)` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 11 |
 | `mint_dag_node(foundation::effects::Alloc, foundation::core::BumpArena<crucible::DagArena>&)` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 11 |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | HS14: 8 |
@@ -352,6 +352,7 @@ that the axis does not apply to the row.
 | `mint_heap_array_written` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 3 |
 | `mint_heap_array_zeroed` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_heap_bit_set` | `include/foundation/core/BitSet.h` | Y | - | Y | Y | token | · | HS14: 5 |
+| `mint_held_key` | `include/foundation/core/KeyedMint.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_hole(T0_2)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 14 |
 | `mint_hole(foundation::core::Box<T0_0>&&)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 14 |
 | `mint_identity` | `include/foundation/core/Identity.h` | Y | - | Y | · | token | · | HS14: 4 |
@@ -427,5 +428,5 @@ that the axis does not apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 80 | 46 | 25 | 9 | 0 | 7 |
-| substrate (`include/foundation/`, `include/fixy/`) | 189 | 72 | 113 | 4 | 0 | 2 |
+| crucible (`include/crucible/`) | 80 | 46 | 26 | 8 | 0 | 7 |
+| substrate (`include/foundation/`, `include/fixy/`) | 190 | 72 | 114 | 4 | 0 | 2 |
