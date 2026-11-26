@@ -198,14 +198,18 @@ public:
                   && ::foundation::effects::CtxHasPureSource<Ctx>
         [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append_pure(Ctx const&,
                                                                       ::fixy::View<const value_type> metas) {
-            return ch_->log_.producer_side().with_end(ProducerSideProof{},
-                                                      [metas](::crucible::MetaLog::Producer& end) noexcept {
-                                                          return ::crucible::MetaLog::try_append(end, metas);
-                                                      });
+            // A View of more records than the log holds is a mistake of the
+            // caller, and the checked door of a run ends the process for it.
+            return ch_->log_.producer_side().with_end(
+                ProducerSideProof{},
+                [run = ::crucible::mint_checked_meta_run(metas)](::crucible::MetaLog::Producer& end) noexcept {
+                    return ::crucible::MetaLog::try_append(end, run);
+                });
         }
 
         // The append of one record, with the same gate.  The record goes into
-        // an array of one record, whose View the log copies.
+        // an array of one record, whose View of a fixed extent the log copies
+        // with no check of its count.
         template <::foundation::effects::IsExecCtx Ctx>
             requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
                   && ::foundation::effects::CtxHasPureSource<Ctx>
@@ -213,7 +217,7 @@ public:
             return ch_->log_.producer_side().with_end(
                 ProducerSideProof{}, [&meta](::crucible::MetaLog::Producer& end) noexcept {
                     const ::fixy::FixedArray<value_type, 1> record{meta};
-                    return ::crucible::MetaLog::try_append(end, record.view()).is_valid();
+                    return ::crucible::MetaLog::try_append(end, ::crucible::mint_meta_run(record.view())).is_valid();
                 });
         }
 

@@ -69,8 +69,8 @@ concept DrainsRing =
     };
 
 template <class Ctx>
-concept AppendsToLog = requires(MetaLog::Producer& log, Ctx const& ctx) {
-    MetaLog::try_append_pure(ctx, log, ::fixy::View<const TensorMeta>{});
+concept AppendsToLog = requires(MetaLog::Producer& log, Ctx const& ctx, crucible::MetaRun run) {
+    MetaLog::try_append_pure(ctx, log, run);
 };
 
 // The foreground row is hot, and each pure variant takes it.  The row of
@@ -109,7 +109,7 @@ void test_log_append_under_the_foreground() {
     meta.sizes[0] = ::crucible::tensor_dim(16);
     meta.strides[0] = ::crucible::tensor_dim(1);
     const ::fixy::FixedArray<TensorMeta, 1> record{meta};
-    MetaIndex const index = log->try_append_pure(eff::testing::foreground(), record.view());
+    MetaIndex const index = log->try_append_pure(eff::testing::foreground(), crucible::mint_meta_run(record.view()));
     CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
     CRUCIBLE_TEST_ASSERT(kTest, index.raw() == 0);
 }
@@ -130,7 +130,7 @@ void test_fixture_ends_take_the_foreground_row() {
         CRUCIBLE_TEST_ASSERT(kTest, drained_count == 0u);
     });
     const ::fixy::FixedArray<TensorMeta, 1> record{};
-    ::fixy::View<const TensorMeta> const records = record.view();
+    crucible::MetaRun const records = crucible::mint_meta_run(record.view());
     crucible::test::with_log_producer([&foreground, records](MetaLog::Producer& log) noexcept {
         MetaIndex const index = MetaLog::try_append_pure(foreground, log, records);
         CRUCIBLE_TEST_ASSERT(kTest, index.is_valid() && index.raw() == 0);

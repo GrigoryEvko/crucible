@@ -23,7 +23,9 @@ public:
         auto const context = claim_.mint_producer_context();
         return log_.producer_side().with_end(
             claim_.prove_sole_writer<crucible::RecordProducerRole>(context),
-            [metas](crucible::MetaLog::Producer& end) noexcept { return crucible::MetaLog::try_append(end, metas); });
+            [run = crucible::mint_checked_meta_run(metas)](crucible::MetaLog::Producer& end) noexcept {
+                return crucible::MetaLog::try_append(end, run);
+            });
     }
 
 private:

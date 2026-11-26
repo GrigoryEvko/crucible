@@ -70,7 +70,7 @@ bench::Report bench_raw_append_raw_drain(RawLog& log) {
     std::uint32_t i = 0;
     auto report = bench::run("round-trip: raw MetaLog append + raw drain", [&] {
         const ::fixy::FixedArray<::crucible::TensorMeta, 1> meta{make_meta(++i)};
-        const auto idx = log.try_append(meta.view());
+        const auto idx = log.try_append(::crucible::mint_meta_run(meta.view()));
         bench::do_not_optimize(idx);
         const auto drained = raw_drain_one(log).value_or(::crucible::TensorMeta{});
         bench::do_not_optimize(drained.version);

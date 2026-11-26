@@ -51,6 +51,92 @@ namespace crucible {
     return position.raw() >= bound.raw();
 }
 
+// The count of the records that the metadata log holds (MetaLog::CAPACITY).
+inline constexpr uint32_t kMetaLogCapacity = uint32_t{1} << 20;
+
+// The extent of a View of records that the door of a fixed extent takes: at
+// most the capacity of the log.  The dynamic extent is the largest word, so
+// it fails the bound, and a View of the dynamic extent takes the checked door.
+template <std::size_t Extent>
+concept MetaRunFixedExtent = Extent <= kMetaLogCapacity;
+
+// The extent of a View of records that the checked door takes: the dynamic
+// extent.  A View of a fixed extent takes the door of a fixed extent, which
+// checks nothing at run time.
+template <std::size_t Extent>
+concept MetaRunDynamicExtent = Extent == ::fixy::dynamic_extent;
+
+namespace detail {
+class ValidatedOpDoor;
+}  // namespace detail
+
+class MetaRun;
+
+template <std::size_t Extent>
+    requires MetaRunFixedExtent<Extent>
+[[nodiscard]] constexpr MetaRun mint_meta_run(::fixy::View<const TensorMeta, Extent> records) noexcept;
+
+template <std::size_t Extent>
+    requires MetaRunDynamicExtent<Extent>
+[[nodiscard]] constexpr MetaRun mint_checked_meta_run(::fixy::View<const TensorMeta, Extent> records) noexcept;
+
+// A run of records that one append of the metadata log takes: a View of at
+// most kMetaLogCapacity records.  The constructor is private, and three doors
+// make a run:
+//   - the door of an op, ValidatedOpDoor of crucible/ValidatedOp.h, which
+//     gives a run only when its count is the input count plus the output
+//     count of the entry, two counts of 16 bits, so at most 131070 records
+//   - mint_meta_run, for a View of a fixed extent of at most the capacity,
+//     with no check at run time
+//   - mint_checked_meta_run, for a View of the dynamic extent, whose
+//     precondition refuses more records than the capacity
+// No member writes the run after its door.  So view() states the bound to the
+// optimizer, and an append that reads the count needs no check of it.
+class MetaRun {
+public:
+    MetaRun(MetaRun const&) = default;
+    MetaRun& operator=(MetaRun const&) = delete("a run names its records from its door to its end");
+    MetaRun& operator=(MetaRun&&) = delete("a run names its records from its door to its end");
+
+    // The records.  O(1).
+    [[nodiscard]] constexpr ::fixy::View<const TensorMeta> view() const noexcept {
+        const ::fixy::View<const TensorMeta> records = records_;
+        [[assume(records.size() <= kMetaLogCapacity)]];
+        return records;
+    }
+
+private:
+    constexpr explicit MetaRun(::fixy::View<const TensorMeta> records) noexcept : records_{records} {}
+
+    friend class detail::ValidatedOpDoor;
+    template <std::size_t Extent>
+        requires MetaRunFixedExtent<Extent>
+    friend constexpr MetaRun mint_meta_run(::fixy::View<const TensorMeta, Extent> records) noexcept;
+    template <std::size_t Extent>
+        requires MetaRunDynamicExtent<Extent>
+    friend constexpr MetaRun mint_checked_meta_run(::fixy::View<const TensorMeta, Extent> records) noexcept;
+
+    ::fixy::View<const TensorMeta> records_{};
+};
+
+// The run of the records of a View of a fixed extent.  The constraint bounds
+// the extent by the capacity, so the door checks nothing.  O(1).
+template <std::size_t Extent>
+    requires MetaRunFixedExtent<Extent>
+[[nodiscard]] constexpr MetaRun mint_meta_run(::fixy::View<const TensorMeta, Extent> records) noexcept {
+    return MetaRun{::fixy::View<const TensorMeta>{records}};
+}
+
+// The run of the records of a View of the dynamic extent.  A View of more
+// records than the log holds is a mistake of the caller, so the precondition
+// ends the process for it.  O(1).
+template <std::size_t Extent>
+    requires MetaRunDynamicExtent<Extent>
+[[nodiscard]] constexpr MetaRun mint_checked_meta_run(::fixy::View<const TensorMeta, Extent> records) noexcept {
+    CRUCIBLE_PRE(records.size() <= kMetaLogCapacity);
+    return MetaRun{records};
+}
+
 // The side channel for tensor metadata.
 //
 // The recording ring keeps one cache line per operation, which is far too
@@ -62,7 +148,7 @@ namespace crucible {
 // it meets an operation that had tensors and no index, which discards the
 // whole iteration. A full buffer costs the iteration, not one node.
 struct CRUCIBLE_OWNER MetaLog {
-    static constexpr uint32_t CAPACITY = 1 << 20;
+    static constexpr uint32_t CAPACITY = kMetaLogCapacity;
     static constexpr uint32_t MASK = CAPACITY - 1;
 
     // The writers of the two counters (the writer of a counter of
@@ -283,8 +369,9 @@ public:
     // or no index if the buffer is full or the run is empty.  The producer
     // end proves the one writer of the counter and of the slots it is about
     // to fill, which the thread-safety analysis cannot express, so it is
-    // suppressed here.  The publish loads nothing from the head.
-    [[nodiscard]] CRUCIBLE_INLINE static MetaIndex try_append(Producer& producer, ::fixy::View<const TensorMeta> metas)
+    // suppressed here.  The publish loads nothing from the head.  The run
+    // holds at most CAPACITY records (MetaRun), so the append checks no count.
+    [[nodiscard]] CRUCIBLE_INLINE static MetaIndex try_append(Producer& producer, MetaRun metas)
         CRUCIBLE_NO_THREAD_SAFETY {
         MetaLog& log = *producer.owner_;
         producer_state& state = producer.state_;
@@ -307,8 +394,7 @@ public:
     template <::foundation::effects::IsExecCtx Ctx>
         requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
               && ::foundation::effects::CtxHasPureSource<Ctx>
-    [[nodiscard]] CRUCIBLE_INLINE static MetaIndex try_append_pure(Ctx const&, Producer& producer,
-                                                                   ::fixy::View<const TensorMeta> metas)
+    [[nodiscard]] CRUCIBLE_INLINE static MetaIndex try_append_pure(Ctx const&, Producer& producer, MetaRun metas)
         CRUCIBLE_NO_THREAD_SAFETY {
         return try_append(producer, metas);
     }
@@ -477,7 +563,7 @@ private:
     // A run that fill_run_ wrote: the index of its first record, and its
     // count as the step of the wide copy of the head.  fill_run_ is the one
     // place that makes such a step, from a count that its test of zero and
-    // its precondition bound to 1 thru CAPACITY.
+    // the type of its run (MetaRun) bound to 1 thru CAPACITY.
     struct FilledRun {
         MetaIndex start{};
         ::fixy::WideStep<CAPACITY> step = ::fixy::WideStep<CAPACITY>::one();
@@ -488,16 +574,16 @@ private:
     // the head past the run.  An Option and not the index none, so the
     // optimizer folds the test of the append into the branch that wrote the
     // run.
-    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<FilledRun> fill_run_(producer_state& state,
-                                                                      ::fixy::View<const TensorMeta> metas)
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<FilledRun> fill_run_(producer_state& state, MetaRun run)
         CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(metas.size() <= CAPACITY);
         // The count and the positions below have the width of a View count
         // (64 bits on each supported platform), so the test of the run and
         // the check of each window compare the same values, and the
-        // optimizer removes the checks.  A violation of the precondition
-        // ends the process, so the count is at most CAPACITY below, and the
-        // window of the second run of a wrap fits.
+        // optimizer removes the checks.  The run holds at most CAPACITY
+        // records (MetaRun), so the window of the second run of a wrap fits.
+        // The assume states that bound on the count that the windows and the
+        // step below read, so the optimizer folds their checks.
+        const ::fixy::View<const TensorMeta> metas = run.view();
         const uint64_t n = metas.size();
         [[assume(n <= CAPACITY)]];
         if (n == 0) [[unlikely]]
@@ -547,7 +633,7 @@ private:
         // would skip the block.
         CRUCIBLE_POST(result, result.raw() == h);
         // n is at least one after the test of zero and at most CAPACITY by
-        // the precondition, so the check of the step folds away.
+        // the type of the run, so the check of the step folds away.
         return ::fixy::Option<FilledRun>::some(
             FilledRun{.start = result, .step = ::fixy::WideStep<CAPACITY>::check_within_bound(n)});
     }

@@ -19,7 +19,8 @@ int main() {
     const ::fixy::TestRunnerCtx test{eff::testing::test()};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
     crucible::test::with_log_producer([&](crucible::MetaLog::Producer& log) noexcept {
-        (void)crucible::MetaLog::try_append_pure(test.in_row<eff::Row<eff::Effect::Test>>(), log, record.view());
+        (void)crucible::MetaLog::try_append_pure(test.in_row<eff::Row<eff::Effect::Test>>(), log,
+                                                 crucible::mint_meta_run(record.view()));
     });
     return 0;
 }

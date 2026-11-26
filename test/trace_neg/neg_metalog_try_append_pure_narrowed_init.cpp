@@ -21,7 +21,8 @@ int main() {
     const ::fixy::InitLoadCtx init{eff::testing::init()};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
     crucible::test::with_log_producer([&](crucible::MetaLog::Producer& log) noexcept {
-        (void)crucible::MetaLog::try_append_pure(init.in_row<eff::Row<>>(), log, record.view());
+        (void)crucible::MetaLog::try_append_pure(init.in_row<eff::Row<>>(), log,
+                                                 crucible::mint_meta_run(record.view()));
     });
     return 0;
 }

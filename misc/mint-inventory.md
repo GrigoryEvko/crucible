@@ -51,9 +51,11 @@ that the axis does not apply to the row.
 | `SchemaTableOf::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 10 |
 | `SchemaTableOf::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | HS14: 2 |
 | `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 4 |
+| `mint_checked_meta_run` | `include/crucible/MetaLog.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_context_key` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | token | · | HS14: 16 |
 | `mint_dag_node` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 13 |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | HS14: 11 |
+| `mint_meta_run` | `include/crucible/MetaLog.h` | Y | Y | Y | Y | token | · | HS14: 12 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_synthetic_data_ptr` | `include/crucible/TensorMeta.h` | Y | Y | Y | Y | token | · | HS14: 2 |
@@ -429,5 +431,5 @@ that the axis does not apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 81 | 46 | 27 | 8 | 0 | 7 |
+| crucible (`include/crucible/`) | 83 | 46 | 29 | 8 | 0 | 7 |
 | substrate (`include/foundation/`, `include/fixy/`) | 190 | 72 | 114 | 4 | 0 | 2 |

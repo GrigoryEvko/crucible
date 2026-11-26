@@ -146,7 +146,7 @@ void test_full_log_records_the_op_with_no_index() {
     // No consumer releases the log, so the appends fill it.
     const ::fixy::HeapArray<crucible::TensorMeta> run =
         ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, kFillRecords, crucible::TensorMeta{});
-    ::fixy::View<const crucible::TensorMeta> const records = run.view();
+    crucible::MetaRun const records = crucible::mint_checked_meta_run(run.view());
     log.with_producer([records](MetaLog::Producer& end) noexcept {
         for (uint32_t i = 0; i < MetaLog::CAPACITY / kFillRecords; ++i)
             CRUCIBLE_TEST_ASSERT(kTest, MetaLog::try_append(end, records).is_valid());

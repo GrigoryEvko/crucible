@@ -4322,7 +4322,7 @@ crucible_neg_compile_test(neg_vigil_dispatch_op_pure_no_ctx
 # checks of the trust ladder change.
 crucible_neg_compile_test(neg_validated_op_built_outside_mint
   "is private within this context"
-  "crucible::ValidatedOp::ValidatedOp\\(foundation::core::Ref<const foundation::core::Sealed<crucible::TraceRing::Entry> >, foundation::core::View<const crucible::TensorMeta(, 18446744073709551615)?>\\)")
+  "crucible::ValidatedOp::ValidatedOp\\(foundation::core::Ref<const foundation::core::Sealed<crucible::TraceRing::Entry> >, crucible::MetaRun\\)")
 crucible_neg_compile_test(neg_validated_op_unchecked_entry
   "no matching function for call to .mint_validated_op\\(crucible::TraceRing::FromPytorchEntry\\)."
   "no known conversion for argument 1 from .Tagged<.....,fixy::tags::vessel_trust::FromPytorch>. to .Tagged<.....,fixy::tags::vessel_trust::Validated>")
@@ -4862,6 +4862,25 @@ crucible_neg_compile_test(neg_metalog_consumer_reference_read
 crucible_neg_compile_test(neg_meta_log_buffer_assignment
     "crucible::MetaLog::records_. is private within this context"
     "neg_meta_log_buffer_assignment\\.cpp:17:[0-9]+: error:")
+# An append of the log takes a MetaRun, a View of at most the capacity of the
+# log.  The door of a fixed extent takes an extent up to the capacity and no
+# dynamic extent.  The checked door takes the dynamic extent of a View of
+# const records only.  A plain View converts to no run.
+crucible_neg_compile_test(neg_meta_run_fixed_extent_past_capacity
+    "no matching function for call to .mint_meta_run\\(PastCapacity&\\)."
+    "the expression .Extent <= crucible::kMetaLogCapacity \\[with Extent = 1048577\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_meta_run_fixed_door_of_a_dynamic_view
+    "no matching function for call to .mint_meta_run\\(foundation::core::View<const crucible::TensorMeta>&\\)."
+    "constraints not satisfied")
+crucible_neg_compile_test(neg_meta_run_checked_door_of_a_fixed_view
+    "no matching function for call to .mint_checked_meta_run\\(FourRecords&\\)."
+    "the expression .Extent == foundation::core::dynamic_extent \\[with Extent = 4\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_meta_run_checked_door_of_writable_records
+    "no matching function for call to .mint_checked_meta_run\\(foundation::core::View<crucible::TensorMeta, 18446744073709551615>&\\)."
+    "types .const crucible::TensorMeta. and .crucible::TensorMeta. have incompatible cv-qualifiers")
+crucible_neg_compile_test(neg_meta_log_append_of_a_plain_view
+    "neg_meta_log_append_of_a_plain_view\\.cpp:[0-9]+:[0-9]+: error: cannot convert .const foundation::core::View<const crucible::TensorMeta>. to .crucible::MetaRun."
+    "initializing argument 2 of .static crucible::MetaIndex crucible::MetaLog::try_append\\(Producer&, crucible::MetaRun\\).")
 # copy_run and copy_record take a position of the log, a MetaIndex, and a raw
 # count does not convert to one.
 crucible_neg_compile_test(neg_meta_log_copy_run_raw_start

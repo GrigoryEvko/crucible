@@ -128,8 +128,10 @@ public:
     // Appends a run of records, and gives the index of the first, or no
     // index when the log is full or the run is empty.
     [[nodiscard]] MetaIndex append_metas(::fixy::View<const TensorMeta> metas) noexcept {
-        return log_.producer_side().with_end(
-            RigProducerProof{}, [metas](MetaLog::Producer& log) noexcept { return MetaLog::try_append(log, metas); });
+        return log_.producer_side().with_end(RigProducerProof{},
+                                             [run = mint_checked_meta_run(metas)](MetaLog::Producer& log) noexcept {
+                                                 return MetaLog::try_append(log, run);
+                                             });
     }
 
     // The consumer side, which a BackgroundThread holds.
@@ -247,7 +249,7 @@ inline bool record_local(LocalRing& ring, LocalLog& log, ValidatedOp const& op, 
     return ::fixy::concurrent::with_held_ends(
         ring.split_.producer_side(), proof, log.split_.producer_side(), proof,
         [&op, scope_hash, callsite_hash, depth](TraceRing::Producer& ring_end, MetaLog::Producer& log_end) noexcept {
-            return TraceRing::try_record(ring_end, log_end, op.metas(), op.entry(), scope_hash, callsite_hash, depth);
+            return TraceRing::try_record(ring_end, log_end, op.records(), op.entry(), scope_hash, callsite_hash, depth);
         });
 }
 
@@ -359,13 +361,13 @@ public:
     explicit OpenLog(MetaIndex start = MetaIndex{0}) noexcept
         : local_{::foundation::effects::testing::test().alloc, ::fixy::WideStart::check_below_limit(start.raw())} {}
 
-    [[nodiscard]] MetaIndex try_append(::fixy::View<const TensorMeta> metas) noexcept {
+    [[nodiscard]] MetaIndex try_append(MetaRun metas) noexcept {
         return local_.with_producer(
             [metas](MetaLog::Producer& end) noexcept { return MetaLog::try_append(end, metas); });
     }
 
     template <class Ctx>
-    [[nodiscard]] MetaIndex try_append_pure(Ctx const& ctx, ::fixy::View<const TensorMeta> metas) noexcept {
+    [[nodiscard]] MetaIndex try_append_pure(Ctx const& ctx, MetaRun metas) noexcept {
         return local_.with_producer(
             [&ctx, metas](MetaLog::Producer& end) noexcept { return MetaLog::try_append_pure(ctx, end, metas); });
     }
@@ -432,7 +434,7 @@ public:
         return ::fixy::concurrent::with_held_ends(
             ring_.ring_.producer_side(), proof, log_.log_.producer_side(), proof,
             [&op, scope_hash, callsite_hash, depth](TraceRing::Producer& ring, MetaLog::Producer& log) noexcept {
-                return TraceRing::try_record(ring, log, op.metas(), op.entry(), scope_hash, callsite_hash, depth);
+                return TraceRing::try_record(ring, log, op.records(), op.entry(), scope_hash, callsite_hash, depth);
             });
     }
 

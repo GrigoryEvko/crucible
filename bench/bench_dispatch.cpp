@@ -444,7 +444,7 @@ int main() {
         };
         return bench::run("MetaLog::try_append (2 metas)", [&] {
             bench::do_not_optimize(meta_log);
-            bench::do_not_optimize(meta_log.try_append(metas.view()));
+            bench::do_not_optimize(meta_log.try_append(crucible::mint_meta_run(metas.view())));
         });
     }());
 

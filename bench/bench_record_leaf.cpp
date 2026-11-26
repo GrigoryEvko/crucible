@@ -528,7 +528,9 @@ int main() {
         // place, as the ring does.
         const OpData d = make_op(0, 1);
         TraceRing::Entry entry = *d.entry;
-        const ::fixy::View<const TensorMeta> records = d.records->view();
+        // The run of the records, made once before the timed loop, as an op
+        // carries its run.
+        const crucible::MetaRun records = crucible::mint_checked_meta_run(d.records->view());
         uint64_t tick = 0;
         return bench::Run("record leaf [2 appends, no drainer]").core(record_core_of(cores)).measure([&] {
             entry.schema_hash = SchemaHash{0x1000000u + tick++};

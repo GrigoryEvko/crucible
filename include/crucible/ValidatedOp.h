@@ -245,30 +245,34 @@ namespace detail {
 class ValidatedOpDoor;
 }  // namespace detail
 
-// An entry that passed the trust ladder, with a View of its metadata
-// records.  The count of the records is the size of the View, and it is the
-// input count plus the output count of the entry.  The entry and the records
-// live in the caller, each in a source that no code writes while the op
-// lives: a sealed entry (TraceRing::SealedEntry), and the sources of the
-// doors below.  So an op lives no longer than its sealed entry and the frame
-// or the sealed list of its records.  The op holds a Ref and a View, 24
-// bytes, and copies no byte of the entry or of a record.
+// An entry that passed the trust ladder, with a run of its metadata records.
+// The count of the records is the input count plus the output count of the
+// entry, two counts of 16 bits, so the run holds at most 131070 records, and
+// the log takes it with no check of its count (MetaRun of
+// crucible/MetaLog.h).  The entry and the records live in the caller, each in
+// a source that no code writes while the op lives: a sealed entry
+// (TraceRing::SealedEntry), and the sources of the doors below.  So an op
+// lives no longer than its sealed entry and the frame or the sealed list of
+// its records.  The op holds a Ref and a View, 24 bytes, and copies no byte of
+// the entry or of a record.
 class ValidatedOp {
 public:
     [[nodiscard]] constexpr const TraceRing::Entry& entry() const noexcept { return **entry_; }
 
     // The records of the op: the inputs, then the outputs.
-    [[nodiscard]] constexpr ::fixy::View<const TensorMeta> metas() const noexcept { return metas_; }
+    [[nodiscard]] constexpr ::fixy::View<const TensorMeta> metas() const noexcept { return metas_.view(); }
+
+    // The same records as the run that an append of the log takes.
+    [[nodiscard]] constexpr MetaRun records() const noexcept { return metas_; }
 
 private:
-    constexpr ValidatedOp(::fixy::Ref<TraceRing::SealedEntry const> entry,
-                          ::fixy::View<const TensorMeta> metas) noexcept
+    constexpr ValidatedOp(::fixy::Ref<TraceRing::SealedEntry const> entry, MetaRun metas) noexcept
         : entry_{entry}, metas_{metas} {}
 
     friend class detail::ValidatedOpDoor;
 
     ::fixy::Ref<TraceRing::SealedEntry const> entry_;
-    ::fixy::View<const TensorMeta> metas_{};
+    MetaRun metas_;
 };
 
 // The sealed records of an op: a list that no code changes from its
@@ -320,14 +324,16 @@ namespace detail {
 // private, and the three doors of mint_validated_op are its friends.  The
 // return type of a mint names an Option of a ValidatedOp, and that Option
 // needs a complete class.  So the class itself cannot name a mint as its
-// friend.
+// friend.  It is also the door of an op to a MetaRun: the test of the count
+// below bounds the records by two counts of 16 bits, 131070 records, below
+// the capacity of the log.
 class ValidatedOpDoor {
     [[nodiscard]] static constexpr ::fixy::Option<ValidatedOp> mint_(::fixy::Ref<TraceRing::SealedEntry const> entry,
                                                                      ::fixy::View<const TensorMeta> records) noexcept {
         const TraceRing::Entry& fields = **entry;
         const uint64_t expected = uint64_t{fields.num_inputs} + uint64_t{fields.num_outputs};
         if (records.size() != expected) return ::fixy::none;
-        return ::fixy::Option<ValidatedOp>::some(ValidatedOp{entry, records});
+        return ::fixy::Option<ValidatedOp>::some(ValidatedOp{entry, MetaRun{records}});
     }
 
     template <::foundation::brand::IsBrand Brand, std::size_t Extent>

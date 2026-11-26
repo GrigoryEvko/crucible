@@ -185,7 +185,7 @@ int main() {
             ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
             auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(1 meta  = 168B)", [&] {
-                auto idx = log->try_append(meta1.view());
+                auto idx = log->try_append(crucible::mint_meta_run(meta1.view()));
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
@@ -194,7 +194,7 @@ int main() {
             ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
             auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(2 metas = 336B)", [&] {
-                auto idx = log->try_append(meta2.view());
+                auto idx = log->try_append(crucible::mint_meta_run(meta2.view()));
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
@@ -203,7 +203,7 @@ int main() {
             ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
             auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(3 metas = 504B)", [&] {
-                auto idx = log->try_append(meta3.view());
+                auto idx = log->try_append(crucible::mint_meta_run(meta3.view()));
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
@@ -212,7 +212,7 @@ int main() {
             ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
             auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(8 metas = 1344B)", [&] {
-                auto idx = log->try_append(meta8.view());
+                auto idx = log->try_append(crucible::mint_meta_run(meta8.view()));
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
@@ -230,7 +230,7 @@ int main() {
             uint32_t since_drain = 0;
             constexpr uint32_t kD = 50000;
             return bench::run("throughput (3 metas/call, drain/50k)", [&] {
-                auto idx = log->try_append(meta3.view());
+                auto idx = log->try_append(crucible::mint_meta_run(meta3.view()));
                 bench::do_not_optimize(idx);
                 if (++since_drain >= kD) [[unlikely]] {
                     log->release_to(log->total_produced());

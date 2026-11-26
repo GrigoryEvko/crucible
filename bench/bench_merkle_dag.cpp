@@ -346,8 +346,8 @@ int run_bench(::fixy::os::Args const& arguments) {
                                      SyntheticAddress{0x7f0000000000ULL + (i * 8 + j) * 0x1000});
                              });
             }
-            MetaIndex meta_start = meta_log.try_append(
-                ::fixy::View<const TensorMeta>{metas.view()}.window(0, total_metas).expect("the run fits the array"));
+            MetaIndex meta_start = meta_log.try_append(mint_checked_meta_run(
+                ::fixy::View<const TensorMeta>{metas.view()}.window(0, total_metas).expect("the run fits the array")));
             if (!ring.try_append(e, meta_start, ScopeHash{bench_rand()}, CallsiteHash{bench_rand()})) [[unlikely]]
                 abort_full_ring(i, N);
         }
@@ -404,9 +404,9 @@ int run_bench(::fixy::os::Args const& arguments) {
                 }
                 // The build reads the metas at the indices in meta_batch, so this call does not
                 // use the returned index.
-                (void)meta_log.try_append(::fixy::View<const TensorMeta>{metas.view()}
-                                              .window(0, total_metas)
-                                              .expect("the run fits the array"));
+                (void)meta_log.try_append(mint_checked_meta_run(::fixy::View<const TensorMeta>{metas.view()}
+                                                                    .window(0, total_metas)
+                                                                    .expect("the run fits the array")));
             }
         };
 

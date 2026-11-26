@@ -892,7 +892,7 @@ private:
         return ::fixy::concurrent::with_held_ends(ring_.producer_side(), proof, meta_log_.producer_side(), proof,
                                                   [&op, scope_hash, callsite_hash, depth] [[gnu::always_inline]] (
                                                       TraceRing::Producer & ring, MetaLog::Producer & log) noexcept {
-                                                      return TraceRing::try_record(ring, log, op.metas(), op.entry(),
+                                                      return TraceRing::try_record(ring, log, op.records(), op.entry(),
                                                                                    scope_hash, callsite_hash, depth);
                                                   });
     }

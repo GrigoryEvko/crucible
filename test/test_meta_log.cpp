@@ -41,7 +41,7 @@ static TensorMeta make_meta(SyntheticAddress address) {
 static void test_empty_state() {
     crucible::test::OpenLog log{};
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, !log.try_append(::fixy::View<const TensorMeta>{}).is_valid());
+    CRUCIBLE_TEST_ASSERT(kTest, !log.try_append(mint_checked_meta_run(::fixy::View<const TensorMeta>{})).is_valid());
     ::fixy::check::pass(kTest, "  test_empty:                     PASSED\n");
 }
 
@@ -49,7 +49,7 @@ static void test_single_append_returns_index_zero() {
     crucible::test::OpenLog log{};
     TensorMeta m = make_meta(SyntheticAddress{0x1000});
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
-    auto idx = log.try_append(record.view());
+    auto idx = log.try_append(mint_meta_run(record.view()));
     CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
     CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
@@ -70,8 +70,8 @@ static void test_batch_append_and_monotonic() {
         batch.set(index, meta);
     }
     const ::fixy::View<const TensorMeta> records{batch.view()};
-    auto idx1 = log.try_append(records.window(0, 3).expect("the first run fits the batch"));
-    auto idx2 = log.try_append(records.window(3, 5).expect("the second run fits the batch"));
+    auto idx1 = log.try_append(mint_checked_meta_run(records.window(0, 3).expect("the first run fits the batch")));
+    auto idx2 = log.try_append(mint_checked_meta_run(records.window(3, 5).expect("the second run fits the batch")));
     CRUCIBLE_TEST_ASSERT(kTest, idx1.is_valid() && idx2.is_valid());
     CRUCIBLE_TEST_ASSERT(kTest, idx1.raw() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, idx2.raw() == 3);
@@ -94,13 +94,13 @@ static void test_tail_advance_frees_capacity() {
     crucible::test::OpenLog log{};
     TensorMeta m = make_meta(SyntheticAddress{0x2000});
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
-    auto idx = log.try_append(record.view());
+    auto idx = log.try_append(mint_meta_run(record.view()));
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
     log.release_to(::crucible::MetaIndex{idx.raw() + 1});
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
     // Freeing capacity does not rewind the index.  Indices keep
     // counting, so the next append is 1 and not 0.
-    auto idx2 = log.try_append(record.view());
+    auto idx2 = log.try_append(mint_meta_run(record.view()));
     CRUCIBLE_TEST_ASSERT(kTest, idx2.raw() == 1);
     ::fixy::check::pass(kTest, "  test_tail_advance:              PASSED\n");
 }
@@ -110,12 +110,12 @@ static void test_reset_zeroes_both_pointers() {
     TensorMeta m = make_meta(SyntheticAddress{0x3000});
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     for (int i = 0; i < 10; ++i)
-        (void)log.try_append(record.view());
+        (void)log.try_append(mint_meta_run(record.view()));
     log.release_to(::crucible::MetaIndex{5});
     log.reset();
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
     // A reset does rewind the index, where advancing the tail does not.
-    auto idx = log.try_append(record.view());
+    auto idx = log.try_append(mint_meta_run(record.view()));
     CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == 0);
     // The reset rewinds the copy of the tail of the consumer end too, so a
     // release after it moves the tail from zero.
@@ -139,7 +139,7 @@ static void test_copy_run_across_the_end() {
         const TensorMeta meta = make_meta(SyntheticAddress{0x5000 + index.raw() * 0x100});
         tail5.set(index, meta);
     }
-    auto idx = log.try_append(tail5.view());
+    auto idx = log.try_append(mint_meta_run(tail5.view()));
     CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
     CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == near_end);
 
@@ -180,11 +180,14 @@ static void test_counters_pass_two_to_the_32() {
         run.set(index, meta);
     }
     const ::fixy::View<const TensorMeta> records{run.view()};
-    const MetaIndex first = log.try_append(records.window(0, 15).expect("the first run fits the array"));
+    const MetaIndex first =
+        log.try_append(mint_checked_meta_run(records.window(0, 15).expect("the first run fits the array")));
     CRUCIBLE_TEST_ASSERT(kTest, first.is_valid() && first.raw() == uint64_t{BELOW_WRAP});
-    const MetaIndex last_below = log.try_append(records.window(15, 1).expect("the record fits the array"));
+    const MetaIndex last_below =
+        log.try_append(mint_checked_meta_run(records.window(15, 1).expect("the record fits the array")));
     CRUCIBLE_TEST_ASSERT(kTest, last_below.is_valid() && last_below.raw() == uint64_t{BELOW_WRAP} + 15);
-    const MetaIndex across = log.try_append(records.window(16, 16).expect("the last run fits the array"));
+    const MetaIndex across =
+        log.try_append(mint_checked_meta_run(records.window(16, 16).expect("the last run fits the array")));
     CRUCIBLE_TEST_ASSERT(kTest, across.is_valid() && across.raw() == (uint64_t{1} << 32));
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 32);
 
@@ -229,6 +232,23 @@ static void test_copy_run_refuses_a_run_longer_than_the_buffer(::fixy::TestRunne
     ::fixy::check::pass(test, "  test_copy_run_refuses_long_run: PASSED\n");
 }
 
+// A run of more records than the log holds is no run of an append, so the
+// checked door of a run ends the process for it, and a run of the capacity
+// passes.  The refusal runs in a child.  A run of a fixed extent past the
+// capacity does not compile (neg_meta_run_fixed_extent_past_capacity).
+static void test_checked_meta_run_refuses_more_than_the_capacity(::fixy::TestRunnerCtx const& test) {
+    const ::fixy::HeapArray<TensorMeta> records =
+        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, MetaLog::CAPACITY + 1, TensorMeta{});
+    const ::fixy::View<const TensorMeta> all = records.view();
+    const MetaRun full =
+        mint_checked_meta_run(all.window(0, MetaLog::CAPACITY).expect("the array holds one record more"));
+    CRUCIBLE_TEST_ASSERT(test, full.view().size() == MetaLog::CAPACITY);
+    ::fixy::check::expect_dies(
+        test, [all] noexcept { (void)mint_checked_meta_run(all); },
+        ::fixy::TextView{"foundation: contract violation: records.size() <= kMetaLogCapacity"});
+    ::fixy::check::pass(test, "  test_checked_meta_run_refuses: PASSED\n");
+}
+
 // advance_meta_index gives a position past a run only from a position of the
 // log.  The index none is no position, and a sum past the width of a counter
 // is no position either.  Each refusal runs in a child.
@@ -255,7 +275,7 @@ static void test_release_to_moves_the_tail_forward_only(::fixy::TestRunnerCtx co
     const ::fixy::FixedArray<TensorMeta, 4> records{
         make_meta(SyntheticAddress{0x5000}), make_meta(SyntheticAddress{0x6000}), make_meta(SyntheticAddress{0x7000}),
         make_meta(SyntheticAddress{0x8000})};
-    CRUCIBLE_TEST_ASSERT(test, log.try_append(records.view()) == ::crucible::MetaIndex{0});
+    CRUCIBLE_TEST_ASSERT(test, log.try_append(mint_meta_run(records.view())) == ::crucible::MetaIndex{0});
     log.release_to(::crucible::MetaIndex{3});
     CRUCIBLE_TEST_ASSERT(test, log.total_released() == ::crucible::MetaIndex{3});
     log.release_to(::crucible::MetaIndex{1});
@@ -289,7 +309,7 @@ static void test_spsc_concurrent_integrity() {
         for (uint32_t i = 0; i < N; /* advance only on success */) {
             TensorMeta m = make_meta(SyntheticAddress{uint64_t{i + 1} << 16});
             const ::fixy::FixedArray<TensorMeta, 1> record{m};
-            auto idx = log.try_append(record.view());
+            auto idx = log.try_append(mint_meta_run(record.view()));
             if (idx.is_valid()) [[likely]] {
                 ++i;
             } else {
@@ -353,9 +373,8 @@ static void test_spsc_concurrent_integrity() {
 constexpr ::fixy::HotFgCtx kPure = ::foundation::effects::testing::foreground();
 
 template <typename Ctx>
-concept AppendsPure = requires(MetaLog::Producer& log, Ctx const& ctx, ::fixy::View<const TensorMeta> metas) {
-    MetaLog::try_append_pure(ctx, log, metas);
-};
+concept AppendsPure =
+    requires(MetaLog::Producer& log, Ctx const& ctx, MetaRun metas) { MetaLog::try_append_pure(ctx, log, metas); };
 static_assert(AppendsPure<::fixy::HotFgCtx>);
 static_assert(!AppendsPure<::fixy::TestRunnerCtx>);
 static_assert(!AppendsPure<::fixy::BgDrainCtx>);
@@ -369,7 +388,7 @@ static void test_try_append_pure() {
         crucible::test::OpenLog log{};
         TensorMeta m = make_meta(SyntheticAddress{0xA0});
         const ::fixy::FixedArray<TensorMeta, 1> record{m};
-        auto idx = log.try_append_pure(kPure, record.view());
+        auto idx = log.try_append_pure(kPure, mint_meta_run(record.view()));
         CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
         CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == 0);
         CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
@@ -383,8 +402,8 @@ static void test_try_append_pure() {
         TensorMeta m2 = make_meta(SyntheticAddress{0xC0});
         const ::fixy::FixedArray<TensorMeta, 1> first_record{m1};
         const ::fixy::FixedArray<TensorMeta, 1> second_record{m2};
-        auto idx1 = log.try_append_pure(kPure, first_record.view());
-        auto idx2 = log.try_append_pure(kPure, second_record.view());
+        auto idx1 = log.try_append_pure(kPure, mint_meta_run(first_record.view()));
+        auto idx2 = log.try_append_pure(kPure, mint_meta_run(second_record.view()));
         CRUCIBLE_TEST_ASSERT(kTest, idx1.is_valid() && idx2.is_valid());
         CRUCIBLE_TEST_ASSERT(kTest, idx1.raw() == 0);
         CRUCIBLE_TEST_ASSERT(kTest, idx2.raw() == 1);
@@ -398,10 +417,10 @@ static void test_try_append_pure() {
         crucible::test::OpenLog log{};
         TensorMeta m = make_meta(SyntheticAddress{0xD0});
         const ::fixy::FixedArray<TensorMeta, 1> record{m};
-        auto i0 = log.try_append(record.view());  // index 0
-        auto i1 = log.try_append_pure(kPure, record.view());  // index 1
-        auto i2 = log.try_append(record.view());  // index 2
-        auto i3 = log.try_append_pure(kPure, record.view());  // index 3
+        auto i0 = log.try_append(mint_meta_run(record.view()));  // index 0
+        auto i1 = log.try_append_pure(kPure, mint_meta_run(record.view()));  // index 1
+        auto i2 = log.try_append(mint_meta_run(record.view()));  // index 2
+        auto i3 = log.try_append_pure(kPure, mint_meta_run(record.view()));  // index 3
         CRUCIBLE_TEST_ASSERT(kTest, i0.raw() == 0);
         CRUCIBLE_TEST_ASSERT(kTest, i1.raw() == 1);
         CRUCIBLE_TEST_ASSERT(kTest, i2.raw() == 2);
@@ -438,7 +457,7 @@ static void test_try_append_pure_concurrent() {
         for (uint32_t i = 0; i < N; /* advance only on success */) {
             TensorMeta m = make_meta(SyntheticAddress{uint64_t{i + 1} << 16});
             const ::fixy::FixedArray<TensorMeta, 1> record{m};
-            auto idx = log.try_append_pure(kPure, record.view());
+            auto idx = log.try_append_pure(kPure, mint_meta_run(record.view()));
             if (idx.is_valid()) [[likely]] {
                 ++i;
             } else {
@@ -492,6 +511,7 @@ int main() {
     // a child process.
     test_copy_run_refuses_a_run_longer_than_the_buffer(test);
     test_advance_meta_index_refuses_no_position(test);
+    test_checked_meta_run_refuses_more_than_the_capacity(test);
     test_release_to_moves_the_tail_forward_only(test);
     test_empty_state();
     test_single_append_returns_index_zero();

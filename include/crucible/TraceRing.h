@@ -381,8 +381,8 @@ public:
     // its arms inline, and the record makes no call apart from the copy of
     // the records.
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE static bool
-    try_record(Producer& ring, MetaLog::Producer& log, ::fixy::View<const TensorMeta> metas, const Entry& entry,
-               ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    try_record(Producer& ring, MetaLog::Producer& log, MetaRun metas, const Entry& entry, ScopeHash scope_hash,
+               CallsiteHash callsite_hash, OpDepth depth) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         return try_reserve_(ring).match(
             [&](Reservation reserved) noexcept {
                 const MetaIndex meta_start = MetaLog::try_append(log, metas);

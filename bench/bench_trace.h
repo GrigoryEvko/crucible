@@ -23,8 +23,8 @@ inline void refill_meta_log(crucible::test::OpenLog& meta_log, const crucible::L
     for (const crucible::TraceRing::Entry& entry : trace.entries) {
         const uint16_t meta_count = static_cast<uint16_t>(entry.num_inputs + entry.num_outputs);
         if (meta_count > 0 && cursor + meta_count <= trace.num_metas) {
-            (void)meta_log.try_append(
-                trace.metas.view().window(cursor, meta_count).expect("the run of the op fits the metas"));
+            (void)meta_log.try_append(crucible::mint_checked_meta_run(
+                trace.metas.view().window(cursor, meta_count).expect("the run of the op fits the metas")));
             cursor += meta_count;
         }
     }

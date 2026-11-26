@@ -19,7 +19,7 @@ int main() {
     const ::fixy::BgLoadCtx load{eff::testing::bg()};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
     crucible::test::with_log_producer([&](crucible::MetaLog::Producer& log) noexcept {
-        (void)crucible::MetaLog::try_append_pure(load, log, record.view());
+        (void)crucible::MetaLog::try_append_pure(load, log, crucible::mint_meta_run(record.view()));
     });
     return 0;
 }

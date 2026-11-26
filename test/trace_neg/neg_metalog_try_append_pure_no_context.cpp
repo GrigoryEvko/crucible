@@ -21,7 +21,7 @@ namespace {
 void append_from_an_allocating_caller(::fixy::TestRunnerCtx const&) {
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
     crucible::test::with_log_producer([&record](crucible::MetaLog::Producer& log) noexcept {
-        (void)crucible::MetaLog::try_append_pure(log, record.view());
+        (void)crucible::MetaLog::try_append_pure(log, crucible::mint_meta_run(record.view()));
     });
 }
 

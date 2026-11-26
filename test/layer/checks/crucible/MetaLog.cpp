@@ -2,7 +2,33 @@
 
 #include <crucible/MetaLog.h>
 
+#include <cstdint>
+#include <type_traits>
+
 namespace crucible {
+
+// The view of a MetaRun states that it holds at most kMetaLogCapacity records.
+// That rests on the doors: no default run, no public constructor and no
+// conversion from a View, and no assignment, so no code writes a run after
+// its door.  A run is a View and nothing more.
+static_assert(!std::is_default_constructible_v<MetaRun>);
+static_assert(!std::is_constructible_v<MetaRun, ::fixy::View<const TensorMeta>>);
+static_assert(!std::is_convertible_v<::fixy::View<const TensorMeta>, MetaRun>);
+static_assert(!std::is_copy_assignable_v<MetaRun> && !std::is_move_assignable_v<MetaRun>);
+static_assert(!std::is_assignable_v<MetaRun&, ::fixy::View<const TensorMeta>>);
+static_assert(std::is_trivially_copy_constructible_v<MetaRun>);
+static_assert(sizeof(MetaRun) == sizeof(::fixy::View<const TensorMeta>));
+
+// The count of the records of an op is the sum of two counts of 16 bits, so
+// the run of an op fits the log (the door of an op, ValidatedOpDoor).
+static_assert(uint32_t{::fixy::max_of<uint16_t>} + uint32_t{::fixy::max_of<uint16_t>} <= kMetaLogCapacity);
+static_assert(MetaLog::CAPACITY == kMetaLogCapacity);
+
+// The door of a fixed extent takes each extent up to the capacity, and the
+// checked door takes only the dynamic extent.
+static_assert(MetaRunFixedExtent<1> && MetaRunFixedExtent<kMetaLogCapacity>);
+static_assert(!MetaRunFixedExtent<kMetaLogCapacity + 1> && !MetaRunFixedExtent<::fixy::dynamic_extent>);
+static_assert(MetaRunDynamicExtent<::fixy::dynamic_extent> && !MetaRunDynamicExtent<4>);
 
 // The state of each side lives in its end, on a cache line of its own.  An end
 // holds the Ref of its log and then its state, so the state starts the second
