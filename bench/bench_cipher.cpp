@@ -22,10 +22,10 @@
 #include "bench_harness.h"
 
 // Opening the store and its open view need a context whose row admits IO
-// and Block.
-[[nodiscard]] inline ::fixy::TestRunnerCtx store_ctx() {
-    return ::fixy::TestRunnerCtx{::foundation::effects::testing::test()};
-}
+// and Block.  The context has the background source, as the store of a
+// product has.  A context of the test source would time the write of the
+// write fault of a test of fixy/os/Fs.h in place of the product write.
+[[nodiscard]] inline ::fixy::BgLoadCtx store_ctx() { return ::fixy::BgLoadCtx{::foundation::effects::testing::bg()}; }
 
 using namespace crucible;
 
