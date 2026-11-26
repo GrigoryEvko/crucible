@@ -56,6 +56,7 @@
 #include <foundation/algebra/lattices/TrustLattice.h>
 #include <foundation/core/Equatable.h>
 #include <foundation/core/Text.h>
+#include <foundation/core/TypeParts.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/reflect/Instance.h>
 
@@ -281,9 +282,12 @@ template <typename To, typename T, typename From>
 // passes the value in a register.  The annotation refuses the checked
 // lifetime start over bytes, for every tag.  A tag that names a source
 // keeps a trivially copyable wrapper: a byte image that crosses a trust
-// boundary arrives under such a tag and is checked again.
+// boundary arrives under such a tag and is checked again.  A Tagged holds its
+// value and nothing else that borrows, so a Tagged<void*, Tag> is an address
+// that no reader follows (stated_address of foundation/core/TypeParts.h).
 template <typename T, typename Tag>
-class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]][[= ::foundation::core::equal_parts{}]] Tagged
+class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]][[= ::foundation::core::equal_parts{}]]
+                   [[= ::foundation::core::stated_address{}]] Tagged
     : public graded_facade<::foundation::algebra::ModalityKind::RelativeMonad,
                            ::foundation::algebra::lattices::TrustLattice<Tag>, T> {
 public:

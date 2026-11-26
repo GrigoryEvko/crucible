@@ -123,7 +123,7 @@ namespace detail {
 // as a reference does, so the class states refers{} over its first argument.
 // The elements are bytes of an owner of the brand, and only the table of a set
 // writes the pointer, from a run of its own brand.  So the class names the
-// owner (names_owner_second of foundation/core/BumpArena.h).
+// owner (names_owner_second of foundation/core/TypeParts.h).
 template <class T, class Brand, std::size_t I>
 class[[= ::foundation::transfer::refers{}]][[= names_owner_second{}]] RunFirst_ {
     template <UnsignedInteger Count, class TableBrand, class... Runs>

@@ -379,7 +379,11 @@ static_assert(!ArenaKeeps<RunAddress, Family> && !ArenaKeeps<StaticText, Family>
 
 // A reference member, a pointer to an object and an incomplete class are
 // refusals.  A pointer to a function and a pointer to member pass.  A void*
-// passes only in a class that names it as a type argument.
+// passes only as the first type argument of a class of the base that states
+// stated_address{}, such as a Tagged<void*, Tag>.  The check file of
+// fixy/Tagged.h pins that form, and the check file of
+// foundation/core/TypeParts.h pins that a class outside the base gains
+// nothing from the mark.
 struct HoldsReference {
     Plain& target;
 };
@@ -410,15 +414,29 @@ static_assert(!ArenaKeeps<HoldsScalarReference, Family> && !ArenaKeeps<HoldsByte
 static_assert(!ArenaKeeps<HoldsEnumReference, Family> && !ArenaKeeps<DerivedOfScalarReference, Family>);
 static_assert(!ArenaKeeps<HoldsScalarReferenceDeep, Family> && !ArenaKeeps<FixedList<HoldsScalarReference, 2>, Family>);
 static_assert(!ArenaKeeps<Option<HoldsByteReference>, Family> && !ArenaKeeps<HoldsByteReference, OtherFamily>);
-static_assert(!holds_loose_borrow_(^^void (*)(int), ^^Family, PartNaming::by_member));
-static_assert(!holds_loose_borrow_(^^int Plain::*, ^^Family, PartNaming::by_member));
-static_assert(holds_loose_borrow_(^^int*, ^^Family, PartNaming::by_argument));
-static_assert(holds_loose_borrow_(^^void*, ^^Family, PartNaming::by_member));
-static_assert(!holds_loose_borrow_(^^void*, ^^Family, PartNaming::by_argument));
-static_assert(!holds_loose_borrow_(^^void const*, ^^Family, PartNaming::by_argument));
-static_assert(!holds_loose_borrow_(^^Stated<void*>, ^^Family, PartNaming::by_member));
-static_assert(!holds_loose_borrow_(^^Stated<Stated<void*>>, ^^Family, PartNaming::by_member));
-static_assert(holds_loose_borrow_(^^Stated<int*>, ^^Family, PartNaming::by_member));
+template <class Value>
+struct[[= stated_address{}]] StatedAddress {
+    Value value{};
+};
+static_assert(!holds_loose_borrow_(^^void (*)(int), ^^Family));
+static_assert(!holds_loose_borrow_(^^int Plain::*, ^^Family));
+static_assert(holds_loose_borrow_(^^int*, ^^Family) && holds_loose_borrow_(^^void*, ^^Family));
+static_assert(holds_loose_borrow_(^^Stated<void*>, ^^Family) && holds_loose_borrow_(^^Stated<int*>, ^^Family));
+static_assert(!holds_loose_borrow_(^^StatedAddress<void*>, ^^Family));
+static_assert(!holds_loose_borrow_(^^StatedAddress<void const*>, ^^Family));
+static_assert(holds_loose_borrow_(^^StatedAddress<int*>, ^^Family));
+static_assert(!ArenaKeeps<Option<void*>, Family>, "an Option names a void* with no mark: a borrow with no type");
+
+// The owner of a borrow of the base is owner_brand of
+// foundation/core/TypeParts.h: the second type argument of a Ref, a Link and
+// an ArenaRun, which state names_owner_second.  A View names no owner.  An
+// arena tag is a member tag or a family tag, and an epoch brand is neither.
+static_assert(type_parts_v<Ref<int, Family>>.owner_brand == ^^Family);
+static_assert(type_parts_v<ArenaRun<int const, Family>>.owner_brand == ^^Family);
+static_assert(type_parts_v<Link<Plain, Family>>.owner_brand == ^^Family);
+static_assert(type_parts_v<View<int>>.owner_brand == std::meta::info{});
+static_assert(is_arena_tag_(^^Family) && is_arena_tag_(^^Owner::Member));
+static_assert(!is_arena_tag_(^^EpochOf<Owner::Member>) && !is_arena_tag_(^^Unmarked));
 
 // Each door of an arena and of an epoch takes a type that it can keep, and no
 // other one.

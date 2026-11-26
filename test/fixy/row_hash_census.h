@@ -1194,6 +1194,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::synchronized_by_proof,
      "the mark of a synchronized class whose doors keep no borrow that a caller gives: an empty tag that holds "
      "nothing"},
+    {^^::foundation::core::stated_address,
+     "the mark of a class whose void* is an address that no reader follows: an empty tag that holds nothing"},
     {^^::foundation::core::owns_its_storage,
      "the annotation of an owner that holds its storage through pointers that no caller sets: it is empty and is "
      "never a value in a signature"},

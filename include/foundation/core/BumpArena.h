@@ -65,7 +65,8 @@
 //   value, at each depth:
 //     - A Ref, a Link, an ArenaRun and a run of an ArenaRunSet pass when they
 //       name the brand of the arena, or a named tag that the tag of the arena
-//       states as outlived_by (foundation/Brand.h).  An epoch and the arena of
+//       states as outlived_by (foundation/Brand.h).  The walk reads the brand
+//       of a borrow as owner_brand of foundation/core/TypeParts.h.  An epoch and the arena of
 //       a scope have no tag of their own, so an object of an epoch keeps only
 //       borrows of that epoch, and an object of a scope only borrows of that
 //       scope
@@ -76,12 +77,14 @@
 //       frame
 //     - A reference member, a pointer to an object, a class whose state
 //       reflection does not show and an incomplete class are refusals
-//     - A void* passes only in a class that names it as a type argument, such
-//       as a Tagged<void*, Tag>.  That class states an address that no reader
-//       follows, and each raw pointer outside the base is a finding of the
-//       quarantine.  A void* that no type argument names can be a borrow with
-//       no type, as in a CallRef.  So a StaticText and a RunAddress are
-//       refusals too, although neither one dangles
+//     - A void* passes only as the first type argument of a class of the base
+//       that states stated_address{}, such as a Tagged<void*, Tag>
+//       (is_stated_address_ of foundation/core/TypeParts.h).  That class
+//       states an address that no reader follows, and each raw pointer
+//       outside the base is a finding of the quarantine.  Each other void*
+//       can be a borrow with no type, as in a CallRef or an Option<void*>.
+//       So a StaticText and a RunAddress are refusals too, although neither
+//       one dangles
 //     - A class that holds its values in raw storage, such as an Option, and an
 //       owner of the base, such as an Atomic, give their type arguments
 //   The walk trusts the brand of a Ref.  A type that states an arena tag as its
@@ -356,7 +359,7 @@ class ArenaRefDoor final : ::foundation::NoObject<ArenaRefDoor> {
 // (foundation/Transfer.h), which names T as its target.  The check file of
 // this header pins each const door and each copy.
 template <ViewElement T, ::foundation::brand::IsBrand Brand>
-class[[= ::foundation::transfer::refers_deep{^^T}]] ArenaRun final {
+class[[= ::foundation::transfer::refers_deep{^^T}]][[= detail::names_owner_second{}]] ArenaRun final {
 public:
     using brand_type = Brand;
 
@@ -413,68 +416,47 @@ private:
 
 namespace detail {
 
-// The mark of a borrow of the base whose second type argument is the brand of
-// the owner of its target, such as the first element of a run of a set of
-// runs (foundation/core/RunSet.h).  Only the doors of the class make a value
-// that is not empty, from a borrow of that brand.  The walk of the objects of
-// an arena trusts the mark only in the base.
-struct names_owner_second {};
-
 // True when a borrow with the brand owner outlives each object of an arena of
 // the brand: the two are one brand, or owner is a named tag and the brand states
 // it as outlived_by (foundation/Brand.h).
 [[nodiscard]] consteval bool outlives_objects_(std::meta::info owner, std::meta::info brand) {
-    namespace brand_marks = ::foundation::brand;
     if (owner == brand) return true;
-    bool const is_named_tag = ::foundation::reflect::carries_annotation(owner, ^^brand_marks::arena_member_brand)
-                           || ::foundation::reflect::carries_annotation(owner, ^^brand_marks::arena_family_brand);
-    if (!is_named_tag) return false;
+    if (!is_arena_tag_(owner)) return false;
     std::meta::info const arguments[] = {owner};
-    std::meta::info const statement = std::meta::substitute(^^brand_marks::outlived_by, arguments);
+    std::meta::info const statement = std::meta::substitute(^^::foundation::brand::outlived_by, arguments);
     return ::foundation::reflect::carries_annotation(brand, statement);
 }
 
 // True for a borrow of the base that names an owner of its target which
-// outlives each object of an arena of the brand.  The second type argument of
-// a Ref, a Link, an ArenaRun and a class with the mark names_owner_second is
-// the brand of the owner.
-[[nodiscard]] consteval bool is_borrow_of_arena_(std::meta::info type, std::meta::info brand) {
-    if (!std::meta::has_template_arguments(type)) return false;
-    std::meta::info const family = std::meta::template_of(type);
-    bool const is_named_family = family == ^^Ref || family == ^^Link || family == ^^ArenaRun;
-    if (!is_named_family) {
-        if (!::foundation::reflect::is_class_of_the_base_(type)) return false;
-        if (!::foundation::reflect::carries_annotation(type, ^^names_owner_second)) return false;
-    }
-    return outlives_objects_(std::meta::dealias(std::meta::template_arguments_of(type)[1]), brand);
+// outlives each object of an arena of the brand.  The owner is owner_brand of
+// the parts of the borrow (foundation/core/TypeParts.h): the second type
+// argument of a borrow of the base that states names_owner_second, such as a
+// Ref, a Link and an ArenaRun.  The store check of an epoch body reads the
+// owner of a borrow there too (StoresNoEpochBorrowOutside of
+// foundation/core/CaptureStore.h).
+[[nodiscard]] consteval bool is_borrow_of_arena_(TypeParts const& parts, std::meta::info brand) {
+    return parts.owner_brand != std::meta::info{} && outlives_objects_(parts.owner_brand, brand);
 }
-
-// Where a class names the type of a part: in its type arguments, or only in a
-// member.
-enum class PartNaming : unsigned char {
-    by_argument,
-    by_member,
-};
 
 // True when an object of the type holds a borrow of a different owner than an
 // arena, as the rules of the objects of an arena read it.  brand is the brand
 // of the arena that keeps the object.  The read follows only what the object
 // holds by value, so it ends with the depth of the type.  It is a function
-// that is no template, so no unit can specialize what it admits.  Complexity:
-// linear in the parts that the object holds by value.
-[[nodiscard]] consteval bool holds_loose_borrow_(std::meta::info type, std::meta::info brand, PartNaming naming) {
+// that is no template, so no unit can specialize what it admits.  A void* is
+// a borrow with no type, unless a class of the base states it as an address
+// that no reader follows (is_stated_address_ of foundation/core/TypeParts.h),
+// which the store check of an epoch body reads too.  Complexity: linear in
+// the parts that the object holds by value.
+[[nodiscard]] consteval bool holds_loose_borrow_(std::meta::info type, std::meta::info brand) {
     std::meta::info const held = std::meta::remove_all_extents(std::meta::dealias(type));
     if (is_leaf_(held)) return false;
-    if (std::meta::is_pointer_type(held)) {
-        std::meta::info const pointee = std::meta::remove_pointer(held);
-        bool const is_stated_address = naming == PartNaming::by_argument && std::meta::is_void_type(pointee);
-        return !is_stated_address && !std::meta::is_function_type(pointee);
-    }
+    if (std::meta::is_pointer_type(held)) return !std::meta::is_function_type(std::meta::remove_pointer(held));
     if (!is_class_or_union_(held)) return false;
     if (!std::meta::is_complete_type(held)) return true;
     if (is_plain_class_(held)) return false;
     TypeParts const& parts = std::meta::extract<TypeParts const&>(kept_parts_of(held));
-    if (parts.is_frame_borrow || parts.is_borrow) return !is_borrow_of_arena_(held, brand);
+    if (parts.is_frame_borrow || parts.is_borrow) return !is_borrow_of_arena_(parts, brand);
+    if (is_stated_address_(parts)) return false;
     if (parts.is_unreadable) return true;
     PartRun const run = parts.run();
     if (parts.holds_bytes || parts.is_storage_owner) {
@@ -483,7 +465,7 @@ enum class PartNaming : unsigned char {
             bool const is_only_a_tag = is_class_or_union_(argument.type) && !std::meta::is_complete_type(argument.type);
             if (is_only_a_tag) continue;
             if (argument.has(PartFact::was_reference)) return true;
-            if (holds_loose_borrow_(argument.type, brand, PartNaming::by_argument)) return true;
+            if (holds_loose_borrow_(argument.type, brand)) return true;
         }
     }
     if (parts.is_storage_owner) return false;
@@ -491,12 +473,7 @@ enum class PartNaming : unsigned char {
         TypePart const part = run[index];
         if (part.has(PartFact::was_reference)) return true;
         if (part.has(PartFact::is_plain)) continue;
-        PartNaming part_naming = PartNaming::by_member;
-        for (std::size_t argument = 0; argument < parts.argument_count; ++argument) {
-            bool const is_named = run[argument].type == std::meta::remove_all_extents(part.type);
-            if (is_named) part_naming = PartNaming::by_argument;
-        }
-        if (holds_loose_borrow_(part.type, brand, part_naming)) return true;
+        if (holds_loose_borrow_(part.type, brand)) return true;
     }
     return false;
 }
@@ -505,7 +482,7 @@ enum class PartNaming : unsigned char {
 
 // An object type that an arena of the brand can keep (objects of an arena).
 template <class T, class Brand>
-concept ArenaKeeps = !detail::holds_loose_borrow_(^^T, ^^Brand, detail::PartNaming::by_member);
+concept ArenaKeeps = !detail::holds_loose_borrow_(^^T, ^^Brand);
 
 // The reason of each deleted door of an arena for a type that it cannot keep.
 #define CRUCIBLE_ARENA_KEEPS_REFUSAL                                                                                 \
@@ -1263,6 +1240,7 @@ public:
         "the body of an epoch captures a writer of a type that can hold the epoch brand, or reaches the arena "
         "through a path that is not const, or captures a writer of a type too large for the gate to read: capture "
         "each value that the body needs, by value or by a const reference, and not the owner of the arena");
+
 
     // A body that holds a linear value by value binds to this overload, so
     // the refusal gives its reason.

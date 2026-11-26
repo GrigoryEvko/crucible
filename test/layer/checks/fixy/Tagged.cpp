@@ -2,6 +2,14 @@
 
 #include <fixy/Tagged.h>
 
+#include <foundation/Brand.h>
+#include <foundation/core/BumpArena.h>
+#include <foundation/core/CaptureStore.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/TypeParts.h>
+
+#include <utility>
+
 namespace fixy {
 
 static_assert(sizeof(Tagged<int, tags::source::FromUser>) == sizeof(int));
@@ -128,5 +136,25 @@ static_assert(::foundation::fail_closed::is_antisymmetric<^^tags::admitted_retag
 static_assert(::foundation::fail_closed::is_intra_namespace<^^tags::admitted_retags>(),
               "fixy::tags::admitted_retags must not cross tag families: laundering across "
               "orthogonal axes (source::* to trust::*, source::* to access::*) is never safe");
+
+// A Tagged<void*, Tag> is an address that no reader follows (stated_address of
+// foundation/core/TypeParts.h): an object of an arena keeps it, and the store
+// gate of an epoch body reads it as no slot.  A Tagged of a pointer to an
+// object stays a borrow, and so does an Option<void*>.
+namespace detail::tagged_address_checks {
+
+namespace core = ::foundation::core;
+
+struct[[= ::foundation::brand::arena_family_brand{}]] Family final {};
+struct[[= ::foundation::brand::arena_member_brand{}]] Member final {};
+
+using Cookie = Tagged<void*, tags::source::External>;
+static_assert(core::detail::is_stated_address_(core::detail::type_parts_v<Cookie>));
+static_assert(
+    core::detail::is_stated_address_(core::detail::type_parts_v<Tagged<void const*, tags::source::External>>));
+static_assert(!core::detail::is_stated_address_(core::detail::type_parts_v<Tagged<int*, tags::source::External>>));
+static_assert(core::ArenaKeeps<Cookie, Family> && !core::ArenaKeeps<Tagged<int*, tags::source::External>, Family>);
+
+}  // namespace detail::tagged_address_checks
 
 }  // namespace fixy

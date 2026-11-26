@@ -437,9 +437,10 @@ template <class... Refused, class T>
 void to(T&& object) = delete("a Ref of a temporary dangles at the end of the full expression");
 
 // A Ref is a reference that a value holds, so it moves between threads as a
-// reference to T does (foundation/Transfer.h).
+// reference to T does (foundation/Transfer.h).  Its brand names the owner of
+// its target (names_owner_second of foundation/core/TypeParts.h).
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
-class[[= ::foundation::transfer::refers{}]] Ref {
+class[[= ::foundation::transfer::refers{}]][[= detail::names_owner_second{}]] Ref {
     static_assert(!detail::is_loan_key_type_(^^T),
                   "a Ref of a LoanKey would keep a borrow of the key past the frame that lent it: borrow the key "
                   "with LoanKey<B>& for the call (THE DISPATCH BRAND of foundation/core/Frame.h)");

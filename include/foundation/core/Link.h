@@ -105,7 +105,7 @@ private:
 };
 
 template <class T, ::foundation::brand::IsFreshBrand Brand>
-class[[= ::foundation::transfer::refers_deep{^^T}]] Link final {
+class[[= ::foundation::transfer::refers_deep{^^T}]][[= detail::names_owner_second{}]] Link final {
 public:
     // A Link that refers to no object.
     constexpr Link() noexcept = default;

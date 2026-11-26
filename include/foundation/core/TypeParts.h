@@ -80,9 +80,29 @@ struct keeps_own_borrows final {};
 // takes a body cannot take the mark (the fixture neg_core_proof_mark_body_door).
 struct synchronized_by_proof final {};
 
+// The mark of a class template of the base that holds a value of its first
+// type argument and nothing else that borrows, such as Tagged of
+// fixy/Tagged.h.  When that argument is a void*, the class holds an address
+// that no reader follows: each raw pointer outside the base is a finding of
+// the quarantine, so no code outside the base follows the address.
+// ArenaKeeps of foundation/core/BumpArena.h and the store check of an epoch
+// body of foundation/core/CaptureStore.h read such a class as no borrow
+// (is_stated_address_ below).  A walk trusts the mark only in the base, and
+// each other void* stays a borrow with no type, as in a CallRef or an
+// Option<void*>.
+struct stated_address final {};
+
 }  // namespace foundation::core
 
 namespace foundation::core::detail {
+
+// The mark of a borrow of the base whose second type argument is the brand of
+// the owner of its target, such as a Ref, a Link, an ArenaRun, a FrameLink
+// and the first element of a run of a set of runs (foundation/core/RunSet.h).
+// Only the doors of the class make a value that is not empty, from a borrow of
+// that brand.  A walk trusts the mark only in the base (owner_brand of
+// TypeParts below).
+struct names_owner_second {};
 
 // What a class tells of one of its parts, one bit each: a reference, a const
 // object (the referent of a reference, or the part itself), a mutable member,
@@ -210,6 +230,16 @@ struct TypeParts {
     // store check reads such a pointer as no borrow slot, and reads each other
     // part of the class.
     bool refers_static = false;
+    // The brand of the owner of the target of a borrow of the base that states
+    // names_owner_second, and null for each other class.  The read takes the
+    // brand by its position, the second type argument, because the base has
+    // no member that names it on each such class.  The walks take the target
+    // of a borrow by its position too, the first type argument.  ArenaKeeps
+    // of foundation/core/BumpArena.h and the store check of an epoch body of
+    // foundation/core/CaptureStore.h read the owner of a borrow here alone.
+    std::meta::info owner_brand{};
+    // A class of the base that states stated_address{}.
+    bool states_stated_address = false;
     // A class with an array of bytes or a union in a member.  Such a member can
     // hold a value of a type argument.  A class with no such member holds a
     // value of a type argument only in a member of a type that names it, which
@@ -242,6 +272,30 @@ struct TypeParts {
         return is_leaf_(std::meta::dealias(std::meta::remove_cv(std::meta::remove_all_extents(type))));
     }
     return !std::meta::is_function_type(type) && !std::meta::is_member_pointer_type(type);
+}
+
+// True for a named tag of an arena: a member tag or a family tag
+// (foundation/Brand.h).  ArenaKeeps of foundation/core/BumpArena.h and the
+// store check of an epoch body of foundation/core/CaptureStore.h read the
+// owner of a borrow through it.
+[[nodiscard]] consteval bool is_arena_tag_(std::meta::info brand) {
+    if (brand == std::meta::info{}) return false;
+    std::meta::info const tag = std::meta::dealias(brand);
+    return std::meta::is_class_type(tag) && std::meta::is_complete_type(tag)
+        && (::foundation::reflect::carries_annotation(tag, ^^::foundation::brand::arena_member_brand)
+            || ::foundation::reflect::carries_annotation(tag, ^^::foundation::brand::arena_family_brand));
+}
+
+// True for a class of the base that states stated_address{} and whose first
+// type argument is a void*, such as a Tagged<void*, Tag> of fixy/Tagged.h:
+// an address that no reader follows.  ArenaKeeps of
+// foundation/core/BumpArena.h and the store check of an epoch body of
+// foundation/core/CaptureStore.h read such a class as no borrow here alone,
+// and read no part of it.
+[[nodiscard]] consteval bool is_stated_address_(TypeParts const& parts) {
+    std::meta::info const value = parts.first_argument;
+    return parts.states_stated_address && value != std::meta::info{} && std::meta::is_pointer_type(value)
+        && std::meta::is_void_type(std::meta::remove_pointer(value));
 }
 
 // True for raw storage that can hold a value of a type argument of its
@@ -480,10 +534,27 @@ consteval void list_arguments_(TypeParts& parts, PartList<Room>& list, std::meta
     if (has_value_arguments) list_value_arguments_(list, arguments, first_place);
 }
 
+// The second type argument of a specialization, bare, or a null reflection
+// when it has fewer than two.  A value argument does not count.  Complexity:
+// linear in the template arguments of the class.
+[[nodiscard]] consteval std::meta::info second_type_argument_(std::meta::info type) {
+    if (!std::meta::has_template_arguments(type)) return std::meta::info{};
+    std::vector<std::meta::info> const arguments = std::meta::template_arguments_of(type);
+    std::meta::info const* const first = arguments.data();
+    std::size_t const count = arguments.size();
+    std::size_t types = 0;
+    for (std::size_t index = 0; index < count; ++index) {
+        if (!std::meta::is_type(first[index])) continue;
+        if (types == 1) return ::foundation::reflect::bare_type(std::meta::dealias(first[index]));
+        ++types;
+    }
+    return std::meta::info{};
+}
+
 // Reads the marks of the class that a walk reads: is_borrow and
 // gives_const_access, is_storage_owner and the marks of an owner, the key
-// mark, keeps_own_borrows, refers_static, is_share, and the statement of
-// synchronized_by_proof.
+// mark, keeps_own_borrows, refers_static, is_share, the statement of
+// synchronized_by_proof, owner_brand and states_stated_address.
 consteval void read_marks_(TypeParts& parts, std::meta::info type) {
     namespace tr = ::foundation::transfer;
     bool states_owner = false;
@@ -491,6 +562,8 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
     bool refers_deep = false;
     bool keeps_own = false;
     bool refers_static = false;
+    bool names_owner = false;
+    bool states_address = false;
     std::vector<std::meta::info> const annotations = std::meta::annotations_of(type);
     std::meta::info const* const first = annotations.data();
     std::size_t const count = annotations.size();
@@ -519,10 +592,16 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
             parts.is_share = true;
         } else if (mark == ^^synchronized_by_proof) {
             parts.states_synchronized_by_proof = true;
+        } else if (mark == ^^names_owner_second) {
+            names_owner = true;
+        } else if (mark == ^^stated_address) {
+            states_address = true;
         }
     }
-    if (!states_owner && !refers_deep && !keeps_own && !refers_static) return;
+    if (!states_owner && !refers_deep && !keeps_own && !refers_static && !names_owner && !states_address) return;
     bool const is_of_the_base = ::foundation::reflect::is_class_of_the_base_(type);
+    if (names_owner && is_of_the_base) parts.owner_brand = second_type_argument_(type);
+    parts.states_stated_address = states_address && is_of_the_base;
     parts.is_storage_owner = states_owner && is_of_the_base && !parts.is_share;
     parts.states_by_arguments = owns_arguments && is_of_the_base;
     parts.gives_const_access = refers_deep && is_of_the_base;

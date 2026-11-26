@@ -300,4 +300,20 @@ static_assert(!core::detail::type_parts_v<OwnerOutside>.is_storage_owner);
 static_assert(core::detail::type_parts_v<DeepOutside<int>>.is_borrow);
 static_assert(!core::detail::type_parts_v<DeepOutside<int>>.gives_const_access);
 
+// A class outside the base that states names_owner_second or stated_address
+// names no owner and states no address.  So ArenaKeeps and the store check
+// of an epoch body read its borrows and its void* as borrows.
+struct OutsideFamily final {};
+template <class Target, class Owner>
+struct[[= transfer::refers{}]][[= core::detail::names_owner_second{}]] OwnerNamedOutside {
+    core::View<Target> targets{};
+};
+template <class Value>
+struct[[= core::stated_address{}]] AddressOutside {
+    Value value{};
+};
+static_assert(core::detail::type_parts_v<OwnerNamedOutside<int, OutsideFamily>>.owner_brand == std::meta::info{});
+static_assert(!core::detail::type_parts_v<AddressOutside<void*>>.states_stated_address);
+static_assert(!core::detail::is_stated_address_(core::detail::type_parts_v<AddressOutside<void*>>));
+
 }  // namespace type_parts_outside_checks
