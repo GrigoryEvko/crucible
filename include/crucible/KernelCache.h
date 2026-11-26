@@ -489,8 +489,8 @@ add_branch(::foundation::effects::Alloc a, ::foundation::effects::cap::Nondet no
     CRUCIBLE_PRE(old_guard_value != new_guard_value);
     CRUCIBLE_PRE(is_foldable_recipe(recipe));
     const DagFrameRef<RegionNode, Fresh> new_region = recipe.match(
-        [a, &frame, &new_ops](RecipeRef chosen) noexcept { return make_region(a, frame, new_ops, *chosen); },
-        [a, &frame, &new_ops]() noexcept { return make_region(a, frame, new_ops); });
+        [a, &frame, new_ops](RecipeRef chosen) noexcept { return make_region(a, frame, new_ops, *chosen); },
+        [a, &frame, new_ops]() noexcept { return make_region(a, frame, new_ops); });
 
     const TraceLink suffix = existing_suffix.match(
         [](DagFrameRef<TraceNode, Fresh> const& head) noexcept { return TraceLink::some(head.weaken()); },
