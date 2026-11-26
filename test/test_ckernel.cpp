@@ -95,15 +95,14 @@ int main() {
         CRUCIBLE_TEST_ASSERT(test, te.kernel_id == CKernelId::GEMM_ADDMM);
     }
 
-    // The fallback name for an unnamed id opens with an angle bracket,
-    // which is what the second half of the assertion below catches.
-    for (uint8_t i = 1; std::size_t{i} < ckernel_id_count; i++) {
-        const ::fixy::TextView name = ckernel_name(static_cast<CKernelId>(i));
-        const bool opens_with_an_angle_bracket =
-            name.window(0, 1).match([](::fixy::TextView first) noexcept { return first == ::fixy::TextView{"<"}; },
-                                    [] noexcept { return false; });
-        CRUCIBLE_TEST_ASSERT(test, name.size() != 0 && !opens_with_an_angle_bracket
-                                       && "all known ids must have proper names");
+    // The name of each id is the identifier of its enumerator.  The loop
+    // reads each id through enum_from, so it names no value past the ids.
+    for (unsigned raw = 0; raw < ckernel_id_count; ++raw) {
+        const ::fixy::Option<CKernelId> id = ::fixy::enum_from<CKernelId>(static_cast<uint8_t>(raw));
+        CRUCIBLE_TEST_ASSERT(test, id.is_some_and([](CKernelId named) noexcept {
+            return ::fixy::enumerator_name_text(named).is_some_and(
+                [named](::fixy::TextView identifier) noexcept { return ckernel_name(named) == identifier; });
+        }) && "each id has the identifier of its enumerator as its name");
     }
 
     // A byte widens into a CKernelId through enum_from.  Each byte below the

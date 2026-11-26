@@ -616,7 +616,11 @@ inline void publish_static_ckernel_table() noexcept {
         case CKernelId::COMM_BARRIER:
             return "COMM_BARRIER";
         default:
-            return "<unknown>";
+            // A CKernelId comes only from an enumerator or from enum_from,
+            // which refuses each byte that names no id.  The switch names each
+            // id, which -Wswitch-enum checks, so no value reaches this arm.
+            // -Wswitch-default asks for the arm.
+            ::fixy::unreachable();
     }
 }
 
