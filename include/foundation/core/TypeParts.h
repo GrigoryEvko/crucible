@@ -68,6 +68,18 @@ namespace foundation::core {
 // check file of each marked class pins its doors.
 struct keeps_own_borrows final {};
 
+// The mark of a class that states synchronized{} of foundation/Transfer.h and
+// whose doors keep no borrow that a caller gives them.  The store check of
+// foundation/core/CaptureStore.h reads a class with the mark as no borrow
+// slot, also outside the base, because it checks each fact behind the mark
+// one time for each class before it trusts it (synchronized_by_proof_check_v
+// of foundation/core/CaptureStore.h).  A class that states the mark and fails
+// the check stops the build.  The check reads a door template through the
+// probe body of foundation/Transfer.h, which stands for each type that a
+// caller can give.  So a class with a borrow slot and a door template that
+// takes a body cannot take the mark (the fixture neg_core_proof_mark_body_door).
+struct synchronized_by_proof final {};
+
 }  // namespace foundation::core
 
 namespace foundation::core::detail {
@@ -186,6 +198,11 @@ struct TypeParts {
     // A handle of the base that states keeps_own_borrows{}.  The store check
     // reads it as no borrow slot.
     bool keeps_own_borrows = false;
+    // A class that states synchronized_by_proof{}, in the base or outside it.
+    // The bit is the statement alone: the store check runs the check of the
+    // mark before it trusts it.  Such a class is no plain class, so each walk
+    // that reaches it runs the check.
+    bool states_synchronized_by_proof = false;
     // A class of the base that states refers_static{} of foundation/Transfer.h,
     // such as a StaticText: each pointer that it holds as its own data member
     // names static storage.  The read of the mark checks each constructor of
@@ -465,7 +482,8 @@ consteval void list_arguments_(TypeParts& parts, PartList<Room>& list, std::meta
 
 // Reads the marks of the class that a walk reads: is_borrow and
 // gives_const_access, is_storage_owner and the marks of an owner, the key
-// mark, keeps_own_borrows, refers_static, and is_share.
+// mark, keeps_own_borrows, refers_static, is_share, and the statement of
+// synchronized_by_proof.
 consteval void read_marks_(TypeParts& parts, std::meta::info type) {
     namespace tr = ::foundation::transfer;
     bool states_owner = false;
@@ -499,6 +517,8 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
             refers_static = true;
         } else if (mark == ^^tr::shares) {
             parts.is_share = true;
+        } else if (mark == ^^synchronized_by_proof) {
+            parts.states_synchronized_by_proof = true;
         }
     }
     if (!states_owner && !refers_deep && !keeps_own && !refers_static) return;
@@ -647,8 +667,10 @@ consteval void list_parts_(TypeParts& parts, PartList<Room>& list, std::meta::in
     bool const has_plain_bases = list_bases_(list, bases);
     bool const has_plain_members = list_members_(parts, list, members);
     parts.size = list.size();
+    // A class that states synchronized_by_proof{} is no plain class, so each
+    // walk that reaches it runs the check of the mark.
     parts.is_plain = has_plain_bases && has_plain_members && !parts.is_unreadable && !parts.hides_members
-                  && (!parts.holds_bytes || parts.argument_count == 0);
+                  && (!parts.holds_bytes || parts.argument_count == 0) && !parts.states_synchronized_by_proof;
 }
 
 template <std::size_t Room, PartRead Read>
