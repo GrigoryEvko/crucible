@@ -55,6 +55,8 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/KeyedArray.h>
+#include <foundation/core/KeyedMint.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstdint>
@@ -160,7 +162,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
             ::fixy::HeapArray<::fixy::Option<::fixy::RunAddress>> address_column =
                 ::fixy::mint_heap_array<::fixy::Option<::fixy::RunAddress>>(
                     allocation, plan_slots, ::fixy::Option<::fixy::RunAddress>{::fixy::none});
-            devices_ = ::fixy::mint_heap_array<TensorDevice>(allocation, plan_slots, kHostDevice);
+            devices_.replace(columns_key_, ::fixy::mint_heap_array<TensorDevice>(allocation, plan_slots, kHostDevice));
             ::fixy::HeapArray<::fixy::View<uint8_t>> view_column =
                 ::fixy::mint_heap_array<::fixy::View<uint8_t>>(allocation, plan_slots, ::fixy::View<uint8_t>{});
 
@@ -199,8 +201,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
                                                                 : ::fixy::mint_run_address(bytes, 0);
                                    });
             });
-            addresses_ = std::move(address_column);
-            views_ = std::move(view_column);
+            addresses_.replace(columns_key_, std::move(address_column));
+            views_.replace(columns_key_, std::move(view_column));
         }
         // A contract predicate that reads a member through `this` is skipped
         // when the compiler folds the body at compile time, so every such
@@ -218,9 +220,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
         refuse_lent_change_();
         crucible::warden::unregister_hot_region(::fixy::pages::storage_of(pool_.view()));
         pool_.reset();
-        addresses_ = ::fixy::HeapArray<::fixy::Option<::fixy::RunAddress>>{};
-        devices_ = ::fixy::HeapArray<TensorDevice>{};
-        views_ = ::fixy::HeapArray<::fixy::View<uint8_t>>{};
+        addresses_.replace(columns_key_, ::fixy::HeapArray<::fixy::Option<::fixy::RunAddress>>{});
+        devices_.replace(columns_key_, ::fixy::HeapArray<TensorDevice>{});
+        views_.replace(columns_key_, ::fixy::HeapArray<::fixy::View<uint8_t>>{});
         num_external_ = 0;
         // Back to the default-constructed shape, which is what a subsequent
         // initialisation requires.
@@ -259,7 +261,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // each read from a temporary pool, here and in the members that follow.
     [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
     inline ::fixy::Option<::fixy::RunAddress> slot_ptr(SlotId sid, InitializedView const&) const& noexcept {
-        return *addresses_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
+        return *addresses_.view().get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
     }
 
     ::fixy::Option<::fixy::RunAddress> slot_ptr(SlotId, InitializedView const&) const&& =
@@ -293,8 +295,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // value for the slot.
     CRUCIBLE_INLINE void register_external(SlotId sid, TensorData data, InitializedView const&) noexcept {
         write_slot_(sid, ::fixy::some(data.address()), data.device(), ::fixy::View<uint8_t>{});
-        CRUCIBLE_POST(0, *addresses_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots")
-                             == ::fixy::some(data.address()));
+        CRUCIBLE_POST(0,
+                      *addresses_.view().get(sid.raw()).expect("a slot id of the plan is below the count of its slots")
+                          == ::fixy::some(data.address()));
     }
 
     // The bytes of a slot as a read-only View of T, for a reader of an input:
@@ -528,18 +531,18 @@ private:
     }
 
     // Writes the address, the device and the bytes of the slot sid into the
-    // three columns, through the element door of each column.  An id at or
-    // past the count of slots ends the process.  Complexity: O(1).
+    // three columns, through the keyed element door of each column.  An id at
+    // or past the count of slots ends the process.  Complexity: O(1).
     CRUCIBLE_INLINE void write_slot_(SlotId sid, ::fixy::Option<::fixy::RunAddress> address, TensorDevice device,
                                      ::fixy::View<uint8_t> bytes) noexcept {
         addresses_.with_element(
-            sid.raw(), [address](::fixy::Option<::fixy::RunAddress>& slot) noexcept { slot = address; },
+            columns_key_, sid.raw(), [address](::fixy::Option<::fixy::RunAddress>& slot) noexcept { slot = address; },
             [] noexcept { ::fixy::fatal("a slot id of the plan is below the count of its slots"); });
         devices_.with_element(
-            sid.raw(), [device](TensorDevice& slot) noexcept { slot = device; },
+            columns_key_, sid.raw(), [device](TensorDevice& slot) noexcept { slot = device; },
             [] noexcept { ::fixy::fatal("the two columns hold one entry for each slot"); });
         views_.with_element(
-            sid.raw(), [bytes](::fixy::View<uint8_t>& slot) noexcept { slot = bytes; },
+            columns_key_, sid.raw(), [bytes](::fixy::View<uint8_t>& slot) noexcept { slot = bytes; },
             [] noexcept { ::fixy::fatal("the three columns hold one entry for each slot"); });
     }
 
@@ -562,7 +565,7 @@ private:
     // slot sid.  An id at or past the count of slots ends the process.
     // Complexity: O(1).
     [[nodiscard]] bool holds_bytes_(SlotId sid) const noexcept {
-        return views_.get(sid.raw()).expect("the three columns hold one entry for each slot")->size() != 0;
+        return views_.view().get(sid.raw()).expect("the three columns hold one entry for each slot")->size() != 0;
     }
 
     // True when the address is the first byte of the bytes, or the bytes are
@@ -580,9 +583,9 @@ private:
     // it.  Complexity: O(1).
     [[nodiscard]] bool is_pool_window_(SlotId sid, TensorSlot const& slot) const noexcept {
         const ::fixy::View<uint8_t> held =
-            *views_.get(sid.raw()).expect("the three columns hold one entry for each slot");
+            *views_.view().get(sid.raw()).expect("the three columns hold one entry for each slot");
         return held.size() == slot.nbytes
-            && *addresses_.get(sid.raw()).expect("the three columns hold one entry for each slot")
+            && *addresses_.view().get(sid.raw()).expect("the three columns hold one entry for each slot")
                    == ::fixy::mint_run_address(pool_.view(), slot.offset_bytes);
     }
 
@@ -591,17 +594,39 @@ private:
     // the caller writes through.  The bytes are no part of the value of the
     // allocator, so the owner is mutable.
     mutable ::foundation::AlignedBytes pool_{};
+    // The brand of the three columns (the held key of
+    // foundation/core/KeyedMint.h).  Its proof has a private constructor, and
+    // the pool is its one friend, so only the pool mints the key of its
+    // columns.
+    struct ColumnsBrand final {
+        class key_proof final {
+            friend struct PoolAllocator;
+
+            constexpr key_proof() noexcept {}
+
+        public:
+            key_proof(key_proof const&) = delete("a proof of the key of the columns stays with the pool");
+            key_proof& operator=(key_proof const&) = delete("a proof of the key of the columns stays with the pool");
+        };
+    };
+
     // The address of each slot, or no address for an external slot that its
-    // owner did not register yet.  The replay reads this column.
-    ::fixy::HeapArray<::fixy::Option<::fixy::RunAddress>> addresses_{};
+    // owner did not register yet.  The replay reads this column.  Each
+    // column lends a slot in place only with columns_key_, so no body of a
+    // slot replaces a column under it.
+    ::foundation::core::KeyedHeapArray<::fixy::Option<::fixy::RunAddress>, ColumnsBrand> addresses_{};
     // The device of each slot, with the length of the column of addresses.
     // A pooled slot is on the host, and a registered slot is on the device of
     // its owner.
-    ::fixy::HeapArray<TensorDevice> devices_{};
+    ::foundation::core::KeyedHeapArray<TensorDevice, ColumnsBrand> devices_{};
     // The bytes of each slot, with the length of the column of addresses
     // (the column of bytes).  The replay of an op binds its external slots
     // through the three columns, which share a line of the context.
-    ::fixy::HeapArray<::fixy::View<uint8_t>> views_{};
+    ::foundation::core::KeyedHeapArray<::fixy::View<uint8_t>, ColumnsBrand> views_{};
+    // The one key of the three columns.  The key is empty, so it takes no
+    // byte.
+    [[no_unique_address]] ::foundation::core::LoanKey<ColumnsBrand> columns_key_{
+        ::foundation::core::mint_held_key<ColumnsBrand>(ColumnsBrand::key_proof{})};
     uint32_t num_external_ = 0;
     // The lends of the pool, which a body door of a const pool counts too.  No
     // path of the replay of an op reads it, so it stands after the columns.
