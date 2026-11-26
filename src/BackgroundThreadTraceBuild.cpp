@@ -234,7 +234,7 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
     ::fixy::ArenaRun<TensorMeta, DagArena> meta_arena_run = meta_frame_run.weaken();
     const ::fixy::View<TensorMeta> meta_run = meta_arena_run.view();
     if (first_meta.is_valid()) {
-        meta_log.copy_run(first_meta.raw(), meta_run);
+        meta_log.copy_run(first_meta, meta_run);
     }
 
     // The other runs of the ops: the scalars, the producer of each input,

@@ -384,10 +384,10 @@ public:
     // A record holds the data pointer of its tensor, and no frame gives such
     // a value out or writes it into a run of the caller, so each copy of a
     // record goes through the view of the consumer side.
-    [[nodiscard]] TensorMeta copy_record(uint64_t index) const noexcept { return view_->copy_record(index); }
-    void copy_run(uint64_t start, ::fixy::View<TensorMeta> dst) const noexcept { view_->copy_run(start, dst); }
+    [[nodiscard]] TensorMeta copy_record(MetaIndex index) const noexcept { return view_->copy_record(index); }
+    void copy_run(MetaIndex start, ::fixy::View<TensorMeta> dst) const noexcept { view_->copy_run(start, dst); }
     template <class Brand, std::size_t Extent>
-    void copy_run(uint64_t start, ::fixy::ViewMut<TensorMeta, Brand, Extent> dst) const noexcept {
+    void copy_run(MetaIndex start, ::fixy::ViewMut<TensorMeta, Brand, Extent> dst) const noexcept {
         view_->copy_run(start, std::move(dst));
     }
     [[nodiscard]] bool holds_record(TensorMeta const& record) const noexcept {

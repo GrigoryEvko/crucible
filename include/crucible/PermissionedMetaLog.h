@@ -290,7 +290,7 @@ public:
                 return ::fixy::none;
             }
 
-            const value_type meta = log->copy_record(t.raw());
+            const value_type meta = log->copy_record(t);
             advance_tail(::fixy::WideStep<::crucible::MetaLog::CAPACITY>::one());
             return ::fixy::some(meta);
         }
@@ -306,7 +306,7 @@ public:
             // The body gets a copy of each record, and no reference into a
             // slot that the producer writes again after the release.
             for (std::uint32_t i = 0; i < count; ++i) {
-                const value_type meta = log->copy_record(t.raw() + i);
+                const value_type meta = log->copy_record(::crucible::MetaIndex{t.raw() + i});
                 body(meta);
             }
             if (count != 0) {
@@ -328,7 +328,7 @@ public:
             const auto log = ch_->log_.consumer_side().owner_view();
             CRUCIBLE_FATAL_INVARIANT(::crucible::is_at_or_after(index, log->total_released())
                                      && ::crucible::is_before(index, log->total_produced()));
-            return log->copy_record(index.raw());
+            return log->copy_record(index);
         }
 
         // Releases the step records after the tail (MetaLog::advance_tail).

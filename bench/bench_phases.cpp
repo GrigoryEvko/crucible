@@ -171,7 +171,7 @@ CopiedOps copy_ops_in_frame_(DagFrame<Fresh>& frame, crucible::test::OpenLog con
     const uint32_t count = static_cast<uint32_t>(trace_data.size());
     auto ops_run = make_op_run(A, frame, count);
     auto meta_frame_run = frame.array(A, counts.metas, TensorMeta{});
-    meta_log.copy_run(first_meta.raw(), meta_frame_run.view());
+    meta_log.copy_run(first_meta, meta_frame_run.view());
     auto scalar_frame_run = frame.array(A, counts.scalars, int64_t{0});
     auto producer_frame_run = frame.array(A, counts.inputs, OpIndex{});
     auto slot_frame_run = frame.array(A, counts.inputs + counts.outputs, SlotId{});
@@ -597,7 +597,7 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
             ::fixy::HeapArray<TensorMeta> meta_buffer =
                 ::fixy::with_mut(::fixy::mint_heap_array(A, total_metas, TensorMeta{}),
                                  [&meta_log = meta_log_read, first_meta](auto run) noexcept {
-                                     meta_log.copy_run(first_meta.raw(), std::move(run));
+                                     meta_log.copy_run(first_meta, std::move(run));
                                  });
             const uint64_t t1 = bench::rdtsc_end();
 

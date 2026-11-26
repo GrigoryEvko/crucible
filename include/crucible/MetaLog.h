@@ -376,39 +376,41 @@ public:
         CRUCIBLE_POST(0, state.own_head.get() == 0);
     }
 
-    // Copies the run of records that starts at index start into dst, one
-    // record for each element of dst.  A run that passes the end of the
+    // Copies the run of records that starts at the position start into dst,
+    // one record for each element of dst.  A run that passes the end of the
     // buffer takes two copies.  The tail moves past a run when the consumer
     // releases it.  The producer then writes new records over those slots.  A
     // reader that keeps the records after the release keeps this copy, and no
     // reference into the buffer.  The consumer copies a run before it
     // releases the run, and the producer writes no slot of that run while the
-    // copy operates.
-    void copy_run(uint64_t start, ::fixy::View<TensorMeta> dst) const CRUCIBLE_NO_THREAD_SAFETY {
+    // copy operates.  start is a position of the log, such as the meta start
+    // of an op, so no raw count names a run.
+    void copy_run(MetaIndex start, ::fixy::View<TensorMeta> dst) const CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(dst.size() <= CAPACITY);
         if (dst.size() == 0) return;
         const uint32_t count = static_cast<uint32_t>(dst.size());
         const ::fixy::View<TensorMeta const> ring = records_.view();
-        const uint32_t start_pos = static_cast<uint32_t>(start & MASK);
+        const uint32_t start_pos = static_cast<uint32_t>(start.raw() & MASK);
         const uint32_t first_chunk = (count <= CAPACITY - start_pos) ? count : CAPACITY - start_pos;
         copy_records_(dst, 0, ring, start_pos, first_chunk);
         copy_records_(dst, first_chunk, ring, 0, count - first_chunk);
         // The first and the last record of the copy are the records at the
         // two ends of the run.  A start without the mask, or a split of the
         // run at the wrong slot, puts a different record at one end.
-        CRUCIBLE_POST(0, *dst.get(0).expect("the copy holds its first record") == record_at_(start));
-        CRUCIBLE_POST(0, *dst.get(count - 1).expect("the copy holds its last record") == record_at_(start + count - 1));
+        CRUCIBLE_POST(0, *dst.get(0).expect("the copy holds its first record") == record_at_(start.raw()));
+        CRUCIBLE_POST(0, *dst.get(count - 1).expect("the copy holds its last record")
+                             == record_at_(start.raw() + count - 1));
     }
 
     // The same copy into the run of a frame.  The copy takes the ViewMut of
     // the frame, so it is the one writer of the run.  The form above takes
     // the plain View of an arena run, which no frame lends.
     template <class Brand, std::size_t Extent>
-    void copy_run(uint64_t start, ::fixy::ViewMut<TensorMeta, Brand, Extent> dst) const CRUCIBLE_NO_THREAD_SAFETY {
+    void copy_run(MetaIndex start, ::fixy::ViewMut<TensorMeta, Brand, Extent> dst) const CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(dst.size() <= CAPACITY);
         if (dst.size() == 0) return;
         const uint32_t count = static_cast<uint32_t>(dst.size());
-        const uint32_t start_pos = static_cast<uint32_t>(start & MASK);
+        const uint32_t start_pos = static_cast<uint32_t>(start.raw() & MASK);
         const uint32_t first_chunk = (count <= CAPACITY - start_pos) ? count : CAPACITY - start_pos;
         dst = ::fixy::reborrow(std::move(dst), [this, start_pos, first_chunk, count](auto lent) noexcept {
             const ::fixy::View<TensorMeta const> ring = records_.view();
@@ -422,13 +424,15 @@ public:
         });
         // The checks of the form above, through a read of the run.
         const ::fixy::View<TensorMeta const> copied = dst.view();
-        CRUCIBLE_POST(0, *copied.get(0).expect("the copy holds its first record") == record_at_(start));
-        CRUCIBLE_POST(0,
-                      *copied.get(count - 1).expect("the copy holds its last record") == record_at_(start + count - 1));
+        CRUCIBLE_POST(0, *copied.get(0).expect("the copy holds its first record") == record_at_(start.raw()));
+        CRUCIBLE_POST(0, *copied.get(count - 1).expect("the copy holds its last record")
+                             == record_at_(start.raw() + count - 1));
     }
 
-    // Copies the record at index, with the rule of copy_run.
-    [[nodiscard]] TensorMeta copy_record(uint64_t index) const CRUCIBLE_NO_THREAD_SAFETY { return record_at_(index); }
+    // Copies the record at the position index, with the rule of copy_run.
+    [[nodiscard]] TensorMeta copy_record(MetaIndex index) const CRUCIBLE_NO_THREAD_SAFETY {
+        return record_at_(index.raw());
+    }
 
     // True when the record lies in the buffer of the log, such as for a test
     // that no op of a built graph points into the log.  The test compares

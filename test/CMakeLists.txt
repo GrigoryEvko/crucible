@@ -4862,6 +4862,14 @@ crucible_neg_compile_test(neg_metalog_consumer_reference_read
 crucible_neg_compile_test(neg_meta_log_buffer_assignment
     "crucible::MetaLog::records_. is private within this context"
     "neg_meta_log_buffer_assignment\\.cpp:17:[0-9]+: error:")
+# copy_run and copy_record take a position of the log, a MetaIndex, and a raw
+# count does not convert to one.
+crucible_neg_compile_test(neg_meta_log_copy_run_raw_start
+    "no matching function for call to .crucible::MetaLog::copy_run\\(uint64_t, "
+    "no known conversion for argument 1 from .uint64_t. .aka .long unsigned int.. to .crucible::MetaIndex.")
+crucible_neg_compile_test(neg_meta_log_copy_record_raw_index
+    "neg_meta_log_copy_record_raw_index\\.cpp:[0-9]+:[0-9]+: error: cannot convert .uint64_t. .aka .long unsigned int.. to .crucible::MetaIndex."
+    "initializing argument 1 of .crucible::TensorMeta crucible::MetaLog::copy_record\\(crucible::MetaIndex\\) const.")
 
 # HS14 for the two MetaLog session mints.  Each gate is one concept, and
 # each fixture fails one clause of it: the context, the handle passed as

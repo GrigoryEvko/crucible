@@ -53,7 +53,7 @@ static void test_single_append_returns_index_zero() {
     CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
     CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
-    const TensorMeta got = log.copy_record(0);
+    const TensorMeta got = log.copy_record(idx);
     CRUCIBLE_TEST_ASSERT(kTest, got.data_ptr.value() == m.data_ptr.value());
     CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(got.sizes[0]) == 128);
     CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(got.sizes[1]) == 256);
@@ -80,7 +80,7 @@ static void test_batch_append_and_monotonic() {
     // The copy of the two appends is the eight records in their order.
     auto const& log_read = log;
     ::fixy::FixedArray<TensorMeta, 8> const copied = ::fixy::build_fixed_array<TensorMeta, 8>(
-        [&log_read](auto run) noexcept { log_read.copy_run(0, std::move(run)); });
+        [&log_read, idx1](auto run) noexcept { log_read.copy_run(idx1, std::move(run)); });
     for (size_t i = 0; i < 8; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,
@@ -147,7 +147,7 @@ static void test_copy_run_across_the_end() {
     // at its start, in the order of the append.
     auto const& log_read = log;
     ::fixy::FixedArray<TensorMeta, 5> const copied = ::fixy::build_fixed_array<TensorMeta, 5>(
-        [&log_read, near_end](auto run) noexcept { log_read.copy_run(near_end, std::move(run)); });
+        [&log_read, idx](auto run) noexcept { log_read.copy_run(idx, std::move(run)); });
     for (uint32_t i = 0; i < 5; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,
@@ -157,7 +157,7 @@ static void test_copy_run_across_the_end() {
 
     // A run that does not pass the end is one copy.
     ::fixy::FixedArray<TensorMeta, 2> const head2 = ::fixy::build_fixed_array<TensorMeta, 2>(
-        [&log_read, near_end](auto run) noexcept { log_read.copy_run(near_end + 3, std::move(run)); });
+        [&log_read, near_end](auto run) noexcept { log_read.copy_run(MetaIndex{near_end + 3}, std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<0>()).data_ptr.value()
                                     == tail5.at(::fixy::index<3>()).data_ptr.value());
     CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<1>()).data_ptr.value()
@@ -192,15 +192,15 @@ static void test_counters_pass_two_to_the_32() {
     // run and in the copy of one record at each index.
     auto const& log_read = log;
     ::fixy::FixedArray<TensorMeta, 32> const copied = ::fixy::build_fixed_array<TensorMeta, 32>(
-        [&log_read, first](auto cells) noexcept { log_read.copy_run(first.raw(), std::move(cells)); });
+        [&log_read, first](auto cells) noexcept { log_read.copy_run(first, std::move(cells)); });
     for (uint32_t i = 0; i < 32; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,
             copied.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value()
                 == run.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value());
     }
-    const TensorMeta read_below = log.copy_record(last_below.raw());
-    const TensorMeta read_across = log.copy_record(across.raw());
+    const TensorMeta read_below = log.copy_record(last_below);
+    const TensorMeta read_across = log.copy_record(across);
     CRUCIBLE_TEST_ASSERT(kTest, read_below.data_ptr.value() == run.at(::fixy::index<15>()).data_ptr.value());
     CRUCIBLE_TEST_ASSERT(kTest, read_across.data_ptr.value() == run.at(::fixy::index<16>()).data_ptr.value());
 
@@ -221,8 +221,9 @@ static void test_copy_run_refuses_a_run_longer_than_the_buffer(::fixy::TestRunne
     ::fixy::check::expect_dies(
         test,
         [&log_read, &destination] noexcept {
-            destination = ::fixy::with_mut(std::move(destination),
-                                           [&log_read](auto run) noexcept { log_read.copy_run(0, std::move(run)); });
+            destination = ::fixy::with_mut(std::move(destination), [&log_read](auto run) noexcept {
+                log_read.copy_run(MetaIndex{0}, std::move(run));
+            });
         },
         ::fixy::TextView{"foundation: contract violation: dst.size() <= CAPACITY"});
     ::fixy::check::pass(test, "  test_copy_run_refuses_long_run: PASSED\n");
@@ -316,7 +317,7 @@ static void test_spsc_concurrent_integrity() {
                 continue;
             }
             for (uint32_t k = 0; k < avail; ++k) {
-                const TensorMeta m = log.copy_record(next + k);
+                const TensorMeta m = log.copy_record(MetaIndex{next + k});
                 const ExternalDataPtr expected =
                     mint_synthetic_data_ptr(SyntheticAddress{uint64_t{next + k + 1} << 16});
                 CRUCIBLE_TEST_ASSERT(kTest, m.data_ptr.value() == expected.value());
@@ -372,7 +373,7 @@ static void test_try_append_pure() {
         CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
         CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == 0);
         CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
-        const TensorMeta got = log.copy_record(idx.raw());
+        const TensorMeta got = log.copy_record(idx);
         CRUCIBLE_TEST_ASSERT(kTest, got.data_ptr.value() == m.data_ptr.value());
     }
 
@@ -460,7 +461,7 @@ static void test_try_append_pure_concurrent() {
                 continue;
             }
             for (uint32_t k = 0; k < avail; ++k) {
-                const TensorMeta m = log.copy_record(next + k);
+                const TensorMeta m = log.copy_record(MetaIndex{next + k});
                 const ExternalDataPtr expected =
                     mint_synthetic_data_ptr(SyntheticAddress{uint64_t{next + k + 1} << 16});
                 CRUCIBLE_TEST_ASSERT(kTest, m.data_ptr.value() == expected.value());

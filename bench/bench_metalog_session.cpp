@@ -58,7 +58,7 @@ using RawLog = ::crucible::test::OpenLog;
     if (t == log.total_produced()) {
         return ::fixy::none;
     }
-    const ::crucible::TensorMeta meta = log.copy_record(t.raw());
+    const ::crucible::TensorMeta meta = log.copy_record(t);
     log.release_to(::crucible::MetaIndex{t.raw() + 1});
     return ::fixy::some(meta);
 }
