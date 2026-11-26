@@ -95,8 +95,13 @@ void delay(::crucible::test::PhiloxStream& delays) noexcept {
     }
 }
 
-// The refusal of a push, or no value when the ring took the Box.
-[[nodiscard]] fixy::Option<Refused> refusal_of(BoxPush&& pushed) noexcept { return std::move(pushed).err(); }
+// The refusal of a push, or no value when the ring took the Box.  The arms
+// give the refusal, which owns its Box, out of the match.
+[[nodiscard]] fixy::Option<Refused> refusal_of(BoxPush&& pushed) noexcept {
+    return std::move(pushed).match(
+        [](fixy::Unit) noexcept { return fixy::Option<Refused>{}; },
+        [](Refused refused) noexcept { return fixy::Option<Refused>::some(std::move(refused)); });
+}
 
 // The label of the parcel of a Box.  The Box can be a temporary, which lives
 // until the end of the full expression of the call.

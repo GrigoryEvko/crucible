@@ -8271,6 +8271,11 @@ fixy_neg_compile_test(neg_shared_locked_read_body_gives_the_data_out
 fixy_neg_compile_test(neg_shared_locked_end_of_data_that_stays
   "neg_shared_locked_end_of_data_that_stays\\.cpp:27:[0-9]+: error: no matching function for call to .fixy::SharedLocked<int, .*::end_lock\\("
   "required for the satisfaction of .LeavesLock<T>. .with T = int.")
+# The value that leave_lock gives holds no borrow, so the lock of data that
+# gives a View of what it keeps has no end.
+fixy_neg_compile_test(neg_shared_locked_end_gives_a_view
+  "no matching function for call to .fixy::SharedLocked<.anonymous.::LeavesAView, .*::end_lock\\("
+  "nested requirement .HoldsNoBorrow<decltype \\(data.leave_lock\\(key\\)\\)>. is not satisfied")
 
 fixy_neg_compile_test(neg_blocking_guard_without_permission
   "no matching function for call to .fixy::spin::GateGuard<\\{anonymous\\}::GateTag, foundation::algebra::lattices::WaitStrategy::AcquireWait, \\{anonymous\\}::GateBrand>::GateGuard\\("

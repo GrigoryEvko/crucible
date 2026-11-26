@@ -5781,6 +5781,16 @@ foundation_neg_compile_test(neg_core_find_if_keeps_an_element
 foundation_neg_compile_test(neg_core_store_mark_outside_the_base
   "use of deleted function .void foundation::core::find_if\\(View<T, Extent>, Predicate\\)"
   "a body of a frame door stores no borrow outside the frame")
+# The borrow walk reads an owner of the base by its type arguments, so a Box of
+# a View holds a borrow, and it trusts an owner mark only in the base, so a
+# marked class with a View outside the base holds one too.  An rvalue match
+# refuses each as the result of an arm.
+foundation_neg_compile_test(neg_core_match_gives_a_box_of_a_view
+  "use of deleted function .void foundation::core::Option<T>::match\\(OnSome&&, OnNone&&\\) &&"
+  "the result of the rvalue match holds no borrow")
+foundation_neg_compile_test(neg_core_owner_mark_outside_the_base
+  "use of deleted function .void foundation::core::Option<T>::match\\(OnSome&&, OnNone&&\\) &&"
+  "the result of the rvalue match holds no borrow")
 # A guard of a share holds the address of its pool, which it does not own, so
 # the store check reads it as a borrow, and find_if refuses a body that
 # captures by reference an Option of a guard.

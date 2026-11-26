@@ -376,6 +376,13 @@ private:
 static_assert(::foundation::transfer::Sendable<LoopingOwner>
               && ::foundation::transfer::Sendable<::fixy::thread::OwnerThread<LoopingOwner>>);
 
+// The borrow walk of HoldsNoBorrow reads an OwnerThread through its argument,
+// the owner, which holds the OwnerThread again.  The walk reads each argument
+// one time, so it ends, and the owner holds no borrow: its members are a
+// canary, atomic cells and the thread.
+static_assert(::foundation::core::HoldsNoBorrow<LoopingOwner>
+              && ::foundation::core::HoldsNoBorrow<::fixy::thread::OwnerThread<LoopingOwner>>);
+
 // The end of an owner whose body still loops calls the stop hook and joins
 // before any other member ends, so the body sees each member alive to its
 // end.

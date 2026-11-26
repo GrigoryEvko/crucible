@@ -97,6 +97,24 @@ static_assert(type_parts_v<View<int>>.is_borrow && !type_parts_v<View<int>>.is_s
 static_assert(type_parts_v<Ref<int, CheckBrand>>.is_borrow && !type_parts_v<Ref<int, CheckBrand>>.gives_const_access);
 static_assert(type_parts_v<Box<int>>.is_storage_owner && !type_parts_v<Box<int>>.is_borrow);
 static_assert(type_parts_v<HeapArray<int>>.is_storage_owner && !type_parts_v<Scalars>.is_storage_owner);
+
+// The borrow walk of HoldsNoBorrow (foundation/core/Choice.h) and the store
+// check read one fact: an owner holds a borrow exactly when a type argument
+// holds one.  So a Box and a HeapArray of plain values hold no borrow as a
+// result, and a body that captures one by reference stores no borrow into it.
+// A Box and a HeapArray of Views hold a borrow, and the store check refuses
+// such a capture.
+template <class Held>
+struct CapturesByReference final {
+    Held& held;
+    void operator()() const noexcept {}
+};
+static_assert(HoldsNoBorrow<Box<int>> && HoldsNoBorrow<HeapArray<int>> && HoldsNoBorrow<Option<Box<int>>>);
+static_assert(StoresNoBorrowOutside<CapturesByReference<Box<int>>>
+              && StoresNoBorrowOutside<CapturesByReference<HeapArray<int>>>);
+static_assert(!HoldsNoBorrow<Box<View<int const>>> && !HoldsNoBorrow<HeapArray<View<int const>>>);
+static_assert(!StoresNoBorrowOutside<CapturesByReference<Box<View<int const>>>>
+              && !StoresNoBorrowOutside<CapturesByReference<HeapArray<View<int const>>>>);
 struct[[= owns_its_storage{}]] MarkedOfTheBase {
     int count = 0;
 };

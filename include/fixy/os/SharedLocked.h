@@ -75,17 +75,14 @@ public:
 };
 
 // A T that gives up what it holds at the end of its lock: leave_lock takes the
-// key and gives a value.
-//
-// leave_lock carries one promise of the T: the value that it gives holds no
-// borrow of the T and of what the T keeps.  No gate reads the promise.  The
-// value can own a resource and hold its address, as a mapping does, and
-// HoldsNoBorrow does not tell the address of an owner from a borrow.  A gate of
-// this concept becomes possible when HoldsNoBorrow reads the ownership that a
-// type states.
+// key and gives a value that holds no borrow of the T and of what the T keeps
+// (HoldsNoBorrow of foundation/core/Choice.h).  The value can own a resource
+// and hold its address, as a mapping does: an owner of the base holds no
+// borrow when its type arguments hold none.
 template <typename T>
 concept LeavesLock = requires(T& data, SharedLockEndKey<T> const& key) {
     { data.leave_lock(key) } noexcept -> ::foundation::core::RecordElement;
+    requires ::foundation::core::HoldsNoBorrow<decltype(data.leave_lock(key))>;
 };
 
 // What a T gives up at the end of its lock.

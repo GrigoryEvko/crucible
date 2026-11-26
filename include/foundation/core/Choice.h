@@ -1300,15 +1300,36 @@ template <class Arm, class Payload>
 // arguments and not their slots.  A OneOf holds one sum slot, and the walk
 // reads the alternatives of the slot, after its first argument, the form of
 // the slot.  OneOf.h defines OneOf, so this header names no OneOf.
-// Complexity: linear in the parts of the type.
-[[nodiscard]] consteval bool holds_borrow_(std::meta::info type) {
+//
+// An owner of the base (is_storage_owner of foundation/core/TypeParts.h, the
+// fact that the store check reads too) keeps the address of its own storage,
+// which is no borrow.  So the walk reads its type arguments and no member: the
+// owner holds a borrow exactly when an argument holds one, as a Box of a View
+// does.  A type argument that is an incomplete class is a tag, and it holds no
+// value.  The walk trusts an owner mark only on a class of the base, so it
+// reads the members of a marked class outside the base.  An owner can hold
+// itself through an argument, as a tree node does through a Box, so seen lists
+// each argument that the walk entered, and a second entry adds nothing.  The
+// read of OwnerRead::members reads an owner by its members, so it also finds
+// the address of the storage of an owner (holds_address_ below).  Complexity:
+// linear in the parts of the type.
+enum class OwnerRead : unsigned char {
+    arguments,
+    members,
+};
+
+[[nodiscard]] consteval bool holds_borrow_seen_(std::meta::info type, std::vector<std::meta::info>& seen,
+                                                OwnerRead read) {
     if (std::meta::is_reference_type(type)) return true;
     type = std::meta::dealias(std::meta::remove_cv(std::meta::dealias(type)));
     if (std::meta::is_pointer_type(type) || std::meta::is_member_pointer_type(type)) return true;
-    if (std::meta::is_array_type(type)) return detail::holds_borrow_(std::meta::remove_all_extents(type));
+    if (std::meta::is_array_type(type)) {
+        return detail::holds_borrow_seen_(std::meta::remove_all_extents(type), seen, read);
+    }
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
+    bool const is_complete = std::meta::is_complete_type(type);
     bool const states_borrow =
-        std::meta::is_complete_type(type)
+        is_complete
         && (::foundation::reflect::carries_annotation(type, ^^::foundation::transfer::refers)
             || ::foundation::reflect::carries_annotation(type, ^^::foundation::transfer::refers_unique)
             || ::foundation::reflect::carries_annotation(type, ^^::foundation::transfer::refers_deep));
@@ -1319,7 +1340,26 @@ template <class Arm, class Payload>
         if (is_slot || family == ^^Option || family == ^^Result) {
             auto const payloads = std::meta::template_arguments_of(type);
             for (std::size_t index = is_slot ? 1 : 0; index < payloads.size(); ++index) {
-                if (detail::holds_borrow_(payloads[index])) return true;
+                if (detail::holds_borrow_seen_(payloads[index], seen, read)) return true;
+            }
+            return false;
+        }
+    }
+    if (is_complete && read == OwnerRead::arguments) {
+        TypeParts const& parts = std::meta::extract<TypeParts const&>(kept_parts_of(type));
+        if (parts.is_storage_owner) {
+            PartRun const run = parts.run();
+            for (std::size_t index = 0; index < parts.argument_count; ++index) {
+                TypePart const argument = run[index];
+                if (argument.has(PartFact::was_reference)) return true;
+                bool const is_tag = is_class_or_union_(argument.type) && !std::meta::is_complete_type(argument.type);
+                bool was_seen = false;
+                for (std::size_t earlier = 0; earlier < seen.size(); ++earlier) {
+                    was_seen = was_seen || seen[earlier] == argument.type;
+                }
+                if (is_tag || was_seen) continue;
+                seen.push_back(argument.type);
+                if (detail::holds_borrow_seen_(argument.type, seen, read)) return true;
             }
             return false;
         }
@@ -1327,9 +1367,24 @@ template <class Arm, class Payload>
     ::foundation::reflect::TypeNode const node{type, true};
     if (::foundation::reflect::holds_unreadable_state(node)) return true;
     for (::foundation::reflect::TypeNode const& part : ::foundation::reflect::member_components_of(node)) {
-        if (!part.is_held_by_value || detail::holds_borrow_(part.type)) return true;
+        if (!part.is_held_by_value || detail::holds_borrow_seen_(part.type, seen, read)) return true;
     }
     return false;
+}
+
+// True when a value of the type holds a borrow (holds_borrow_seen_ above).
+[[nodiscard]] consteval bool holds_borrow_(std::meta::info type) {
+    std::vector<std::meta::info> seen;
+    return detail::holds_borrow_seen_(type, seen, OwnerRead::arguments);
+}
+
+// True when a value of the type names an object outside its own bytes: each
+// borrow, and the address of the storage of an owner, such as the object of a
+// Box.  The read of the inputs of fixy/concurrent/Spawn.h asks it, because a
+// compare of the bytes of an element sees no object outside them.
+[[nodiscard]] consteval bool holds_address_(std::meta::info type) {
+    std::vector<std::meta::info> seen;
+    return detail::holds_borrow_seen_(type, seen, OwnerRead::members);
 }
 
 // The template arguments of a type, by index.  The walk indexes the list, so

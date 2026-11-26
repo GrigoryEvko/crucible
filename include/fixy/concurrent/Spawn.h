@@ -500,7 +500,7 @@ namespace detail {
     std::meta::info const statement = ^^::foundation::transfer::sendable;
     bool const is_stated = std::meta::is_class_type(bare) && std::meta::is_complete_type(bare)
                         && ::foundation::reflect::carries_annotation(bare, statement);
-    return is_stated || !::foundation::core::detail::holds_borrow_(bare);
+    return is_stated || !::foundation::core::detail::holds_address_(bare);
 }
 
 // True for an input that reads() admits: a class of a family of the inputs

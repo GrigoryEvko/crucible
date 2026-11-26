@@ -98,6 +98,17 @@ static_assert(!ForeignDescriptor{-1}.is_open() && ForeignDescriptor{0}.is_open()
 // is no key of the region.
 static_assert(LeavesLock<Region> && std::is_same_v<left_lock_t<Region>, Linear<Mapping>>);
 static_assert(!LeavesLock<int> && !LeavesLock<Mapping>);
+
+// The value that leave_lock gives holds no borrow: a mapping owns its pages,
+// so the region passes above, and a T that gives a View of what it keeps has
+// no end of its lock.
+struct LeavesAView final {
+    ::foundation::core::View<int const> kept{};
+    [[nodiscard]] ::foundation::core::View<int const> leave_lock(SharedLockEndKey<LeavesAView> const&) noexcept {
+        return kept;
+    }
+};
+static_assert(!LeavesLock<LeavesAView>);
 using EndKey = SharedLockEndKey<Region>;
 static_assert(!std::is_default_constructible_v<EndKey> && !std::is_copy_constructible_v<EndKey>);
 static_assert(!std::is_convertible_v<SharedLockEndKey<ReadOnlyRegion> const&, EndKey const&>);
