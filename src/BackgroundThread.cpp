@@ -488,6 +488,8 @@ BackgroundThread::BackgroundThread(BackgroundThreadKey const& /*key*/, ::foundat
       scratch_retained_limit_{setup.limits.scratch_retained},
       region_store_{::fixy::mint_heap_array_with<RegionMemory>(allocation, setup.limits.region_store.raw(),
                                                                [](size_t) noexcept { return RegionMemory{}; })},
+      left_generations_{
+          ::fixy::mint_heap_array(allocation, setup.limits.region_store.raw(), uint64_t{RegionMemory::NOT_LEFT})},
       free_slots_{::fixy::mint_heap_bit_set<RegionStoreSlots>(allocation, setup.limits.region_store)},
       swept_slots_{::fixy::mint_heap_bit_set<RegionStoreSlots>(allocation, setup.limits.region_store)},
       settled_slots_{::fixy::mint_heap_bit_set<RegionStoreSlots>(allocation, setup.limits.region_store)},
@@ -721,8 +723,8 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     static_cast<void>(region_store_.exchange(
         slot.raw(), RegionMemory{.parts = std::move(parts),
                                  .queued = std::move(pushed.queued),
-                                 .published = PublishedRegion{.region = const_published, .reset_point = reset_point},
-                                 .left_generation = RegionMemory::NOT_LEFT}));
+                                 .published = PublishedRegion{.region = const_published, .reset_point = reset_point}}));
+    set_left_generation_(slot, RegionMemory::NOT_LEFT);
     last_published_ = const_published;
 
     active_region_.store_release(RegionLink::some(region));
@@ -735,9 +737,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
 }
 
 void BackgroundThread::set_left_generation_(RegionSlot slot, uint64_t generation) noexcept {
-    region_store_.with_element(
-        slot.raw(), [generation](RegionMemory& memory) noexcept { memory.left_generation = generation; },
-        [] noexcept { ::fixy::fatal("an id of a slot lies below the count of the store"); });
+    left_generations_.set(slot.raw(), generation);
 }
 
 ::fixy::Option<RegionSlot> BackgroundThread::find_free_slot_() const noexcept {
@@ -835,7 +835,7 @@ bool BackgroundThread::sweep_slot_(PublishStage const& stage, RegionMarks const&
     const RegionMemory& memory =
         *region_store_.view().get(slot.raw()).expect("an id of a slot lies below the count of the store");
     const bool is_queued = uncompiled_regions_.holds(stage, memory.queued);
-    switch (find_sweep_step_(stage, marks, memory)) {
+    switch (find_sweep_step_(stage, marks, slot, memory)) {
         case SweepStep::Keep:
             set_left_generation_(slot, RegionMemory::NOT_LEFT);
             return true;
@@ -847,9 +847,10 @@ bool BackgroundThread::sweep_slot_(PublishStage const& stage, RegionMarks const&
         case SweepStep::Settle:
             return false;
         case SweepStep::Release:
-            region_store_.with_element(
-                slot.raw(), [](RegionMemory& released) noexcept { released = RegionMemory{}; },
-                [] noexcept { ::fixy::fatal("an id of a slot lies below the count of the store"); });
+            // The exchange gives the memory of the region back, and its end
+            // releases the arena of the parts after the slot holds no region.
+            static_cast<void>(region_store_.exchange(slot.raw(), RegionMemory{}));
+            set_left_generation_(slot, RegionMemory::NOT_LEFT);
             free_slots_.set(slot);
             return false;
         default:
@@ -858,8 +859,11 @@ bool BackgroundThread::sweep_slot_(PublishStage const& stage, RegionMarks const&
 }
 
 BackgroundThread::SweepStep BackgroundThread::find_sweep_step_(PublishStage const& stage, RegionMarks const& marks,
+                                                               RegionSlot slot,
                                                                RegionMemory const& memory) const noexcept {
     using Foreground = RegionMarks::Foreground;
+    const uint64_t left_generation =
+        *left_generations_.view().get(slot.raw()).expect("an id of a slot lies below the count of the store");
     const DagRef<RegionNode const> region =
         memory.queued.node().expect("the sweep reads only slots that hold a region");
     const auto is_region = [region](DagRef<RegionNode const> other) noexcept {
@@ -868,9 +872,9 @@ BackgroundThread::SweepStep BackgroundThread::find_sweep_step_(PublishStage cons
     if (last_published_.is_some_and(is_region) || marks.handed.is_some_and(is_region)) return SweepStep::Keep;
     if (marks.foreground == Foreground::Writing) return SweepStep::Wait;
     const bool has_read_foreground = marks.foreground == Foreground::Read;
-    if (has_read_foreground && memory.left_generation == RegionMemory::NOT_LEFT) return SweepStep::MarkLeft;
+    if (has_read_foreground && left_generation == RegionMemory::NOT_LEFT) return SweepStep::MarkLeft;
     if (uncompiled_regions_.holds(stage, memory.queued)) return SweepStep::Settle;
-    if (has_read_foreground && marks.foreground_generation <= memory.left_generation) return SweepStep::Wait;
+    if (has_read_foreground && marks.foreground_generation <= left_generation) return SweepStep::Wait;
     for (DagRef<RegionNode const> const held : marks.held) {
         if (is_region(held)) return SweepStep::Wait;
     }
@@ -891,10 +895,8 @@ uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
 
 ::fixy::Option<uint64_t> BackgroundThread::left_generation_of(PublishStage const&, RegionSlot slot) const noexcept {
     if (free_slots_.test(slot)) return ::fixy::none;
-    return ::fixy::some(region_store_.view()
-                            .get(slot.raw())
-                            .expect("an id of a slot lies below the count of the store")
-                            ->left_generation);
+    return ::fixy::some(
+        *left_generations_.view().get(slot.raw()).expect("an id of a slot lies below the count of the store"));
 }
 
 ::fixy::Quantity<::fixy::unit::Byte, size_t> BackgroundThread::region_bytes(PublishStage const&) const noexcept {

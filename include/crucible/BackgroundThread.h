@@ -416,8 +416,8 @@ struct QueuePush {
 // whole, so the link of the node ends with the arena.  The parts are one
 // BuiltRegion, so no code assigns one buffer of them.
 struct RegionMemory {
-    // The left generation of a region that is the last published region or the
-    // handed region.
+    // The left generation (the column left_generations_ of BackgroundThread)
+    // of a region that is the last published region or the handed region.
     static constexpr uint64_t NOT_LEFT = UINT64_MAX;
 
     BuiltRegion parts;
@@ -426,9 +426,6 @@ struct RegionMemory {
     // The record that the region callback gets, and that the owner can publish
     // to its foreground.
     PublishedRegion published{};
-    // The foreground generation at the first sweep that found the region
-    // neither the last published region nor the handed region.
-    uint64_t left_generation = NOT_LEFT;
 };
 
 // Regions that have been published but not compiled.  This is the hand-off
@@ -1203,6 +1200,12 @@ private:
     // and counts it in regions_dropped_full_.  Each later publish does the same
     // sweep, so it has the same chance to free a slot.
     ::fixy::HeapArray<RegionMemory> region_store_;
+    // The left generation of the region of each slot of the store: the
+    // foreground generation at the first sweep that found the region neither
+    // the last published region nor the handed region, or NOT_LEFT.  It is a
+    // column of its own, so a sweep writes one word through a value door and
+    // no door lends a region of the store to a body.
+    ::fixy::HeapArray<uint64_t> left_generations_;
     ConstRegionLink last_published_{};
     uint64_t regions_dropped_full_ = 0;
 
@@ -1250,9 +1253,10 @@ private:
     // slot too.
     [[nodiscard]] bool sweep_slot_(PublishStage const& stage, RegionMarks const& marks, RegionSlot slot) noexcept;
 
-    // The step of the region of a slot.  Complexity: O(M) for M marks, which are
-    // at most RegionMarks::CAP.
-    [[nodiscard]] SweepStep find_sweep_step_(PublishStage const& stage, RegionMarks const& marks,
+    // The step of the region of a slot, from its memory and its left
+    // generation.  Complexity: O(M) for M marks, which are at most
+    // RegionMarks::CAP.
+    [[nodiscard]] SweepStep find_sweep_step_(PublishStage const& stage, RegionMarks const& marks, RegionSlot slot,
                                              RegionMemory const& memory) const noexcept;
 
     // Writes the left generation of the region of one slot.
