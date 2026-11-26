@@ -13,6 +13,7 @@
 #include <fixy/session/Registry.h>
 #include <fixy/session/Watch.h>
 #include <fixy/session/Wire.h>
+#include <foundation/core/CaptureStore.h>
 
 #include <array>
 #include <concepts>
@@ -55,6 +56,12 @@ namespace fixy::session {
 // (HoldsNoLinearValue of foundation/Linear.h).  A step calls them again
 // while it waits, and a call is no consume, so a linear value that one of
 // them holds would end with no consume.
+//
+// A transport and a stop test also store no borrow outside the call
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h).  A step lends
+// the Resource and the message to the transport for one call.  So a
+// transport that writes a borrow of either into an object that it captures
+// by reference keeps the borrow past the step, and each gate refuses it.
 
 // A trying write of a copyable payload reads the value through a reference,
 // and the caller keeps it while the write has no room.  A trying write of a
@@ -90,7 +97,8 @@ template <typename F, typename Resource, typename T>
 concept WriteShape = TryWrite<F, Resource, T> || DeclaredWrite<F, Resource, T>;
 
 template <typename F, typename Resource, typename T>
-concept WriteTransport = WriteShape<F, Resource, T> && ::foundation::linear::HoldsNoLinearValue<F>;
+concept WriteTransport = WriteShape<F, Resource, T> && ::foundation::linear::HoldsNoLinearValue<F>
+                      && ::foundation::core::StoresNoBorrowOutside<F>;
 
 // The reason of the deleted twin of each send of a linear payload, for a
 // write that has no write shape of a linear payload.
@@ -106,9 +114,10 @@ concept WriteTransport = WriteShape<F, Resource, T> && ::foundation::linear::Hol
 // and give the value back to the caller.  A send with a stop test calls
 // the test and the write as plain calls, so each is a callable object.
 template <typename F>
-concept WriteStop = ::foundation::linear::HoldsNoLinearValue<F> && requires(F& stop) {
-    { stop() } -> std::same_as<bool>;
-};
+concept WriteStop =
+    ::foundation::linear::HoldsNoLinearValue<F> && ::foundation::core::StoresNoBorrowOutside<F> && requires(F& stop) {
+        { stop() } -> std::same_as<bool>;
+    };
 
 template <typename F, typename Resource, typename T>
 concept CallableTryWrite =
@@ -133,7 +142,8 @@ template <typename F, typename Resource, typename T>
 concept ReadShape = PollRead<F, Resource, T> || DeclaredRead<F, Resource, T>;
 
 template <typename F, typename Resource, typename T>
-concept ReadTransport = ReadShape<F, Resource, T> && ::foundation::linear::HoldsNoLinearValue<F>;
+concept ReadTransport = ReadShape<F, Resource, T> && ::foundation::linear::HoldsNoLinearValue<F>
+                     && ::foundation::core::StoresNoBorrowOutside<F>;
 
 namespace detail {
 

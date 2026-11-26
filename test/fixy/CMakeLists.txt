@@ -3528,6 +3528,20 @@ fixy_neg_compile_test(neg_sess_pin_body_holds_linear
 fixy_neg_compile_test(neg_sess_transport_holds_linear
   "no matching function for call to .fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>"
   "required for the satisfaction of .HoldsNoLinearValue<F>.")
+# A step lends the Resource to its transport for one call, so a transport
+# that keeps a View of the Resource in an Option that it captures by
+# reference keeps a borrow past the step.  The write gate, the read gate and
+# the gate of a crash send refuse it (StoresNoBorrowOutside of
+# foundation/core/CaptureStore.h).
+fixy_neg_compile_test(neg_sess_transport_keeps_a_view_of_the_resource
+  "no matching function for call to .fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>"
+  "required for the satisfaction of .StoresNoBorrowOutside<F>.")
+fixy_neg_compile_test(neg_sess_read_keeps_a_view_of_the_resource
+  "no matching function for call to .fixy::session::SessionHandle<fixy::session::Offer<fixy::session::End, fixy::session::End>"
+  "required for the satisfaction of .StoresNoBorrowOutside<F>.")
+fixy_neg_compile_test(neg_sess_crash_transport_keeps_a_view_of_the_resource
+  "no matching function for call to .fixy::session::CrashWatched<"
+  "required for the satisfaction of .StoresNoBorrowOutside<Transport>.")
 fixy_neg_compile_test(neg_sess_send_view
   "no matching function for call to .mint_session<neg_sess_send_view_types::Proto>"
   "Payload_Not_Owned.: a payload of the protocol cannot move to another thread, or it holds a borrow"

@@ -1123,10 +1123,14 @@ concept PoleWritesIn = ChannelPole<Pole> && HasPoleTable<Pole> && ::foundation::
 // The table of the pole reads a value of type T in the context Ctx.  The
 // receive of a pole takes the context where a receive of another Resource
 // takes its transport, so the context holds no linear value by value
-// (HoldsNoLinearValue of foundation/Linear.h), as a transport does.
+// (HoldsNoLinearValue of foundation/Linear.h) and stores no borrow outside
+// the call (StoresNoBorrowOutside of foundation/core/CaptureStore.h), as a
+// transport does.  A context holds only its capability and its row, so each
+// context passes the store check.
 template <typename Pole, typename Ctx, typename T>
 concept PoleReadsIn = ChannelPole<Pole> && HasPoleTable<Pole> && ::foundation::effects::IsExecCtx<Ctx>
-                   && ::foundation::linear::HoldsNoLinearValue<Ctx> && requires(Ctx const& ctx, Pole& pole) {
+                   && ::foundation::linear::HoldsNoLinearValue<Ctx> && ::foundation::core::StoresNoBorrowOutside<Ctx>
+                   && requires(Ctx const& ctx, Pole& pole) {
                           {
                               pole_table_t<Pole>::read(ctx, pole)
                           } noexcept -> std::same_as<::foundation::core::Option<T>>;

@@ -152,6 +152,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Armed.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Record.h>
 
 #include <atomic>
@@ -991,6 +992,7 @@ public:
         requires is_send_v<typename Handle::protocol> && (!is_keyed_step_v<typename Handle::protocol>)
               && TryWrite<Transport, typename Handle::resource_type, typename Handle::protocol::message_type>
               && ::foundation::linear::HoldsNoLinearValue<Transport>
+              && ::foundation::core::StoresNoBorrowOutside<Transport>
     [[nodiscard]] static constexpr auto send(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
                                              detail::sent_value_t<typename Handle::protocol::message_type> value,
                                              Transport transport) {
@@ -1039,6 +1041,7 @@ public:
         requires is_send_v<typename Handle::protocol> && is_keyed_step_v<typename Handle::protocol>
               && TryWrite<Transport, typename Handle::resource_type, std::size_t>
               && ::foundation::linear::HoldsNoLinearValue<Transport>
+              && ::foundation::core::StoresNoBorrowOutside<Transport>
     [[nodiscard]] static constexpr auto send(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
                                              Transport transport) {
         using P = typename Handle::protocol;
@@ -1068,6 +1071,7 @@ public:
         requires is_select_v<typename Handle::protocol>
               && TryWrite<Transport, typename Handle::resource_type, std::size_t>
               && ::foundation::linear::HoldsNoLinearValue<Transport>
+              && ::foundation::core::StoresNoBorrowOutside<Transport>
     [[nodiscard]] static constexpr auto select(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
                                                Transport transport) {
         using P = typename Handle::protocol;
@@ -1115,7 +1119,7 @@ public:
               typename Read>
         requires is_recv_v<typename Handle::protocol> && (!is_keyed_step_v<typename Handle::protocol>)
               && (!is_crash_payload_v<typename Handle::protocol::message_type>)
-              && ::foundation::linear::HoldsNoLinearValue<Read>
+              && ::foundation::linear::HoldsNoLinearValue<Read> && ::foundation::core::StoresNoBorrowOutside<Read>
     [[nodiscard]] static constexpr auto recv(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
                                              Read read) {
         using T = typename Handle::protocol::message_type;
@@ -1153,7 +1157,7 @@ public:
     template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position,
               typename Poll>
         requires is_recv_v<typename Handle::protocol> && is_keyed_step_v<typename Handle::protocol>
-              && ::foundation::linear::HoldsNoLinearValue<Poll>
+              && ::foundation::linear::HoldsNoLinearValue<Poll> && ::foundation::core::StoresNoBorrowOutside<Poll>
     [[nodiscard]] static constexpr auto recv(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched,
                                              Poll poll) {
         using P = typename Handle::protocol;
@@ -1251,6 +1255,7 @@ public:
     template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position,
               typename Poll, typename Handler>
         requires is_offer_v<typename Handle::protocol> && ::foundation::linear::HoldsNoLinearValue<Poll>
+              && ::foundation::core::StoresNoBorrowOutside<Poll>
     static constexpr auto branch(CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>&& watched, Poll poll,
                                  Handler handler) {
         using P = typename Handle::protocol;
@@ -1389,6 +1394,7 @@ public:
     template <typename Transport, typename P = protocol>
         requires is_send_v<P> && (!is_keyed_step_v<P>) && TryWrite<Transport, resource_type, typename P::message_type>
               && ::foundation::linear::HoldsNoLinearValue<Transport>
+              && ::foundation::core::StoresNoBorrowOutside<Transport>
     [[nodiscard]] constexpr auto send(detail::sent_value_t<typename P::message_type> value, Transport transport) && {
         return CrashSessionDoor::send(std::move(*this), std::move(value), std::move(transport));
     }
@@ -1412,6 +1418,7 @@ public:
     template <typename Transport, typename P = protocol>
         requires is_send_v<P> && is_keyed_step_v<P> && TryWrite<Transport, resource_type, std::size_t>
               && ::foundation::linear::HoldsNoLinearValue<Transport>
+              && ::foundation::core::StoresNoBorrowOutside<Transport>
     [[nodiscard]] constexpr auto send(Transport transport) && {
         return CrashSessionDoor::send(std::move(*this), std::move(transport));
     }
@@ -1433,6 +1440,7 @@ public:
     template <std::size_t I, typename Transport, typename P = protocol>
         requires is_select_v<P> && TryWrite<Transport, resource_type, std::size_t>
               && ::foundation::linear::HoldsNoLinearValue<Transport>
+              && ::foundation::core::StoresNoBorrowOutside<Transport>
     [[nodiscard]] constexpr auto select(Transport transport) && {
         return CrashSessionDoor::template select<I>(std::move(*this), std::move(transport));
     }
@@ -1458,7 +1466,7 @@ public:
     // Crash_Of_Reliable_Peer or with Crash_Splits_A_Message.
     template <typename Read, typename P = protocol>
         requires is_recv_v<P> && (!is_keyed_step_v<P>) && (!is_crash_payload_v<typename P::message_type>)
-              && ::foundation::linear::HoldsNoLinearValue<Read>
+              && ::foundation::linear::HoldsNoLinearValue<Read> && ::foundation::core::StoresNoBorrowOutside<Read>
     [[nodiscard]] constexpr auto recv(Read read) && {
         return CrashSessionDoor::recv(std::move(*this), std::move(read));
     }
@@ -1470,6 +1478,7 @@ public:
     // the value.
     template <typename Poll, typename P = protocol>
         requires is_recv_v<P> && is_keyed_step_v<P> && ::foundation::linear::HoldsNoLinearValue<Poll>
+              && ::foundation::core::StoresNoBorrowOutside<Poll>
     [[nodiscard]] constexpr auto recv(Poll poll) && {
         return CrashSessionDoor::recv(std::move(*this), std::move(poll));
     }
@@ -1506,6 +1515,7 @@ public:
     // message.
     template <typename Poll, typename Handler, typename P = protocol>
         requires is_offer_v<P> && ::foundation::linear::HoldsNoLinearValue<Poll>
+              && ::foundation::core::StoresNoBorrowOutside<Poll>
     constexpr auto branch(Poll poll, Handler handler) && {
         return CrashSessionDoor::branch(std::move(*this), std::move(poll), std::move(handler));
     }
