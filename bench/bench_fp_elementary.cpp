@@ -108,15 +108,25 @@ struct ClockChain {
 // so the row can be up to 0.7 cycles above the function alone.
 //
 // The latency floor of a code is the longest chain of dependent operations
-// from the input to the result, with these latencies: 4 for an fma, 3 for a
-// multiply, an add, a conversion or a round, 1 for an integer operation or a
-// move between a general register and an xmm register, 0 for a move that the
-// rename ends, and 4 for a load from L1.  Each latency is a lower bound of
-// the guide, so the floor is a lower bound too.  The chain x + 0 * y of the
-// row adds a multiply and an add, 6 cycles:
-//   fixy exp double 43 + 6 = 49   fixy log double 38 + 6 = 44   fixy erf double 72 + 6 = 78
-//   fixy exp float  29 + 6 = 35   fixy log float  27 + 6 = 33   fixy erf float  30 + 6 = 36
-//   cr_expf         28 + 6 = 34   cr_logf         23 + 6 = 29   cr_erff         30 + 6 = 36
+// from the input to the result.  The floor counts these latencies of the
+// guide:
+//   - 4 cycles for an fma, and 3 for a multiply, an add, a conversion or a
+//     round.
+//   - 1 cycle for an integer operation or a move between a general register
+//     and an xmm register, and 0 for a move that the rename ends.
+//   - 4 cycles from the address of a load from L1 to the use of its value in
+//     a general register, and 7 cycles in an xmm register (appendix A).  A
+//     scaled index adds 1 cycle, but the loop of a row can use a simple
+//     address.  A load of a constant does not wait for the input.
+// Each latency is a lower bound, so the floor is a lower bound too.
+// uops.info measures 6 cycles for a move to a general register and back,
+// but the guide gives 1 cycle for each move, so a chain through a move can
+// be above its floor.  The guide 58455 of Zen 5 gives the same loads but 2
+// cycles for an add, so these floors are for the Zen 4c core only.  The
+// chain x + 0 * y of the row adds a multiply and an add, 6 cycles:
+//   fixy exp double 43 + 6 = 49   fixy log double 41 + 6 = 47   fixy erf double 72 + 6 = 78
+//   fixy exp float  29 + 6 = 35   fixy log float  30 + 6 = 36   fixy erf float  33 + 6 = 39
+//   cr_expf         28 + 6 = 34   cr_logf         26 + 6 = 32   cr_erff         33 + 6 = 39
 // The Horner chain of fixy erf double holds 11 dependent fma.  fixy erf float
 // and cr_erff take an Estrin form of degree 7.  After the table, fixy log
 // float takes a polynomial of degree 5 in r, and cr_logf one of degree 3.  The
@@ -134,9 +144,9 @@ struct Floor {
         case Function::Exp:
             return is_double ? Floor{46.0 / 6.0, 49.0} : Floor{29.0 / 6.0, 34.0};
         case Function::Log:
-            return is_double ? Floor{48.0 / 6.0, 44.0} : Floor{34.0 / 6.0, 29.0};
+            return is_double ? Floor{48.0 / 6.0, 47.0} : Floor{34.0 / 6.0, 32.0};
         case Function::Erf:
-            return is_double ? Floor{13.0 / 2.0, 78.0} : Floor{6.0, 36.0};
+            return is_double ? Floor{13.0 / 2.0, 78.0} : Floor{6.0, 39.0};
         default:
             ::fixy::unreachable();
     }
