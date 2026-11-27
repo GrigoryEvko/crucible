@@ -79,48 +79,49 @@ struct ClockChain {
     }
 };
 
-[[nodiscard]] double measure_cycles_per_ns() {
-    ClockChain chain{};
-    bench::Report const report = bench::Run("clock").batch(kClockBatch).samples(kClockSamples).measure(chain);
-    bench::do_not_optimize(chain.value);
-    return report.pct.p50 > 0.0 ? kClockAdds / report.pct.p50 : 0.0;
-}
-
-// The floor of each row in cycles of the core, for the hot path of the
-// function in the code of this bench: -O3 -march=native on the Zen 4c core of
-// luks-a (EPYC 9754).  The counts come from the assembly of each function out
-// of line, on the path of the inputs of the rows: the table path of log, and
-// the interval path of erf.  The model is the Zen 4 core of the AMD guide
-// 57647:
-//   - Two FP pipes take a multiply or an fma, and two take an add or a
-//     conversion.
+// The floor of each row in cycles of the core: the floor of the faster of two
+// codes of the function, fixy/fp and CORE-MATH.  Each code floor counts the
+// hot path in the assembly of the function out of line, on the path of the
+// inputs of the rows: the table path of log, and the interval path of erf.
+// fixy/fp compiles with the flags of this bench, -O3 -march=native, and
+// CORE-MATH with the flags of core_math_reference, -O2 -march=native.  The
+// core is the Zen 4c core of luks-a (EPYC 9754), with the model of the AMD
+// guide 57647:
+//   - Two FP pipes take a multiply or an fma, and two take an add, a
+//     conversion or a round.
 //   - The core dispatches six macro operations each cycle.  A compare and its
 //     branch are one macro operation.
-// The throughput floor is the largest of three bounds: the fma and the
-// multiplies on two pipes, the adds and the conversions on two pipes, and
-// the macro operations at six for each cycle.
-//   function    fma  mul  add  cvt  ops   floor
-//   exp double    7    3    3    0   33   5.5, the dispatch
-//   exp float     4    2    2    2   33   5.5, the dispatch
-//   log double    8    2    5    1   44   7.33, the dispatch
-//   log float     6    2    2    3   37   6.17, the dispatch
-//   erf double   11    2    4    2   50   8.33, the dispatch
-//   erf float     8    2    4    4   50   8.33, the dispatch
+// The throughput floor of a code is the largest of three bounds: the fma and
+// the multiplies on two pipes, the adds and the conversions on two pipes,
+// and the macro operations at six for each cycle.
+//   code              fma  mul  add  cvt  ops   floor
+//   fixy exp double     7    3    3    0   33   5.5, the dispatch
+//   fixy exp float      4    2    2    2   33   5.5, the dispatch
+//   fixy log double     8    2    5    1   44   7.33, the dispatch
+//   fixy log float      6    2    2    3   37   6.17, the dispatch
+//   fixy erf double    11    2    4    2   50   8.33, the dispatch
+//   fixy erf float      8    2    4    4   50   8.33, the dispatch
+//   cr_expf             6    2    1    3   30   5.0, the dispatch
+//   cr_logf             5    1    1    3   34   5.67, the dispatch
+//   cr_erff             8    4    1    5   32   6.0, the fma pipes
 // The loop of a row adds a load, an xor and the loop control to each input,
 // so the row can be up to 0.7 cycles above the function alone.
 //
-// The latency floor is the longest chain of dependent operations from the
-// input to the result, with these latencies: 4 for an fma, 3 for a multiply,
-// an add or a conversion, 1 for an integer operation or a move between a
-// general register and an xmm register, 0 for a move that the rename ends,
-// and 4 for a load from L1.  Each latency is a lower bound of the guide, so
-// the floor is a lower bound too.  The chain x + 0 * y of the row adds a
-// multiply and an add, 6 cycles:
-//   exp double 33 + 6 = 39      log double 37 + 6 = 43      erf double 72 + 6 = 78
-//   exp float  31 + 6 = 37      log float  42 + 6 = 48      erf float  66 + 6 = 72
-// The Horner chains of erf hold 11 and 8 dependent fma, so erf has the
-// longest chain.  A reference row below a floor shows a cheaper algorithm,
-// not an error of the floor: the floor is of the code of fixy/fp.
+// The latency floor of a code is the longest chain of dependent operations
+// from the input to the result, with these latencies: 4 for an fma, 3 for a
+// multiply, an add, a conversion or a round, 1 for an integer operation or a
+// move between a general register and an xmm register, 0 for a move that the
+// rename ends, and 4 for a load from L1.  Each latency is a lower bound of
+// the guide, so the floor is a lower bound too.  The chain x + 0 * y of the
+// row adds a multiply and an add, 6 cycles:
+//   fixy exp double 33 + 6 = 39   fixy log double 37 + 6 = 43   fixy erf double 72 + 6 = 78
+//   fixy exp float  31 + 6 = 37   fixy log float  42 + 6 = 48   fixy erf float  66 + 6 = 72
+//   cr_expf         28 + 6 = 34   cr_logf         23 + 6 = 29   cr_erff         30 + 6 = 36
+// The Horner chains of fixy erf hold 11 and 8 dependent fma.  cr_erff takes
+// an Estrin form of degree 7, and cr_logf a short polynomial after its
+// table.  The floors do not count glibc, SLEEF and the double
+// code of CORE-MATH.  So a reference row below a floor shows a code that the
+// floor does not count.
 struct Floor {
     double throughput = 0.0;
     double latency = 0.0;
@@ -129,11 +130,11 @@ struct Floor {
 [[nodiscard]] constexpr Floor floor_of(Function function, bool is_double) noexcept {
     switch (function) {
         case Function::Exp:
-            return is_double ? Floor{33.0 / 6.0, 39.0} : Floor{33.0 / 6.0, 37.0};
+            return is_double ? Floor{33.0 / 6.0, 39.0} : Floor{30.0 / 6.0, 34.0};
         case Function::Log:
-            return is_double ? Floor{44.0 / 6.0, 43.0} : Floor{37.0 / 6.0, 48.0};
+            return is_double ? Floor{44.0 / 6.0, 43.0} : Floor{34.0 / 6.0, 29.0};
         case Function::Erf:
-            return is_double ? Floor{50.0 / 6.0, 78.0} : Floor{50.0 / 6.0, 72.0};
+            return is_double ? Floor{50.0 / 6.0, 78.0} : Floor{6.0, 36.0};
         default:
             ::fixy::unreachable();
     }
@@ -224,29 +225,41 @@ template <class Body>
     return run.measure(static_cast<Body&&>(body));
 }
 
-// The cycles of one input at the p50 and the p99 of a row.
+// The cycles of the core in one ns, on the core of the rows.
+[[nodiscard]] double measure_cycles_per_ns() {
+    ClockChain chain{};
+    bench::Run run{"clock"};
+    static_cast<void>(run.batch(kClockBatch).samples(kClockSamples));
+    bench::Report const report = measure_row(static_cast<bench::Run&&>(run), chain);
+    bench::do_not_optimize(chain.value);
+    return report.pct.p50 > 0.0 ? kClockAdds / report.pct.p50 : 0.0;
+}
+
+// The cycles of one input at the p50 and the p99 of a row, and the clock of
+// the core in GHz that gives them.
 struct Cycles {
     double p50 = 0.0;
     double p99 = 0.0;
     double cv = 0.0;
+    double clock = 0.0;
 };
 
 [[nodiscard]] Cycles cycles_of(bench::Report const& report, double cycles_per_ns) noexcept {
     double const scale = cycles_per_ns / static_cast<double>(kInputs);
-    return Cycles{report.pct.p50 * scale, report.pct.p99 * scale, report.pct.cv};
+    return Cycles{report.pct.p50 * scale, report.pct.p99 * scale, report.pct.cv, cycles_per_ns};
 }
 
 // Writes one row: the name, the cycles at the p50 and the p99 of one input,
-// the coefficient of variation, the floor and the ratio to it, and the ratio
-// to the fastest reference of the form (0 when no reference ran).
+// the coefficient of variation, the clock, the floor and the ratio to it, and
+// the ratio to the fastest reference of the form (0 when no reference ran).
 void print_row(::fixy::TextView name, Cycles cycles, double floor, double fastest_reference) noexcept {
     double const to_floor = floor > 0.0 ? cycles.p50 / floor : 0.0;
     double const to_reference = fastest_reference > 0.0 ? cycles.p50 / fastest_reference : 0.0;
-    bench::print("  {}  p50={} cycles  p99={} cycles  cv={} permille  floor={}  to floor={}  to fastest "
-                 "reference={}\n",
+    bench::print("  {}  p50={} cycles  p99={} cycles  cv={} permille  clock={} GHz  floor={}  to floor={}  to "
+                 "fastest reference={}\n",
                  name, ::fixy::Fixed<2>{cycles.p50}, ::fixy::Fixed<2>{cycles.p99},
-                 static_cast<std::uint64_t>(cycles.cv * 1000.0 + 0.5), ::fixy::Fixed<2>{floor},
-                 ::fixy::Fixed<2>{to_floor}, ::fixy::Fixed<2>{to_reference});
+                 static_cast<std::uint64_t>(cycles.cv * 1000.0 + 0.5), ::fixy::Fixed<3>{cycles.clock},
+                 ::fixy::Fixed<2>{floor}, ::fixy::Fixed<2>{to_floor}, ::fixy::Fixed<2>{to_reference});
 }
 
 // The smaller of two cycle counts, where 0 is no count.  A build with no
