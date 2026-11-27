@@ -131,9 +131,11 @@ struct ClockChain {
 // and cr_erff take an Estrin form of degree 7.  After the table, fixy log
 // float takes a polynomial of degree 5 in r, and cr_logf one of degree 3.  The
 // rounding test of cr_logf admits an absolute error of about 2^-32, so more
-// inputs take its second path.  The floors do not count glibc, SLEEF and the double
-// code of CORE-MATH.  So a reference row below a floor shows a code that the
-// floor does not count.
+// inputs take its second path.  Each floor is a floor of the codes that it
+// counts, not a floor of the function.  The floors do not count glibc, SLEEF
+// and the double code of CORE-MATH, but each row prints its "to floor"
+// against the floor of its function.  So a row of such a reference can be
+// below 1.0 of the floor.
 struct Floor {
     double throughput = 0.0;
     double latency = 0.0;
