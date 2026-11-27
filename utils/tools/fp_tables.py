@@ -486,6 +486,39 @@ def print_erf() -> None:
     )
 
 
+ERF_FLOAT_FIRST = 8
+ERF_FLOAT_INTERVALS = 55
+ERF_FLOAT_DEGREE = 7
+
+
+def print_erff() -> None:
+    """Print the table of the intervals of the float form of Erf.h.
+
+    Interval i covers [i/16, (i + 1)/16) for i from ERF_FLOAT_FIRST, and the
+    last one holds the first x whose erf rounds to 1 in float.  For each, the
+    minimax polynomial of degree ERF_FLOAT_DEGREE in the offset from the
+    center, for the relative error of erf.  O(intervals * remez).
+    """
+    width = mp.mpf(1) / 16
+    half = width / 2
+    largest = mp.mpf(0)
+    print(f"// Table: {ERF_FLOAT_INTERVALS} intervals of width 1/16 from {ERF_FLOAT_FIRST}/16.  For each: the")
+    print(f"// coefficients 0 to {ERF_FLOAT_DEGREE} of the minimax polynomial in the offset from the center.")
+    for index in range(ERF_FLOAT_FIRST, ERF_FLOAT_FIRST + ERF_FLOAT_INTERVALS):
+        center = width * index + half
+
+        def target(offset: Any, middle: Any = center) -> Any:
+            return mp.erf(middle + offset)
+
+        def weight(offset: Any, middle: Any = center) -> Any:
+            return 1 / mp.erf(middle + offset)
+
+        coefficients = [round_double(value) for value in remez(target, weight, -half, half, ERF_FLOAT_DEGREE)]
+        largest = max(largest, measured_error(target, weight, -half, half, coefficients))
+        print(f"    {{{{{', '.join(hex_double(item) for item in coefficients)}}}}},")
+    print(f"// largest relative error of the table polynomials: 2^{log2_text(largest)}")
+
+
 def first_at_or_above(edge: Any, fraction_bits: int) -> float:
     """Return the smallest positive number with fraction_bits bits after its point at or above an edge."""
     exponent = int(mp.floor(mp.log(edge, 2)))
@@ -493,7 +526,13 @@ def first_at_or_above(edge: Any, fraction_bits: int) -> float:
     return round_double(mp.ceil(edge / step) * step)
 
 
-SUBCOMMANDS: dict[str, Callable[[], None]] = {"exp": print_exp, "log": print_log, "logf": print_logf, "erf": print_erf}
+SUBCOMMANDS: dict[str, Callable[[], None]] = {
+    "exp": print_exp,
+    "log": print_log,
+    "logf": print_logf,
+    "erf": print_erf,
+    "erff": print_erff,
+}
 
 
 def main(arguments: list[str]) -> int:
