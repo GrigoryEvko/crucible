@@ -7841,6 +7841,11 @@ target_compile_definitions(test_fp_elementary PRIVATE CRUCIBLE_TEST_HAS_V1_UNIT=
                                                       CRUCIBLE_TEST_HAS_V3_UNIT=${_fp_has_v3_unit}
                                                       CRUCIBLE_TEST_HAS_V4_UNIT=${_fp_has_v4_unit})
 
+# test_fp_double_word checks the operations of fixy/fp/DoubleWord.h: the exact
+# sums and products against a second method, and the bound of each operation
+# on pairs of doubles against the exact result in an expansion of doubles.
+fixy_test(test_fp_double_word)
+
 # test_fp_exp_double checks the correct round of exp(double): the hard inputs
 # of fp_exp_hard_cases.h through exp and through the slow path on its own,
 # and a sample of 2^16 inputs against the pinned digest of CORE-MATH, through
