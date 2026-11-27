@@ -119,4 +119,30 @@ unsigned long read_before_the_end() noexcept {
     return read_and_end(std::move(items), view);
 }
 
+// A constructor names each of its arguments, so a capture of a class that holds
+// no borrow and that a constructor builds from the View counts as a capture of
+// the View, while the callee moves the owner on.
+template <class Body>
+Items run_with(Items items, Body body) noexcept {
+    body();
+    return items;
+}
+
+struct Count {
+    unsigned long value = 0;
+    explicit Count(View view) noexcept : value(view.size()) {}
+};
+
+unsigned long move_on_and_capture_a_count(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [count = Count{view}, &size]() noexcept { size = count.value; });
+    return size;
+}
+
+unsigned long count_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return move_on_and_capture_a_count(items, view);
+}
+
 }  // namespace planted

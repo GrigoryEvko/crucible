@@ -11,7 +11,12 @@
 # an append and across an append with code of the element.  In the unit beside one
 # argument of a call gives a borrow, and a different argument names its object, but
 # no callee ends it.  A callee moves the owner on and back, and gives the borrow to
-# no closure.  In the unit through a closure argument holds a borrow through
+# no closure.  A callee moves the owner on, and its closure holds no borrow of the
+# View: a value of a call on the View that holds no borrow, a member that holds no
+# borrow, a borrow of a type that cannot name an element of the View, and a borrow
+# derived from a different parameter.  A derived borrow that no closure captures, a
+# View that a helper reads outside a closure, and a Ref read after a lend of a
+# member of its owner read live storage too.  In the unit through a closure argument holds a borrow through
 # its captures, beside an argument that gives an object, but no callee changes the
 # object of the borrow: a capture of the owner itself (31), a View of a different
 # owner (38), and a callee that only reads the owner (45).  In the unit in_place a

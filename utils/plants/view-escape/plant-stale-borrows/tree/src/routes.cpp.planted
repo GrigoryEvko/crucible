@@ -1,0 +1,409 @@
+// A callee moves the owner of a plain borrow parameter into a call, and a closure
+// that the call runs reads a borrow that the callee derives from the parameter,
+// while the owner is away.  Each route of the derivation has one callee: a local
+// from a member door, a local Option of a window, an init capture of a chain
+// through a temporary Option, a StridedView of a free door, a local from a free
+// function, an assignment to a local, an aggregate of the parameter, an aggregate
+// of a derived borrow, a branch of a condition, the parameter given on to a callee
+// whose closure captures it, an init capture of a free function, an Option moved
+// into expect(), a reference alias of the parameter, a class with a written
+// constructor, an assignment through a written operator=, and the second argument
+// of a call with two borrows.  A callee with no body in the unit that gets the
+// owner and the borrow can end the owner too.  A callee lends a member of the
+// owner to its body, and the body runs a closure that reads the borrow in the
+// lend.
+#include <foundation/core/Array.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+#include <foundation/core/Strided.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+using View = fc::View<int const>;
+using Counts = fc::View<unsigned long const>;
+
+struct Window {
+    View view{};
+};
+
+struct CopiedWindow {
+    View view{};
+    explicit CopiedWindow(View from) noexcept : view(from) {}
+    CopiedWindow(CopiedWindow const& other) noexcept : view(other.view) {}
+    CopiedWindow& operator=(CopiedWindow const& other) noexcept {
+        view = other.view;
+        return *this;
+    }
+};
+
+template <class Body>
+Items run_with(Items items, Body body) noexcept {
+    body();
+    return items;
+}
+
+View head_of(View view) noexcept { return view.prefix_up_to(1); }
+
+View either(View first, View second) noexcept { return first.size() != 0 ? first : second; }
+
+unsigned long capture_a_prefix(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    View const head = view.prefix_up_to(1);
+    items = run_with(std::move(items), [head, &size]() noexcept { size = head.size(); });
+    return size;
+}
+
+unsigned long capture_a_window(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    auto const window = view.window(0, 1);
+    items = run_with(std::move(items), [window, &size]() noexcept { size = window.is_some() ? 1 : 0; });
+    return size;
+}
+
+unsigned long capture_a_chain(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [head = view.window(0, 1).expect("the view holds an element"), &size]() noexcept {
+        size = head.size();
+    });
+    return size;
+}
+
+unsigned long capture_a_strided_view(Items& items, View view, Counts sizes) noexcept {
+    unsigned long size = 0;
+    auto const strided = fc::mint_strided_view(view, sizes, sizes, 0);
+    items = run_with(std::move(items), [&strided, &size]() noexcept { size = strided.is_some() ? 1 : 0; });
+    return size;
+}
+
+unsigned long capture_a_head(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    View const head = head_of(view);
+    items = run_with(std::move(items), [&head, &size]() noexcept { size = head.size(); });
+    return size;
+}
+
+unsigned long capture_an_assigned_prefix(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    View head{};
+    head = view.prefix_up_to(1);
+    items = run_with(std::move(items), [head, &size]() noexcept { size = head.size(); });
+    return size;
+}
+
+unsigned long capture_an_aggregate(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    Window const window{view};
+    items = run_with(std::move(items), [window, &size]() noexcept { size = window.view.size(); });
+    return size;
+}
+
+unsigned long capture_an_aggregate_of_a_prefix(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    Window const window{view.prefix_up_to(1)};
+    items = run_with(std::move(items), [window, &size]() noexcept { size = window.view.size(); });
+    return size;
+}
+
+unsigned long capture_a_branch(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    View const head = view.size() != 0 ? view : View{};
+    items = run_with(std::move(items), [head, &size]() noexcept { size = head.size(); });
+    return size;
+}
+
+unsigned long capture_a_copy(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [view, &size]() noexcept { size = view.size(); });
+    return size;
+}
+
+unsigned long pass_it_on(Items& items, View view) noexcept { return capture_a_copy(items, view); }
+
+unsigned long capture_a_head_in_place(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [head = head_of(view), &size]() noexcept { size = head.size(); });
+    return size;
+}
+
+unsigned long capture_an_expected_window(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    auto window = view.window(0, 1);
+    View const head = std::move(window).expect("the view holds an element");
+    items = run_with(std::move(items), [head, &size]() noexcept { size = head.size(); });
+    return size;
+}
+
+unsigned long capture_a_prefix_of_an_alias(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    View const& alias = view;
+    View const head = alias.prefix_up_to(1);
+    items = run_with(std::move(items), [head, &size]() noexcept { size = head.size(); });
+    return size;
+}
+
+unsigned long capture_a_built_prefix(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    CopiedWindow const window{view.prefix_up_to(1)};
+    items = run_with(std::move(items), [window, &size]() noexcept { size = window.view.size(); });
+    return size;
+}
+
+unsigned long capture_an_assigned_window(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    CopiedWindow window{View{}};
+    window = CopiedWindow{view};
+    items = run_with(std::move(items), [window, &size]() noexcept { size = window.view.size(); });
+    return size;
+}
+
+unsigned long capture_the_second_of_two(Items& items, View other, View view) noexcept {
+    unsigned long size = 0;
+    View const head = either(other, view);
+    items = run_with(std::move(items), [head, &size]() noexcept { size = head.size(); });
+    return size;
+}
+
+unsigned long prefix_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_a_prefix(items, view);
+}
+
+unsigned long window_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_a_window(items, view);
+}
+
+unsigned long chain_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_a_chain(items, view);
+}
+
+unsigned long strided_view_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    fc::HeapArray<unsigned long> sizes{};
+    View const view = items.view();
+    return capture_a_strided_view(items, view, sizes.view());
+}
+
+unsigned long head_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_a_head(items, view);
+}
+
+unsigned long assigned_prefix_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_an_assigned_prefix(items, view);
+}
+
+unsigned long aggregate_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_an_aggregate(items, view);
+}
+
+unsigned long aggregate_of_a_prefix_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_an_aggregate_of_a_prefix(items, view);
+}
+
+unsigned long branch_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_a_branch(items, view);
+}
+
+unsigned long given_on_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return pass_it_on(items, view);
+}
+
+unsigned long head_in_place_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_a_head_in_place(items, view);
+}
+
+unsigned long expected_window_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_an_expected_window(items, view);
+}
+
+unsigned long alias_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_a_prefix_of_an_alias(items, view);
+}
+
+unsigned long built_prefix_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_a_built_prefix(items, view);
+}
+
+unsigned long assigned_window_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_an_assigned_window(items, view);
+}
+
+unsigned long second_of_two_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    Items others{};
+    View const view = items.view();
+    return capture_the_second_of_two(items, others.view(), view);
+}
+
+// A call through a function pointer reaches the same judge as a callee with no
+// body in the unit.
+unsigned long hidden_move_on(Items& items, View view) noexcept;
+
+unsigned long view_beside_an_owner_that_a_hidden_callee_takes() noexcept {
+    Items items{};
+    View const view = items.view();
+    return hidden_move_on(items, view);
+}
+
+struct Holder {
+    Items items{};
+};
+
+template <class Borrow, class Body>
+unsigned long lend_a_member(Holder& holder, Borrow ref, Body&& body) noexcept {
+    unsigned long size = 0;
+    body(holder.items, [&ref, &size]() noexcept { size = ref->size(); });
+    return size;
+}
+
+unsigned long ref_beside_a_lent_member() noexcept {
+    Holder holder{};
+    Items const& items = holder.items;
+    auto const ref = fc::to(items);
+    return lend_a_member(holder, ref, [](Items& lent, auto&& read) noexcept {
+        read();
+        static_cast<void>(lent.size());
+    });
+}
+
+// An owner that holds a borrow copies the borrow through its written copy
+// constructor, and the route of an owner to its own class names no object.
+struct OwningWindow {
+    View view{};
+    Items kept{};
+    explicit OwningWindow(View from) noexcept : view(from) {}
+    OwningWindow(OwningWindow const& other) noexcept : view(other.view) {}
+    OwningWindow& operator=(OwningWindow const&) = delete("a planted window does not assign");
+    ~OwningWindow() { kept = Items{}; }
+};
+
+unsigned long capture_a_copy_of_an_owner(Items& items, OwningWindow const& window) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [copy = window, &size]() noexcept { size = copy.view.size(); });
+    return size;
+}
+
+unsigned long owner_of_a_view_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    OwningWindow const window{items.view()};
+    return capture_a_copy_of_an_owner(items, window);
+}
+
+// The closure holds the borrow of a member of the parameter: a copy of the member
+// in an init capture, a local copy of the member, a member of a local copy of the
+// parameter, a name of a structured binding, a member of the parameter by a
+// reference, as a member through a pointer local reads, and a member through
+// operator-> of a Ref of the parameter.
+struct Counted {
+    View view{};
+    unsigned long count = 0;
+};
+
+unsigned long capture_a_member(Items& items, Counted counted) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [inner = counted.view, &size]() noexcept { size = inner.size(); });
+    return size;
+}
+
+unsigned long capture_a_local_member(Items& items, Counted counted) noexcept {
+    unsigned long size = 0;
+    View const inner = counted.view;
+    items = run_with(std::move(items), [inner, &size]() noexcept { size = inner.size(); });
+    return size;
+}
+
+unsigned long capture_a_member_of_a_copy(Items& items, Counted counted) noexcept {
+    unsigned long size = 0;
+    Counted const copy = counted;
+    items = run_with(std::move(items), [inner = copy.view, &size]() noexcept { size = inner.size(); });
+    return size;
+}
+
+unsigned long capture_a_binding(Items& items, Counted counted) noexcept {
+    unsigned long size = 0;
+    auto const [inner, count] = counted;
+    items = run_with(std::move(items), [inner, &size]() noexcept { size = inner.size(); });
+    return size + count;
+}
+
+unsigned long capture_a_member_by_reference(Items& items, Counted const& counted) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [inner = counted.view, &size]() noexcept { size = inner.size(); });
+    return size;
+}
+
+unsigned long capture_a_member_through_a_ref(Items& items, Counted counted) noexcept {
+    unsigned long size = 0;
+    auto const ref = fc::to(counted);
+    items = run_with(std::move(items), [inner = ref->view, &size]() noexcept { size = inner.size(); });
+    return size;
+}
+
+unsigned long member_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    Counted const counted{items.view(), 0};
+    return capture_a_member(items, counted);
+}
+
+unsigned long local_member_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    Counted const counted{items.view(), 0};
+    return capture_a_local_member(items, counted);
+}
+
+unsigned long member_of_a_copy_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    Counted const counted{items.view(), 0};
+    return capture_a_member_of_a_copy(items, counted);
+}
+
+unsigned long binding_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    Counted const counted{items.view(), 0};
+    return capture_a_binding(items, counted);
+}
+
+unsigned long member_by_reference_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    Counted const counted{items.view(), 0};
+    return capture_a_member_by_reference(items, counted);
+}
+
+unsigned long member_through_a_ref_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    Counted const counted{items.view(), 0};
+    return capture_a_member_through_a_ref(items, counted);
+}
+
+}  // namespace planted

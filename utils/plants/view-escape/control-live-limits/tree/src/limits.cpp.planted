@@ -1,12 +1,15 @@
 // Reads of dead storage that the kind stale-borrow does not see.  No line of this
 // unit names the rule view-escape.  Each function pins one limit: a call that keeps
 // a borrow in a different argument, a container of borrows, the result of a generic
-// closure, a member that keeps a borrow, and a call with no body that takes a class
+// closure, a member that keeps a borrow, a call with no body that takes a class
 // which the unit never completes, and that reaches the owner by a path that the unit
-// cannot see.
+// cannot see, and a borrow in an out argument that a closure reads while a callee
+// moves the owner on.
 #include <foundation/core/Array.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Region.h>
+
+#include <utility>
 
 namespace planted {
 
@@ -70,6 +73,30 @@ unsigned long end_behind_an_incomplete_class(Never& never, Items& items) noexcep
     auto const view = items.view();
     change(never);
     return view.size();
+}
+
+// A callee keeps the View in an out argument and moves the owner into a call,
+// and a closure that the call runs reads the out argument while the owner is
+// away.  A borrow that a call keeps in a different argument names no parameter of
+// the callee.
+template <class Body>
+Items run_with(Items items, Body body) noexcept {
+    body();
+    return items;
+}
+
+unsigned long keep_out_and_move_on(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    Kept kept{};
+    keep(kept, view);
+    items = run_with(std::move(items), [&kept, &size]() noexcept { size = kept.view.size(); });
+    return size;
+}
+
+unsigned long view_kept_out_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return keep_out_and_move_on(items, view);
 }
 
 }  // namespace planted

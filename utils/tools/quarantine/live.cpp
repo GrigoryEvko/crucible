@@ -177,9 +177,19 @@
 //     argument that borrows it ends the borrow when its body ends the owner, or
 //     when its body moves or lends the owner and a closure of a body captures the
 //     parameter of the borrow (the ends beside a borrow).  A capture names the
-//     parameter by a reference or a copy, through a constructor or a local copy,
-//     but a borrow that a different call makes from the parameter, as a window
-//     of a View, names no parameter (fail open).  The record of a body holds no
+//     parameter by a reference or a copy, through a temporary, a local, an
+//     aggregate, a member that holds a borrow, or a branch of a condition.  It
+//     also names the parameter through a borrow that a call derives from it, as a
+//     window of a View, when the route of the result reaches the argument, and
+//     through each argument of a constructor (add_parameters_of).  A constructor
+//     of a class that holds no borrow names its arguments too (fail closed, the
+//     plant plant-live-limits).
+//     A call that gets the borrow joins the captures of its callee.  A borrow that
+//     a call keeps in a different argument, as an out argument, names no
+//     parameter (fail open, the control control-live-limits).  A call through a
+//     function pointer, and a function with no body in the unit, that gets the
+//     owner beside the borrow ends the borrow as a function with no body (fail
+//     closed).  The record of a body holds no
 //     order, so a read of the borrow before the end is a finding too (fail
 //     closed, the plant plant-live-limits), and so is a capture by a closure that
 //     runs before the move.  A closure that ends an owner whose storage holds the
@@ -1214,48 +1224,163 @@ private:
         return found;
     }
 
-    // The place of the parameter that VALUE names, or kNoPlace: the parameter itself,
-    // its object by a reference, or a local that a copy of the parameter starts.
-    int parameter_named_by(tree value) {
+    // Adds to FOUND the place of each parameter that VALUE names: the parameter
+    // itself, its object by a reference, or a local that holds a borrow of the
+    // parameter (parameter_copies_).
+    void add_named_parameters(tree value, std::vector<int>& found) {
         tree const named = value != NULL_TREE ? strip_value(object_of(value)) : NULL_TREE;
         int const place = named != NULL_TREE && TREE_CODE(named) == PARM_DECL ? places_.root(named)
                         : value != NULL_TREE                                  ? place_of_pointee(value)
                                                                               : kNoPlace;
         tree const root = place != kNoPlace ? places_.root_decl(place) : named;
         if (root == NULL_TREE) {
-            return kNoPlace;
+            return;
         }
         if (TREE_CODE(root) == PARM_DECL) {
-            return place;
+            add_index(found, place);
+            return;
         }
         auto copy = parameter_copies_.find(DECL_P(root) ? DECL_UID(root) : 0U);
-        return copy != parameter_copies_.end() ? copy->second : kNoPlace;
+        if (copy != parameter_copies_.end()) {
+            add_indices(found, copy->second);
+        }
     }
 
-    // The place of the parameter that the capture value VALUE names, by a reference
-    // or by a copy, directly, through a temporary, through a constructor or through
-    // a local copy, or kNoPlace (the ends beside a borrow).
-    int captured_parameter(tree value) {
-        int place = parameter_named_by(value);
-        tree init = strip_value(value);
+    // Adds to FOUND the place of each parameter whose borrow the value VALUE holds
+    // (the ends beside a borrow): a parameter that it names, by a reference or by a
+    // copy, directly, through a temporary or through a local, and a parameter that
+    // it derives a borrow from.  A value of a call derives a borrow from an argument
+    // when the value holds a borrow and its route reaches the argument, as a window
+    // of a View reaches the View.  A constructor derives it from each argument, and
+    // an aggregate that holds a borrow from each member.  Each branch of a condition
+    // counts.  Complexity: linear in the nodes of VALUE.
+    void add_parameters_of(tree value, std::vector<int>& found, int depth = 0) {
+        if (value == NULL_TREE || depth >= kTypeDepth) {
+            return;
+        }
+        add_named_parameters(value, found);
+        tree init = strip_value(object_of(value));
         if (init != NULL_TREE && TREE_CODE(init) == TARGET_EXPR) {
-            init = strip_value(TARGET_EXPR_INITIAL(init));
+            init = strip_value(object_of(TARGET_EXPR_INITIAL(init)));
+            add_named_parameters(init, found);
         }
-        if (place == kNoPlace && init != NULL_TREE && init != strip_value(value)) {
-            place = parameter_named_by(init);
+        if (init == NULL_TREE) {
+            return;
         }
-        if (place == kNoPlace && init != NULL_TREE
-            && (TREE_CODE(init) == AGGR_INIT_EXPR || TREE_CODE(init) == CALL_EXPR)) {
-            tree const constructor = cp_get_callee_fndecl_nofold(init);
-            // The first argument of a constructor is the object that it builds, also
-            // in an AGGR_INIT_EXPR.
-            if (constructor != NULL_TREE && DECL_CONSTRUCTOR_P(constructor)) {
-                for (int index = 1; index < argument_count(init) && place == kNoPlace; ++index) {
-                    place = captured_parameter(argument_at(init, index));
+        // A name of a structured binding and a capture in a closure read through
+        // their value.
+        if (VAR_P(init) && DECL_HAS_VALUE_EXPR_P(init)) {
+            add_parameters_of(DECL_VALUE_EXPR(init), found, depth + 1);
+            return;
+        }
+        switch (TREE_CODE(init)) {
+            case COMPONENT_REF:
+            case ARRAY_REF:
+            case INDIRECT_REF:
+                add_parameters_of_part(init, found, depth);
+                return;
+            case COND_EXPR:
+                add_parameters_of(TREE_OPERAND(init, 1), found, depth + 1);
+                add_parameters_of(TREE_OPERAND(init, 2), found, depth + 1);
+                return;
+            case COMPOUND_EXPR:
+                add_parameters_of(TREE_OPERAND(init, 1), found, depth + 1);
+                return;
+            case CONSTRUCTOR: {
+                if (!holds_borrow(TREE_TYPE(init))) {
+                    return;
                 }
+                unsigned position = 0;
+                tree element = NULL_TREE;
+                FOR_EACH_CONSTRUCTOR_VALUE(CONSTRUCTOR_ELTS(init), position, element) {
+                    add_parameters_of(element, found, depth + 1);
+                }
+                return;
+            }
+            case CALL_EXPR:
+            case AGGR_INIT_EXPR:
+                add_derived_parameters(init, found, depth + 1);
+                return;
+            default:
+                return;
+        }
+    }
+
+    // Adds to FOUND the parameter of the object whose member, element or pointee
+    // PART reads by value, when PART holds a borrow: the parameter at the root of
+    // the place, or the parameters of a local at the root (the ends beside a
+    // borrow).  A part of the result of a call, as a member through operator-> of
+    // a Ref, gives the parameters that the call derives its result from.  A member
+    // that holds no borrow, as a count, gives none.
+    void add_parameters_of_part(tree part, std::vector<int>& found, int depth) {
+        if (!holds_borrow(TREE_TYPE(part))) {
+            return;
+        }
+        int const place = place_of_lvalue(part);
+        tree const root = place != kNoPlace ? places_.root_decl(place) : NULL_TREE;
+        if (root == NULL_TREE) {
+            if (tree const call = base_call(part)) {
+                add_parameters_of(call, found, depth + 1);
+            }
+            return;
+        }
+        if (TREE_CODE(root) == PARM_DECL) {
+            add_index(found, place);
+            return;
+        }
+        auto copy = parameter_copies_.find(DECL_UID(root));
+        if (copy != parameter_copies_.end()) {
+            add_indices(found, copy->second);
+        }
+    }
+
+    // Adds to FOUND the parameters of each argument of CALL that the borrow of its
+    // result reaches (the ends beside a borrow).  A constructor gives each of its
+    // arguments, because the copy or the move of an owner that holds a borrow, as a
+    // handle of a channel, carries the borrow, and the route of an owner to its own
+    // class names no object (fail closed).  The first argument of a constructor is
+    // the object that it builds, also in an AGGR_INIT_EXPR.
+    void add_derived_parameters(tree call, std::vector<int>& found, int depth) {
+        tree const callee = cp_get_callee_fndecl_nofold(call);
+        bool const is_constructor = callee != NULL_TREE && DECL_CONSTRUCTOR_P(callee);
+        tree const type = type_of_callee(call, callee);
+        tree const result = is_constructor    ? DECL_CONTEXT(callee)
+                          : type != NULL_TREE ? TREE_TYPE(type)
+                                              : TREE_TYPE(call);
+        if (!is_constructor && (result == NULL_TREE || !holds_borrow(result))) {
+            return;
+        }
+        tree parameter = type != NULL_TREE ? TYPE_ARG_TYPES(type) : NULL_TREE;
+        for (int index = 0; index < argument_count(call); ++index) {
+            tree const parameter_type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
+            parameter = parameter != NULL_TREE ? TREE_CHAIN(parameter) : NULL_TREE;
+            tree const argument = argument_at(call, index);
+            if ((is_constructor && index == 0) || argument == NULL_TREE
+                || (parameter_type != NULL_TREE && VOID_TYPE_P(parameter_type))) {
+                continue;
+            }
+            tree const given = parameter_type != NULL_TREE ? parameter_type : TREE_TYPE(argument);
+            tree const held = is_indirect_type(given) ? TREE_TYPE(given) : given;
+            bool const is_reached =
+                is_constructor || (held != NULL_TREE && borrow_route(result, held).reach != Reach::none);
+            if (is_reached) {
+                add_parameters_of(argument, found, depth);
             }
         }
-        return place;
+    }
+
+    // The local at the root of PLACE holds the borrows of the parameters that VALUE
+    // holds, when no dereference leads to PLACE (the ends beside a borrow).  The
+    // map joins each store, so a later store keeps the earlier parameters.
+    void note_parameter_copies(int place, tree value) {
+        if (place == kNoPlace || places_.has_dereference(place) || !VAR_P(places_.root_decl(place))) {
+            return;
+        }
+        std::vector<int> found;
+        add_parameters_of(value, found);
+        if (!found.empty()) {
+            add_indices(parameter_copies_[DECL_UID(places_.root_decl(place))], found);
+        }
     }
 
     // The loans of the value VALUE of the member FIELD of an object.  CLOSURE is
@@ -1266,8 +1391,9 @@ private:
         unsigned const closure_id = closure != NULL_TREE ? TYPE_UID(TYPE_MAIN_VARIANT(closure)) : 0U;
         std::vector<int> found;
         if (is_field && closure_id != 0) {
-            int const parameter = captured_parameter(value);
-            if (parameter != kNoPlace) {
+            std::vector<int> parameters;
+            add_parameters_of(value, parameters);
+            for (int parameter : parameters) {
                 visit_effects(parameter, [](Effect& effect) {
                     effect.all.is_captured = true;
                     effect.inner.is_captured = true;
@@ -2146,10 +2272,7 @@ private:
         reads_cursors_ = outer;
         transfer_temporary(value, places_.root(decl));
         store_local(decl, value);
-        int const copied = captured_parameter(value);
-        if (copied != kNoPlace) {
-            parameter_copies_[DECL_UID(decl)] = copied;
-        }
+        note_parameter_copies(places_.root(decl), value);
     }
 
     void walk_branches(tree condition, tree first, tree second) {
@@ -2374,6 +2497,7 @@ private:
         walk_expression(value);
         walk_target(target);
         int const place = place_of_lvalue(target);
+        note_parameter_copies(place, value);
         if (TREE_CODE(node) == INIT_EXPR) {
             transfer_temporary(value, place);
         } else {
@@ -3119,6 +3243,7 @@ private:
         }
         if (argument.is_borrow) {
             take_borrow(facts, argument, index);
+            pass_borrowed_parameters(facts, argument, index);
             return;
         }
         if (!argument.is_write) {
@@ -3221,6 +3346,20 @@ private:
             if (facts.is_body_call) {
                 note_lent(place, argument.parameter);
             }
+        }
+    }
+
+    // A call that gets a borrow of a parameter takes that parameter, so the effects of
+    // the callee on its own parameter join the effects of the parameter, as a capture
+    // in a closure of the callee (the ends beside a borrow).
+    void pass_borrowed_parameters(const CallFacts& facts, const Argument& argument, std::size_t index) {
+        if (facts.callee == NULL_TREE) {
+            return;
+        }
+        std::vector<int> parameters;
+        add_parameters_of(argument.node, parameters);
+        for (int place : parameters) {
+            note_taking(place, taking_of_parameter(facts.callee, index, argument.held));
         }
     }
 
@@ -3393,6 +3532,7 @@ private:
         if (places_.has_dereference(place) || !holds_borrow(TREE_TYPE(places_.root_decl(place)))) {
             return;
         }
+        note_parameter_copies(place, arguments[1].node);
         int const id = root_id(place);
         if (places_.depth(place) == 0) {
             state_.loans.erase(id);
@@ -3414,6 +3554,7 @@ private:
             || !holds_borrow(TREE_TYPE(object))) {
             return;
         }
+        note_parameter_copies(places_.root(object), call);
         std::vector<int> loans = loans_of_call(call);
         int const id = static_cast<int>(DECL_UID(object));
         state_.loans.erase(id);
@@ -3443,9 +3584,10 @@ private:
     // True while the event in hand takes an object by a move.
     bool is_rvalue_end_ = false;
     std::unordered_map<int, int> parameters_;
-    // The parameter that a local copy of it, or of its address, names (the ends
-    // beside a borrow).
-    std::unordered_map<unsigned, int> parameter_copies_;
+    // The places of the parameters whose borrows a local holds, by the DECL_UID of
+    // the local: a copy of a parameter, of its address, or a borrow derived from it
+    // (the ends beside a borrow).
+    std::unordered_map<unsigned, std::vector<int>> parameter_copies_;
     Places places_;
     std::vector<Loan> loans_;
     std::map<decltype(std::declval<Loan>().key(UNKNOWN_LOCATION)), int> loan_index_;

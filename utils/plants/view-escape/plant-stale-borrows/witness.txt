@@ -47,6 +47,23 @@
 # (117).  A callee gives the owner to a call that ends it, and then it reads the View
 # (123).  The closure holds a copy of the borrow through a written copy constructor
 # (158), through a constructor in the capture (164), and through a local copy (170).
+# In the unit routes the closure holds a borrow that the callee derives from the
+# parameter of the borrow, while the owner is away: a local from a member door
+# (174), an Option of a window (180), an init capture of a chain through a temporary
+# (186), a StridedView of a free door (193), a local from a free function (199), an
+# assignment to a local (205), an aggregate of the parameter (211) and of a derived
+# borrow (217), a branch of a condition (223), the parameter given on to a callee
+# whose closure captures it (229), an init capture of a free function (235), an
+# Option moved into expect() (241), a reference alias (247), a class with a written
+# constructor (253), an assignment through a written operator= (259), and the second
+# argument of a call with two borrows (266).  A callee with no body in the unit gets
+# the owner and the borrow (276).  A callee lends a member of the owner to its body,
+# and the body runs a closure that reads a Ref of the member in the lend (294).  An
+# owner that holds a View copies it through a written copy constructor into a
+# capture (320).  The closure holds the borrow of a member of the parameter: a copy
+# of the member in an init capture (376), a local copy of the member (382), a member
+# of a local copy (388), a name of a structured binding (394), a member by a
+# reference (400), and a member through operator-> of a Ref (406).
 # In the unit receiver the receiver of a borrow match
 # stands behind the operator-> of a Box, and the arm ends the Box (23).
 #
@@ -287,6 +304,60 @@ error beside src/beside.cpp:123 | this use reads a borrow of items in an argumen
 error beside src/beside.cpp:158 | this use reads a borrow of items in window after a call of planted::move_on_and_copy_window with items, which moves an owner of the borrow
 error beside src/beside.cpp:164 | this use reads a borrow of items in an argument of the call after a call of planted::move_on_and_build with items, which moves an owner of the borrow
 error beside src/beside.cpp:170 | this use reads a borrow of items in an argument of the call after a call of planted::move_on_and_copy_local with items, which moves an owner of the borrow
+
+compile routes src/routes.cpp
+flag routes -freflection
+exit routes fail
+finding routes view-escape stale-borrow src/routes.cpp:174:28 | borrow of items in an argument of the call after a call of planted::capture_a_prefix with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:180:28 | borrow of items in an argument of the call after a call of planted::capture_a_window with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:186:27 | borrow of items in an argument of the call after a call of planted::capture_a_chain with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:193:34 | borrow of items in an argument of the call after a call of planted::capture_a_strided_view with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:199:26 | borrow of items in an argument of the call after a call of planted::capture_a_head with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:205:38 | borrow of items in an argument of the call after a call of planted::capture_an_assigned_prefix with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:211:32 | borrow of items in an argument of the call after a call of planted::capture_an_aggregate with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:217:44 | borrow of items in an argument of the call after a call of planted::capture_an_aggregate_of_a_prefix with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:223:28 | borrow of items in an argument of the call after a call of planted::capture_a_branch with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:229:22 | borrow of items in an argument of the call after a call of planted::pass_it_on with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:235:35 | borrow of items in an argument of the call after a call of planted::capture_a_head_in_place with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:241:38 | borrow of items in an argument of the call after a call of planted::capture_an_expected_window with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:247:40 | borrow of items in an argument of the call after a call of planted::capture_a_prefix_of_an_alias with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:253:34 | borrow of items in an argument of the call after a call of planted::capture_a_built_prefix with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:259:38 | borrow of items in an argument of the call after a call of planted::capture_an_assigned_window with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:266:37 | borrow of items in an argument of the call after a call of planted::capture_the_second_of_two with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:276:26 | borrow of items in an argument of the call after a call of planted::hidden_move_on with items, which reaches a function with no body in this unit
+finding routes view-escape stale-borrow src/routes.cpp:294:25 | borrow of holder.items in an argument of the call after a call of planted::lend_a_member with holder, which lends the object to a closure under a unique borrow
+finding routes view-escape stale-borrow src/routes.cpp:320:38 | borrow of items in window after a call of planted::capture_a_copy_of_an_owner with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:376:28 | borrow of items in an argument of the call after a call of planted::capture_a_member with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:382:34 | borrow of items in an argument of the call after a call of planted::capture_a_local_member with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:388:38 | borrow of items in an argument of the call after a call of planted::capture_a_member_of_a_copy with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:394:29 | borrow of items in an argument of the call after a call of planted::capture_a_binding with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:400:41 | borrow of items in counted after a call of planted::capture_a_member_by_reference with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:406:42 | borrow of items in an argument of the call after a call of planted::capture_a_member_through_a_ref with items, which moves an owner of the borrow
+error routes src/routes.cpp:174 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_prefix with items, which moves an owner of the borrow
+error routes src/routes.cpp:180 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_window with items, which moves an owner of the borrow
+error routes src/routes.cpp:186 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_chain with items, which moves an owner of the borrow
+error routes src/routes.cpp:193 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_strided_view with items, which moves an owner of the borrow
+error routes src/routes.cpp:199 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_head with items, which moves an owner of the borrow
+error routes src/routes.cpp:205 | this use reads a borrow of items in an argument of the call after a call of planted::capture_an_assigned_prefix with items, which moves an owner of the borrow
+error routes src/routes.cpp:211 | this use reads a borrow of items in an argument of the call after a call of planted::capture_an_aggregate with items, which moves an owner of the borrow
+error routes src/routes.cpp:217 | this use reads a borrow of items in an argument of the call after a call of planted::capture_an_aggregate_of_a_prefix with items, which moves an owner of the borrow
+error routes src/routes.cpp:223 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_branch with items, which moves an owner of the borrow
+error routes src/routes.cpp:229 | this use reads a borrow of items in an argument of the call after a call of planted::pass_it_on with items, which moves an owner of the borrow
+error routes src/routes.cpp:235 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_head_in_place with items, which moves an owner of the borrow
+error routes src/routes.cpp:241 | this use reads a borrow of items in an argument of the call after a call of planted::capture_an_expected_window with items, which moves an owner of the borrow
+error routes src/routes.cpp:247 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_prefix_of_an_alias with items, which moves an owner of the borrow
+error routes src/routes.cpp:253 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_built_prefix with items, which moves an owner of the borrow
+error routes src/routes.cpp:259 | this use reads a borrow of items in an argument of the call after a call of planted::capture_an_assigned_window with items, which moves an owner of the borrow
+error routes src/routes.cpp:266 | this use reads a borrow of items in an argument of the call after a call of planted::capture_the_second_of_two with items, which moves an owner of the borrow
+error routes src/routes.cpp:276 | this use reads a borrow of items in an argument of the call after a call of planted::hidden_move_on with items, which reaches a function with no body in this unit
+error routes src/routes.cpp:294 | this use reads a borrow of holder.items in an argument of the call after a call of planted::lend_a_member with holder, which lends the object to a closure under a unique borrow
+error routes src/routes.cpp:320 | this use reads a borrow of items in window after a call of planted::capture_a_copy_of_an_owner with items, which moves an owner of the borrow
+error routes src/routes.cpp:376 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_member with items, which moves an owner of the borrow
+error routes src/routes.cpp:382 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_local_member with items, which moves an owner of the borrow
+error routes src/routes.cpp:388 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_member_of_a_copy with items, which moves an owner of the borrow
+error routes src/routes.cpp:394 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_binding with items, which moves an owner of the borrow
+error routes src/routes.cpp:400 | this use reads a borrow of items in counted after a call of planted::capture_a_member_by_reference with items, which moves an owner of the borrow
+error routes src/routes.cpp:406 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_member_through_a_ref with items, which moves an owner of the borrow
 
 compile through src/through.cpp
 flag through -freflection

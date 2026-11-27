@@ -1,7 +1,8 @@
 # The rule does not see these reads of dead storage, and no line names the rule
 # view-escape: a call that keeps a borrow in a different argument, a container of
-# borrows, the result of a generic closure, a member that keeps a borrow, and a call
-# with no body that takes a class which the unit never completes.
+# borrows, the result of a generic closure, a member that keeps a borrow, a call
+# with no body that takes a class which the unit never completes, and a borrow in
+# an out argument that a closure reads while a callee moves the owner on.
 
 compile limits src/limits.cpp
 flag limits -freflection

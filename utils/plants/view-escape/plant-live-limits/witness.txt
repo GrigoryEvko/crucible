@@ -5,6 +5,8 @@
 # borrow in an arm of a match that takes the owner (94), and a second owner of the same
 # class that leaves the object (101).  The record of a callee holds no order, so a
 # callee that reads a borrow and then ends the owner beside it ends the borrow (119).
+# A constructor names each of its arguments, so a capture of a class that holds no
+# borrow, built from the View, counts as a capture of the View (145).
 # In the unit numbers a function whose parameter
 # names an owner of a resource by its number by an rvalue reference ends the number,
 # also in a class that keeps the owner (63) and in a function that gives it back (70).
@@ -22,6 +24,7 @@ finding limits view-escape stale-borrow src/limits.cpp:87:12 | borrow of box in 
 finding limits view-escape stale-borrow src/limits.cpp:94:35 | borrow of items in a closure of foundation::core::Option::match after a move of option
 finding limits view-escape stale-borrow src/limits.cpp:101:12 | borrow of two in view after the end of the scope of items
 finding limits view-escape stale-borrow src/limits.cpp:119:24 | borrow of items in an argument of the call after a call of planted::read_and_end with items
+finding limits view-escape stale-borrow src/limits.cpp:145:39 | borrow of items in an argument of the call after a call of planted::move_on_and_capture_a_count with items, which moves an owner of the borrow
 error limits src/limits.cpp:48 | this use reads a borrow of items in view after an assignment of items
 error limits src/limits.cpp:55 | this use reads a borrow of pair in view after a call of foundation::core::FixedArray::set with pair
 error limits src/limits.cpp:61 | this use reads a borrow of two in view after a call of planted::Two::replace_second with two
@@ -32,6 +35,7 @@ error limits src/limits.cpp:87 | this use reads a borrow of box in view after a 
 error limits src/limits.cpp:94 | this use reads a borrow of items in a closure of foundation::core::Option::match after a move of option
 error limits src/limits.cpp:101 | this use reads a borrow of two in view after the end of the scope of items
 error limits src/limits.cpp:119 | this use reads a borrow of items in an argument of the call after a call of planted::read_and_end with items
+error limits src/limits.cpp:145 | this use reads a borrow of items in an argument of the call after a call of planted::move_on_and_capture_a_count with items, which moves an owner of the borrow
 
 compile numbers src/numbers.cpp
 flag numbers -freflection

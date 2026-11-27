@@ -3,6 +3,7 @@
 // by a reference to const, the owner by a reference that the callee only reads, and
 // an owner that the callee consumes and keeps.
 #include <foundation/core/Array.h>
+#include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 
 #include <utility>
@@ -77,6 +78,119 @@ unsigned long view_beside_an_owner_that_moves_on() noexcept {
     Items items{};
     View const view = items.view();
     return move_on_and_read(items, view);
+}
+
+// A callee moves the owner on, and its closure holds a value that holds no borrow
+// of the View: a call on the View whose result holds no borrow, a borrow of a
+// type that cannot name an element of the View, a borrow derived from a different
+// parameter, and a member that holds no borrow.  A derived borrow that no closure
+// captures, and a View that a callee reads outside a closure, read live storage
+// too.
+using Reals = fc::View<double const>;
+
+Reals reals_beside(View view, Reals reals) noexcept {
+    static_cast<void>(view.size());
+    return reals;
+}
+
+unsigned long capture_a_count(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [count = view.size(), &size]() noexcept { size = count; });
+    return size;
+}
+
+unsigned long capture_a_borrow_of_reals(Items& items, View view, Reals reals) noexcept {
+    unsigned long size = 0;
+    Reals const kept = reals_beside(view, reals);
+    items = run_with(std::move(items), [kept, &size]() noexcept { size = kept.size(); });
+    return size;
+}
+
+unsigned long keep_a_prefix_out_of_the_closure(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    View const head = view.prefix_up_to(1);
+    items = run_with(std::move(items), [&size]() noexcept { size = 1; });
+    return size + head.size();
+}
+
+unsigned long capture_a_prefix_of_reals(Items& items, View view, Reals reals) noexcept {
+    unsigned long size = view.size();
+    Reals const kept = reals.prefix_up_to(1);
+    items = run_with(std::move(items), [kept, &size]() noexcept { size = kept.size(); });
+    return size;
+}
+
+unsigned long pass_on_and_read(Items& items, View view) noexcept { return move_on_and_read(items, view); }
+
+struct Counted {
+    View view{};
+    unsigned long count = 0;
+};
+
+unsigned long capture_a_count_member(Items& items, Counted counted) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [count = counted.count, &size]() noexcept { size = count; });
+    return size;
+}
+
+unsigned long count_member_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    Counted const counted{items.view(), 0};
+    return capture_a_count_member(items, counted);
+}
+
+unsigned long count_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return capture_a_count(items, view);
+}
+
+unsigned long reals_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    fc::HeapArray<double> reals{};
+    View const view = items.view();
+    return capture_a_borrow_of_reals(items, view, reals.view());
+}
+
+unsigned long prefix_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return keep_a_prefix_out_of_the_closure(items, view);
+}
+
+unsigned long prefix_of_reals_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    fc::HeapArray<double> reals{};
+    View const view = items.view();
+    return capture_a_prefix_of_reals(items, view, reals.view());
+}
+
+unsigned long view_given_on_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return pass_on_and_read(items, view);
+}
+
+// A callee lends a member of the owner to its body, and reads the borrow after the
+// lend, with no closure.
+struct Holder {
+    Items items{};
+};
+
+template <class Borrow, class Body>
+unsigned long lend_a_member_and_read(Holder& holder, Borrow ref, Body&& body) noexcept {
+    body(holder.items, []() noexcept {});
+    return ref->size();
+}
+
+unsigned long ref_beside_a_lent_member() noexcept {
+    Holder holder{};
+    Items const& items = holder.items;
+    auto const ref = fc::to(items);
+    return lend_a_member_and_read(holder, ref, [](Items& lent, auto&& read) noexcept {
+        read();
+        static_cast<void>(lent.size());
+    });
 }
 
 }  // namespace planted
