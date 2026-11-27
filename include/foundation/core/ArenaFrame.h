@@ -700,7 +700,9 @@ public:
     void view() const&& = delete("a View of a temporary parcel outlives its arena: name the parcel first");
 
     // The bytes of each block of the arena of the parcel.
-    [[nodiscard]] constexpr std::size_t retained_bytes() const noexcept { return arena_->retained_bytes(); }
+    [[nodiscard]] constexpr std::size_t retained_bytes() const noexcept {
+        return with_view(arena_, [](BumpArena<Family> const& arena) noexcept { return arena.retained_bytes(); });
+    }
 
 private:
     friend class ArenaFrameDoor;
@@ -786,8 +788,10 @@ template <class... Refused, class Family, class... Ts, class Body,
 // the four doors of this header are its friends: each door opens a frame of
 // the scope brand of its own call site, on an arena that it holds, and only
 // the mint seals a Box with the seal of its own frame.  A frame is a
-// prvalue, so a door builds it in place by guaranteed elision.  A home owner
-// row of utils/rule-table.txt keeps this definition in this header.
+// prvalue, so a door builds it in place by guaranteed elision.
+// detail::FrameDoor (foundation/core/Frame.h) befriends it, so it reads the
+// arena of the Box that such a door holds by value.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
 class ArenaFrameDoor final : ::foundation::NoObject<ArenaFrameDoor> {
     template <class... Refused, class Family, class Body, ::foundation::brand::IsBrand Fresh>
         requires(sizeof...(Refused) == 0) && ArenaFrameBody<Body, Family, Fresh>
@@ -811,10 +815,12 @@ class ArenaFrameDoor final : ::foundation::NoObject<ArenaFrameDoor> {
 
     // A frame on the arena of a Box.  The door that calls it holds the Box by
     // value, so no other name of the Box can end the arena while the frame is
-    // open.  operator-> of the Box gives the arena that the Box holds.
+    // open.  frame_object_ of the Box gives the arena that the Box holds, with
+    // the key of the frame doors (foundation/core/Frame.h), which this door
+    // takes only for the Box of such a door.
     template <class Family, class Fresh>
     [[nodiscard]] static ArenaFrame<Family, Fresh> open(Box<BumpArena<Family>>& arena) noexcept {
-        return ArenaFrame<Family, Fresh>{*arena.operator->()};
+        return ArenaFrame<Family, Fresh>{frame_object_(detail::FrameDoor::key(), arena)};
     }
 
     // A frame on the arena of the Box of a parcel.

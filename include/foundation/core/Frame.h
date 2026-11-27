@@ -279,6 +279,7 @@ class StageFrameKeyDoor;
 class DispatchFrameKeyDoor;
 class ParallelForFrameKeyDoor;
 class LaneRingFrameKeyDoor;
+class ArenaFrameDoor;
 
 namespace detail {
 
@@ -327,6 +328,7 @@ class FrameDoor final : ::foundation::NoObject<FrameDoor> {
     friend class ::foundation::core::DispatchFrameKeyDoor;
     friend class ::foundation::core::ParallelForFrameKeyDoor;
     friend class ::foundation::core::LaneRingFrameKeyDoor;
+    friend class ::foundation::core::ArenaFrameDoor;
 
     [[nodiscard]] CRUCIBLE_INLINE static constexpr FrameKey key() noexcept { return FrameKey{}; }
 };
