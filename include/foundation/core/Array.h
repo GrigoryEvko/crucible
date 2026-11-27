@@ -1542,8 +1542,14 @@ struct MaskedArrayState {
         return MaskedArrayState{};
     }
 
-    static constexpr void release(MaskedArrayState const& state) noexcept {
-        release_heap_elements_<T, Align>(state.first, state.count);
+    // Ends the elements and gives the storage back, as the release of a
+    // HeapArrayState does: the test of null storage always inlines, so the
+    // release of a state that a move or a take emptied folds to no code in
+    // its caller.
+    CRUCIBLE_INLINE static constexpr void release(MaskedArrayState const& state) noexcept {
+        if (state.first != nullptr) {
+            release_heap_elements_<T, Align>(state.first, state.count);
+        }
     }
 };
 
