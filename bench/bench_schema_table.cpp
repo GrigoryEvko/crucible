@@ -136,6 +136,98 @@ using FullName = ::fixy::FixedText<crucible::SCHEMA_NAME_MAX>;
     return image;
 }
 
+// The state of each row lives in a home of the row (bench::RowHome), so the
+// distance from the state to the frame of the timed loop depends only on the
+// code of the row.
+
+// The count of the names of the table of the lookup rows.
+constexpr uint32_t kTableNames = 250;
+
+// The allocation capability of the rows of the name table.
+constexpr ::foundation::effects::Alloc kAllocation = ::foundation::effects::testing::test().alloc;
+
+// The key of a row that misses, which the body steps in each call.
+struct MissKey {
+    uint64_t miss_key = 0;
+};
+
+// A table of kTableNames names, their hashes, the position of the next hash,
+// the hash in the middle, and the key of a miss.
+struct LookupRow {
+    SchemaTable table{};
+    ::fixy::FixedArray<SchemaHash, kTableNames> hashes{};
+    ::fixy::Index<kTableNames> idx = ::fixy::index<0>();
+    SchemaHash hot{};
+    uint64_t miss_key = 0xDEADBEEFCAFEBABEULL;
+
+    LookupRow() noexcept {
+        // The view and each registration ask for the context of a Vigil's
+        // producer claim.  The bench uses no Vigil, so it takes that context
+        // from the test door.  The bench has one writer, so the writer of the
+        // claim takes the section with one compare-exchange.
+        constexpr crucible::VigilFgCtx writer = ::foundation::effects::testing::foreground<crucible::Vigil>();
+        const auto mutable_view = table.mint_mutable_view(writer).expect("a fresh table mints a mutable view");
+        for (::fixy::Index<kTableNames> const i : hashes.indices()) {
+            const uint64_t h = 0x9E3779B97F4A7C15ULL * (i.raw() + 1);
+            hashes.set(i, SchemaHash{h});
+            // The names are texts of the run time, so they come through the
+            // validator of a name from outside.
+            ::fixy::FixedText<16> name{};
+            const ::fixy::TextView name_view = ::fixy::format(name, "aten::op{}", i.raw())
+                                                   .expect("aten::op and a number below 250 fit in 16 characters");
+            const crucible::SanitizedSchemaName sanitized =
+                crucible::sanitize_schema_name(hashes.at(i),
+                                               ::fixy::mint_tagged<::fixy::tags::source::External>(name_view))
+                    .expect("each name of the bench passes the validator");
+            const bool was_registered =
+                crucible::register_schema_name_in(table, writer, kAllocation, mutable_view, sanitized).is_ok();
+            CRUCIBLE_FATAL_INVARIANT(was_registered);
+        }
+        hot = hashes.at(::fixy::index<kTableNames / 2>());
+    }
+};
+
+// The hashes of a name table of kTimedNames names, and the image of a trace
+// with that table.
+struct NameTableRow {
+    ::fixy::FixedList<uint64_t, kTimedNames> table_hashes{};
+    NameTableImage image = make_name_table_image();
+
+    NameTableRow() noexcept {
+        for (uint64_t index = 1; index <= kTimedNames; ++index) {
+            const bool is_held = table_hashes.append(kSpread * index).is_ok();
+            CRUCIBLE_FATAL_INVARIANT(is_held);
+        }
+    }
+};
+
+// The name that no row of the generated table holds, and its hash.
+constexpr ::fixy::TextView kOutsideName{"crucible::outside_op"};
+constexpr SchemaHash kOutsideHash{0x5DEECE66DULL};
+
+// The names and the hashes of the first and the last row of the generated
+// table, and the hash of no row.
+struct ReserveRow {
+    FullName first_name = full_name_of(crucible::vessel::aten_op_row<0>());
+    FullName last_name = full_name_of(crucible::vessel::aten_op_row<crucible::vessel::kAtenOpCount - 1>());
+    SchemaHash first_hash{crucible::vessel::aten_op_row<0>().schema_hash};
+    SchemaHash last_hash{crucible::vessel::aten_op_row<crucible::vessel::kAtenOpCount - 1>().schema_hash};
+    SchemaHash outside_hash = kOutsideHash;
+};
+
+// The report of a row whose step runs on a name table in a home of its own.
+template <typename Step>
+[[nodiscard]] bench::Report run_on_name_table(::fixy::TextView name, Step step) {
+    return bench::run_in_home(name, []() noexcept { return NameTableRow{}; }, step);
+}
+
+// The report of a row whose step runs on the reserve rows in a home of its
+// own.
+template <typename Step>
+[[nodiscard]] bench::Report run_on_reserve(::fixy::TextView name, Step step) {
+    return bench::run_in_home(name, []() noexcept { return ReserveRow{}; }, step);
+}
+
 }  // namespace
 
 int main() {
@@ -144,125 +236,79 @@ int main() {
 
     const bench::JsonTail json = bench::env_json();
 
-    constexpr uint32_t N = 250;
-    SchemaTable table{};
-    // The view and each registration ask for the context of a Vigil's
-    // producer claim.  The bench uses no Vigil, so it takes that context from
-    // the test door.  The bench has one writer, so the writer of the claim
-    // takes the section with one compare-exchange.
-    constexpr crucible::VigilFgCtx writer = ::foundation::effects::testing::foreground<crucible::Vigil>();
-    const auto mutable_view = table.mint_mutable_view(writer).expect("a fresh table mints a mutable view");
-    ::fixy::FixedArray<SchemaHash, N> hashes{};
-    for (::fixy::Index<N> const i : hashes.indices()) {
-        const uint64_t h = 0x9E3779B97F4A7C15ULL * (i.raw() + 1);
-        hashes.set(i, SchemaHash{h});
-        // The names are texts of the run time, so they come through the
-        // validator of a name from outside.
-        ::fixy::FixedText<16> name{};
-        const ::fixy::TextView name_view =
-            ::fixy::format(name, "aten::op{}", i.raw()).expect("aten::op and a number below 250 fit in 16 characters");
-        const crucible::SanitizedSchemaName sanitized =
-            crucible::sanitize_schema_name(hashes.at(i), ::fixy::mint_tagged<::fixy::tags::source::External>(name_view))
-                .expect("each name of the bench passes the validator");
-        const bool was_registered =
-            crucible::register_schema_name_in(table, writer, ::foundation::effects::testing::test().alloc, mutable_view,
-                                              sanitized)
-                .is_ok();
-        CRUCIBLE_FATAL_INVARIANT(was_registered);
-    }
-
     bench::print("=== schema_table ===\n");
-    bench::print("  table entries: {} (log2 = ~8 probes)\n\n", N);
+    bench::print("  table entries: {} (log2 = ~8 probes)\n\n", kTableNames);
 
     ::fixy::FixedArray<bench::Report, 4> reports{
-        [&] {
-            // The lookup of the record path: the global table, then the late
-            // table, each a static of its door.  No name is in the two tables.
-            uint64_t miss_key = 0x5DEECE66DULL;
-            return bench::run("schema_name miss (the two static tables)", [&] {
-                miss_key = miss_key * 6364136223846793005ULL + 1442695040888963407ULL;
-                const bool is_found = crucible::schema_name(SchemaHash{miss_key}).is_some();
+        // The lookup of the record path: the global table, then the late
+        // table, each a static of its door.  No name is in the two tables.
+        bench::run_in_home(
+            "schema_name miss (the two static tables)", []() noexcept { return MissKey{.miss_key = 0x5DEECE66DULL}; },
+            [](MissKey& row) noexcept {
+                row.miss_key = row.miss_key * 6364136223846793005ULL + 1442695040888963407ULL;
+                const bool is_found = crucible::schema_name(SchemaHash{row.miss_key}).is_some();
                 bench::do_not_optimize(is_found);
-            });
-        }(),
-        [&] {
-            // The rotation (idx + 1) % N stays below N, so the compiler folds
-            // the check of the index and the body holds no branch for it.
-            // The index is below N, so its 32-bit value is exact, and the
-            // remainder is the 32-bit remainder of a counter of 32 bits.
-            ::fixy::Index<N> idx = ::fixy::index<0>();
-            return bench::run("lookup hit  (250-entry table)", [&] {
-                const auto h = hashes.at(idx);
-                idx = ::fixy::Index<N>::check((::fixy::wrapping_narrow<uint32_t>(idx.raw()) + 1) % N)
-                          .expect("a rotation modulo N stays below N");
-                const bool is_found = table.lookup(h).is_some();
+            }),
+        // The rotation (idx + 1) % N stays below N, so the compiler folds the
+        // check of the index and the body holds no branch for it.  The index
+        // is below N, so its 32-bit value is exact, and the remainder is the
+        // 32-bit remainder of a counter of 32 bits.
+        bench::run_in_home(
+            "lookup hit  (250-entry table)", []() noexcept { return LookupRow{}; },
+            [](LookupRow& row) noexcept {
+                const auto h = row.hashes.at(row.idx);
+                row.idx = ::fixy::Index<kTableNames>::check((::fixy::wrapping_narrow<uint32_t>(row.idx.raw()) + 1)
+                                                            % kTableNames)
+                              .expect("a rotation modulo N stays below N");
+                const bool is_found = row.table.lookup(h).is_some();
                 bench::do_not_optimize(is_found);
-            });
-        }(),
-        [&] {
-            uint64_t miss_key = 0xDEADBEEFCAFEBABEULL;
-            return bench::run("lookup miss (returns no name)", [&] {
-                miss_key = miss_key * 6364136223846793005ULL + 1442695040888963407ULL;
-                const bool is_found = table.lookup(SchemaHash{miss_key}).is_some();
+            }),
+        bench::run_in_home(
+            "lookup miss (returns no name)", []() noexcept { return LookupRow{}; },
+            [](LookupRow& row) noexcept {
+                row.miss_key = row.miss_key * 6364136223846793005ULL + 1442695040888963407ULL;
+                const bool is_found = row.table.lookup(SchemaHash{row.miss_key}).is_some();
                 bench::do_not_optimize(is_found);
-            });
-        }(),
-        [&] {
-            const auto hot = hashes.at(::fixy::index<N / 2>());
-            return bench::run("short_name(strip aten::)", [&] {
-                const bool is_found = table.short_name(hot).is_some();
+            }),
+        bench::run_in_home(
+            "short_name(strip aten::)", []() noexcept { return LookupRow{}; },
+            [](LookupRow& row) noexcept {
+                const bool is_found = row.table.short_name(row.hot).is_some();
                 bench::do_not_optimize(is_found);
-            });
-        }(),
+            }),
     };
 
     bench::emit_reports(reports.view(), json);
-
-    ::fixy::FixedList<uint64_t, kTimedNames> table_hashes{};
-    for (uint64_t index = 1; index <= kTimedNames; ++index) {
-        const bool is_held = table_hashes.append(kSpread * index).is_ok();
-        CRUCIBLE_FATAL_INVARIANT(is_held);
-    }
-    const NameTableImage image = make_name_table_image();
-    const ::foundation::effects::Alloc allocation = ::foundation::effects::testing::test().alloc;
 
     bench::print("\n=== repeated hash of a name table ===\n");
     bench::print("  names: {}, each hash distinct\n\n", kTimedNames);
 
     ::fixy::FixedArray<bench::Report, 3> table_reports{
-        bench::run("quadratic (old)",
-                   [&] {
-                       const bool is_repeated = has_repeated_hash_quadratic(table_hashes.view());
-                       bench::do_not_optimize(is_repeated);
-                   }),
-        bench::run("sort and scan (has_repeated_hash_)",
-                   [&] {
-                       const bool is_repeated = crucible::detail::has_repeated_hash_(
-                           allocation, ::fixy::mint_heap_array_copy<uint64_t>(allocation, table_hashes.view()));
-                       bench::do_not_optimize(is_repeated);
-                   }),
-        bench::run(
-            "check of table (CheckedTraceImage::check)",
-            [&] {
-                const bool is_checked =
-                    crucible::CheckedTraceImage::check(::fixy::View<std::byte const>{image.view()}, allocation).is_ok();
-                bench::do_not_optimize(is_checked);
-            }),
+        run_on_name_table("quadratic (old)",
+                          [](NameTableRow& row) noexcept {
+                              const bool is_repeated = has_repeated_hash_quadratic(row.table_hashes.view());
+                              bench::do_not_optimize(is_repeated);
+                          }),
+        run_on_name_table("sort and scan (has_repeated_hash_)",
+                          [](NameTableRow& row) noexcept {
+                              const bool is_repeated = crucible::detail::has_repeated_hash_(
+                                  kAllocation,
+                                  ::fixy::mint_heap_array_copy<uint64_t>(kAllocation, row.table_hashes.view()));
+                              bench::do_not_optimize(is_repeated);
+                          }),
+        run_on_name_table("check of table (CheckedTraceImage::check)",
+                          [](NameTableRow& row) noexcept {
+                              const bool is_checked = crucible::CheckedTraceImage::check(
+                                                          ::fixy::View<std::byte const>{row.image.view()}, kAllocation)
+                                                          .is_ok();
+                              bench::do_not_optimize(is_checked);
+                          }),
     };
 
     bench::emit_reports(table_reports.view(), json);
 
-    constexpr crucible::vessel::OpEntry const& first_row = crucible::vessel::aten_op_row<0>();
-    constexpr crucible::vessel::OpEntry const& last_row =
-        crucible::vessel::aten_op_row<crucible::vessel::kAtenOpCount - 1>();
-    const FullName first_name = full_name_of(first_row);
-    const FullName last_name = full_name_of(last_row);
-    const SchemaHash first_hash{first_row.schema_hash};
-    const SchemaHash last_hash{last_row.schema_hash};
-    constexpr ::fixy::TextView kOutsideName{"crucible::outside_op"};
-    const SchemaHash outside_hash{0x5DEECE66DULL};
-    CRUCIBLE_FATAL_INVARIANT(is_reserved_by_walk(outside_hash, kOutsideName) == false);
-    CRUCIBLE_FATAL_INVARIANT(crucible::vessel::aten_op_index_of(outside_hash).is_none());
+    CRUCIBLE_FATAL_INVARIANT(is_reserved_by_walk(kOutsideHash, kOutsideName) == false);
+    CRUCIBLE_FATAL_INVARIANT(crucible::vessel::aten_op_index_of(kOutsideHash).is_none());
 
     bench::print("\n=== reserved hash of an outside name ===\n");
     bench::print("  rows of the generated table: {}\n\n", crucible::vessel::kAtenOpCount);
@@ -270,45 +316,45 @@ int main() {
     // Each body takes copies of its hash and its name that the optimizer does
     // not know, so it runs the whole check in each call.
     ::fixy::FixedArray<bench::Report, 6> reserved_reports{
-        bench::run("walk (old), first row",
-                   [&] {
-                       const bool is_reserved =
-                           is_reserved_by_walk(bench::make_opaque(first_hash), bench::make_opaque(first_name.view()));
-                       bench::do_not_optimize(is_reserved);
-                   }),
-        bench::run("walk (old), last row",
-                   [&] {
-                       const bool is_reserved =
-                           is_reserved_by_walk(bench::make_opaque(last_hash), bench::make_opaque(last_name.view()));
-                       bench::do_not_optimize(is_reserved);
-                   }),
-        bench::run("walk (old), no row",
-                   [&] {
-                       const bool is_reserved =
-                           is_reserved_by_walk(bench::make_opaque(outside_hash), bench::make_opaque(kOutsideName));
-                       bench::do_not_optimize(is_reserved);
-                   }),
-        bench::run("search, first row",
-                   [&] {
-                       const bool is_reserved = crucible::vessel::kAtenNameReserve.is_reserved_for_other_name(
-                           bench::make_opaque(first_hash),
-                           crucible::SchemaNameParts{bench::make_opaque(first_name.view())});
-                       bench::do_not_optimize(is_reserved);
-                   }),
-        bench::run("search, last row",
-                   [&] {
-                       const bool is_reserved = crucible::vessel::kAtenNameReserve.is_reserved_for_other_name(
-                           bench::make_opaque(last_hash),
-                           crucible::SchemaNameParts{bench::make_opaque(last_name.view())});
-                       bench::do_not_optimize(is_reserved);
-                   }),
-        bench::run("search, no row",
-                   [&] {
-                       const bool is_reserved = crucible::vessel::kAtenNameReserve.is_reserved_for_other_name(
-                           bench::make_opaque(outside_hash),
-                           crucible::SchemaNameParts{bench::make_opaque(kOutsideName)});
-                       bench::do_not_optimize(is_reserved);
-                   }),
+        run_on_reserve("walk (old), first row",
+                       [](ReserveRow& row) noexcept {
+                           const bool is_reserved = is_reserved_by_walk(bench::make_opaque(row.first_hash),
+                                                                        bench::make_opaque(row.first_name.view()));
+                           bench::do_not_optimize(is_reserved);
+                       }),
+        run_on_reserve("walk (old), last row",
+                       [](ReserveRow& row) noexcept {
+                           const bool is_reserved = is_reserved_by_walk(bench::make_opaque(row.last_hash),
+                                                                        bench::make_opaque(row.last_name.view()));
+                           bench::do_not_optimize(is_reserved);
+                       }),
+        run_on_reserve("walk (old), no row",
+                       [](ReserveRow& row) noexcept {
+                           const bool is_reserved = is_reserved_by_walk(bench::make_opaque(row.outside_hash),
+                                                                        bench::make_opaque(kOutsideName));
+                           bench::do_not_optimize(is_reserved);
+                       }),
+        run_on_reserve("search, first row",
+                       [](ReserveRow& row) noexcept {
+                           const bool is_reserved = crucible::vessel::kAtenNameReserve.is_reserved_for_other_name(
+                               bench::make_opaque(row.first_hash),
+                               crucible::SchemaNameParts{bench::make_opaque(row.first_name.view())});
+                           bench::do_not_optimize(is_reserved);
+                       }),
+        run_on_reserve("search, last row",
+                       [](ReserveRow& row) noexcept {
+                           const bool is_reserved = crucible::vessel::kAtenNameReserve.is_reserved_for_other_name(
+                               bench::make_opaque(row.last_hash),
+                               crucible::SchemaNameParts{bench::make_opaque(row.last_name.view())});
+                           bench::do_not_optimize(is_reserved);
+                       }),
+        run_on_reserve("search, no row",
+                       [](ReserveRow& row) noexcept {
+                           const bool is_reserved = crucible::vessel::kAtenNameReserve.is_reserved_for_other_name(
+                               bench::make_opaque(row.outside_hash),
+                               crucible::SchemaNameParts{bench::make_opaque(kOutsideName)});
+                           bench::do_not_optimize(is_reserved);
+                       }),
     };
 
     bench::emit_reports(reserved_reports.view(), json);
