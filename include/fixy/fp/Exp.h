@@ -54,14 +54,16 @@
 //   The fast path, for 2^-54 <= |x| < 512:
 //     r1 = x - k L1 is exact: |k| < 2^17, and L1 has 36 bits.
 //     r_hi = RN(r1 - k L2), and r_lo = RN(RN(r1 - r_hi) - k L2).
-//     q = (tail + r_lo) (1 + r_hi) + r_hi^2 (C2 + C3 r_hi + r_hi^2 (C4 + C5 r_hi)).
+//     P' = C2 + C3 r_hi + r_hi^2 (C4 + C5 r_hi), and q = r_hi^2 P' +
+//     tail (1 + r_hi) + r_lo (1 + r_hi).  r_lo (1 + r_hi) joins after the
+//     polynomial, so r_lo is off the longest chain.
 //     hi = RN(s + s r_hi), and lo = RN(s q + RN(s + s r_hi - hi)).
-//     Then |hi + lo - exp(x)| <= eps_fast exp(x), with eps_fast = 2^-65.20.
+//     Then |hi + lo - exp(x)| <= eps_fast exp(x), with eps_fast = 2^-65.17.
 //     The rounding test: with E = 2^-65 hi, if RN(hi + RN(lo + E)) and
 //     RN(hi + RN(lo - E)) are the same value, that value is the correctly
 //     rounded result, because RN is monotone and exp(x) is between the two
 //     sums.  Each sum takes an inner round of at most u |lo + E|, so the test
-//     needs a margin of eps_fast + u |lo| + u E <= 2^-65.17 |hi|.  About one
+//     needs a margin of eps_fast + u |lo| + u E <= 2^-65.15 |hi|.  About one
 //     input in 3000 does not pass, and the slow path takes it.  |hi| is at
 //     least 2^-739, so E is a normal double, and the round of a subnormal
 //     part of the path costs at most 2^-1075, below 2^-336 |hi|.
@@ -89,18 +91,20 @@
 //   exp(x) = s (1 + U), in absolute units:
 //     the rounds of P' (times r_hi^2)              2^-70.06
 //     the round of r_hi^2 (times P')               2^-71.06
+//     the round of r_hi^2 P' + tail (1 + r_hi)     2^-71.06
 //     the round of q                               2^-71.06
 //     tau r_hi^2 P', which q drops                 2^-71.29
 //     the second-order part of r_lo, dropped       2^-79.58
-//     tau - tail, the rounds of t and of a         2^-106.2 or less
-//     the sum, over (1 + tau) exp(r)               2^-68.77
+//     tau - tail, the rounds of tail (1 + r_hi)
+//       and of r_lo (1 + r_hi)                     2^-106.2 or less
+//     the sum, over (1 + tau) exp(r)               2^-68.50
 //   The relative errors of hi + lo:
 //     the polynomial, a bound for each |r| <= R    2^-65.35
-//     the errors of U                              2^-68.77
+//     the errors of U                              2^-68.50
 //     the round of lo, with |lo| <= 2^-18.05 |hi|  2^-71.05
 //     r - r_hi - r_lo, with |k| <= 2^17            2^-81.51
 //     the round of the error of hi                 2^-106
-//     the sum: eps_fast                            2^-65.20
+//     the sum: eps_fast                            2^-65.17
 //
 // Error budget of the slow path, from `fp_tables.py exp` (exact fractions)
 //   The double-word operations of fixy/fp/DoubleWord.h take the bounds of
@@ -407,10 +411,12 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     double const squared = reduced * reduced;
     double const low_pair = fma_of_finite(reduced, kExpC3, kExpC2);
     double const high_pair = fma_of_finite(reduced, kExpC5, kExpC4);
-    double const tail_sum = tail + reduced_low;
-    double const small_terms = fma_of_finite(tail_sum, reduced, tail_sum);
+    // r_lo (1 + r_hi) joins after the polynomial, so r_lo is off the longest
+    // chain.
+    double const tail_terms = fma_of_finite(tail, reduced, tail);
+    double const low_terms = fma_of_finite(reduced_low, reduced, reduced_low);
     double const polynomial = fma_of_finite(squared, high_pair, low_pair);
-    double const rest = fma_of_finite(squared, polynomial, small_terms);
+    double const rest = fma_of_finite(squared, polynomial, tail_terms) + low_terms;
     double const high = fma_of_finite(scale, reduced, scale);
     // s - hi is exact: hi is within 2^-8.4 of s.
     double const high_error = fma_of_finite(scale, reduced, scale - high);

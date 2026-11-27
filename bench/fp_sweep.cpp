@@ -313,9 +313,9 @@ template <std::size_t Count>
     }
 }
 
-// The bound of the sweep fast-bound: eps_fast = 2^-65.20 of the budget of
-// fixy/fp/Exp.h, rounded up to 2^-65.19.
-constexpr double kExpFastBound = 0x1.c0d2771113e65p-66;
+// The bound of the sweep fast-bound: eps_fast = 2^-65.17 of the budget of
+// fixy/fp/Exp.h, rounded up to 2^-65.16.
+constexpr double kExpFastBound = 0x1.ca40b9e178b1cp-66;
 
 // The domain of the slow path of exp(double): 2^-54 <= |x|, and a result from
 // 2^-1074 up to the largest finite value.
@@ -602,7 +602,7 @@ constexpr ::fixy::FixedArray<Region, 4> kExpFastRegions{
     double const in_bits = ::fixy::fp::log(largest) / 0x1.62e42fefa39efp-1;
     ::fixy::report(::fixy::Sink::Out,
                    "bench_fp_sweep: the fast pair of exp: {} inputs, largest relative error 2^{} at {}, bound "
-                   "2^-65.19, {} inputs take the slow path\n",
+                   "2^-65.16, {} inputs take the slow path\n",
                    inputs, ::fixy::Fixed<3>{in_bits}, largest_input, slow_calls);
     return largest <= kExpFastBound ? 0 : 1;
 }

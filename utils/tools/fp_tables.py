@@ -534,15 +534,17 @@ def exp_fast_budget(
     widened = reach + low_most
     g_most = c2 * widened**2 + c3 * widened**3 + c4 * widened**4 + c5 * widened**5
     g_second = 2 * c2 + 6 * c3 * widened + 12 * c4 * widened**2 + 20 * c5 * widened**3
-    # The rounds of q: t = RN(tail + r_lo), a = RN(t + t r_hi), the pairs of P', P' and q.
-    t_most = (tail_most + low_most) * (1 + u)
-    a_most = t_most * (1 + reach) * (1 + u)
+    # The rounds of q: b = RN(tail + tail r_hi), c = RN(r_lo + r_lo r_hi), the pairs of P', P',
+    # q1 = RN(r_hi^2 P' + b) and q = RN(q1 + c).  c joins after the polynomial, so r_lo is off the longest chain.
+    b_most = tail_most * (1 + reach) * (1 + u)
+    c_most = low_most * (1 + reach) * (1 + u)
     low_pair = c2 + c3 * reach
     high_pair = c4 + c5 * reach
     square_most = reach**2 * (1 + u)
     poly_most = (low_pair + high_pair * square_most) * (1 + u) ** 2
     poly_round = u * low_pair + u * reach**2 * high_pair * (1 + u) + reach**2 * u * high_pair + u * poly_most
-    q_most = (a_most + square_most * poly_most) * (1 + u)
+    q1_most = (b_most + square_most * poly_most) * (1 + u)
+    q_most = (q1_most + c_most) * (1 + u)
     terms = [
         ("tau r_lo (dropped)", tail_most * low_most),
         ("tau r^2 P' (dropped)", tail_most * g_most),
@@ -552,10 +554,11 @@ def exp_fast_budget(
             low_most * (c2_gap * reach + 3 * c3 * reach**2 + 4 * c4 * reach**3 + 5 * c5 * reach**4)
             + low_most**2 * g_second / 2,
         ),
-        ("round of t, times 1 + r_hi", u * (tail_most + low_most) * (1 + reach)),
-        ("round of a", u * a_most),
+        ("round of b", u * b_most),
+        ("round of c", u * c_most),
         ("round of r_hi^2, times P'", u * reach**2 * poly_most),
         ("rounds of P', times r_hi^2", reach**2 * poly_round),
+        ("round of q1", u * q1_most),
         ("round of q", u * q_most),
     ]
     in_u = print_terms("fast path: the errors of U, absolute", terms)

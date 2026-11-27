@@ -95,7 +95,7 @@ struct ClockChain {
 // the multiplies on two pipes, the adds and the conversions on two pipes,
 // and the macro operations at six for each cycle.
 //   code              fma  mul  add  cvt  ops   floor
-//   fixy exp double    12    2    8    0   46   7.67, the dispatch
+//   fixy exp double    13    2    8    0   48   8.0, the dispatch
 //   fixy exp float      5    1    1    2   29   4.83, the dispatch
 //   fixy log double     6    4   10    1   50   8.33, the dispatch
 //   fixy log float      6    1    1    3   35   5.83, the dispatch
@@ -124,7 +124,7 @@ struct ClockChain {
 // be above its floor.  The guide 58455 of Zen 5 gives the same loads but 2
 // cycles for an add, so these floors are for the Zen 4c core only.  The
 // chain x + 0 * y of the row adds a multiply and an add, 6 cycles:
-//   fixy exp double 43 + 6 = 49   fixy log double 37 + 6 = 43   fixy erf double 72 + 6 = 78
+//   fixy exp double 40 + 6 = 46  fixy log double 37 + 6 = 43   fixy erf double 72 + 6 = 78
 //   fixy exp float  29 + 6 = 35   fixy log float  30 + 6 = 36   fixy erf float  33 + 6 = 39
 //   cr_expf         28 + 6 = 34   cr_logf         26 + 6 = 32   cr_erff         33 + 6 = 39
 // The Horner chain of fixy erf double holds 11 dependent fma.  fixy erf float
@@ -142,7 +142,7 @@ struct Floor {
 [[nodiscard]] constexpr Floor floor_of(Function function, bool is_double) noexcept {
     switch (function) {
         case Function::Exp:
-            return is_double ? Floor{46.0 / 6.0, 49.0} : Floor{29.0 / 6.0, 34.0};
+            return is_double ? Floor{48.0 / 6.0, 46.0} : Floor{29.0 / 6.0, 34.0};
         case Function::Log:
             return is_double ? Floor{50.0 / 6.0, 43.0} : Floor{34.0 / 6.0, 32.0};
         case Function::Erf:
