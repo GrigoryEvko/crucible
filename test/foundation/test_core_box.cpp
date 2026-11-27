@@ -326,6 +326,45 @@ void test_read_frame_of_moved_from_aborts(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_FATAL_INVARIANT(value == 4);
 }
 
+// A class that holds a Box as a private member reads the object of the Box
+// through the owner door, with its own key.
+class OwnerOfBox {
+public:
+    explicit OwnerOfBox(Box<CountedObject> held) noexcept : held_{std::move(held)} {}
+
+    [[nodiscard]] int label() const noexcept { return ::foundation::core::borrow_owned(Key{}, held_).label(); }
+    [[nodiscard]] ::foundation::core::Address address() const noexcept {
+        return ::foundation::core::address_of(::foundation::core::to(::foundation::core::borrow_owned(Key{}, held_)));
+    }
+    [[nodiscard]] ::foundation::core::Address box_address() const noexcept { return address_in(held_); }
+
+private:
+    using Key = ::foundation::core::box_owner_key<OwnerOfBox>;
+    Box<CountedObject> held_;
+};
+
+// The owner door gives the object of the Box in place: the address of the
+// borrow is the address of the object, and the door ends no object.  A
+// moved-from holder holds an empty Box, and the door ends the process, as
+// the frames do.  The door runs in a child through expect_dies.
+void test_owner_door(::fixy::TestRunnerCtx const& test) {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+    {
+        OwnerOfBox owner{mint_box<CountedObject>(alloc, 6)};
+        CRUCIBLE_FATAL_INVARIANT(owner.label() == 6 && owner.label() == 6);
+        CRUCIBLE_FATAL_INVARIANT(owner.address() == owner.box_address());
+        CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
+        OwnerOfBox moved{std::move(owner)};
+        CRUCIBLE_FATAL_INVARIANT(moved.label() == 6 && live_objects == 1);
+        ::fixy::check::expect_dies(
+            test, [&owner] noexcept { static_cast<void>(owner.label()); },
+            ::foundation::core::TextView{
+                "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+}
+
 // The allocation door gives malloc storage up to an alignment of 16 and
 // aligned_alloc storage above it.  Each alignment from 8 to 4096 gives a
 // Box at that alignment, and its object holds its value.
@@ -602,6 +641,7 @@ int main() {
     test_frame_of_moved_from_aborts(test);
     test_read_frame();
     test_read_frame_of_moved_from_aborts(test);
+    test_owner_door(test);
     test_each_alignment();
     test_agrees_with_plain_model();
     test_box_of_a_declared_type();

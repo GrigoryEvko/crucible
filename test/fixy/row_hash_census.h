@@ -1122,6 +1122,9 @@ inline constexpr StatedZero kZeros[] = {
      "signature"},
     {^^::foundation::core::box_word_key,
      "the proof that a member of the authority calls a door of a box word: it lives for one call, and holds nothing"},
+    {^^::foundation::core::box_owner_key,
+     "the proof that a member of the owner calls the owner door of its Box: it lives for one call, and holds "
+     "nothing"},
     {^^::foundation::core::BumpArena,
      "the blocks of an arena: it holds storage and makes no claim about the objects in it"},
     {^^::foundation::core::EpochArena,

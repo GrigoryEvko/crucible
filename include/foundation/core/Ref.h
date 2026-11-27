@@ -1264,6 +1264,34 @@ public:
     box_word_key& operator=(box_word_key const&) = delete("a key of a box word lives for one call of a door");
 };
 
+// Owner door of a Box
+//   borrow_owned(key, box) gives the object of a Box for a read, for the life
+//   of the Box, to the class that holds the Box as a private member.  The key
+//   box_owner_key<Owner> has one friend, Owner, so only a member of Owner
+//   builds a key.  It is no public view of a Box: a caller with no key reads
+//   the object only in the frames with_view and with_mut.  The owner gives
+//   the object out only through its own view doors, and each such door is
+//   bound to the owner (CRUCIBLE_LIFETIMEBOUND, and a deleted twin for an
+//   rvalue owner).  So the kind stale-borrow of the rule view-escape refuses
+//   a read of a view of the owner after an assignment to the owner, after the
+//   end of the owner, and after the end of the destination of a move of the
+//   owner.  A move of the owner moves the Box, so the object stays alive in
+//   the destination.  The door writes nothing, so a write of the object keeps
+//   the frame with_mut.
+template <class Owner>
+    requires std::is_class_v<Owner>
+class [[nodiscard]] box_owner_key {
+    friend Owner;
+
+    // Both constructors are user-provided, so no byte copy and no lifetime
+    // start over a buffer builds a key.
+    constexpr box_owner_key() noexcept {}
+    constexpr box_owner_key(box_owner_key const&) noexcept {}
+
+public:
+    box_owner_key& operator=(box_owner_key const&) = delete("a key of the owner door of a Box lives for one call");
+};
+
 // The object of a Box, given to the words of one authority (the word of a
 // Box).  Only a Box builds a word that holds an object.  Only a Box takes the
 // object of a word, and only a member of the authority borrows it.  The type
@@ -1362,6 +1390,12 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box<T>>]][[= 
     // the key that only a frame door builds.  A Box with no object ends the
     // process here, because a moved-from Box can still come to the door.
     [[nodiscard]] friend T& frame_object_(detail::FrameKey const& /*key*/, Box& box) noexcept { return *box.held_(); }
+
+    // The owner door reads the object for the owner of the key (the owner
+    // door of a Box).
+    template <class Owner, BoxPayload U>
+        requires std::is_class_v<Owner>
+    friend U const& borrow_owned(box_owner_key<Owner> const& key, Box<U> const& box) noexcept;
 
 public:
     // Takes the storage of the size and the alignment of T from the
@@ -1478,6 +1512,23 @@ public:
     T* operator->() && = delete("a borrow of a temporary Box dangles at the end of the full expression");
     T const* operator->() const&& = delete("a borrow of a temporary Box dangles at the end of the full expression");
 };
+
+// The owner door of a Box (the owner door of a Box): the object of box for a
+// read, bound to box.  A Box with no object ends the process, as the frames
+// do.  Complexity: O(1).
+template <class Owner, BoxPayload U>
+    requires std::is_class_v<Owner>
+[[nodiscard]] U const& borrow_owned(box_owner_key<Owner> const& /*key*/,
+                                    Box<U> const& box CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return *box.held_();
+}
+
+// A temporary Box ends its object at the end of the full expression.
+template <class Owner, BoxPayload U>
+    requires std::is_class_v<Owner>
+void borrow_owned(box_owner_key<Owner> const& key, Box<U> const&& box) =
+    delete("the owner door of a Box gives a borrow of its object, and a temporary Box ends the object at the end of "
+           "the full expression: name the Box");
 
 // The storage has the size and the alignment of T, and the destructor of
 // the Box gives it back with the same two values.  The door never gives a

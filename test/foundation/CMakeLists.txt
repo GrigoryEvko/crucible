@@ -4153,6 +4153,22 @@ foundation_neg_compile_test(neg_core_box_word_borrow_by_another_authority
 foundation_neg_compile_test(neg_core_box_word_of_linear_payload
   "no matching function for call to .foundation::core::Box<foundation::core::Hole<8, 8> >::release_to_word\\(foundation::core::box_word_key<Channel>\\)."
   "required for the satisfaction of .DroppableBoxPayload<T>. \\[with T = foundation::core::Hole<8, 8>\\]")
+# Only a member of the owner builds the key of the owner door of a Box, and the
+# door refuses a temporary Box.  A view of a holder that reads its private Box
+# through the door is a borrow of the holder, so stale-borrow ends it at a move
+# and at a move assignment of the holder.
+foundation_neg_compile_test(neg_core_box_owner_key_from_other_class
+  "is private within this context"
+  "foundation::core::box_owner_key<Owner>::box_owner_key\\(\\) \\[with Owner = Holder\\]")
+foundation_neg_compile_test(neg_core_box_borrow_owned_of_temporary
+  "use of deleted function"
+  "the owner door of a Box gives a borrow of its object, and a temporary Box ends the object at the end of the full expression: name the Box")
+foundation_neg_compile_test(neg_core_box_owner_view_past_the_end_of_a_move
+  "neg_core_box_owner_view_past_the_end_of_a_move\\.cpp:[0-9]+:[0-9]+: error: this use reads a borrow of holder in kept"
+  "after the end of the scope of moved")
+foundation_neg_compile_test(neg_core_box_owner_view_past_assignment
+  "neg_core_box_owner_view_past_assignment\\.cpp:[0-9]+:[0-9]+: error: this use reads a borrow of holder in kept"
+  "after an assignment of holder")
 foundation_neg_compile_test(neg_core_box_borrow_of_temporary
   "use of deleted function .T& foundation::core::Box<T>::operator\\*\\(\\) && \\[with T = int\\]."
   "a borrow of a temporary Box dangles at the end of the full expression")
