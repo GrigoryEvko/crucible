@@ -124,23 +124,43 @@ void test_counts_and_wrapping_keys() {
     }
 }
 
-// The element door writes one element in place at a masked key, and a key
-// with the same low bits names the same element.  The door gives the result of
-// the body, and its body holds no reference to the element after the call.
+// The element door of an array that is not const lends an element in place
+// only when two threads can write it, and a body that only reads a plain
+// element takes the const door.
+template <class T>
+concept writes_in_place = requires(MaskedArray<T>& array) { array.with_masked(std::uint64_t{0}, [](T&) noexcept {}); };
+template <class T>
+concept reads_in_place =
+    requires(MaskedArray<T>& array) { array.with_masked(std::uint64_t{0}, [](T const&) noexcept {}); };
+static_assert(writes_in_place<::foundation::core::Atomic<std::uint64_t>> && writes_in_place<PinnedSlot>);
+static_assert(!writes_in_place<std::uint64_t> && reads_in_place<std::uint64_t>);
+
+// The element door writes one element in place at a masked key when two
+// threads can write the element (an Atomic cell), and a key with the same low
+// bits names the same element.  The door gives the result of the body, and
+// its body holds no reference to the element after the call.  A plain element
+// has no writer in place: a body that only reads it takes the const door,
+// also on an array that is not const.
 void test_element_door_writes_in_place() {
+    using Cell = ::foundation::core::Atomic<std::uint64_t>;
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    MaskedArray<std::uint64_t> words = mint_masked_array<std::uint64_t>(alloc, 8);
-    int const steps = words.with_masked(2 + 8 * 7, [](std::uint64_t& word) noexcept {
-        word |= 16;
+    MaskedArray<Cell> cells = mint_masked_array<Cell>(alloc, 8);
+    int const steps = cells.with_masked(2 + 8 * 7, [](Cell& cell) noexcept {
+        cell.store_release(16);
         return 1;
     });
     CRUCIBLE_FATAL_INVARIANT(steps == 1);
-    CRUCIBLE_FATAL_INVARIANT(words.at_masked(2) == 16 && words.at_masked(10) == 16);
+    CRUCIBLE_FATAL_INVARIANT(cells.at_masked(2).load_acquire() == 16 && cells.at_masked(10).load_acquire() == 16);
     std::uint64_t total = 0;
-    for (std::uint64_t const word : words.view()) {
-        total += word;
+    for (Cell const& cell : cells.view()) {
+        total += cell.load_acquire();
     }
     CRUCIBLE_FATAL_INVARIANT(total == 16);
+
+    MaskedArray<std::uint64_t> words = mint_masked_array<std::uint64_t>(alloc, 8);
+    words.set_masked(3, std::uint64_t{5});
+    std::uint64_t const read = words.with_masked(3 + 8, [](std::uint64_t const& word) noexcept { return word; });
+    CRUCIBLE_FATAL_INVARIANT(read == 5);
 }
 
 // The update door writes one plain element at a masked key, and a key with the

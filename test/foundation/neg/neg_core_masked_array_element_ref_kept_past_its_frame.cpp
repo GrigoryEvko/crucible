@@ -2,10 +2,12 @@
 // the element in a variable that it captures by reference.  The Ref outlives
 // the frame, so a move of the array, or of a child owner that the element
 // holds (the child move of test_core_owner_probe.cpp), can end the storage
-// that the Ref names.  The store check of the door (StoresNoBorrowOutside of
-// foundation/core/CaptureStore.h) refuses the body.
+// that the Ref names.  The element is a class of Atomic cells, so the door
+// that is not const lends it in place.  The store check of the door
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h) refuses the body.
 
 #include <foundation/core/Array.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
@@ -16,7 +18,7 @@ struct NodeBrand final {};
 
 struct Node {
     using brand_type = NodeBrand;
-    int label = 0;
+    ::foundation::core::Atomic<int> label{0};
 };
 
 }  // namespace

@@ -26,7 +26,9 @@
 //     auto [holder, key] = mint_keyed_owner(keyed_heap_array_owner<T>, std::move(array))
 //     auto [holder, key] = mint_keyed_owner(keyed_masked_array_owner<T>, std::move(table))
 //   The holder adds no logic of an array: each door calls the door of the
-//   array that it holds.
+//   array that it holds.  An array lends a plain element in place only to its
+//   holder: the holder is a friend of the array, and its keyed element door
+//   calls the private slot door of the array.
 //
 //   KeyedHeapArray<T, Brand, Align> holder{}
 //                       the empty holder
@@ -166,15 +168,15 @@ public:
 
     // The keyed element door: on_some gets the element at position in place,
     // as T&, for the time of the call, and at or past size() on_none runs.  The
-    // door borrows the key, so no body of it reaches the key, and the door of
-    // the HeapArray runs the arms.  The door always inlines, because it runs
-    // in the loops of each op.  Complexity: one compare, and the cost of the
-    // arm.
+    // door borrows the key, so no body of it reaches the key, and the private
+    // slot door of the HeapArray runs the arms.  The door always inlines,
+    // because it runs in the loops of each op.  Complexity: one compare, and
+    // the cost of the arm.
     template <class OnSome, class OnNone>
         requires KeyedElementArms<OnSome, OnNone, T, Brand>
     CRUCIBLE_INLINE constexpr auto with_element(LoanKey<Brand>& /*loan*/, std::size_t position, OnSome&& on_some,
                                                 OnNone&& on_none) & noexcept {
-        return storage_.with_element(position, static_cast<OnSome&&>(on_some), static_cast<OnNone&&>(on_none));
+        return storage_.lend_slot_(position, static_cast<OnSome&&>(on_some), static_cast<OnNone&&>(on_none));
     }
     template <class OnSome, class OnNone>
         requires std::is_nothrow_invocable_v<OnSome&&, T&> && std::is_nothrow_invocable_v<OnNone&&>
@@ -235,7 +237,7 @@ public:
         "the holder: call with_element(key, position, on_some, on_none)");
 };
 
-template <class T, ::foundation::brand::IsBrand Brand, std::size_t Align = alignof(T)>
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Align>
     requires KeyedHolderParts<T, Brand, Align>
 class [[nodiscard]][[= ::foundation::transfer::by_arguments<0>{}]][[= loan_key_mark{}]] KeyedMaskedArray final {
     MaskedArray<T, Align> storage_{};
@@ -284,13 +286,14 @@ public:
     // The keyed element door: body gets the element at key & (count - 1) in
     // place, as T&, for the time of the call, and the door gives the result
     // of body.  The door borrows the loan key, so no body of it reaches the
-    // key, and the door of the MaskedArray runs the body.  The door always
-    // inlines, because it runs in the loops of each op.  An empty holder ends
-    // the process, as at_masked does.  Complexity: O(1), and the cost of body.
+    // key, and the private slot door of the MaskedArray runs the body.  The
+    // door always inlines, because it runs in the loops of each op.  An empty
+    // holder ends the process, as at_masked does.  Complexity: O(1), and the
+    // cost of body.
     template <class Body>
         requires KeyedElementBody<Body, T, Brand>
     CRUCIBLE_INLINE constexpr auto with_masked(LoanKey<Brand>& /*loan*/, std::uint64_t key, Body&& body) & noexcept {
-        return storage_.with_masked(key, static_cast<Body&&>(body));
+        return storage_.lend_masked_slot_(key, static_cast<Body&&>(body));
     }
     template <class Body>
         requires std::is_nothrow_invocable_v<Body&&, T&> && (!ReachesNoLoanKey<Body, Brand>)

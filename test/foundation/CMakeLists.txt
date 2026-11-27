@@ -6289,6 +6289,15 @@ foundation_neg_compile_test(neg_core_heap_array_view_of_temporary
 foundation_neg_compile_test(neg_core_heap_array_nested_element_door
   "this arm of a borrow match writes the sum that the match reads .mutating-call array."
   "the payload that the arm borrows can end while the arm holds its reference")
+# A HeapArray lends a plain element in place to no body, so a body that
+# replaces the array through a captured Ref of it, or that opens the door of
+# the array again and replaces the element, does not compile.
+foundation_neg_compile_test(neg_core_heap_array_plain_element_written_in_place
+  "use of deleted function .void foundation::core::HeapArray<T, Align>::with_element\\(std::size_t, OnSome&&, OnNone&&\\) &"
+  "a HeapArray lends an element that an arm writes in place only when two threads can write the element")
+foundation_neg_compile_test(neg_core_heap_array_owner_element_written_in_place
+  "use of deleted function .void foundation::core::HeapArray<T, Align>::with_element\\(std::size_t, OnSome&&, OnNone&&\\) &"
+  "T = foundation::core::HeapArray<long unsigned int>")
 # view() of a HeapArray gives a View of the const elements, so two Views of
 # one array write no element.
 foundation_neg_compile_test(neg_core_heap_array_two_mutable_views
@@ -6441,6 +6450,12 @@ foundation_neg_compile_test(neg_core_masked_array_two_mutable_views
 foundation_neg_compile_test(neg_core_masked_array_nested_element_door
   "this arm of a borrow match writes the sum that the match reads .mutating-call array."
   "the payload that the arm borrows can end while the arm holds its reference")
+# A MaskedArray lends a plain element in place to no body, so a body that
+# opens the door of the table again and replaces the element does not
+# compile.
+foundation_neg_compile_test(neg_core_masked_array_owner_element_written_in_place
+  "use of deleted function .void foundation::core::MaskedArray<T, Align>::with_masked\\(uint64_t, Body&&\\) &"
+  "a MaskedArray lends an element that a body writes in place only when two threads can write the element")
 # The header instantiates the View of bytes of HexBytes, and with it the
 # friend first_of_ of that View, which is no template.  GCC then names the
 # refusal as a template-id that matches no template, in place of a function

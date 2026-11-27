@@ -42,6 +42,7 @@
 #include <foundation/contracts/Post.h>
 #include <foundation/core/CyclicCursor.h>
 #include <foundation/core/Immortal.h>
+#include <foundation/core/KeyedArray.h>
 #include <foundation/core/Seat.h>
 #include <foundation/core/WindowStack.h>
 #include <foundation/effects/Effect.h>
@@ -389,22 +390,26 @@ fixed_array_with_element(::foundation::core::FixedArray<std::uint64_t, 128, Shap
     words.with_element(key, position, [bit](std::uint64_t& word) noexcept { word |= bit; });
 }
 
-// The or of a bit into one element of a HeapArray through the element door.
-// A position at or past the count takes the fatal exit, as the write through
-// get() and expect did.
-[[gnu::used]] void heap_array_with_element(::foundation::core::HeapArray<std::uint32_t>& array, std::size_t position,
+// The or of a bit into one element of a HeapArray through the element door of
+// its keyed holder, which is the one door that writes a plain element of a
+// HeapArray in place.  A position at or past the count takes the fatal exit,
+// as the write through get() and expect did.
+[[gnu::used]] void heap_array_with_element(::foundation::core::KeyedHeapArray<std::uint32_t, ShapeElementBrand>& array,
+                                           ::foundation::core::LoanKey<ShapeElementBrand> key, std::size_t position,
                                            std::uint32_t bit) noexcept {
     array.with_element(
-        position, [bit](std::uint32_t& element) noexcept { element |= bit; },
+        key, position, [bit](std::uint32_t& element) noexcept { element |= bit; },
         [] noexcept { ::foundation::core::fatal("the probe gets a position below the count"); });
 }
 
 // The or of a bit into the element of a masked key of a MaskedArray through
-// the element door.  An array that holds no storage takes the fatal exit, as
-// a read through at_masked does.
-[[gnu::used]] void masked_array_with_masked(::foundation::core::MaskedArray<std::uint32_t>& array, std::uint64_t key,
-                                            std::uint32_t bit) noexcept {
-    array.with_masked(key, [bit](std::uint32_t& element) noexcept { element |= bit; });
+// the element door of its keyed holder.  An array that holds no storage
+// takes the fatal exit, as a read through at_masked does.
+[[gnu::used]] void
+masked_array_with_masked(::foundation::core::KeyedMaskedArray<std::uint32_t, ShapeElementBrand>& array,
+                         ::foundation::core::LoanKey<ShapeElementBrand> key, std::uint64_t key_of_element,
+                         std::uint32_t bit) noexcept {
+    array.with_masked(key, key_of_element, [bit](std::uint32_t& element) noexcept { element |= bit; });
 }
 
 // The or of a bit into one element of a HeapArray through the update door.

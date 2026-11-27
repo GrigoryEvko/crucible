@@ -584,14 +584,14 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "heap_array_with_element",
-        "with_element of a HeapArray adds one compare of the position with the count and one branch to the fatal "
-        "exit to the or of the raw subscript, with no call of the arm",
+        "with_element of a KeyedHeapArray adds one compare of the position with the count and one branch to the "
+        "fatal exit to the or of the raw subscript, with no call of the arm: a key is empty",
         checks=("fatal",),
     ),
     Probe(
         "masked_array_with_masked",
-        "with_masked of a MaskedArray adds the test of the storage and one branch to the fatal exit to the or of the "
-        "raw masked subscript, with no call of the body",
+        "with_masked of a KeyedMaskedArray adds the test of the storage and one branch to the fatal exit to the or "
+        "of the raw masked subscript, with no call of the body: a key is empty",
         checks=("fatal",),
     ),
     Probe(

@@ -143,6 +143,7 @@ foundation/core/Atomic.cpp | unmeasured | ::foundation::transfer::door_probe_con
 foundation/core/BumpArena.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/CaptureStore.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/KeyWalk.cpp | unmeasured | unknown
+foundation/core/KeyedArray.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Link.cpp | 0.3 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/LiveList.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Owner.cpp | 0.1 | unknown

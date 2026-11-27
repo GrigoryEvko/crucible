@@ -94,53 +94,64 @@ void test_fill_and_reads() {
     }
 }
 
-// The element door writes one element in place below the count and gives the
-// result of on_some.  At the count and past it, on_none runs, and no element
-// changes.  An element of atomic cells takes a write in place too.  The door
-// of a const array reads, and an empty array runs on_none for each position.
+// The element door of an array that is not const lends an element in place
+// only when two threads can write it, and a body that only reads a plain
+// element takes the const door.
+template <class T>
+concept writes_in_place =
+    requires(HeapArray<T>& array) { array.with_element(std::size_t{0}, [](T&) noexcept {}, [] noexcept {}); };
+template <class T>
+concept reads_in_place =
+    requires(HeapArray<T>& array) { array.with_element(std::size_t{0}, [](T const&) noexcept {}, [] noexcept {}); };
+static_assert(writes_in_place<::foundation::core::Atomic<std::uint64_t>>);
+static_assert(!writes_in_place<std::uint64_t> && reads_in_place<std::uint64_t>);
+
+// The element door writes one element in place below the count when two
+// threads can write the element (an Atomic cell), and gives the result of
+// on_some.  At the count and past it, on_none runs, and no element changes.
+// A plain element has no writer in place: a body that only reads it takes
+// the const door, also on an array that is not const.  An empty array runs
+// on_none for each position.  The keyed holder of
+// test_core_keyed_array.cpp writes a plain element in place.
 void test_element_door_writes_in_place() {
+    using Cell = ::foundation::core::Atomic<std::uint64_t>;
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    HeapArray<std::uint64_t> words = mint_heap_array(alloc, 4, std::uint64_t{1});
-    int const steps = words.with_element(
+    HeapArray<Cell> cells = mint_heap_array_with<Cell>(alloc, 4, [](std::size_t) noexcept { return Cell{1}; });
+    int const steps = cells.with_element(
         2,
-        [](std::uint64_t& word) noexcept {
-            word |= 16;
+        [](Cell& cell) noexcept {
+            cell.store_release(17);
             return 1;
         },
         [] noexcept { return 0; });
-    int const missed = words.with_element(
+    int const missed = cells.with_element(
         4,
-        [](std::uint64_t& word) noexcept {
-            word = 0;
+        [](Cell& cell) noexcept {
+            cell.store_release(0);
             return 1;
         },
         [] noexcept { return 0; });
-    HeapArray<std::uint64_t> const& read = words;
-    std::uint64_t const third = read.with_element(
-        2, [](std::uint64_t const& word) noexcept { return word; }, [] noexcept { return std::uint64_t{0}; });
-    CRUCIBLE_FATAL_INVARIANT(steps == 1 && missed == 0 && third == 17);
+    CRUCIBLE_FATAL_INVARIANT(steps == 1 && missed == 0);
     std::uint64_t total = 0;
-    for (std::uint64_t const word : words) {
-        total += word;
+    for (Cell const& cell : cells) {
+        total += cell.load_acquire();
     }
     CRUCIBLE_FATAL_INVARIANT(total == 1 + 1 + 17 + 1);
 
-    HeapArray<::foundation::core::Atomic<std::uint64_t>> cells =
-        mint_heap_array_with<::foundation::core::Atomic<std::uint64_t>>(
-            alloc, 2, [](std::size_t) noexcept { return ::foundation::core::Atomic<std::uint64_t>{}; });
-    bool const is_written = cells.with_element(
-        1,
-        [](::foundation::core::Atomic<std::uint64_t>& cell) noexcept {
-            cell.store_release(9);
-            return true;
-        },
-        [] noexcept { return false; });
-    CRUCIBLE_FATAL_INVARIANT(is_written);
-    CRUCIBLE_FATAL_INVARIANT(cells.view().get(1).expect("the array holds two cells")->load_acquire() == 9);
+    HeapArray<std::uint64_t> words = mint_heap_array(alloc, 4, std::uint64_t{1});
+    std::uint64_t const updated = words.update(2, [](std::uint64_t& word) noexcept {
+        word |= 16;
+        return word;
+    });
+    HeapArray<std::uint64_t> const& read = words;
+    std::uint64_t const third = read.with_element(
+        2, [](std::uint64_t const& word) noexcept { return word; }, [] noexcept { return std::uint64_t{0}; });
+    std::uint64_t const first = words.with_element(
+        0, [](std::uint64_t const& word) noexcept { return word; }, [] noexcept { return std::uint64_t{0}; });
+    CRUCIBLE_FATAL_INVARIANT(updated == 17 && third == 17 && first == 1);
 
-    HeapArray<std::uint64_t> empty{};
-    bool const is_none =
-        empty.with_element(0, [](std::uint64_t&) noexcept { return false; }, [] noexcept { return true; });
+    HeapArray<Cell> empty{};
+    bool const is_none = empty.with_element(0, [](Cell&) noexcept { return false; }, [] noexcept { return true; });
     CRUCIBLE_FATAL_INVARIANT(is_none);
 }
 

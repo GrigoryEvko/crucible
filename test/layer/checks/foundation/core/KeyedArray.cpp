@@ -3,6 +3,7 @@
 #include <foundation/core/KeyedArray.h>
 
 #include <foundation/core/Array.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/core/Frame.h>
 #include <foundation/reflect/Annotation.h>
 
@@ -82,8 +83,14 @@ static_assert(!LendsElementWithKey<KeyedWords const, WriteWord>);
 static_assert(LendsMaskedWithKey<KeyedTable, WriteWord> && !LendsMaskedWithNoKey<KeyedTable, WriteWord>);
 static_assert(!LendsMaskedWithKey<KeyedTable, KeyReachingBody>);
 static_assert(!LendsMaskedWithKey<KeyedTable const, WriteWord>);
-// The control of LendsElementWithNoKey: the element door of a HeapArray.
-static_assert(LendsElementWithNoKey<HeapArray<int>, WriteWord>);
+// The control of LendsElementWithNoKey and LendsMaskedWithNoKey: the element
+// door of an array lends an element of Atomic cells in place, and a plain
+// element only through its holder.
+inline constexpr auto write_cell = [](Atomic<int>& cell) noexcept { cell.store_release(2); };
+using WriteCell = decltype(write_cell);
+static_assert(LendsElementWithNoKey<HeapArray<Atomic<int>>, WriteCell>);
+static_assert(LendsMaskedWithNoKey<MaskedArray<Atomic<int>>, WriteCell>);
+static_assert(!LendsElementWithNoKey<HeapArray<int>, WriteWord> && !LendsMaskedWithNoKey<MaskedArray<int>, WriteWord>);
 
 // A holder has no value door, and fill, replace and take take the key.
 template <class Holder>

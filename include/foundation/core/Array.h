@@ -128,9 +128,11 @@
 //                       position below size() in place, and on_none runs for
 //                       each other position (the element door)
 //
-// A write of one element takes with_element, and a write of the run takes
-// the frame door with_mut (the frame door).  So no two Views of one array
-// write the same elements.
+// A write of one element takes set, exchange or update, or the element door
+// for an element that two threads can write (Synchronized), or the keyed
+// holder of foundation/core/KeyedArray.h.  A write of the run takes the
+// frame door with_mut (the frame door).  So no two Views of one array write
+// the same elements.
 //
 // A HeapArray owns its storage alone.  A move gives the storage to the
 // target and leaves the source empty, and the destructor ends each element
@@ -150,8 +152,10 @@
 //                       key & (count - 1) in place (the element door)
 //
 // A MaskedArray owns its storage as a HeapArray does.  It has no operator[]
-// and no pointer to its elements.  A write of one element takes
-// with_masked, and a write of the run takes the frame door with_mut.
+// and no pointer to its elements.  A write of one element takes set_masked,
+// exchange_masked or update_masked, or with_masked for a Synchronized
+// element, or the keyed holder.  A write of the run takes the frame door
+// with_mut.
 //
 // Frame door
 //   array.with_mut(key, body)   of a keyed FixedArray: body gets the ViewMut
@@ -185,10 +189,16 @@
 //   with_element(position, on_some, on_none)   of a HeapArray, with a
 //                       position that no type proves: on_some gets the
 //                       element in place below size(), and on_none runs at or
-//                       past it.  The two arms give one type.  One compare
+//                       past it.  The two arms give one type.  One compare.
+//                       A door that is not const takes only a Synchronized
+//                       element
 //   with_masked(key, body)   of a MaskedArray: body gets the element at
 //                       key & (count - 1) in place.  The mask keeps each key
-//                       below the count, so the door has no none arm
+//                       below the count, so the door has no none arm.  A door
+//                       that is not const takes only a Synchronized element
+// The keyed holders of foundation/core/KeyedArray.h lend each element in
+// place with their LoanKey, through a private slot door of the array, whose
+// one caller is the holder.
 // The result holds no borrow (HoldsNoBorrow of foundation/core/Choice.h), so
 // no reference to the element leaves the door, and the door gives no View.  A
 // const array gives T const&.  The door with no key carries the annotation
@@ -276,12 +286,16 @@ template <class T, class Brand, std::size_t Align>
 concept KeyedHolderParts =
     OwnedElement<T> && detail::HeapArrayAlignment<T, Align> && IsKeyBrand<Brand> && DroppablePayload<T>;
 
-// The keyed holder of a HeapArray (foundation/core/KeyedArray.h).  HeapArray
-// names it as a friend, so this declaration stands before HeapArray and gives
-// the default argument.
+// The keyed holders of a HeapArray and of a MaskedArray
+// (foundation/core/KeyedArray.h).  Each array names its holder as a friend,
+// so these declarations stand before the arrays and give the default
+// arguments.
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Align = alignof(T)>
     requires KeyedHolderParts<T, Brand, Align>
 class KeyedHeapArray;
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Align = alignof(T)>
+    requires KeyedHolderParts<T, Brand, Align>
+class KeyedMaskedArray;
 
 // The door of a FixedArray and a HeapArray to the body of each get of a run
 // and to the root stage of enumerate() (RegionRefDoor of
@@ -1810,6 +1824,28 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
         return this->state_.first[position];
     }
 
+    // The slot door: on_some gets the element at position in place, as T&,
+    // for the time of the call, and at or past size() on_none runs.  Its one
+    // caller is the keyed holder KeyedHeapArray, whose LoanKey keeps each arm
+    // away from a second door of the holder.  The body is the body of the
+    // element door, with no forced inline, so a door of the holder has the
+    // code of that door.  The two arms give the same type, which holds no
+    // borrow.  Complexity: one compare, and the cost of the arm.
+    template <class OnSome, class OnNone>
+        requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
+              && std::same_as<std::invoke_result_t<OnSome, T&>, std::invoke_result_t<OnNone>>
+              && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
+              && ::foundation::linear::HoldsNoLinearValue<OnNone> && ArmsStoreNoBorrowOutside<OnSome, OnNone>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
+        lend_slot_(std::size_t position, OnSome&& on_some,
+                   OnNone&& on_none) & noexcept(std::is_nothrow_invocable_v<OnSome, T&>
+                                                && std::is_nothrow_invocable_v<OnNone>) {
+        if (position >= this->state_.count) {
+            return static_cast<OnNone&&>(on_none)();
+        }
+        return static_cast<OnSome&&>(on_some)(this->state_.first[position]);
+    }
+
 public:
     using element_type = T;
 
@@ -2002,10 +2038,16 @@ public:
     // size() on_none runs.  The two arms give the same type, which holds no
     // borrow, so no reference to the element leaves the door.  A const array
     // gives a const element.  No type holds the count of a HeapArray, so the
-    // position is a count, as for get().  Complexity: one compare, and the
-    // cost of the arm.
+    // position is a count, as for get().  The door that is not const takes
+    // only an element that two threads can write at the same time
+    // (Synchronized of foundation/Transfer.h).  Another name of the array,
+    // such as a capture of an arm, could replace the storage while an arm
+    // holds a plain element.  So a plain element takes set, exchange or
+    // update, or the keyed holder KeyedHeapArray (foundation/core/KeyedArray.h).
+    // Complexity: one compare, and the cost of the arm.
     template <class OnSome, class OnNone>
-        requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
+        requires ::foundation::transfer::Synchronized<T> && std::is_invocable_v<OnSome, T&>
+              && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T&>, std::invoke_result_t<OnNone>>
               && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
               && ::foundation::linear::HoldsNoLinearValue<OnNone> && ArmsStoreNoBorrowOutside<OnSome, OnNone>
@@ -2018,6 +2060,14 @@ public:
         }
         return static_cast<OnSome&&>(on_some)(this->state_.first[position]);
     }
+    template <class OnSome, class OnNone>
+        requires(!::foundation::transfer::Synchronized<T>)
+                 && std::is_invocable_v<OnSome, T&> && (!std::is_invocable_v<OnSome, T const&>)
+    void with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) & =
+        delete("a HeapArray lends an element that an arm writes in place only when two threads can write the element "
+               "(Synchronized), because another name of the array could replace its storage while the arm holds the "
+               "element: call set, exchange or update(position, body), or hold the array in a KeyedHeapArray "
+               "(mint_keyed_owner) and call with_element(key, position, on_some, on_none)");
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
@@ -2033,7 +2083,8 @@ public:
         return static_cast<OnSome&&>(on_some)(static_cast<T const*>(this->state_.first)[position]);
     }
     template <class OnSome, class OnNone>
-        requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
+        requires ::foundation::transfer::Synchronized<T> && std::is_invocable_v<OnSome, T&>
+                  && std::is_invocable_v<OnNone>
                   && (!::foundation::linear::HoldsNoLinearValue<OnSome>
                       || !::foundation::linear::HoldsNoLinearValue<OnNone>)
     void with_element(std::size_t position, OnSome&& on_some,
@@ -2345,6 +2396,26 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
     // after its body, through the storage and the mask of this time.
     [[nodiscard]] constexpr T& slot_of_update_(std::uint64_t key) noexcept { return held_()[key & this->state_.mask]; }
 
+    template <class Element, ::foundation::brand::IsBrand Brand, std::size_t ElementAlign>
+        requires KeyedHolderParts<Element, Brand, ElementAlign>
+    friend class KeyedMaskedArray;
+
+    // The slot door: body gets the element at key & (count - 1) in place, as
+    // T&, for the time of the call, and the door gives the result of body.
+    // Its one caller is the keyed holder KeyedMaskedArray, whose LoanKey keeps
+    // each body away from a second door of the holder.  The body is the body
+    // of the element door, with no forced inline, so a door of the holder has
+    // the code of that door.  The result holds no borrow.  An empty array
+    // ends the process, as at_masked does.  Complexity: O(1), and the cost of
+    // body.
+    template <class Body>
+        requires std::is_invocable_v<Body, T&> && HoldsNoBorrow<std::invoke_result_t<Body, T&>>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T&>
+        lend_masked_slot_(std::uint64_t key, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
+        return static_cast<Body&&>(body)(held_()[key & this->state_.mask]);
+    }
+
 public:
     using element_type = T;
 
@@ -2426,17 +2497,30 @@ public:
     // the count, so the door has no none arm.  The result holds no borrow, so
     // no reference to the element leaves the door.  A const array gives a
     // const element.  The door writes no state of the array, so two threads
-    // can call it on one shared array, and only an element that is safe for
-    // concurrent writes, such as a class of Atomic cells, makes such calls
-    // correct.  An empty array ends the process, as at_masked does.
-    // Complexity: O(1), and the cost of body.
+    // can call it on one shared array.  The door that is not const takes only
+    // an element that is safe for concurrent writes (Synchronized of
+    // foundation/Transfer.h), such as a class of Atomic cells.  Another name
+    // of the array, such as a capture of the body, could replace the storage
+    // while the body holds a plain element.  So a plain element takes
+    // set_masked, exchange_masked or update_masked, or the keyed holder
+    // KeyedMaskedArray (foundation/core/KeyedArray.h).  An empty array ends
+    // the process, as at_masked does.  Complexity: O(1), and the cost of body.
     template <class Body>
-        requires std::is_invocable_v<Body, T&> && HoldsNoBorrow<std::invoke_result_t<Body, T&>>
-              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
+        requires ::foundation::transfer::Synchronized<T> && std::is_invocable_v<Body, T&>
+              && HoldsNoBorrow<std::invoke_result_t<Body, T&>> && ::foundation::linear::HoldsNoLinearValue<Body>
+              && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T&>
         with_masked(std::uint64_t key, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
         return static_cast<Body&&>(body)(held_()[key & this->state_.mask]);
     }
+    template <class Body>
+        requires(!::foundation::transfer::Synchronized<T>)
+                 && std::is_invocable_v<Body, T&> && (!std::is_invocable_v<Body, T const&>)
+    void with_masked(std::uint64_t key, Body&& body) & =
+        delete("a MaskedArray lends an element that a body writes in place only when two threads can write the element "
+               "(Synchronized), because another name of the array could replace its storage while the body holds the "
+               "element: call set_masked, exchange_masked or update_masked(key, body), or hold the array in a "
+               "KeyedMaskedArray (mint_keyed_owner) and call with_masked(loan, key, body)");
     template <class Body>
         requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<std::invoke_result_t<Body, T const&>>
               && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
@@ -2445,7 +2529,7 @@ public:
         return static_cast<Body&&>(body)(static_cast<T const*>(held_())[key & this->state_.mask]);
     }
     template <class Body>
-        requires LinearElementBody<Body, T>
+        requires ::foundation::transfer::Synchronized<T> && LinearElementBody<Body, T>
     void with_masked(std::uint64_t key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
         requires LinearElementBody<Body, T const>
