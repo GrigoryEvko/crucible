@@ -27,11 +27,8 @@ using namespace crucible;
 static TensorMeta make_meta(SyntheticAddress address) {
     TensorMeta m{};
     m.data_ptr = mint_synthetic_data_ptr(address);
-    m.ndim = 2;
-    m.sizes[0] = ::crucible::tensor_dim(128);
-    m.sizes[1] = ::crucible::tensor_dim(256);
-    m.strides[0] = ::crucible::tensor_dim(256);
-    m.strides[1] = ::crucible::tensor_dim(1);
+    const ::fixy::FixedArray<TensorDim, 2> dims{::crucible::tensor_dim(128), ::crucible::tensor_dim(256)};
+    m.set_shape(contiguous_tensor_shape(TensorSizes{dims.view()}).expect("a contiguous shape of rank 2"));
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
     m.device_idx = 0;

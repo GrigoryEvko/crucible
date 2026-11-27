@@ -31,9 +31,7 @@ constexpr uint64_t kIterations = 64;
 // the tensor needs no data address.
 crucible::TensorMeta make_meta() noexcept {
     crucible::TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = crucible::tensor_dim(1024);
-    meta.strides[0] = crucible::tensor_dim(1);
+    meta.set_shape(crucible::vector_tensor_shape(crucible::tensor_dim(1024)));
     meta.dtype = crucible::ScalarType::Float;
     meta.device_type = crucible::DeviceType::CPU;
     meta.device_idx = 0;

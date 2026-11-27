@@ -33,6 +33,13 @@ using crucible::ExternalDataPtr;
 using crucible::vessel::TypedMeta;
 using crucible::vessel::TypedSchemaName;
 
+// The shape of rank 1 with zero in its size and its stride.
+[[nodiscard]] crucible::TensorShape rank_one_shape() noexcept {
+    const ::fixy::FixedArray<crucible::TensorDim, 1> zero{crucible::tensor_dim(0)};
+    return crucible::mint_tensor_shape(crucible::TensorSizes{zero.view()}, crucible::TensorStrides{zero.view()})
+        .expect("a shape of rank 1");
+}
+
 // The tag is phantom, so the typed wrapper must add no storage at the
 // ABI boundary.  A failure here means the wrapper costs something.  The handle
 // of a Vigil is a word that the table of handles checks (test_vigil_handles).
@@ -149,15 +156,12 @@ void test_meta_roundtrip() {
     EXPECT(typed_multi.value() == &first, "as_meta_typed pointer must match the raw pointer");
 
     // The decode gives each field of the record, the data pointer too.
+    const ::fixy::FixedArray<crucible::TensorDim, 3> expected_dims{crucible::tensor_dim(4), crucible::tensor_dim(8),
+                                                                   crucible::tensor_dim(16)};
     crucible::TensorMeta expected{};
-    expected.sizes[0] = crucible::tensor_dim(4);
-    expected.sizes[1] = crucible::tensor_dim(8);
-    expected.sizes[2] = crucible::tensor_dim(16);
-    expected.strides[0] = crucible::tensor_dim(128);
-    expected.strides[1] = crucible::tensor_dim(16);
-    expected.strides[2] = crucible::tensor_dim(1);
+    expected.set_shape(crucible::contiguous_tensor_shape(crucible::TensorSizes{expected_dims.view()})
+                           .expect("a contiguous shape of rank 3"));
     expected.data_ptr = crucible::external_data_ptr(meta.data_ptr);
-    expected.ndim = 3;
     expected.dtype = crucible::ScalarType::Float;
     expected.device_type = crucible::DeviceType::CUDA;
     expected.device_idx = 1;
@@ -847,7 +851,7 @@ void test_hash_order_finds_each_row() {
 // element_size in the background pipeline, which ends the process.
 void test_ladder_refuses_unnamed_enumerations() {
     crucible::TensorMeta named{};
-    named.ndim = 1;
+    named.set_shape(rank_one_shape());
     named.dtype = crucible::ScalarType::Float;
     named.device_type = crucible::DeviceType::CUDA;
     named.layout = crucible::Layout::SparseBsc;
@@ -882,7 +886,7 @@ enum class RecordCount : uint8_t {
     auto const [is_some, records] =
         ::fixy::build_fixed_array<crucible::TensorMeta, 3>([&sealed, count](auto run) noexcept {
             for (crucible::TensorMeta& meta : run) {
-                meta.ndim = 1;
+                meta.set_shape(rank_one_shape());
                 meta.dtype = crucible::ScalarType::Float;
             }
             return crucible::vessel::validate_ffi_op(

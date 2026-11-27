@@ -141,11 +141,9 @@ void test_numerics_policy_word() {
     meta.dtype = ScalarType::Float;
     meta.device_type = crucible::DeviceType::CUDA;
     meta.device_idx = 3;
-    meta.ndim = 2;
-    meta.sizes[0] = crucible::tensor_dim(3);
-    meta.sizes[1] = crucible::tensor_dim(4);
-    meta.strides[0] = crucible::tensor_dim(4);
-    meta.strides[1] = crucible::tensor_dim(1);
+    const ::fixy::FixedArray<crucible::TensorDim, 2> dims{crucible::tensor_dim(3), crucible::tensor_dim(4)};
+    meta.set_shape(
+        crucible::contiguous_tensor_shape(crucible::TensorSizes{dims.view()}).expect("a contiguous shape of rank 2"));
     meta.layout = crucible::Layout::SparseCsr;
     meta.set_flags(static_cast<uint8_t>(crucible::meta_flags::IS_NEG | crucible::meta_flags::IS_CONJ
                                         | crucible::meta_flags::IS_LEAF | crucible::meta_flags::IS_VIEW));
@@ -179,7 +177,10 @@ void test_tensor_word() {
     edge.dtype = ScalarType::Float8_e4m3fn;
     edge.device_type = crucible::DeviceType::PrivateUse1;
     edge.device_idx = 127;
-    edge.ndim = crucible::kMaxTensorNDim;
+    const ::fixy::FixedArray<crucible::TensorDim, crucible::kMaxTensorNDim> zero_lanes = crucible::zero_tensor_dims();
+    edge.set_shape(crucible::mint_tensor_shape(crucible::TensorSizes{zero_lanes.view()},
+                                               crucible::TensorStrides{zero_lanes.view()})
+                       .expect("a shape of the largest rank"));
     edge.layout = crucible::Layout::SparseBsc;
     edge.set_flags(0x3F);
     CRUCIBLE_TEST_ASSERT(kTest,

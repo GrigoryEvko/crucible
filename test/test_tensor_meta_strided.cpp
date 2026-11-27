@@ -17,8 +17,13 @@
 
 namespace {
 
+using ::crucible::kMaxTensorNDim;
 using ::crucible::ScalarType;
+using ::crucible::TensorDim;
+using ::crucible::TensorDimArray;
 using ::crucible::TensorMeta;
+using ::crucible::TensorSizes;
+using ::crucible::TensorStrides;
 using ::crucible::TensorViewRefusal;
 using ::fixy::check::pass;
 
@@ -27,19 +32,26 @@ using Elements = ::fixy::FixedArray<std::int32_t, 6>;
 // The descriptor of an Int tensor of the sizes and the strides.
 [[nodiscard]] TensorMeta int_meta(::fixy::View<std::int64_t const> sizes,
                                   ::fixy::View<std::int64_t const> strides) noexcept {
-    TensorMeta meta{};
-    meta.dtype = ScalarType::Int;
-    meta.ndim = static_cast<std::uint8_t>(sizes.size());
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> size_lanes = ::crucible::zero_tensor_dims();
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> stride_lanes = ::crucible::zero_tensor_dims();
     std::size_t axis = 0;
     for (std::int64_t const size : sizes) {
-        meta.sizes[axis] = ::crucible::tensor_dim(size);
+        size_lanes.set(TensorDimArray::LaneIndex::check(axis).expect("the rank is at most 8"),
+                       ::crucible::tensor_dim(size));
         ++axis;
     }
     axis = 0;
     for (std::int64_t const stride : strides) {
-        meta.strides[axis] = ::crucible::tensor_dim(stride);
+        stride_lanes.set(TensorDimArray::LaneIndex::check(axis).expect("the rank is at most 8"),
+                         ::crucible::tensor_dim(stride));
         ++axis;
     }
+    TensorMeta meta{};
+    meta.dtype = ScalarType::Int;
+    meta.set_shape(::crucible::mint_tensor_shape(
+                       TensorSizes{size_lanes.view().window(0, sizes.size()).expect("the rank is at most 8")},
+                       TensorStrides{stride_lanes.view().window(0, strides.size()).expect("the rank is at most 8")})
+                       .expect("two counts of one rank make a shape"));
     return meta;
 }
 

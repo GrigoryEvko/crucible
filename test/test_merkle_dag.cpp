@@ -57,12 +57,10 @@ two_ops(::fixy::BumpArena<crucible::DagArena>& arena, SchemaHash first, SchemaHa
         ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
     crucible::test::Kernels kernels = crucible::test::make_kernel_arena();
 
+    const ::fixy::FixedArray<crucible::TensorDim, 2> dims{::crucible::tensor_dim(32), ::crucible::tensor_dim(64)};
     crucible::TensorMeta m{};
-    m.ndim = 2;
-    m.sizes[0] = ::crucible::tensor_dim(32);
-    m.sizes[1] = ::crucible::tensor_dim(64);
-    m.strides[0] = ::crucible::tensor_dim(64);
-    m.strides[1] = ::crucible::tensor_dim(1);
+    m.set_shape(
+        crucible::contiguous_tensor_shape(crucible::TensorSizes{dims.view()}).expect("a contiguous shape of rank 2"));
     m.dtype = crucible::ScalarType::Float;
     auto nbytes = crucible::compute_storage_nbytes(crucible::external_tensor_meta(m));
     auto nbytes_det = crucible::compute_storage_nbytes_det(crucible::external_tensor_meta(m));
@@ -74,12 +72,13 @@ two_ops(::fixy::BumpArena<crucible::DagArena>& arena, SchemaHash first, SchemaHa
     CRUCIBLE_TEST_ASSERT(kTest, !nbytes.was_clamped() && "well-formed tensor must not saturate");
 
     {
+        // 2^32 × 2^32 = 2^64, which overflows int64_t.
+        const ::fixy::FixedArray<crucible::TensorDim, 2> huge_lanes{::crucible::tensor_dim(1LL << 32),
+                                                                    ::crucible::tensor_dim(1)};
         crucible::TensorMeta huge{};
-        huge.ndim = 2;
-        huge.sizes[0] = ::crucible::tensor_dim(1LL << 32);
-        huge.strides[0] = ::crucible::tensor_dim(1LL << 32);  // 2^32 × 2^32 = 2^64, overflows int64_t
-        huge.sizes[1] = ::crucible::tensor_dim(1);
-        huge.strides[1] = ::crucible::tensor_dim(1);
+        huge.set_shape(crucible::mint_tensor_shape(crucible::TensorSizes{huge_lanes.view()},
+                                                   crucible::TensorStrides{huge_lanes.view()})
+                           .expect("a shape of rank 2"));
         huge.dtype = crucible::ScalarType::Float;
         auto nb = crucible::compute_storage_nbytes(crucible::external_tensor_meta(huge));
         CRUCIBLE_TEST_ASSERT(kTest, nb.value() == UINT64_MAX && "huge tensor must saturate value to UINT64_MAX");
@@ -106,22 +105,27 @@ two_ops(::fixy::BumpArena<crucible::DagArena>& arena, SchemaHash first, SchemaHa
                 == crucible::detail::compute_storage_nbytes_simd(crucible::external_tensor_meta(meta));
         };
 
+        const ::fixy::FixedArray<crucible::TensorDim, 2> reversed_strides{::crucible::tensor_dim(-4),
+                                                                          ::crucible::tensor_dim(1)};
+        const ::fixy::FixedArray<crucible::TensorDim, 2> reversed_sizes{::crucible::tensor_dim(8),
+                                                                        ::crucible::tensor_dim(4)};
         crucible::TensorMeta reversed{};
-        reversed.ndim = 2;
-        reversed.sizes[0] = ::crucible::tensor_dim(8);
-        reversed.sizes[1] = ::crucible::tensor_dim(4);
-        reversed.strides[0] = ::crucible::tensor_dim(-4);
-        reversed.strides[1] = ::crucible::tensor_dim(1);
+        reversed.set_shape(crucible::mint_tensor_shape(crucible::TensorSizes{reversed_sizes.view()},
+                                                       crucible::TensorStrides{reversed_strides.view()})
+                               .expect("a shape of rank 2"));
         reversed.dtype = crucible::ScalarType::Double;
         CRUCIBLE_TEST_ASSERT(kTest, agrees(reversed)
                                         && "the public storage-span name stopped forwarding to the tested reference");
 
+        const ::fixy::FixedArray<crucible::TensorDim, 2> empty_sizes{::crucible::tensor_dim(8),
+                                                                     ::crucible::tensor_dim(0)};
         crucible::TensorMeta empty_extent = reversed;
-        empty_extent.sizes[1] = ::crucible::tensor_dim(0);
+        empty_extent.set_shape(crucible::mint_tensor_shape(crucible::TensorSizes{empty_sizes.view()},
+                                                           crucible::TensorStrides{reversed_strides.view()})
+                                   .expect("a shape of rank 2"));
         CRUCIBLE_TEST_ASSERT(kTest, agrees(empty_extent));
 
         crucible::TensorMeta scalar_meta{};
-        scalar_meta.ndim = 0;
         scalar_meta.dtype = crucible::ScalarType::ComplexDouble;
         CRUCIBLE_TEST_ASSERT(kTest, agrees(scalar_meta));
 
@@ -599,12 +603,10 @@ two_ops(::fixy::BumpArena<crucible::DagArena>& arena, SchemaHash first, SchemaHa
         // Frozen 2026-11-16 when the word took these facts.  The tensor of
         // the vectors above has the rank zero, the strided layout, no bit and
         // the offset zero, so its word did not move.
+        const ::fixy::FixedArray<crucible::TensorDim, 2> fact_dims{crucible::tensor_dim(3), crucible::tensor_dim(4)};
         crucible::TensorMeta fact_input = real_input;
-        fact_input.ndim = 2;
-        fact_input.sizes[0] = crucible::tensor_dim(3);
-        fact_input.sizes[1] = crucible::tensor_dim(4);
-        fact_input.strides[0] = crucible::tensor_dim(4);
-        fact_input.strides[1] = crucible::tensor_dim(1);
+        fact_input.set_shape(crucible::contiguous_tensor_shape(crucible::TensorSizes{fact_dims.view()})
+                                 .expect("a contiguous shape of rank 2"));
         fact_input.layout = crucible::Layout::Sparse;
         fact_input.set_flags(static_cast<uint8_t>(crucible::meta_flags::IS_NEG | crucible::meta_flags::IS_CONJ));
         fact_input.storage_offset = 5;

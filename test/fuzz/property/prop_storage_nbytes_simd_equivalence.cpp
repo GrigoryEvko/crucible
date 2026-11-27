@@ -55,7 +55,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             TensorMeta meta{};
             // ndim in [0, 8] — covers scalar (ndim=0), single-dim,
             // and full 8-dim cases.
-            meta.ndim = static_cast<uint8_t>(rng.next_below(9));
+            const auto ndim = static_cast<uint8_t>(rng.next_below(9));
 
             // dtype: pick one of the common scalar types.
             // Match the ordinals that exist in Types.h.
@@ -92,13 +92,21 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             //   - includes huge sizes / strides (forces pre-screen
             //     failure, scalar fallback path)
             //   - includes negative strides (max/min split)
-            for (uint8_t d = 0; d < meta.ndim; ++d) {
+            ::fixy::FixedArray<TensorDim, kMaxTensorNDim> sizes = zero_tensor_dims();
+            ::fixy::FixedArray<TensorDim, kMaxTensorNDim> strides = zero_tensor_dims();
+            for (uint8_t d = 0; d < ndim; ++d) {
+                const TensorDimArray::LaneIndex lane =
+                    TensorDimArray::LaneIndex::check(d).expect("the rank is at most 8");
                 const uint64_t s = rng.next64() & ((uint64_t{1} << 40) - 1);
-                meta.sizes[d] = tensor_dim(static_cast<int64_t>(s));
+                sizes.set(lane, tensor_dim(static_cast<int64_t>(s)));
 
                 const uint64_t st = rng.next64() & ((uint64_t{1} << 41) - 1);
-                meta.strides[d] = tensor_dim(static_cast<int64_t>(st) - (int64_t{1} << 40));
+                strides.set(lane, tensor_dim(static_cast<int64_t>(st) - (int64_t{1} << 40)));
             }
+            meta.set_shape(
+                mint_tensor_shape(TensorSizes{sizes.view().window(0, ndim).expect("the rank is at most 8")},
+                                  TensorStrides{strides.view().window(0, ndim).expect("the rank is at most 8")})
+                    .expect("two counts of one rank make a shape"));
             return meta;
         },
         [](const TensorMeta& meta) {

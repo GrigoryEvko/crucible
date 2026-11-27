@@ -41,9 +41,7 @@ using crucible::TraceEntry;
 
 [[nodiscard]] TensorMeta vector_meta(int64_t extent) {
     TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = crucible::tensor_dim(extent);
-    meta.strides[0] = crucible::tensor_dim(1);
+    meta.set_shape(crucible::vector_tensor_shape(crucible::tensor_dim(extent)));
     meta.dtype = crucible::ScalarType::Float;
     return meta;
 }

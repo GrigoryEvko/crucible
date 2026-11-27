@@ -132,9 +132,7 @@ constexpr uint64_t kStreamOps = kOpsBeforeStop + kOpsWhileStopped + kOpsAfterRes
 // pointer, so the build gives it no slot of the memory plan.
 [[nodiscard]] crucible::TensorMeta output_meta(uint64_t index) noexcept {
     crucible::TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = crucible::tensor_dim(static_cast<int64_t>(64 + index % kPeriod));
-    meta.strides[0] = crucible::tensor_dim(1);
+    meta.set_shape(crucible::vector_tensor_shape(crucible::tensor_dim(static_cast<int64_t>(64 + index % kPeriod))));
     meta.dtype = crucible::ScalarType::Float;
     meta.device_type = crucible::DeviceType::CPU;
     meta.device_idx = 0;

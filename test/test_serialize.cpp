@@ -34,15 +34,14 @@ static uint64_t fnv1a_bytes(::fixy::View<const std::byte> bytes) {
 static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     crucible::TensorMeta m{};
     if (size1 > 0) {
-        m.ndim = 2;
-        m.sizes[0] = ::crucible::tensor_dim(size0);
-        m.sizes[1] = ::crucible::tensor_dim(size1);
-        m.strides[0] = ::crucible::tensor_dim(size1);
-        m.strides[1] = ::crucible::tensor_dim(1);
+        const ::fixy::FixedArray<crucible::TensorDim, 2> dims{::crucible::tensor_dim(size0),
+                                                              ::crucible::tensor_dim(size1)};
+        m.set_shape(crucible::contiguous_tensor_shape(crucible::TensorSizes{dims.view()})
+                        .expect("a contiguous shape of rank 2"));
     } else {
-        m.ndim = 1;
-        m.sizes[0] = ::crucible::tensor_dim(size0);
-        m.strides[0] = ::crucible::tensor_dim(1);
+        const ::fixy::FixedArray<crucible::TensorDim, 1> dims{::crucible::tensor_dim(size0)};
+        m.set_shape(crucible::contiguous_tensor_shape(crucible::TensorSizes{dims.view()})
+                        .expect("a contiguous shape of rank 1"));
     }
     m.dtype = crucible::ScalarType::Float;
     m.device_type = crucible::DeviceType::CPU;

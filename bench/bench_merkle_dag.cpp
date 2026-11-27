@@ -52,17 +52,28 @@ void check_meta_tail(const TensorMeta& meta) {
         CRUCIBLE_BENCH_CHECK(raw_tensor_dim(meta.sizes[d]) == 0 && raw_tensor_dim(meta.strides[d]) == 0);
 }
 
+// The shape of rank ndim with random sizes and strides, drawn in the order of
+// the lanes: the size of a lane, then its stride.
+TensorShape random_shape(uint8_t ndim) {
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> sizes = zero_tensor_dims();
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> strides = zero_tensor_dims();
+    for (uint8_t d = 0; d < ndim; d++) {
+        const TensorDimArray::LaneIndex lane = TensorDimArray::LaneIndex::check(d).expect("the rank is at most 8");
+        sizes.set(lane, tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256))));
+        strides.set(lane, tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64))));
+    }
+    return mint_tensor_shape(TensorSizes{sizes.view().window(0, ndim).expect("the rank is at most 8")},
+                             TensorStrides{strides.view().window(0, ndim).expect("the rank is at most 8")})
+        .expect("two counts of one rank make a shape");
+}
+
 // One metadata of rank ndim with random sizes, strides and data pointer.
 TensorMeta make_synthetic_meta(uint8_t ndim) {
     TensorMeta m{};
-    m.ndim = ndim;
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
     m.device_idx = 0;
-    for (uint8_t d = 0; d < ndim; d++) {
-        m.sizes[d] = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
-        m.strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
-    }
+    m.set_shape(random_shape(ndim));
     m.data_ptr = mint_synthetic_data_ptr(SyntheticAddress{0x7f0000000000ULL + bench_rand() % 0x100000});
     check_meta_tail(m);
     return m;
@@ -334,14 +345,10 @@ int run_bench(::fixy::os::Args const& arguments) {
             for (uint16_t j = 0; j < total_metas && j < 8; j++) {
                 metas.update(::fixy::Index<8>::check(j).expect("the position fits the array"),
                              [i, j](TensorMeta& meta) noexcept {
-                                 meta.ndim = 4;
                                  meta.dtype = ScalarType::Float;
                                  meta.device_type = DeviceType::CUDA;
                                  meta.device_idx = 0;
-                                 for (uint8_t d = 0; d < 4; d++) {
-                                     meta.sizes[d] = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
-                                     meta.strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
-                                 }
+                                 meta.set_shape(random_shape(4));
                                  meta.data_ptr = mint_synthetic_data_ptr(
                                      SyntheticAddress{0x7f0000000000ULL + (i * 8 + j) * 0x1000});
                              });
@@ -395,7 +402,12 @@ int run_bench(::fixy::os::Args const& arguments) {
                 for (uint16_t j = 0; j < total_metas && j < 8; j++) {
                     metas.update(::fixy::Index<8>::check(j).expect("the position fits the array"),
                                  [i, j](TensorMeta& meta) noexcept {
-                                     meta.ndim = 4;
+                                     const ::fixy::FixedArray<TensorDim, kMaxTensorNDim> zero_lanes =
+                                         zero_tensor_dims();
+                                     const ::fixy::View<TensorDim const> lanes =
+                                         zero_lanes.view().window(0, 4).expect("the rank 4 is at most 8");
+                                     meta.set_shape(mint_tensor_shape(TensorSizes{lanes}, TensorStrides{lanes})
+                                                        .expect("a shape of rank 4"));
                                      meta.dtype = ScalarType::Float;
                                      meta.device_type = DeviceType::CUDA;
                                      meta.data_ptr = mint_synthetic_data_ptr(

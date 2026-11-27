@@ -33,9 +33,7 @@ namespace crucible::fuzz::boundary {
     const auto op = encode_trace_op(record);
     seed.append_bytes(op.view());
     TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = tensor_dim(4);
-    meta.strides[0] = tensor_dim(1);
+    meta.set_shape(vector_tensor_shape(tensor_dim(4)));
     meta.dtype = ScalarType::Float;
     const auto meta_bytes = encode_trace_meta(meta);
     seed.append_bytes(meta_bytes.view());

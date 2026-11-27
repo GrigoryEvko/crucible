@@ -53,10 +53,8 @@ static_assert(combine_digest() == 0xbf5ac219ada20de7ULL);
 
 crucible::TensorMeta tensor(crucible::ScalarType dtype) {
     crucible::TensorMeta meta{};
-    meta.ndim = 1;
     meta.dtype = dtype;
-    meta.sizes[0] = crucible::tensor_dim(1024);
-    meta.strides[0] = crucible::tensor_dim(1);
+    meta.set_shape(crucible::vector_tensor_shape(crucible::tensor_dim(1024)));
     return meta;
 }
 
@@ -149,7 +147,7 @@ void test_collective_node_admission() {
     CRUCIBLE_TEST_ASSERT(kTest, reheader.content_hash == header.content_hash);
 
     auto changed_shape = op;
-    changed_shape.attrs.input.meta.sizes[0] = crucible::tensor_dim(2048);
+    changed_shape.attrs.input.meta.set_shape(crucible::vector_tensor_shape(crucible::tensor_dim(2048)));
     auto const shape_hash = ir::serialize_ir001_header(ir::admit_ir001_node(changed_shape)).content_hash;
     CRUCIBLE_TEST_ASSERT(kTest, shape_hash != header.content_hash);
 

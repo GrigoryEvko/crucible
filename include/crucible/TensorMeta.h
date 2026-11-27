@@ -40,74 +40,57 @@ inline constexpr int64_t kMaxTensorDimExtent = ::fixy::max_of<int64_t> / kTensor
 
 using TensorDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorDimExtent>, int64_t>;
 
+struct TensorMeta;
+class TensorShape;
+
 // The lanes of the sizes or of the strides of a tensor.  The Protocol family
 // takes its equality, hash and image from the private block of lanes.
 //
-// Each lane holds a TensorDim.  Slot::operator= is the one write of a lane,
-// and it takes a TensorDim, so the bound is an invariant of the block.  No
-// byte door makes a block: no_start_over_bytes refuses decode of the family,
-// decode and bit_cast of the Scalar family, and a lifetime start over bytes.
-// Lanes from outside take one of two routes, and each route checks the bound
-// of each lane once.  A record of a trace file, the image of a descriptor in
-// the Cipher store and a record of a C caller of the vessel go through
-// decode_tensor_meta.  fill_meta of the vessel reads a tensor of PyTorch,
-// checks its rank and each extent, and then writes each lane through
-// tensor_dim.
+// Each lane holds a TensorDim.  set_lane_ is the one write of a lane, and it
+// takes a TensorDim, so the bound is an invariant of the block.  No byte door
+// makes a block: no_start_over_bytes refuses decode of the family, decode and
+// bit_cast of the Scalar family, and a lifetime start over bytes.
+//
+// The lanes of a descriptor agree with its rank: each lane past the rank
+// holds zero.  So only TensorShape writes a lane, and only TensorShape and
+// TensorMeta copy a block.  A copy of the block of another descriptor would
+// put its lanes beside a rank that they do not match.  The copy constructor
+// and the copy assignment are private, and each is trivial, so a TensorMeta
+// stays trivially copyable.  The subscript reads a lane, and no subscript
+// writes one.
 struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] TensorDimArray {
     // The index of one lane.
     using LaneIndex = ::fixy::Index<kMaxTensorNDim>;
 
+    constexpr TensorDimArray() noexcept = default;
+
 private:
+    friend struct TensorMeta;
+    friend class TensorShape;
+
+    constexpr TensorDimArray(TensorDimArray const&) noexcept = default;
+    constexpr TensorDimArray& operator=(TensorDimArray const&) noexcept = default;
+
     ::fixy::FixedArray<int64_t, kMaxTensorNDim> lanes_{};
 
     // The lane of a dimension.  A dimension index comes from a loop bounded
-    // by ndim, which the trust ladder bounds by the lane count, so a caller
-    // that knows the bound folds the check away.
+    // by ndim, which TensorRank bounds by the lane count, so a caller that
+    // knows the bound folds the check away.
     [[nodiscard]] static constexpr LaneIndex lane_of_(std::size_t index) noexcept {
         return LaneIndex::check(index).expect("a dimension index is below the lane count of a TensorDimArray");
     }
 
+    // The one write of a lane.
+    constexpr void set_lane_(std::size_t index, TensorDim dim) noexcept { lanes_.set(lane_of_(index), dim.value()); }
+
 public:
-    // The lane of a block that the subscript of a block that is not const
-    // names.  It holds the block and the index, and a write goes through the
-    // value door of the lanes, so no reference to a lane leaves the block.
-    // Only the subscript of the block makes a slot, so each slot names a lane
-    // of a block, and the lane holds a TensorDim.
-    class Slot {
-    public:
-        constexpr Slot(Slot const&) noexcept = default;
-
-        // A write of one slot from another slot copies the lane.  The source
-        // lane holds a TensorDim, so the copy keeps the bound.
-        constexpr void operator=(Slot const& source) const noexcept { *this = static_cast<TensorDim>(source); }
-
-        constexpr void operator=(TensorDim dim) const noexcept { array_->lanes_.set(lane_, dim.value()); }
-
-        [[nodiscard]] constexpr int64_t value() const noexcept { return array_->lanes_.at(lane_); }
-
-        // The lane holds a TensorDim: the one write of a lane takes a
-        // TensorDim, and no byte door makes a block.  So the mint does not
-        // check the bound again.
-        [[nodiscard]] constexpr operator TensorDim() const noexcept {
-            return ::fixy::mint_refined_trusted<::fixy::bounded_above<kMaxTensorDimExtent>>(value());
-        }
-
-    private:
-        friend struct TensorDimArray;
-
-        constexpr Slot(::fixy::Ref<TensorDimArray> array, LaneIndex lane) noexcept : array_{array}, lane_{lane} {}
-
-        ::fixy::Ref<TensorDimArray> array_;
-        LaneIndex lane_;
-    };
-
-    // The lane of a const block, which the subscript of a const block names.
-    // Only that subscript makes one, so the lane holds a TensorDim.
+    // The lane of a block, which the subscript of the block names.  Only that
+    // subscript makes one, so the lane holds a TensorDim.
     class ConstSlot {
     public:
         constexpr ConstSlot(ConstSlot const&) noexcept = default;
-        void operator=(ConstSlot const&) = delete("a ConstSlot reads a lane of a const block, and no write of a "
-                                                  "lane goes through it");
+        void operator=(ConstSlot const&) = delete("a ConstSlot reads a lane of a block, and no write of a lane goes "
+                                                  "through it.  TensorMeta::set_shape writes the lanes");
 
         [[nodiscard]] constexpr int64_t value() const noexcept { return *lane_; }
 
@@ -125,10 +108,6 @@ public:
 
         ::fixy::Ref<const int64_t> lane_;
     };
-
-    [[nodiscard]] constexpr Slot operator[](std::size_t index) noexcept {
-        return Slot{::fixy::erase_brand(::fixy::to(*this)), lane_of_(index)};
-    }
 
     [[nodiscard]] constexpr ConstSlot operator[](std::size_t index) const noexcept {
         return ConstSlot{::fixy::erase_brand(::fixy::to(lanes_.at(lane_of_(index))))};
@@ -158,8 +137,6 @@ public:
 
 [[nodiscard]] inline constexpr int64_t raw_tensor_dim(TensorDim dim) noexcept { return dim.value(); }
 
-[[nodiscard]] inline constexpr int64_t raw_tensor_dim(TensorDimArray::Slot dim) noexcept { return dim.value(); }
-
 [[nodiscard]] inline constexpr int64_t raw_tensor_dim(TensorDimArray::ConstSlot dim) noexcept { return dim.value(); }
 
 // The bits of TensorMeta::flags.  Bits 6 and 7 are reserved, and each
@@ -174,8 +151,6 @@ inline constexpr uint8_t IS_CONJ = 1 << 5;
 // The six named bits.  Each other bit is reserved.
 inline constexpr uint8_t KNOWN_BITS = IS_LEAF | IS_CONTIGUOUS | HAS_GRAD_FN | IS_VIEW | IS_NEG | IS_CONJ;
 }  // namespace meta_flags
-
-struct TensorMeta;
 
 // The flags of one tensor descriptor: the six bits of meta_flags, and bits 6
 // and 7, which are reserved and hold zero.  TensorMeta::set_flags is the one
@@ -215,6 +190,160 @@ private:
     uint8_t bits_ = 0;
 };
 
+// A rank, which is at most kMaxTensorNDim.  A rank from a byte of outside goes
+// through the checked mint of this type.
+using ValidNDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorNDim>, uint8_t>;
+
+// The rank of a tensor descriptor: the count of its dimensions, at most
+// kMaxTensorNDim.  A TensorShape holds a rank, and TensorMeta::set_shape
+// writes the rank of the descriptor from it, so the rank agrees with the
+// lanes.  No door makes a rank from a byte outside TensorShape.  A copy of the
+// rank of another descriptor would put that rank beside lanes that it does not
+// match, so the copy constructor and the copy assignment are private, and
+// each is trivial.
+//
+// The conversion to uint8_t gives the rank to a reader that takes a byte.
+class[[= ::fixy::derive_protocol{}]] TensorRank {
+public:
+    constexpr TensorRank() noexcept = default;
+
+    // The count of the dimensions.
+    [[nodiscard]] constexpr uint8_t count() const noexcept { return count_; }
+    [[nodiscard]] constexpr operator uint8_t() const noexcept { return count_; }
+
+    [[nodiscard]] friend constexpr bool operator==(TensorRank const& left, TensorRank const& right) noexcept {
+        return left.count_ == right.count_;
+    }
+
+private:
+    friend struct TensorMeta;
+    friend class TensorShape;
+
+    constexpr TensorRank(TensorRank const&) noexcept = default;
+    constexpr TensorRank& operator=(TensorRank const&) noexcept = default;
+    constexpr explicit TensorRank(ValidNDim count) noexcept : count_{count.value()} {}
+
+    uint8_t count_ = 0;
+};
+
+// The sizes of the dimensions of a shape: one lane for each dimension.
+struct TensorSizes {
+    ::fixy::View<TensorDim const> lanes{};
+};
+
+// The strides of the dimensions of a shape: one lane for each dimension.
+struct TensorStrides {
+    ::fixy::View<TensorDim const> lanes{};
+};
+
+// The lanes of mint_tensor_shape: the sizes, and then the strides.  Each has
+// its own type, so a call cannot give the strides in the place of the sizes.
+template <class Sizes, class Strides>
+concept TensorShapeLanes = std::is_same_v<Sizes, TensorSizes> && std::is_same_v<Strides, TensorStrides>;
+
+// The shape of one tensor: its rank, and the size and the stride of each
+// dimension.  Each lane past the rank holds zero.  mint_tensor_shape is the
+// one door that makes a shape, and TensorMeta::set_shape is the one door that
+// writes a shape into a descriptor.  So each descriptor holds the two claims
+// of its shape: the rank is at most kMaxTensorNDim, and each lane past the
+// rank is zero.
+class TensorShape {
+public:
+    [[nodiscard]] constexpr uint8_t ndim() const noexcept { return rank_.count(); }
+
+    [[nodiscard]] constexpr TensorDimArray const& sizes() const& noexcept { return sizes_; }
+    void sizes() const&& = delete("the lanes of a temporary shape end at the end of the full expression");
+
+    [[nodiscard]] constexpr TensorDimArray const& strides() const& noexcept { return strides_; }
+    void strides() const&& = delete("the lanes of a temporary shape end at the end of the full expression");
+
+private:
+    // The mint gives an Option<TensorShape>.  Its return type is deduced, so
+    // the Option is named only where this class is complete.
+    template <class Sizes, class Strides>
+        requires TensorShapeLanes<Sizes, Strides>
+    friend constexpr auto mint_tensor_shape(Sizes sizes, Strides strides) noexcept;
+    friend struct TensorMeta;
+
+    // The shape of the lanes, which the mint checked: the two counts are equal
+    // and at most kMaxTensorNDim.  O(rank).
+    constexpr TensorShape(TensorSizes sizes, TensorStrides strides) noexcept
+        : rank_{::fixy::mint_refined<::fixy::bounded_above<kMaxTensorNDim>>(static_cast<uint8_t>(sizes.lanes.size()))} {
+        std::size_t index = 0;
+        for (const TensorDim dim : sizes.lanes)
+            sizes_.set_lane_(index++, dim);
+        index = 0;
+        for (const TensorDim dim : strides.lanes)
+            strides_.set_lane_(index++, dim);
+    }
+
+    TensorRank rank_{};
+    TensorDimArray sizes_{};
+    TensorDimArray strides_{};
+};
+
+// The shape of the sizes and the strides, or no shape when the two counts
+// differ or pass kMaxTensorNDim.  O(rank).
+template <class Sizes, class Strides>
+    requires TensorShapeLanes<Sizes, Strides>
+[[nodiscard]] constexpr auto mint_tensor_shape(Sizes sizes, Strides strides) noexcept {
+    using Answer = ::fixy::Option<TensorShape>;
+    const std::size_t rank = sizes.lanes.size();
+    if (rank != strides.lanes.size() || rank > kMaxTensorNDim) return Answer{::fixy::none};
+    return Answer::some(TensorShape{sizes, strides});
+}
+
+// The lanes of the largest rank, each zero, for a writer that fills the lanes
+// below a rank.  The list names each lane, and a FixedArray refuses a list of
+// fewer elements than its count, so a change of kMaxTensorNDim fails here at
+// compile time.
+[[nodiscard]] constexpr ::fixy::FixedArray<TensorDim, kMaxTensorNDim> zero_tensor_dims() noexcept {
+    constexpr TensorDim zero = ::fixy::mint_refined<::fixy::bounded_above<kMaxTensorDimExtent>>(int64_t{0});
+    return ::fixy::FixedArray<TensorDim, kMaxTensorNDim>{zero, zero, zero, zero, zero, zero, zero, zero};
+}
+
+// The shape of rank 1 of a dense vector: the size extent and the stride 1.
+[[nodiscard]] constexpr TensorShape vector_tensor_shape(TensorDim extent) noexcept {
+    const ::fixy::FixedArray<TensorDim, 1> sizes{extent};
+    const ::fixy::FixedArray<TensorDim, 1> strides{tensor_dim(1)};
+    return mint_tensor_shape(TensorSizes{sizes.view()}, TensorStrides{strides.view()})
+        .expect("one size and one stride make a shape of rank 1");
+}
+
+// The shape of the sizes with the strides of a dense tensor in row-major
+// order, as PyTorch gives them: the last stride is 1, and each other stride
+// is the product of the sizes after it, where a size of 0 counts as 1.  No
+// shape when the count of the sizes passes kMaxTensorNDim, or when a stride
+// passes kMaxTensorDimExtent.  O(rank).
+[[nodiscard]] constexpr ::fixy::Option<TensorShape> contiguous_tensor_shape(TensorSizes sizes) noexcept {
+    const std::size_t rank = sizes.lanes.size();
+    if (rank > kMaxTensorNDim) return ::fixy::none;
+    ::fixy::FixedArray<int64_t, kMaxTensorNDim> extents{};
+    std::size_t index = 0;
+    for (const TensorDim dim : sizes.lanes) {
+        extents.set(TensorDimArray::LaneIndex::check(index).expect("the rank is at most kMaxTensorNDim"),
+                    ::fixy::max(dim.value(), int64_t{1}));
+        ++index;
+    }
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> strides = zero_tensor_dims();
+    int64_t stride = 1;
+    for (std::size_t position = rank; position > 0; --position) {
+        if (stride > kMaxTensorDimExtent) return ::fixy::none;
+        const TensorDimArray::LaneIndex lane =
+            TensorDimArray::LaneIndex::check(position - 1).expect("the rank is at most kMaxTensorNDim");
+        strides.set(lane, tensor_dim(stride));
+        // The first dimension has no stride before it, so its product is not
+        // read, and it can pass the bound.
+        if (position == 1) break;
+        ::fixy::Option<int64_t> next = ::fixy::checked_mul(stride, extents.at(lane));
+        if (next.is_none()) return ::fixy::none;
+        stride = std::move(next).expect("the product has a value");
+    }
+    const ::fixy::View<TensorDim const> stride_lanes =
+        strides.view().window(0, rank).expect("the rank is at most kMaxTensorNDim");
+    return mint_tensor_shape(sizes, TensorStrides{stride_lanes});
+}
+
 // The descriptor of one tensor.  The Protocol family derives its equality from
 // its parts, and its hash, image and format from the parts that are not local
 // to the process: the data pointer, the storage generation and the hash of
@@ -249,10 +378,13 @@ struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_b
     // (fixy/session/Classification.h).
     using session_payload_is_data = void;
 
+    // set_shape writes sizes, strides and ndim together.  Each of the three
+    // is public, so the descriptor stays standard-layout, and each type
+    // refuses a write from outside.
     TensorDimArray sizes{};
     TensorDimArray strides{};
     [[= ::fixy::local_part{}]] ExternalDataPtr data_ptr{};
-    uint8_t ndim = 0;
+    TensorRank ndim{};
     ScalarType dtype = ScalarType::Undefined;
     DeviceType device_type = DeviceType::CPU;
     int8_t device_idx = -1;  // -1 is the host; 0 and up index a device
@@ -287,6 +419,15 @@ struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_b
     // The one writer of the flags.  It writes the bits of meta_flags that the
     // byte sets, and zero in each reserved bit.
     constexpr void set_flags(uint8_t bits) noexcept { flags = TensorFlags{bits}; }
+
+    // The one writer of the rank and of the lanes.  Each lane past the rank
+    // of the shape holds zero, so each lane past the rank of the descriptor
+    // holds zero.
+    constexpr void set_shape(TensorShape const& shape) noexcept {
+        ndim = shape.rank_;
+        sizes = shape.sizes_;
+        strides = shape.strides_;
+    }
 
     // Two descriptors are equal when each field holds the same value, a
     // local part too: equal of the Protocol family reads each field in
@@ -426,14 +567,6 @@ using ExternalTensorMeta = ::fixy::Tagged<const TensorMeta&, ::fixy::tags::sourc
     return ::fixy::mint_tagged<::fixy::tags::source::External, const TensorMeta&>(meta);
 }
 
-// A deserialized byte can hold any value in [0, 255]. Every write of ndim
-// from outside the process goes through this so the field keeps the bound the
-// inline arrays depend on. The factory hands back a bare uint8_t, which is
-// what keeps the struct layout unchanged.
-using ValidNDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorNDim>, uint8_t>;
-
-[[nodiscard, gnu::const]] inline constexpr uint8_t make_ndim(ValidNDim raw) noexcept { return raw.value(); }
-
 // The fields of one tensor descriptor as a writer outside the process gave
 // them: a C caller of the vessel, a metadata record of a trace file, or the
 // image of a descriptor in a region of the store.  No field holds a checked
@@ -487,17 +620,23 @@ struct[[= ::fixy::derive_protocol{}]] UncheckedTensorMeta {
                                                                    ExternalDataPtr data_ptr) noexcept {
     const uint8_t ndim = fields.ndim;
     if (ndim > kMaxTensorNDim) return ::fixy::none;
-    TensorMeta meta{};
-    meta.ndim = make_ndim(::fixy::mint_refined<::fixy::bounded_above<kMaxTensorNDim>>(ndim));
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> sizes = zero_tensor_dims();
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> strides = zero_tensor_dims();
     for (const TensorDimArray::LaneIndex lane : decltype(fields.sizes)::indices()) {
         const int64_t size = fields.sizes.at(lane);
         const int64_t stride = fields.strides.at(lane);
         const bool is_lane_held =
             lane.raw() < ndim ? size <= kMaxTensorDimExtent && stride <= kMaxTensorDimExtent : size == 0 && stride == 0;
         if (!is_lane_held) return ::fixy::none;
-        meta.sizes[lane.raw()] = tensor_dim(size);
-        meta.strides[lane.raw()] = tensor_dim(stride);
+        sizes.set(lane, tensor_dim(size));
+        strides.set(lane, tensor_dim(stride));
     }
+    ::fixy::Option<TensorShape> shape =
+        mint_tensor_shape(TensorSizes{sizes.view().window(0, ndim).expect("the rank is at most kMaxTensorNDim")},
+                          TensorStrides{strides.view().window(0, ndim).expect("the rank is at most kMaxTensorNDim")});
+    if (shape.is_none()) return ::fixy::none;
+    TensorMeta meta{};
+    meta.set_shape(std::move(shape).expect("the test above found the shape"));
 
     // ScalarType and DeviceType are sparse, and a switch over the element
     // type ends the process for a value of no enumerator.  A device and a

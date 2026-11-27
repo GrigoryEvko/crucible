@@ -165,9 +165,7 @@ enum class OpPosition : std::uint32_t {
 
 TensorMeta make_meta(SyntheticAddress address) noexcept {
     TensorMeta m{};
-    m.ndim = 1;
-    m.sizes[0] = tensor_dim(1024);
-    m.strides[0] = tensor_dim(1);
+    m.set_shape(vector_tensor_shape(tensor_dim(1024)));
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.device_idx = 0;
@@ -357,9 +355,7 @@ private:
                     op.schema_hash = *schemas.get(i).expect("i is below the count of the schema hashes");
                     op.shape_hash = *shapes.get(i).expect("i is below the count of the shape hashes");
                     TensorMeta meta{};
-                    meta.ndim = 1;
-                    meta.sizes[0] = tensor_dim(1024);
-                    meta.strides[0] = tensor_dim(1);
+                    meta.set_shape(vector_tensor_shape(tensor_dim(1024)));
                     meta.dtype = ScalarType::Float;
                     const auto holder = hold_op(ops_run, i);
                     if (i > 0) {

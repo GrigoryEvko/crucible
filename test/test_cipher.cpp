@@ -64,9 +64,7 @@ static crucible::DagRef<crucible::RegionNode> make_test_region(::fixy::BumpArena
             op.schema_hash = crucible::SchemaHash{0xCAFE0000 + i + (salt << 8)};
 
             crucible::TensorMeta meta{};
-            meta.ndim = 1;
-            meta.sizes[0] = ::crucible::tensor_dim(16);
-            meta.strides[0] = ::crucible::tensor_dim(1);
+            meta.set_shape(::crucible::vector_tensor_shape(::crucible::tensor_dim(16)));
             meta.dtype = crucible::ScalarType::Float;
             const auto holder = crucible::hold_op(ops_run, i);
             crucible::TraceEntry::set_inputs(frame, holder, ::fixy::check::run_of(kTest, g_test.alloc, frame, meta),

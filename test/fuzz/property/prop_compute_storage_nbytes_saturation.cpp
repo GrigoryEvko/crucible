@@ -51,25 +51,32 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             // PRODUCT of up to 8 max dims still overflows int64 — so the
             // saturation path is exercised without feeding impossible
             // (non-representable) per-dim extents.
-            TensorMeta m{};
-            m.ndim = static_cast<uint8_t>(rng.next_below(9));  // [0, 8]
+            const auto ndim = static_cast<uint8_t>(rng.next_below(9));  // [0, 8]
             const uint32_t bucket = rng.next_below(100);
-            for (uint8_t d = 0; d < m.ndim; ++d) {
+            ::fixy::FixedArray<TensorDim, kMaxTensorNDim> sizes = zero_tensor_dims();
+            ::fixy::FixedArray<TensorDim, kMaxTensorNDim> strides = zero_tensor_dims();
+            for (uint8_t d = 0; d < ndim; ++d) {
+                const TensorDimArray::LaneIndex lane =
+                    TensorDimArray::LaneIndex::check(d).expect("the rank is at most 8");
                 if (bucket < 50) {
-                    m.sizes[d] = tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1));
-                    m.strides[d] = tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1));
+                    sizes.set(lane, tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1)));
+                    strides.set(lane, tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1)));
                 } else if (bucket < 80) {
-                    m.sizes[d] = tensor_dim(static_cast<int64_t>(rng.next32()));
-                    m.strides[d] = tensor_dim(static_cast<int64_t>(rng.next32()));
+                    sizes.set(lane, tensor_dim(static_cast<int64_t>(rng.next32())));
+                    strides.set(lane, tensor_dim(static_cast<int64_t>(rng.next32())));
                 } else {
                     // Pathological: dims at the top of the valid range.
                     const int64_t ceil_dim =
                         static_cast<int64_t>(rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1));
-                    m.sizes[d] = tensor_dim(ceil_dim);
-                    m.strides[d] = tensor_dim(
-                        static_cast<int64_t>(rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1)));
+                    sizes.set(lane, tensor_dim(ceil_dim));
+                    strides.set(lane, tensor_dim(static_cast<int64_t>(
+                                          rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1))));
                 }
             }
+            TensorMeta m{};
+            m.set_shape(mint_tensor_shape(TensorSizes{sizes.view().window(0, ndim).expect("the rank is at most 8")},
+                                          TensorStrides{strides.view().window(0, ndim).expect("the rank is at most 8")})
+                            .expect("two counts of one rank make a shape"));
             m.dtype = random_scalar_type(rng);
             return m;
         },

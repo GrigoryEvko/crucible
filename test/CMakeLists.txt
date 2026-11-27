@@ -2644,8 +2644,8 @@ crucible_neg_compile_test(neg_serialize_is_zero_uint64_max
 # write through TensorDim = Refined<bounded_above<INT64_MAX / 16>,
 # int64_t> while keeping the raw 64-byte lane blocks for SIMD loads.
 crucible_neg_compile_test(neg_tensor_meta_dim_raw_assignment
-  "no match for .operator=. .operand types are .crucible::TensorDimArray::Slot. and .int.."
-  "no known conversion for argument 1 from .int. to .crucible::TensorDim. .aka .fixy::Refinement<fixy::BoundedAbove<576460752303423487>\\(\\), long int, false>..")
+  "no match for .operator=. .operand types are .crucible::TensorDimArray::ConstSlot. and .int.."
+  "candidate 1: .void crucible::TensorDimArray::ConstSlot::operator=\\(const crucible::TensorDimArray::ConstSlot&\\). \\(deleted\\)")
 crucible_neg_compile_test(neg_tensor_meta_dim_above_max
   "foundation/contracts/Pre\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\). is not a constant expression"
   "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
@@ -2653,16 +2653,18 @@ crucible_neg_compile_test(neg_tensor_meta_dim_above_max
 # Each lane of a TensorDimArray holds a TensorDim, so the conversion of a
 # slot does not check the bound.  Four fixtures close each road to a lane
 # that holds no TensorDim:
-#   * neg_tensor_dim_const_slot_from_ref and neg_tensor_dim_slot_from_ref:
-#     only the subscript of the block makes a slot.
+#   * neg_tensor_dim_const_slot_from_ref: only the subscript of the block
+#     makes a slot.
+#   * neg_tensor_dim_lane_write: no subscript writes a lane, so a lane past
+#     the rank of a descriptor keeps its zero.
 #   * neg_tensor_dim_array_protocol_decode and neg_tensor_dim_array_bit_cast:
 #     no byte door of the Protocol or the Scalar family makes a block.
 crucible_neg_compile_test(neg_tensor_dim_const_slot_from_ref
   "error: .constexpr crucible::TensorDimArray::ConstSlot::ConstSlot\\(foundation::core::Ref<const long int>\\). is private within this context"
   "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
-crucible_neg_compile_test(neg_tensor_dim_slot_from_ref
-  "error: .constexpr crucible::TensorDimArray::Slot::Slot\\(foundation::core::Ref<crucible::TensorDimArray>, crucible::TensorDimArray::LaneIndex\\). is private within this context"
-  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_tensor_dim_lane_write
+  "no match for .operator=. .operand types are .crucible::TensorDimArray::ConstSlot. and .crucible::TensorDim."
+  "candidate 1: .void crucible::TensorDimArray::ConstSlot::operator=\\(const crucible::TensorDimArray::ConstSlot&\\). \\(deleted\\)")
 crucible_neg_compile_test(neg_tensor_dim_array_protocol_decode
   "no matching function for call to .decode<crucible::TensorDimArray>\\(foundation::core::View<const std::byte, 64>\\)."
   "the expression .decodes_at\\(.*\\(\\^\\^ T\\) \\[with T = crucible::TensorDimArray\\]. evaluated to .false.")
@@ -2674,7 +2676,64 @@ crucible_neg_compile_test(neg_tensor_dim_array_bit_cast
 # no lane and gave no error.
 crucible_neg_compile_test(neg_tensor_dim_const_slot_write
   "error: use of deleted function .void crucible::TensorDimArray::ConstSlot::operator=\\(const crucible::TensorDimArray::ConstSlot&\\)."
-  "a ConstSlot reads a lane of a const block, and no write of a lane goes through it")
+  "a ConstSlot reads a lane of a block, and no write of a lane goes through it")
+
+# The rank and the lanes of a descriptor agree: each lane past the rank holds
+# zero.  TensorMeta::set_shape writes the three together from a TensorShape,
+# and each other road to one of them is shut.  The copy constructor and the
+# copy assignment of TensorDimArray and of TensorRank are private, so no
+# designated or brace initializer and no assignment takes a part of another
+# descriptor, and no door makes a rank from a byte.
+crucible_neg_compile_test(neg_tensor_meta_designated_sizes
+  "error: .constexpr crucible::TensorDimArray::TensorDimArray\\(const crucible::TensorDimArray&\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_tensor_meta_designated_strides
+  "error: .constexpr crucible::TensorDimArray::TensorDimArray\\(const crucible::TensorDimArray&\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_tensor_meta_positional_sizes
+  "error: .constexpr crucible::TensorDimArray::TensorDimArray\\(const crucible::TensorDimArray&\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_tensor_meta_designated_ndim_copy
+  "error: .constexpr crucible::TensorRank::TensorRank\\(const crucible::TensorRank&\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_tensor_meta_designated_ndim_byte
+  "error: could not convert .2. from .int. to .crucible::TensorRank."
+  "neg_tensor_meta_designated_ndim_byte\\.cpp:[0-9]+:[0-9]+: error")
+crucible_neg_compile_test(neg_tensor_meta_ndim_from_valid_rank
+  "error: .constexpr crucible::TensorRank::TensorRank\\(crucible::ValidNDim\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_tensor_meta_sizes_assign
+  "error: .constexpr crucible::TensorDimArray& crucible::TensorDimArray::operator=\\(const crucible::TensorDimArray&\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_tensor_meta_strides_assign
+  "error: .constexpr crucible::TensorDimArray& crucible::TensorDimArray::operator=\\(const crucible::TensorDimArray&\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_tensor_meta_ndim_assign
+  "error: .constexpr crucible::TensorRank& crucible::TensorRank::operator=\\(const crucible::TensorRank&\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+
+# mint_tensor_shape is the one door that makes a TensorShape.  Its
+# constraint takes the sizes and the strides in their own types, in that
+# order, and the constructor of a shape from lanes with no check is private.
+crucible_neg_compile_test(neg_tensor_shape_lanes_swapped
+  "no matching function for call to .mint_tensor_shape\\(crucible::TensorStrides, crucible::TensorSizes\\)."
+  "required for the satisfaction of .TensorShapeLanes<Sizes, Strides>. \\[with Sizes = crucible::TensorStrides; Strides = crucible::TensorSizes\\]")
+crucible_neg_compile_test(neg_tensor_shape_raw_views
+  "no matching function for call to .mint_tensor_shape\\(const foundation::core::View<const fixy::Refinement<"
+  "required for the satisfaction of .TensorShapeLanes<Sizes, Strides>. \\[with Sizes = foundation::core::View<")
+crucible_neg_compile_test(neg_tensor_shape_construct
+  "error: .constexpr crucible::TensorShape::TensorShape\\(crucible::TensorSizes, crucible::TensorStrides\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+
+# TensorMeta::set_flags is the one writer of the flags, and it writes zero
+# in each reserved bit.  No assignment takes a byte, and the constructor of
+# the flags from a byte is private.
+crucible_neg_compile_test(neg_tensor_meta_flags_byte_write
+  "no match for .operator=. .operand types are .crucible::TensorFlags. and .uint8_t."
+  "neg_tensor_meta_flags_byte_write\\.cpp:[0-9]+:[0-9]+: error")
+crucible_neg_compile_test(neg_tensor_flags_from_byte
+  "error: .constexpr crucible::TensorFlags::TensorFlags\\(uint8_t\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
 
 # TensorMeta::data_ptr stores
 # ExternalDataPtr = Tagged<void*, source::External>.  Two HS14

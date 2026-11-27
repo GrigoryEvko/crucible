@@ -71,9 +71,7 @@ static crucible::DagRef<RegionNode> make_test_region(::fixy::BumpArena<crucible:
         TraceEntry& op = *ops.get(0).expect("the region holds one op");
         op.schema_hash = SchemaHash{0xDEADBEEF00000000ULL + seed};
         TensorMeta meta{};
-        meta.ndim = 1;
-        meta.sizes[0] = ::crucible::tensor_dim(16);
-        meta.strides[0] = ::crucible::tensor_dim(1);
+        meta.set_shape(::crucible::vector_tensor_shape(::crucible::tensor_dim(16)));
         meta.dtype = ScalarType::Float;
         const auto holder = crucible::hold_op(ops_run, 0);
         TraceEntry::set_inputs(frame, holder, ::fixy::check::run_of(kTest, g_test.alloc, frame, meta),

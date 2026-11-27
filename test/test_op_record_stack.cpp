@@ -26,23 +26,24 @@ namespace {
 
 using ::foundation::core::WindowCount;
 
-// Writes the ranks first_rank, first_rank + 1 and so on into the slots of a
-// frame.
+// Writes the marks first_rank, first_rank + 1 and so on into the output
+// index of the slots of a frame.  The output index is a plain byte, so a mark
+// can pass the rank bound of a descriptor.
 template <class Slots>
 void write_ranks(Slots& slots, uint8_t first_rank) noexcept {
     uint8_t rank = first_rank;
     for (crucible::TensorMeta& slot : slots) {
         slot = crucible::TensorMeta{};
-        slot.ndim = rank;
+        slot.output_nr = rank;
         ++rank;
     }
 }
 
-// True when the slots hold the ranks first_rank, first_rank + 1 and so on.
+// True when the slots hold the marks first_rank, first_rank + 1 and so on.
 [[nodiscard]] bool has_ranks(::fixy::View<const crucible::TensorMeta> slots, uint8_t first_rank) noexcept {
     uint8_t rank = first_rank;
     for (const crucible::TensorMeta& slot : slots) {
-        if (slot.ndim != rank) return false;
+        if (slot.output_nr != rank) return false;
         ++rank;
     }
     return true;

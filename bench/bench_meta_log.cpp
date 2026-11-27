@@ -54,12 +54,12 @@ struct PublishOwner final {
 
 // Realistic 2D float tensor (linear / matmul input).
 [[nodiscard]] static TensorMeta make_meta_2d(int64_t dim0, int64_t dim1) noexcept {
+    const ::fixy::FixedArray<crucible::TensorDim, 2> sizes{crucible::tensor_dim(dim0), crucible::tensor_dim(dim1)};
+    const ::fixy::FixedArray<crucible::TensorDim, 2> strides{crucible::tensor_dim(dim1), crucible::tensor_dim(1)};
     TensorMeta m{};
-    m.sizes[0] = crucible::tensor_dim(dim0);
-    m.sizes[1] = crucible::tensor_dim(dim1);
-    m.strides[0] = crucible::tensor_dim(dim1);
-    m.strides[1] = crucible::tensor_dim(1);
-    m.ndim = 2;
+    m.set_shape(
+        crucible::mint_tensor_shape(crucible::TensorSizes{sizes.view()}, crucible::TensorStrides{strides.view()})
+            .expect("a shape of rank 2"));
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
     m.device_idx = 0;
@@ -69,16 +69,14 @@ struct PublishOwner final {
 
 // 4D NCHW tensor (conv input/weight).
 [[nodiscard]] static TensorMeta make_meta_4d(int64_t n, int64_t c, int64_t h, int64_t w) noexcept {
+    const ::fixy::FixedArray<crucible::TensorDim, 4> sizes{crucible::tensor_dim(n), crucible::tensor_dim(c),
+                                                           crucible::tensor_dim(h), crucible::tensor_dim(w)};
+    const ::fixy::FixedArray<crucible::TensorDim, 4> strides{
+        crucible::tensor_dim(c * h * w), crucible::tensor_dim(h * w), crucible::tensor_dim(w), crucible::tensor_dim(1)};
     TensorMeta m{};
-    m.sizes[0] = crucible::tensor_dim(n);
-    m.sizes[1] = crucible::tensor_dim(c);
-    m.sizes[2] = crucible::tensor_dim(h);
-    m.sizes[3] = crucible::tensor_dim(w);
-    m.strides[0] = crucible::tensor_dim(c * h * w);
-    m.strides[1] = crucible::tensor_dim(h * w);
-    m.strides[2] = crucible::tensor_dim(w);
-    m.strides[3] = crucible::tensor_dim(1);
-    m.ndim = 4;
+    m.set_shape(
+        crucible::mint_tensor_shape(crucible::TensorSizes{sizes.view()}, crucible::TensorStrides{strides.view()})
+            .expect("a shape of rank 4"));
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
     m.device_idx = 0;

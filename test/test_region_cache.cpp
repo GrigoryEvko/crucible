@@ -52,9 +52,7 @@ int64_t tensor_size(uint32_t variant, uint32_t op_idx) {
 
 TensorMeta make_meta(void* data_ptr, int64_t size) {
     TensorMeta m{};
-    m.ndim = 1;
-    m.sizes[0] = ::crucible::tensor_dim(size);
-    m.strides[0] = ::crucible::tensor_dim(1);
+    m.set_shape(::crucible::vector_tensor_shape(::crucible::tensor_dim(size)));
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.device_idx = 0;

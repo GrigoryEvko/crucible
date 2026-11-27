@@ -26,11 +26,8 @@ static constexpr auto A = BG.alloc;
 static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t num_ops) {
     // Each input and the output of each op have one metadata.
     TensorMeta meta{};
-    meta.ndim = 2;
-    meta.sizes[0] = tensor_dim(128);
-    meta.sizes[1] = tensor_dim(256);
-    meta.strides[0] = tensor_dim(256);
-    meta.strides[1] = tensor_dim(1);
+    const ::fixy::FixedArray<TensorDim, 2> dims{tensor_dim(128), tensor_dim(256)};
+    meta.set_shape(contiguous_tensor_shape(TensorSizes{dims.view()}).expect("a contiguous shape of rank 2"));
     meta.dtype = ScalarType::Float;
 
     return ::foundation::core::with_arena_frame(dag_arena, [num_ops, &meta](auto& frame) noexcept {

@@ -69,14 +69,22 @@ constexpr uint64_t kBlocksPerTrial = 9;
 [[nodiscard]] ::crucible::TensorMeta random_meta(RandomKey key, RandomInputs inputs, Trial trial) noexcept {
     uint64_t const first = std::to_underlying(trial) * kBlocksPerTrial;
     ::fixy::Philox4x32::Counter const rank = ::fixy::Philox4x32::generate(first, std::to_underlying(key));
-    ::crucible::TensorMeta meta{};
-    meta.ndim = static_cast<uint8_t>(1 + *rank.get(0).expect("a block holds four words") % 8);
-    meta.dtype = ::crucible::ScalarType::Float;
-    for (uint8_t d = 0; d < meta.ndim; ++d) {
-        ::fixy::Philox4x32::Counter const block = ::fixy::Philox4x32::generate(first + 1 + d, std::to_underlying(key));
-        meta.sizes[d] = ::crucible::tensor_dim(draw_in(inputs.sizes, block, ::fixy::index<0>()));
-        meta.strides[d] = ::crucible::tensor_dim(draw_in(inputs.strides, block, ::fixy::index<2>()));
+    const auto ndim = static_cast<uint8_t>(1 + *rank.get(0).expect("a block holds four words") % 8);
+    ::fixy::FixedArray<::crucible::TensorDim, ::crucible::kMaxTensorNDim> sizes = ::crucible::zero_tensor_dims();
+    ::fixy::FixedArray<::crucible::TensorDim, ::crucible::kMaxTensorNDim> strides = ::crucible::zero_tensor_dims();
+    for (const ::crucible::TensorDimArray::LaneIndex lane : sizes.indices()) {
+        if (lane.raw() >= ndim) break;
+        ::fixy::Philox4x32::Counter const block =
+            ::fixy::Philox4x32::generate(first + 1 + lane.raw(), std::to_underlying(key));
+        sizes.set(lane, ::crucible::tensor_dim(draw_in(inputs.sizes, block, ::fixy::index<0>())));
+        strides.set(lane, ::crucible::tensor_dim(draw_in(inputs.strides, block, ::fixy::index<2>())));
     }
+    ::crucible::TensorMeta meta{};
+    meta.set_shape(::crucible::mint_tensor_shape(
+                       ::crucible::TensorSizes{sizes.view().window(0, ndim).expect("the rank is at most 8")},
+                       ::crucible::TensorStrides{strides.view().window(0, ndim).expect("the rank is at most 8")})
+                       .expect("a shape of the drawn rank"));
+    meta.dtype = ::crucible::ScalarType::Float;
     return meta;
 }
 
@@ -102,20 +110,26 @@ using ExactSpan = ::fixy::Saturated<uint64_t>;
     CRUCIBLE_TEST_ASSERT(kTest, sizes.size() == strides.size());
     CRUCIBLE_TEST_ASSERT(kTest, sizes.size() <= 8);
 
-    TensorMeta meta{};
-    meta.ndim = static_cast<uint8_t>(sizes.size());
-    meta.dtype = dtype;
-
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> size_lanes = ::crucible::zero_tensor_dims();
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> stride_lanes = ::crucible::zero_tensor_dims();
     size_t d = 0;
     for (int64_t const size : sizes) {
-        meta.sizes[d] = ::crucible::tensor_dim(size);
+        size_lanes.set(TensorDimArray::LaneIndex::check(d).expect("the rank is at most 8"),
+                       ::crucible::tensor_dim(size));
         ++d;
     }
     d = 0;
     for (int64_t const stride : strides) {
-        meta.strides[d] = ::crucible::tensor_dim(stride);
+        stride_lanes.set(TensorDimArray::LaneIndex::check(d).expect("the rank is at most 8"),
+                         ::crucible::tensor_dim(stride));
         ++d;
     }
+    TensorMeta meta{};
+    meta.set_shape(::crucible::mint_tensor_shape(
+                       TensorSizes{size_lanes.view().window(0, sizes.size()).expect("the rank is at most 8")},
+                       TensorStrides{stride_lanes.view().window(0, strides.size()).expect("the rank is at most 8")})
+                       .expect("two counts of one rank make a shape"));
+    meta.dtype = dtype;
     return meta;
 }
 
@@ -158,7 +172,6 @@ static void check_equiv(const TensorMeta& meta, ::fixy::TextView what) noexcept 
 
 static void test_scalar_tensor() {
     TensorMeta meta{};
-    meta.ndim = 0;
     meta.dtype = ScalarType::Float;
     check_equiv(meta, "scalar-float");
     CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(meta))
@@ -369,19 +382,24 @@ static void test_negative_size() {
     ::fixy::check::pass(kTest, "  test_negative_size: PASSED\n");
 }
 
-// The lanes past ndim take part in every vector operation, and a hostile
-// descriptor can hold any value in them.  Each lane holds the most negative
-// value here, and the answer must still be the one live dimension alone.
+// The lanes past ndim take part in every vector operation.  A descriptor that
+// held the most negative value in each lane at the largest rank takes a shape
+// of rank 1, and set_shape writes each lane past the new rank as zero.  The
+// answer is the one live dimension alone.
 static void test_dead_lanes_hold_extremes() {
+    const TensorDim lowest = ::crucible::tensor_dim(INT64_MIN);
+    const ::fixy::FixedArray<TensorDim, kMaxTensorNDim> extremes{lowest, lowest, lowest, lowest,
+                                                                 lowest, lowest, lowest, lowest};
     TensorMeta m{};
     m.dtype = ScalarType::Float;
-    for (uint8_t d = 0; d < 8; ++d) {
-        m.sizes[d] = ::crucible::tensor_dim(INT64_MIN);
-        m.strides[d] = ::crucible::tensor_dim(INT64_MIN);
-    }
-    m.ndim = 1;
-    m.sizes[0] = ::crucible::tensor_dim(4);
-    m.strides[0] = ::crucible::tensor_dim(8);
+    m.set_shape(::crucible::mint_tensor_shape(TensorSizes{extremes.view()}, TensorStrides{extremes.view()})
+                    .expect("a shape of the largest rank"));
+    const ::fixy::FixedArray<TensorDim, 1> live_size{::crucible::tensor_dim(4)};
+    const ::fixy::FixedArray<TensorDim, 1> live_stride{::crucible::tensor_dim(8)};
+    m.set_shape(::crucible::mint_tensor_shape(TensorSizes{live_size.view()}, TensorStrides{live_stride.view()})
+                    .expect("a shape of rank 1"));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::crucible::raw_tensor_dim(m.sizes[7]) == 0 && ::crucible::raw_tensor_dim(m.strides[1]) == 0);
     check_equiv(m, "dead-lanes-int64-min");
 
     // Three steps of eight elements past the first, plus the first, of four

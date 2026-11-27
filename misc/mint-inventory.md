@@ -59,6 +59,7 @@ that the axis does not apply to the row.
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_synthetic_data_ptr` | `include/crucible/TensorMeta.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_tensor_shape` | `include/crucible/TensorMeta.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_validated_op(crucible::TraceRing::ValidatedEntry)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | · | token | · | HS14: 14 |
 | `mint_validated_op(crucible::TraceRing::ValidatedEntry, crucible::SealedRecords<T0_0>&)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | Y | token | · | HS14: 14 |
 | `mint_validated_op(crucible::TraceRing::ValidatedEntry, foundation::core::ViewMut<crucible::TensorMeta, T0_0, T0_1>&&)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | Y | token | · | HS14: 14 |
@@ -434,5 +435,5 @@ that the axis does not apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 85 | 48 | 29 | 8 | 0 | 7 |
+| crucible (`include/crucible/`) | 86 | 48 | 30 | 8 | 0 | 7 |
 | substrate (`include/foundation/`, `include/fixy/`) | 191 | 72 | 115 | 4 | 0 | 2 |

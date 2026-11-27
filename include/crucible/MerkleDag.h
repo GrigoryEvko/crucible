@@ -820,7 +820,7 @@ using TensorFields =
 
 // The fields of meta: its placement fields and its rank.
 [[nodiscard, gnu::always_inline]] inline TensorFields tensor_fields_of(const TensorMeta& meta) noexcept {
-    return placement_fields_of(meta).with_fitting<side::TensorRankField>(meta.ndim);
+    return placement_fields_of(meta).with_fitting<side::TensorRankField>(meta.ndim.count());
 }
 
 // The word of one tensor in the content hash of a region.  It folds each fact

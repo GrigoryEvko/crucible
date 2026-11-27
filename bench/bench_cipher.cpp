@@ -39,9 +39,7 @@ static constexpr ::fixy::Quantity<::fixy::unit::Byte, size_t> kArenaBlock{size_t
 // builds them.
 static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t num_ops, uint64_t salt) {
     TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = tensor_dim(64);
-    meta.strides[0] = tensor_dim(1);
+    meta.set_shape(vector_tensor_shape(tensor_dim(64)));
     meta.dtype = ScalarType::Float;
     return ::foundation::core::with_arena_frame(dag_arena, [num_ops, salt, &meta](auto& frame) noexcept {
         auto ops_run = make_op_run(A, frame, num_ops);

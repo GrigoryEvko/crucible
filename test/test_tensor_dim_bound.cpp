@@ -181,35 +181,88 @@ void routes_refuse_a_lane_past_the_bound(::fixy::TestRunnerCtx const& test) noex
     pass(test, "  routes_refuse_a_lane_past_the_bound: PASSED\n");
 }
 
-// A lane of a block reads back the TensorDim that the slot wrote, through
-// the slot of a block that is not const and through the slot of a const
-// block.
-void slots_read_the_written_lane(::fixy::TestRunnerCtx const& test) noexcept {
+// Each route from outside refuses a rank past kMaxTensorNDim and a lane past
+// the rank that is not zero, as an error and not an end of the process.  The
+// largest rank with zero lanes passes, and a descriptor that passes has the
+// shape of its fields.
+void routes_refuse_a_rank_past_the_bound(::fixy::TestRunnerCtx const& test) noexcept {
+    ::fixy::FixedArray<Route, 4> const routes{Route::Fields, Route::Store, Route::Trace, Route::FirstTrace};
+    UncheckedTensorMeta const matrix = fields_with(DimBlock::Sizes, LaneValue::AtBound);
+    UncheckedTensorMeta past_rank = matrix;
+    past_rank.ndim = kMaxTensorNDim + 1;
+    UncheckedTensorMeta top_rank = matrix;
+    top_rank.ndim = 0xFF;
+    UncheckedTensorMeta tail_lane = matrix;
+    tail_lane.sizes.set(::fixy::index<2>(), 5);
+    UncheckedTensorMeta tail_stride = matrix;
+    tail_stride.strides.set(::fixy::index<7>(), 1);
+    UncheckedTensorMeta largest_rank = matrix;
+    largest_rank.ndim = kMaxTensorNDim;
+    for (Route const route : routes.view()) {
+        CRUCIBLE_TEST_ASSERT(test, is_admitted(route, matrix));
+        CRUCIBLE_TEST_ASSERT(test, !is_admitted(route, past_rank));
+        CRUCIBLE_TEST_ASSERT(test, !is_admitted(route, top_rank));
+        CRUCIBLE_TEST_ASSERT(test, !is_admitted(route, tail_lane));
+        CRUCIBLE_TEST_ASSERT(test, !is_admitted(route, tail_stride));
+        CRUCIBLE_TEST_ASSERT(test, is_admitted(route, largest_rank));
+    }
+
+    ::fixy::Option<TensorMeta> decoded = ::crucible::decode_tensor_meta(matrix, ::crucible::ExternalDataPtr{});
+    CRUCIBLE_TEST_ASSERT(test, decoded.is_some());
+    TensorMeta const meta = std::move(decoded).expect("the fields of a matrix decode");
+    CRUCIBLE_TEST_ASSERT(test, meta.ndim == 2);
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.sizes[0]) == 4);
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.sizes[1]) == kMaxTensorDimExtent);
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.strides[0]) == 3);
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.strides[1]) == 1);
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.sizes[2]) == 0);
+    pass(test, "  routes_refuse_a_rank_past_the_bound: PASSED\n");
+}
+
+// A lane of a descriptor reads back the TensorDim of its shape, through the
+// subscript of a descriptor that is not const and through the subscript of a
+// const descriptor.  A lane that the shape gives as zero reads zero.
+void slots_read_the_lanes_of_the_shape(::fixy::TestRunnerCtx const& test) noexcept {
+    ::fixy::FixedArray<::crucible::TensorDim, kMaxTensorNDim> sizes = ::crucible::zero_tensor_dims();
+    ::fixy::FixedArray<::crucible::TensorDim, kMaxTensorNDim> strides = ::crucible::zero_tensor_dims();
+    sizes.set(::fixy::index<2>(), ::crucible::tensor_dim(kMaxTensorDimExtent));
+    strides.set(::fixy::index<7>(), ::crucible::tensor_dim(5));
     TensorMeta meta{};
-    meta.sizes[2] = ::crucible::tensor_dim(kMaxTensorDimExtent);
-    meta.strides[7] = ::crucible::tensor_dim(5);
+    meta.set_shape(
+        ::crucible::mint_tensor_shape(::crucible::TensorSizes{sizes.view()}, ::crucible::TensorStrides{strides.view()})
+            .expect("two counts of the rank bound make a shape"));
     TensorMeta const& held = meta;
     ::crucible::TensorDim const size = held.sizes[2];
     ::crucible::TensorDim const stride = meta.strides[7];
     CRUCIBLE_TEST_ASSERT(test, size.value() == kMaxTensorDimExtent);
     CRUCIBLE_TEST_ASSERT(test, stride.value() == 5);
     CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(held.sizes[0]) == 0);
-    pass(test, "  slots_read_the_written_lane: PASSED\n");
+    pass(test, "  slots_read_the_lanes_of_the_shape: PASSED\n");
 }
 
-// A write of one slot from another slot copies the lane, in one block, from
-// one block to the other, and from a const block.
-void slots_copy_a_lane(::fixy::TestRunnerCtx const& test) noexcept {
+// A shape from the lanes of a descriptor gives a second descriptor the same
+// lanes, and each lane past the rank of the new shape reads zero.
+void lanes_copy_through_a_shape(::fixy::TestRunnerCtx const& test) noexcept {
+    const ::fixy::FixedArray<::crucible::TensorDim, 3> sizes{::crucible::tensor_dim(7), ::crucible::tensor_dim(7),
+                                                             ::crucible::tensor_dim(2)};
+    TensorMeta source{};
+    source.set_shape(::crucible::contiguous_tensor_shape(::crucible::TensorSizes{sizes.view()})
+                         .expect("a contiguous shape of rank 3"));
+    const ::fixy::FixedArray<::crucible::TensorDim, 2> copied_sizes{
+        static_cast<::crucible::TensorDim>(source.sizes[0]), static_cast<::crucible::TensorDim>(source.sizes[1])};
+    const ::fixy::FixedArray<::crucible::TensorDim, 2> copied_strides{
+        static_cast<::crucible::TensorDim>(source.strides[0]), static_cast<::crucible::TensorDim>(source.strides[1])};
     TensorMeta meta{};
-    meta.sizes[1] = ::crucible::tensor_dim(7);
-    meta.sizes[0] = meta.sizes[1];
-    meta.strides[3] = meta.sizes[1];
-    TensorMeta const source = meta;
-    meta.strides[4] = source.sizes[0];
+    meta.set_shape(::crucible::mint_tensor_shape(::crucible::TensorSizes{copied_sizes.view()},
+                                                 ::crucible::TensorStrides{copied_strides.view()})
+                       .expect("a shape of rank 2"));
+    CRUCIBLE_TEST_ASSERT(test, meta.ndim == 2);
     CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.sizes[0]) == 7);
-    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.strides[3]) == 7);
-    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.strides[4]) == 7);
-    pass(test, "  slots_copy_a_lane: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.strides[0]) == 14);
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.strides[1]) == 2);
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.sizes[2]) == 0);
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.strides[2]) == 0);
+    pass(test, "  lanes_copy_through_a_shape: PASSED\n");
 }
 
 }  // namespace
@@ -217,8 +270,9 @@ void slots_copy_a_lane(::fixy::TestRunnerCtx const& test) noexcept {
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     routes_refuse_a_lane_past_the_bound(test);
-    slots_read_the_written_lane(test);
-    slots_copy_a_lane(test);
+    routes_refuse_a_rank_past_the_bound(test);
+    slots_read_the_lanes_of_the_shape(test);
+    lanes_copy_through_a_shape(test);
     pass(test, "test_tensor_dim_bound: all tests passed\n");
     return 0;
 }

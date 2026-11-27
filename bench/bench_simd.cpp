@@ -38,18 +38,18 @@ using crucible::detail::compute_storage_nbytes_scalar;
 // ── Helper: build a TensorMeta with given ndim ────────────────────
 
 [[nodiscard]] static crucible::TensorMeta make_meta_ndim(uint8_t ndim) noexcept {
-    crucible::TensorMeta m{};
-    m.ndim = ndim;
-    m.dtype = crucible::ScalarType::Float;
-    // Common shape pattern: increasing strides, decreasing sizes.
-    int64_t stride = 1;
-    for (int8_t d = static_cast<int8_t>(ndim - 1); d >= 0; --d) {
-        // The loop keeps d at 0 or more, so the conversion keeps its value.
-        const auto lane = static_cast<std::size_t>(d);
-        m.sizes[lane] = crucible::tensor_dim((1u << d) + 4);  // 5, 6, 8, 12, 20, 36, 68, 132 for d=0..7
-        m.strides[lane] = crucible::tensor_dim(stride);
-        stride *= crucible::raw_tensor_dim(m.sizes[lane]);
+    // Common shape pattern: the sizes 5, 6, 8, 12, 20, 36, 68 and 132 for d = 0
+    // to 7, and the strides of a dense tensor, which grow from the last lane.
+    ::fixy::FixedArray<crucible::TensorDim, crucible::kMaxTensorNDim> sizes = crucible::zero_tensor_dims();
+    for (const crucible::TensorDimArray::LaneIndex lane : sizes.indices()) {
+        if (lane.raw() >= ndim) break;
+        sizes.set(lane, crucible::tensor_dim((int64_t{1} << lane.raw()) + 4));
     }
+    crucible::TensorMeta m{};
+    m.set_shape(crucible::contiguous_tensor_shape(
+                    crucible::TensorSizes{sizes.view().window(0, ndim).expect("the rank is at most 8")})
+                    .expect("a contiguous shape"));
+    m.dtype = crucible::ScalarType::Float;
     return m;
 }
 
@@ -260,18 +260,15 @@ int main() {
         // — measures the realistic cost when ndim isn't known at
         // compile time.
         [&] {
+            // The descriptor of each rank, which the loop copies at the rank
+            // that it reads at run time.
+            const ::fixy::FixedArray<crucible::TensorMeta, crucible::kMaxTensorNDim + 1> by_rank{
+                make_meta_ndim(0), make_meta_ndim(1), make_meta_ndim(2), make_meta_ndim(3), make_meta_ndim(4),
+                make_meta_ndim(5), make_meta_ndim(6), make_meta_ndim(7), make_meta_ndim(8)};
             crucible::TensorMeta mvar{};
-            mvar.dtype = crucible::ScalarType::Float;
             return bench::run("dim_hash_simd  (variable ndim, runtime branch)", [&] [[gnu::always_inline]] () {
-                mvar.ndim = static_cast<uint8_t>(v_ndim_8);
-                int64_t stride = 1;
-                for (int d = mvar.ndim - 1; d >= 0; --d) {
-                    // The loop keeps d at 0 or more, so the conversion keeps its value.
-                    const auto lane = static_cast<std::size_t>(d);
-                    mvar.sizes[lane] = crucible::tensor_dim((1 << d) + 4);
-                    mvar.strides[lane] = crucible::tensor_dim(stride);
-                    stride *= crucible::raw_tensor_dim(mvar.sizes[lane]);
-                }
+                mvar = by_rank.at(::fixy::Index<crucible::kMaxTensorNDim + 1>::check(static_cast<std::size_t>(v_ndim_8))
+                                      .expect("the rank of the bench is at most 8"));
                 uint64_t h = dim_hash_simd(mvar);
                 bench::do_not_optimize(h);
             });

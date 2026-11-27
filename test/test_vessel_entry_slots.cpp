@@ -86,11 +86,24 @@ template <std::size_t Slot>
 
 // The input tensor of rank one with the given extent.
 [[nodiscard]] crucible::TensorMeta vector_meta(int64_t extent) {
+    const ::fixy::FixedArray<crucible::TensorDim, 1> dims{crucible::tensor_dim(extent)};
     crucible::TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = crucible::tensor_dim(extent);
-    meta.strides[0] = crucible::tensor_dim(1);
+    meta.set_shape(
+        crucible::contiguous_tensor_shape(crucible::TensorSizes{dims.view()}).expect("a contiguous shape of rank 1"));
     meta.dtype = crucible::ScalarType::Float;
+    return meta;
+}
+
+// The tensor of rank 2 whose first lane is the one lane of a vector, and whose
+// second lane holds zero in its extent and its stride.
+[[nodiscard]] crucible::TensorMeta with_empty_rows(crucible::TensorMeta const& vector) {
+    const crucible::TensorDim zero = crucible::tensor_dim(0);
+    const ::fixy::FixedArray<crucible::TensorDim, 2> sizes{static_cast<crucible::TensorDim>(vector.sizes[0]), zero};
+    const ::fixy::FixedArray<crucible::TensorDim, 2> strides{static_cast<crucible::TensorDim>(vector.strides[0]), zero};
+    crucible::TensorMeta meta = vector;
+    meta.set_shape(
+        crucible::mint_tensor_shape(crucible::TensorSizes{sizes.view()}, crucible::TensorStrides{strides.view()})
+            .expect("a shape of rank 2"));
     return meta;
 }
 
@@ -380,12 +393,10 @@ void test_built_device_has_one_host_index() {
 
 // A matrix of 3 by 4 with the strides of its rows.
 [[nodiscard]] crucible::TensorMeta matrix_meta() {
+    const ::fixy::FixedArray<crucible::TensorDim, 2> dims{crucible::tensor_dim(3), crucible::tensor_dim(4)};
     crucible::TensorMeta meta{};
-    meta.ndim = 2;
-    meta.sizes[0] = crucible::tensor_dim(3);
-    meta.sizes[1] = crucible::tensor_dim(4);
-    meta.strides[0] = crucible::tensor_dim(4);
-    meta.strides[1] = crucible::tensor_dim(1);
+    meta.set_shape(
+        crucible::contiguous_tensor_shape(crucible::TensorSizes{dims.view()}).expect("a contiguous shape of rank 2"));
     meta.dtype = crucible::ScalarType::Float;
     return meta;
 }
@@ -431,9 +442,12 @@ void test_guard_word_reads_each_field_of_the_computation() {
 
     // The transposed matrix of 4 by 3 has the extents of no other input here,
     // so the strides are the only difference of this matrix of 3 by 4.
+    const ::fixy::FixedArray<crucible::TensorDim, 2> column_sizes{crucible::tensor_dim(3), crucible::tensor_dim(4)};
+    const ::fixy::FixedArray<crucible::TensorDim, 2> column_strides{crucible::tensor_dim(1), crucible::tensor_dim(3)};
     crucible::TensorMeta columns = matrix;
-    columns.strides[0] = crucible::tensor_dim(1);
-    columns.strides[1] = crucible::tensor_dim(3);
+    columns.set_shape(crucible::mint_tensor_shape(crucible::TensorSizes{column_sizes.view()},
+                                                  crucible::TensorStrides{column_strides.view()})
+                          .expect("a shape of rank 2"));
     CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, columns, alpha_one) == base) && "a stride moves the word");
 
     crucible::TensorMeta doubles = matrix;
@@ -459,8 +473,7 @@ void test_guard_word_reads_each_field_of_the_computation() {
 
     // A lane of extent zero and stride zero adds nothing to the XOR fold of
     // the content hash, so only the rank tells [4, 0] from [4].
-    crucible::TensorMeta empty_rows = vector;
-    empty_rows.ndim = 2;
+    const crucible::TensorMeta empty_rows = with_empty_rows(vector);
     CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(empty_rows, matrix, alpha_one) == base) && "the rank moves the word");
 
     // A view at another offset of one storage reads other elements.
@@ -709,8 +722,7 @@ void test_each_fact_of_a_tensor_moves_the_hash_and_the_digest() {
         }
     };
 
-    crucible::TensorMeta empty_rows = vector;
-    empty_rows.ndim = 2;
+    const crucible::TensorMeta empty_rows = with_empty_rows(vector);
     expect_moved("rank", empty_rows);
 
     crucible::TensorMeta sparse = vector;

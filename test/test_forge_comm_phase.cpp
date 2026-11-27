@@ -55,10 +55,8 @@ struct StrictRecipe {
 
 crucible::TensorMeta tensor(crucible::ScalarType dtype) {
     crucible::TensorMeta meta{};
-    meta.ndim = 1;
     meta.dtype = dtype;
-    meta.sizes[0] = crucible::tensor_dim(1024);
-    meta.strides[0] = crucible::tensor_dim(1);
+    meta.set_shape(crucible::vector_tensor_shape(crucible::tensor_dim(1024)));
     return meta;
 }
 

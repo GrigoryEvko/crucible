@@ -68,9 +68,7 @@ constexpr crucible::StorageGeneration kUnknownInSecondPeriod =
                                    crucible::StorageGeneration generation = {}) {
     TensorMeta meta{};
     meta.storage_generation = generation;
-    meta.ndim = 1;
-    meta.sizes[0] = crucible::tensor_dim(elements);
-    meta.strides[0] = crucible::tensor_dim(1);
+    meta.set_shape(crucible::vector_tensor_shape(crucible::tensor_dim(elements)));
     meta.dtype = crucible::ScalarType::Float;
     meta.device_type = crucible::DeviceType::CPU;
     meta.device_idx = 0;

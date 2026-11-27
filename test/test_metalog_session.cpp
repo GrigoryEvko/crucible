@@ -126,10 +126,10 @@ void run_test(::fixy::TextView name, Body body) {
 }
 
 [[nodiscard]] ::crucible::TensorMeta make_meta(std::int64_t id) {
+    const ::fixy::FixedArray<::crucible::TensorDim, 1> dims{::crucible::tensor_dim(id)};
     ::crucible::TensorMeta meta{};
-    meta.sizes[0] = ::crucible::tensor_dim(id);
-    meta.strides[0] = ::crucible::tensor_dim(1);
-    meta.ndim = 1;
+    meta.set_shape(::crucible::contiguous_tensor_shape(::crucible::TensorSizes{dims.view()})
+                       .expect("a contiguous shape of rank 1"));
     meta.dtype = ::crucible::ScalarType::Float;
     meta.device_type = ::crucible::DeviceType::CPU;
     meta.device_idx = -1;

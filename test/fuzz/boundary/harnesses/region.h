@@ -92,9 +92,7 @@ inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaB
             TraceEntry& op = *ops.get(i).expect("i is below kOps");
             op.schema_hash = SchemaHash{0xCAFE0000u + i};
             TensorMeta meta{};
-            meta.ndim = 1;
-            meta.sizes[0] = tensor_dim(16);
-            meta.strides[0] = tensor_dim(1);
+            meta.set_shape(vector_tensor_shape(tensor_dim(16)));
             meta.dtype = ScalarType::Float;
             const auto input_metas_run = frame.array(alloc, 1, meta);
             const auto producers_run = frame.array(alloc, 1, OpIndex{});

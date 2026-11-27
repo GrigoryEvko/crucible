@@ -19,14 +19,19 @@ static constexpr auto A = ::foundation::effects::testing::bg().alloc;
 // arena builds the ops and their arrays, which live as long as the arena.
 static ::fixy::ArenaRun<TraceEntry const, DagArena> make_ops(::fixy::BumpArena<DagArena>& arena, uint32_t count,
                                                              uint8_t ndim, uint16_t num_inputs) {
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> sizes = zero_tensor_dims();
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> strides = zero_tensor_dims();
+    for (uint8_t d = 0; d < ndim; d++) {
+        const TensorDimArray::LaneIndex lane = TensorDimArray::LaneIndex::check(d).expect("the rank is at most 8");
+        sizes.set(lane, tensor_dim((d == ndim - 1) ? 128 : 32));
+        strides.set(lane, tensor_dim((d == ndim - 1) ? 1 : 128));
+    }
     TensorMeta meta{};
-    meta.ndim = ndim;
+    meta.set_shape(mint_tensor_shape(TensorSizes{sizes.view().window(0, ndim).expect("the rank is at most 8")},
+                                     TensorStrides{strides.view().window(0, ndim).expect("the rank is at most 8")})
+                       .expect("two counts of one rank make a shape"));
     meta.dtype = ScalarType::Float;
     meta.device_type = DeviceType::CUDA;
-    for (uint8_t d = 0; d < ndim; d++) {
-        meta.sizes[d] = tensor_dim((d == ndim - 1) ? 128 : 32);
-        meta.strides[d] = tensor_dim((d == ndim - 1) ? 1 : 128);
-    }
     return ::foundation::core::with_arena_frame(arena, [&meta, count, num_inputs](auto& frame) noexcept {
         auto ops_run = make_op_run(A, frame, count);
         for (uint32_t i = 0; i < count; i++) {

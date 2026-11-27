@@ -53,9 +53,7 @@ template <class Brand, std::size_t Extent>
             op.grad_enabled = true;
 
             crucible::TensorMeta in_meta{};
-            in_meta.ndim = 1;
-            in_meta.sizes[0] = crucible::tensor_dim(8);
-            in_meta.strides[0] = crucible::tensor_dim(1);
+            in_meta.set_shape(crucible::vector_tensor_shape(crucible::tensor_dim(8)));
             in_meta.dtype = crucible::ScalarType::Float;
             in_meta.device_type = crucible::DeviceType::CPU;
             in_meta.device_idx = -1;

@@ -55,9 +55,7 @@ void* overwrite_ptr() noexcept { return std::bit_cast<void*>(std::uintptr_t{0xBA
 
 crucible::TensorMeta meta_at(void* data_ptr, int64_t size) {
     crucible::TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = ::crucible::tensor_dim(size);
-    meta.strides[0] = ::crucible::tensor_dim(1);
+    meta.set_shape(::crucible::vector_tensor_shape(::crucible::tensor_dim(size)));
     meta.dtype = crucible::ScalarType::Float;
     meta.device_type = crucible::DeviceType::CPU;
     meta.device_idx = 0;

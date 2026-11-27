@@ -162,49 +162,61 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of 
     // from the same constant and a literal here could drift from it. The
     // unboxed path does not check ndim at run time, so the assert below makes
     // the rank check of the trust ladder accept each rank that this function
-    // keeps, and refuse the first rank that it refuses.
+    // keeps.  TensorRank holds no rank above the bound, so no meta holds the
+    // first rank that this function refuses.
     constexpr uint8_t kNDimCeiling = ::crucible::kMaxTensorNDim;
     static_assert(
         [] {
-            const auto is_rank_well_formed = [](uint8_t rank) {
-                crucible::TensorMeta ceiling{};
-                ceiling.ndim = rank;
-                const ::fixy::FixedArray<crucible::TensorMeta, 1> ceiling_records{ceiling};
-                return crucible::vessel::metas_are_well_formed(ceiling_records.view());
-            };
-            return is_rank_well_formed(kNDimCeiling) && !is_rank_well_formed(static_cast<uint8_t>(kNDimCeiling + 1));
+            const ::fixy::FixedArray<crucible::TensorDim, kNDimCeiling> lanes = crucible::zero_tensor_dims();
+            crucible::TensorMeta ceiling{};
+            ceiling.set_shape(
+                crucible::mint_tensor_shape(crucible::TensorSizes{lanes.view()}, crucible::TensorStrides{lanes.view()})
+                    .expect("two counts of the rank bound make a shape"));
+            const ::fixy::FixedArray<crucible::TensorMeta, 1> ceiling_records{ceiling};
+            return crucible::vessel::metas_are_well_formed(ceiling_records.view());
         }(),
-        "fill_meta refuses each rank above the rank bound of the trust ladder, and the unboxed path relies on it");
+        "the trust ladder takes each rank that fill_meta keeps, and the unboxed path relies on it");
     // The test has two sides, so the rank is a lane count from 0 to 8, and
     // each lane index below it is below 8.
     const int64_t rank = tensor.dim();
     if (rank < 0 || rank > int64_t{kNDimCeiling}) [[unlikely]]
         return refuse_tensor_meta(meta);
     const auto ndim = static_cast<uint8_t>(rank);
-    meta.ndim = ndim;
 
+    // The lanes of the shape, each zero until the loops below write it.  A
+    // tensor that is not strided has no strides, and its stride lanes stay
+    // zero.
+    ::fixy::FixedArray<::crucible::TensorDim, kNDimCeiling> size_lanes = ::crucible::zero_tensor_dims();
+    ::fixy::FixedArray<::crucible::TensorDim, kNDimCeiling> stride_lanes = ::crucible::zero_tensor_dims();
     const auto sizes = tensor.sizes();
-    for (uint8_t d = 0; d < ndim; d++) {
-        const int64_t size = sizes[d];
+    for (const ::crucible::TensorDimArray::LaneIndex lane : size_lanes.indices()) {
+        if (lane.raw() >= ndim) break;
+        const int64_t size = sizes[lane.raw()];
         if (size > ::crucible::kMaxTensorDimExtent) [[unlikely]]
             return refuse_tensor_meta(meta);
-        meta.sizes[d] = ::crucible::tensor_dim(size);
+        size_lanes.set(lane, ::crucible::tensor_dim(size));
     }
 
     const bool strided = (tensor.layout() == c10::Layout::Strided);
     if (strided) {
         const auto strides = tensor.strides();
-        for (uint8_t d = 0; d < ndim; d++) {
-            const int64_t stride = strides[d];
+        for (const ::crucible::TensorDimArray::LaneIndex lane : stride_lanes.indices()) {
+            if (lane.raw() >= ndim) break;
+            const int64_t stride = strides[lane.raw()];
             if (stride > ::crucible::kMaxTensorDimExtent) [[unlikely]]
                 return refuse_tensor_meta(meta);
-            meta.strides[d] = ::crucible::tensor_dim(stride);
+            stride_lanes.set(lane, ::crucible::tensor_dim(stride));
         }
         // The storage address crosses the ATen boundary here, so it enters as
         // source::External: hashed and compared as an opaque cookie, never
         // dereferenced, until some later validator retags it.
         meta.data_ptr = ::crucible::external_data_ptr(tensor.data_ptr());
     }
+    meta.set_shape(
+        ::crucible::mint_tensor_shape(
+            ::crucible::TensorSizes{size_lanes.view().window(0, ndim).expect("the rank is at most kMaxTensorNDim")},
+            ::crucible::TensorStrides{stride_lanes.view().window(0, ndim).expect("the rank is at most kMaxTensorNDim")})
+            .expect("the two counts are the rank, which is at most kMaxTensorNDim"));
 
     // A c10 enumeration enters the meta only through its decoder in
     // vessel_api_typed.h, which takes the c10 ordinal as an int8_t.  The

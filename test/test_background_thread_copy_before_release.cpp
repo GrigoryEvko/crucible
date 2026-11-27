@@ -91,12 +91,13 @@ enum class OpTensors : uint8_t {
 [[nodiscard]] TensorMeta record_of(OpNumber op, RecordPlace place) noexcept {
     const int64_t number = ::fixy::widen<int64_t>(op.raw());
     const int64_t at = ::fixy::narrow<int64_t>(place.raw()).expect("a place of a record fits in 64 signed bits");
+    const ::fixy::FixedArray<crucible::TensorDim, 2> sizes{crucible::tensor_dim(number), crucible::tensor_dim(at)};
+    const ::fixy::FixedArray<crucible::TensorDim, 2> strides{crucible::tensor_dim(number * kRecordsPerOp + at + 1),
+                                                             crucible::tensor_dim(1)};
     TensorMeta meta{};
-    meta.ndim = 2;
-    meta.sizes[0] = crucible::tensor_dim(number);
-    meta.sizes[1] = crucible::tensor_dim(at);
-    meta.strides[0] = crucible::tensor_dim(number * kRecordsPerOp + at + 1);
-    meta.strides[1] = crucible::tensor_dim(1);
+    meta.set_shape(
+        crucible::mint_tensor_shape(crucible::TensorSizes{sizes.view()}, crucible::TensorStrides{strides.view()})
+            .expect("a shape of rank 2"));
     meta.dtype = crucible::ScalarType::Float;
     meta.device_type = crucible::DeviceType::CPU;
     meta.device_idx = 0;

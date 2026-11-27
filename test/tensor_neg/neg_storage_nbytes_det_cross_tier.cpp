@@ -13,7 +13,6 @@ int main() {
     using ClockReadBytes = ::fixy::DetSafe<::fixy::DetSafeTier_v::MonotonicClockRead, Raw>;
 
     crucible::TensorMeta meta{};
-    meta.ndim = 0;
     meta.dtype = crucible::ScalarType::Float;
 
     ClockReadBytes bytes = crucible::compute_storage_nbytes_det(crucible::external_tensor_meta(meta));

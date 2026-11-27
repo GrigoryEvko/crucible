@@ -19,9 +19,7 @@ using ::fixy::check::pass;
 [[nodiscard]] TensorMeta meta_at(SyntheticAddress address) noexcept {
     TensorMeta meta{};
     meta.dtype = ::crucible::ScalarType::Float;
-    meta.ndim = 1;
-    meta.sizes[0] = ::crucible::tensor_dim(16);
-    meta.strides[0] = ::crucible::tensor_dim(1);
+    meta.set_shape(::crucible::vector_tensor_shape(::crucible::tensor_dim(16)));
     meta.data_ptr = ::crucible::mint_synthetic_data_ptr(address);
     return meta;
 }

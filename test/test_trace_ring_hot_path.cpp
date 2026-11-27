@@ -105,9 +105,7 @@ void test_ring_append_under_the_foreground() {
 void test_log_append_under_the_foreground() {
     ::fixy::Box<crucible::test::OpenLog> log = ::fixy::mint_box<crucible::test::OpenLog>(eff::testing::test().alloc);
     TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = ::crucible::tensor_dim(16);
-    meta.strides[0] = ::crucible::tensor_dim(1);
+    meta.set_shape(::crucible::vector_tensor_shape(::crucible::tensor_dim(16)));
     const ::fixy::FixedArray<TensorMeta, 1> record{meta};
     MetaIndex const index = log->try_append_pure(eff::testing::foreground(), crucible::mint_meta_run(record.view()));
     CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());

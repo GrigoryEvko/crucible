@@ -83,19 +83,25 @@ namespace crucible::fuzz::prop {
 // non-negative.  data_ptr left null (we're hashing metadata, not
 // dereferencing).
 [[nodiscard]] inline TensorMeta random_tensor_meta(Rng& rng) noexcept {
-    TensorMeta m{};
-    m.ndim = static_cast<uint8_t>(rng.next_below(9));  // [0, 8]
-    for (uint8_t d = 0; d < m.ndim; ++d) {
+    const auto ndim = static_cast<uint8_t>(rng.next_below(9));  // [0, 8]
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> sizes = zero_tensor_dims();
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> strides = zero_tensor_dims();
+    for (uint8_t d = 0; d < ndim; ++d) {
         // Bias toward small dimension sizes (1..1024) to match real ML
         // tensor shapes.  Strides span the full valid TensorDim range;
         // values are bounded to kMaxTensorDimExtent so the Refined
         // TensorDim contract admits them (an out-of-range dim is not a
         // representable tensor, so generating one would test impossible
         // input).
-        m.sizes[d] = tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1));
-        m.strides[d] =
-            tensor_dim(static_cast<int64_t>(rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1)));
+        const TensorDimArray::LaneIndex lane = TensorDimArray::LaneIndex::check(d).expect("the rank is at most 8");
+        sizes.set(lane, tensor_dim(static_cast<int64_t>(rng.next_below(1024) + 1)));
+        strides.set(lane,
+                    tensor_dim(static_cast<int64_t>(rng.next64() % (static_cast<uint64_t>(kMaxTensorDimExtent) + 1))));
     }
+    TensorMeta m{};
+    m.set_shape(mint_tensor_shape(TensorSizes{sizes.view().window(0, ndim).expect("the rank is at most 8")},
+                                  TensorStrides{strides.view().window(0, ndim).expect("the rank is at most 8")})
+                    .expect("two counts of one rank make a shape"));
     m.dtype = random_scalar_type(rng);
     // device_type values map to c10 ordinals; restrict to common set.
     static constexpr ::fixy::FixedArray<DeviceType, 4> kDevices{

@@ -132,15 +132,22 @@ void build_ops(::foundation::effects::Test ctx, crucible::DagFrame<Fresh>& frame
             TensorMeta& meta =
                 *metas.get(input_index).expect("a test reads an element at or past the count of its View");
             meta = TensorMeta{};
-            meta.ndim = 4;
             meta.dtype = ScalarType::Float;
             meta.device_type = DeviceType::CUDA;
             meta.device_idx = 0;
+            ::fixy::FixedArray<crucible::TensorDim, crucible::kMaxTensorNDim> sizes = crucible::zero_tensor_dims();
+            ::fixy::FixedArray<crucible::TensorDim, crucible::kMaxTensorNDim> strides = crucible::zero_tensor_dims();
             for (uint8_t dim = 0; dim < 4; dim++) {
                 const uint64_t dim_seed = mix(seed ^ (uint64_t{input_index} << 8) ^ (uint64_t{dim} << 16));
-                meta.sizes[dim] = crucible::tensor_dim(static_cast<int64_t>(8 + (dim_seed % 256)));
-                meta.strides[dim] = crucible::tensor_dim(static_cast<int64_t>(1 + (dim_seed % 64)));
+                const crucible::TensorDimArray::LaneIndex lane =
+                    crucible::TensorDimArray::LaneIndex::check(dim).expect("the rank is 4");
+                sizes.set(lane, crucible::tensor_dim(static_cast<int64_t>(8 + (dim_seed % 256))));
+                strides.set(lane, crucible::tensor_dim(static_cast<int64_t>(1 + (dim_seed % 64))));
             }
+            meta.set_shape(crucible::mint_tensor_shape(
+                               crucible::TensorSizes{sizes.view().window(0, 4).expect("the rank 4 is at most 8")},
+                               crucible::TensorStrides{strides.view().window(0, 4).expect("the rank 4 is at most 8")})
+                               .expect("a shape of rank 4"));
             // The address differs between the two builds, on purpose.
             const std::uintptr_t address = data_ptr_base + (uint64_t{op_index} * 64 + input_index) * 4096;
             meta.data_ptr = crucible::external_data_ptr(std::bit_cast<void*>(address));

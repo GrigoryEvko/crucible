@@ -60,9 +60,7 @@ struct[[= ::foundation::brand::arena_family_brand{}]] MemoryArena final {};
 // a view.
 [[nodiscard]] crucible::TensorMeta meta_at(::fixy::View<std::byte> memory, uint32_t offset, uint32_t first = 0) {
     crucible::TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = ::crucible::tensor_dim(16 - int64_t{first});
-    meta.strides[0] = ::crucible::tensor_dim(1);
+    meta.set_shape(::crucible::vector_tensor_shape(::crucible::tensor_dim(16 - int64_t{first})));
     meta.dtype = crucible::ScalarType::Float;
     meta.device_type = crucible::DeviceType::CPU;
     meta.device_idx = 0;

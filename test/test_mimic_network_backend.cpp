@@ -47,10 +47,8 @@ cog::CogIdentity identity_for(cog::Uuid uuid) {
 
 crucible::TensorMeta tensor() {
     crucible::TensorMeta meta{};
-    meta.ndim = 1;
     meta.dtype = crucible::ScalarType::Float;
-    meta.sizes[0] = crucible::tensor_dim(1024);
-    meta.strides[0] = crucible::tensor_dim(1);
+    meta.set_shape(crucible::vector_tensor_shape(crucible::tensor_dim(1024)));
     return meta;
 }
 

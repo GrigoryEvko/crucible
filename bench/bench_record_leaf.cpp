@@ -215,9 +215,7 @@ enum class OpPosition : std::uint32_t {
 
 TensorMeta make_meta(SyntheticAddress address) noexcept {
     TensorMeta m{};
-    m.ndim = 1;
-    m.sizes[0] = tensor_dim(1024);
-    m.strides[0] = tensor_dim(1);
+    m.set_shape(vector_tensor_shape(tensor_dim(1024)));
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.device_idx = 0;

@@ -38,9 +38,7 @@ using PermissionedLog = ::crucible::permissioned_metalog_t<decltype(log_root())>
 
 [[nodiscard]] ::crucible::TensorMeta make_meta(std::uint32_t id) {
     ::crucible::TensorMeta meta{};
-    meta.sizes[0] = ::crucible::tensor_dim(static_cast<std::int64_t>(id));
-    meta.strides[0] = ::crucible::tensor_dim(1);
-    meta.ndim = 1;
+    meta.set_shape(::crucible::vector_tensor_shape(::crucible::tensor_dim(static_cast<std::int64_t>(id))));
     meta.dtype = ::crucible::ScalarType::Float;
     meta.device_type = ::crucible::DeviceType::CPU;
     meta.device_idx = -1;

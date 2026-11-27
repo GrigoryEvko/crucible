@@ -26,12 +26,11 @@ namespace test_mlp_trace {
 namespace {
 
 TensorMeta make_2d(void* ptr, int64_t r, int64_t c) {
+    const ::fixy::FixedArray<TensorDim, 2> sizes{::crucible::tensor_dim(r), ::crucible::tensor_dim(c)};
+    const ::fixy::FixedArray<TensorDim, 2> strides{::crucible::tensor_dim(c), ::crucible::tensor_dim(1)};
     TensorMeta m{};
-    m.ndim = 2;
-    m.sizes[0] = ::crucible::tensor_dim(r);
-    m.sizes[1] = ::crucible::tensor_dim(c);
-    m.strides[0] = ::crucible::tensor_dim(c);
-    m.strides[1] = ::crucible::tensor_dim(1);
+    m.set_shape(
+        mint_tensor_shape(TensorSizes{sizes.view()}, TensorStrides{strides.view()}).expect("a shape of rank 2"));
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.device_idx = 0;
@@ -40,10 +39,9 @@ TensorMeta make_2d(void* ptr, int64_t r, int64_t c) {
 }
 
 TensorMeta make_1d(void* ptr, int64_t n) {
+    const ::fixy::FixedArray<TensorDim, 1> dims{::crucible::tensor_dim(n)};
     TensorMeta m{};
-    m.ndim = 1;
-    m.sizes[0] = ::crucible::tensor_dim(n);
-    m.strides[0] = ::crucible::tensor_dim(1);
+    m.set_shape(contiguous_tensor_shape(TensorSizes{dims.view()}).expect("a contiguous shape of rank 1"));
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.device_idx = 0;

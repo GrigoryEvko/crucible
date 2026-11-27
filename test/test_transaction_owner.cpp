@@ -72,9 +72,7 @@ void* fake_ptr(uint32_t iter, uint32_t op) {
 
 crucible::TensorMeta meta_at(void* data_ptr) {
     crucible::TensorMeta m{};
-    m.ndim = 1;
-    m.sizes[0] = ::crucible::tensor_dim(1024);
-    m.strides[0] = ::crucible::tensor_dim(1);
+    m.set_shape(::crucible::vector_tensor_shape(::crucible::tensor_dim(1024)));
     m.dtype = crucible::ScalarType::Float;
     m.device_type = crucible::DeviceType::CPU;
     m.device_idx = 0;

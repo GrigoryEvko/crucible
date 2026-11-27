@@ -260,16 +260,13 @@ TensorMeta make_meta(const TSpec& s, uint32_t iter) {
     m.data_ptr = external_data_ptr((s.ref & P) ? param_ptr(s.ref & 0x7F) : act_ptr(iter, s.ref));
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
-    m.ndim = s.ndim;
+    // Each size of a tensor of the model is above zero, so the strides of a
+    // dense tensor are the products of the sizes after them.
+    ::fixy::FixedArray<TensorDim, kMaxTensorNDim> sizes = zero_tensor_dims();
     for (uint8_t i = 0; i < s.ndim; i++)
-        m.sizes[i] = ::crucible::tensor_dim(s.d[i]);
-    if (s.ndim > 0) {
-        const std::size_t ndim = static_cast<std::size_t>(s.ndim);
-        m.strides[ndim - 1] = ::crucible::tensor_dim(1);
-        for (std::size_t i = ndim - 1; i-- > 0;)
-            m.strides[i] = ::crucible::tensor_dim(::crucible::raw_tensor_dim(m.strides[i + 1])
-                                                  * ::crucible::raw_tensor_dim(m.sizes[i + 1]));
-    }
+        sizes.set(TensorDimArray::LaneIndex::check(i).expect("the rank is at most 8"), ::crucible::tensor_dim(s.d[i]));
+    m.set_shape(contiguous_tensor_shape(TensorSizes{sizes.view().window(0, s.ndim).expect("the rank is at most 8")})
+                    .expect("a contiguous shape"));
     return m;
 }
 

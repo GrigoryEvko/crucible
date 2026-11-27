@@ -250,12 +250,9 @@ static void test_round_trip_single_op() {
 // field by field.  The data pointer of a meta is an address of the process,
 // and the encoder writes zero in its place.
 static void test_encoders_round_trip_through_the_loader() {
+    const ::fixy::FixedArray<TensorDim, 2> dims{tensor_dim(3), tensor_dim(4)};
     TensorMeta meta{};
-    meta.ndim = 2;
-    meta.sizes[0] = tensor_dim(3);
-    meta.sizes[1] = tensor_dim(4);
-    meta.strides[0] = tensor_dim(4);
-    meta.strides[1] = tensor_dim(1);
+    meta.set_shape(contiguous_tensor_shape(TensorSizes{dims.view()}).expect("a contiguous shape of rank 2"));
     meta.data_ptr = external_data_ptr(&meta);
     meta.dtype = ScalarType::Float;
     meta.requires_grad = true;
@@ -968,10 +965,9 @@ static TraceImage make_written_image() {
         const ::fixy::FixedArray<std::byte, sizeof(TraceOpRecord)> op_bytes = encode_trace_op(record);
         append_bytes(op_bytes.view());
     }
+    const ::fixy::FixedArray<TensorDim, 1> dims{tensor_dim(4)};
     TensorMeta meta{};
-    meta.ndim = 1;
-    meta.sizes[0] = tensor_dim(4);
-    meta.strides[0] = tensor_dim(1);
+    meta.set_shape(contiguous_tensor_shape(TensorSizes{dims.view()}).expect("a contiguous shape of rank 1"));
     meta.dtype = ScalarType::Float;
     const ::fixy::FixedArray<std::byte, TRACE_META_BYTES> meta_bytes = encode_trace_meta(meta);
     for (int record_index = 0; record_index < 4; ++record_index) {

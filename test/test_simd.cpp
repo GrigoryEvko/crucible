@@ -379,19 +379,27 @@ static void test_microarch_detection() {
 
 static crucible::TensorMeta make_meta(std::initializer_list<int64_t> sizes, std::initializer_list<int64_t> strides,
                                       crucible::ScalarType dtype = crucible::ScalarType::Float) {
-    crucible::TensorMeta meta{};
-    meta.ndim = static_cast<uint8_t>(sizes.size());
     CRUCIBLE_TEST_ASSERT(kTest, strides.size() == sizes.size());
-    uint8_t d = 0;
+    ::fixy::FixedArray<crucible::TensorDim, crucible::kMaxTensorNDim> size_lanes = crucible::zero_tensor_dims();
+    ::fixy::FixedArray<crucible::TensorDim, crucible::kMaxTensorNDim> stride_lanes = crucible::zero_tensor_dims();
+    std::size_t d = 0;
     for (int64_t const size : sizes) {
-        meta.sizes[d] = ::crucible::tensor_dim(size);
+        size_lanes.set(crucible::TensorDimArray::LaneIndex::check(d).expect("the rank is at most 8"),
+                       ::crucible::tensor_dim(size));
         ++d;
     }
     d = 0;
     for (int64_t const stride : strides) {
-        meta.strides[d] = ::crucible::tensor_dim(stride);
+        stride_lanes.set(crucible::TensorDimArray::LaneIndex::check(d).expect("the rank is at most 8"),
+                         ::crucible::tensor_dim(stride));
         ++d;
     }
+    crucible::TensorMeta meta{};
+    meta.set_shape(
+        crucible::mint_tensor_shape(
+            crucible::TensorSizes{size_lanes.view().window(0, sizes.size()).expect("the rank is at most 8")},
+            crucible::TensorStrides{stride_lanes.view().window(0, strides.size()).expect("the rank is at most 8")})
+            .expect("two counts of one rank make a shape"));
     meta.dtype = dtype;
     return meta;
 }
