@@ -262,6 +262,18 @@ public:
     // The records of the op: the inputs, then the outputs.
     [[nodiscard]] constexpr ::fixy::View<const TensorMeta> metas() const noexcept { return metas_; }
 
+    // The records of the inputs of the op: the first num_inputs records.  The
+    // door of the op checked that the count of the records is the input count
+    // plus the output count of the entry, so the inputs fit the records, and
+    // the prefix has no test.  A read of one input through a window of this
+    // View is the one compare of the position against the input count.
+    [[nodiscard]] constexpr ::fixy::View<const TensorMeta> input_records() const noexcept {
+        const ::fixy::View<const TensorMeta> records = metas_;
+        const std::size_t inputs = entry().num_inputs;
+        [[assume(inputs <= records.size())]];
+        return records.prefix_up_to(inputs);
+    }
+
     // The same records as the run that an append of the log takes.  The door
     // of the op makes the run at this call (ValidatedOpDoor), so the op keeps
     // its View and a replay of the op builds no run.

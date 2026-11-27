@@ -827,28 +827,46 @@ private:
 
     // Binds the listed reads of the op at matched to the live op, and passes
     // the reads of the earlier ops.  The cursor stops at the first read of a
-    // later op.
+    // later op, and at the end of the list.  The window of one read at the
+    // cursor is the test of the end, and its View is never the empty value of
+    // its Option, so the read has no second test.
     [[gnu::noinline]] void bind_reads_up_to_(OpIndex matched, const ValidatedOp& live) {
+        enum class ReadStep : uint8_t {
+            Stop,
+            Next,
+        };
         const ::fixy::View<const ExternalRead> reads = external_reads_.view();
-        while (next_external_read_ < reads.size()) {
-            const ExternalRead& read = *reads.get(next_external_read_).expect("the test above bounds the cursor");
-            if (read.op.raw() > matched.raw()) break;
-            if (read.op.raw() == matched.raw()) bind_external_read_(live, read);
-            ++next_external_read_;
-        }
+        while (reads.window<1>(next_external_read_)
+                   .match(
+                       [this, matched, &live](::fixy::View<const ExternalRead, 1> at) noexcept {
+                           const ExternalRead& read = at.at(::fixy::index<0>());
+                           if (read.op.raw() > matched.raw()) return ReadStep::Stop;
+                           if (read.op.raw() == matched.raw()) bind_external_read_(live, read);
+                           ++next_external_read_;
+                           return ReadStep::Next;
+                       },
+                       [] noexcept { return ReadStep::Stop; })
+               == ReadStep::Next) {}
     }
 
     // Binds one external slot to the storage of one input of the live op.  A
     // slot holds one storage, so the slot takes the address of the first
     // byte of the storage, and two views at different offsets of one storage
     // bind the slot to one address.  The guard matched the shape hash of the
-    // inputs, so the input is in the live op, and the test keeps each read in
-    // bounds when a hash collides.
+    // inputs, so the input is in the live op.  The live op comes from the
+    // front end, and a collision of the hash can name an input past its
+    // inputs, so the window of the input keeps each read in bounds.  It is the
+    // one compare of the position against the input count of the live op.
     void bind_external_read_(const ValidatedOp& live, const ExternalRead& read) {
-        const uint16_t input = read.input.raw();
-        if (input >= live.entry().num_inputs) return;
-        storage_address(*live.metas().get(input).expect("the live op holds its inputs first"))
-            .match([this, &read](TensorData data) noexcept { register_external_(read.slot, data); }, []() noexcept {});
+        live.input_records()
+            .window<1>(read.input.raw())
+            .match(
+                [this, &read](::fixy::View<const TensorMeta, 1> input) noexcept {
+                    storage_address(input.at(::fixy::index<0>()))
+                        .match([this, &read](TensorData data) noexcept { register_external_(read.slot, data); },
+                               []() noexcept {});
+                },
+                [] noexcept {});
     }
 
     void drop_external_reads_() noexcept {
