@@ -509,7 +509,11 @@ inline namespace CRUCIBLE_SIMD_TARGET {
         if (magnitude < 0x1p-28) return detail::erf_tiny_(value);
         return detail::erf_small_<detail::kErfSmallDegree>(value);
     }
-    if (magnitude >= detail::kErfOneFrom) return ::foundation::core::fp::copy_sign(1.0, value);
+    // The test is true for a NaN, so after it the compiler knows that the
+    // magnitude is in [1/2, kErfOneFrom).  Then the conversion of the index in
+    // erf_interval_ needs no check of its range under the sanitizer of the
+    // conversions.  A NaN does not get here.
+    if (!(magnitude < detail::kErfOneFrom)) return ::foundation::core::fp::copy_sign(1.0, value);
     return ::foundation::core::fp::copy_sign(detail::erf_interval_<detail::kErfDegree>(magnitude), value);
 }
 
