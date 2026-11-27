@@ -53,8 +53,9 @@
 //       each row is at least 1.98 times each |z| of the row.
 //     p = z^2 (P2 + z (P3 + P4 z + z^2 (P5 + P6 z))), the minimax polynomial
 //       of log1p(z) - z for the absolute error.
-//     l = RN(p + RN(e ln2_low + RN(l + l2))), the middle step as one fma.
-//       The sum of the low parts does not wait for p.
+//     l = RN(p + RN(l + RN(e ln2_low + l2))), the inner step as one fma.
+//       e ln2_low + l2 does not wait for z, and the sum of the low parts does
+//       not wait for p.
 //     Then |h + l - log(x)| <= eps_fast = 2^-69.43, absolute.
 //     The rounding test: with E = 2^-68.5, if RN(h + RN(l + E)) and
 //     RN(h + RN(l - E)) are the same value, that value is the correctly
@@ -90,8 +91,8 @@
 //     the rounds of the polynomial                 2^-70.41
 //     -log(r_i) - l1 - l2                          2^-97.01
 //     e (ln2 - ln2_high - ln2_low), |e| <= 1075    2^-91.95
-//     the round of l + l2                          2^-95.42
-//     the round of e ln2_low + (l + l2)            2^-86.97
+//     the round of e ln2_low + l2                  2^-86.98
+//     the round of l + (e ln2_low + l2)            2^-86.97
 //     the round of p + (...)                       2^-72.00
 //     the sum: eps_fast                            2^-69.43
 //
@@ -459,9 +460,9 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     double polynomial = fma_of_finite(square, upper_pair, lower_pair);
     polynomial = fma_of_finite(reduced, polynomial, kLogP2);
     polynomial = polynomial * square;
-    // The sum of the low parts does not wait for the polynomial, so its add is
-    // the one step after the polynomial.
-    double const rest = fma_of_finite(scale, kLogLn2Low, head.low + entry.middle);
+    // e ln2_low + l2 does not wait for z, and the sum of the low parts does not
+    // wait for the polynomial, so its add is the one step after the polynomial.
+    double const rest = head.low + fma_of_finite(scale, kLogLn2Low, entry.middle);
     return DoubleWord{head.high, polynomial + rest};
 }
 
