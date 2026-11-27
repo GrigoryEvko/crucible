@@ -170,15 +170,20 @@ constexpr ::fixy::FixedArray<FloatCase, 17> kExpFloatCases{
     FloatCase{0x33000000u, 0x3F800000u}, FloatCase{0xB3000000u, 0x3F800000u},
 };
 
-// log of float: as for double, and the five inputs whose log(double) is a
-// float midpoint, which the list of Log.h answers.
-constexpr ::fixy::FixedArray<FloatCase, 17> kLogFloatCases{
+// log of float: as for double, the five inputs whose log(double) is a float
+// midpoint, which the list of Log.h answers, and each side of four edges of the
+// tables of Log.h: the start and the end of the range of z, and the two ends
+// of the interval that holds 1.
+constexpr ::fixy::FixedArray<FloatCase, 25> kLogFloatCases{
     FloatCase{0x00000000u, 0xFF800000u}, FloatCase{0x80000000u, 0xFF800000u}, FloatCase{0x7F800000u, 0x7F800000u},
     FloatCase{0xFF800000u, kNan32},      FloatCase{0xBF800000u, kNan32},      FloatCase{0x80000001u, kNan32},
     FloatCase{0x7FC00001u, kNan32},      FloatCase{0x3F800000u, 0x00000000u}, FloatCase{0x00000001u, 0xC2CE8ED0u},
     FloatCase{0x007FFFFFu, 0xC2AEAC50u}, FloatCase{0x00800000u, 0xC2AEAC50u}, FloatCase{0x7F7FFFFFu, 0x42B17218u},
     FloatCase{0x41178FEBu, 0x400FE5E7u}, FloatCase{0x4C5D65A5u, 0x418F034Bu}, FloatCase{0x3C413D3Au, 0xC08E158Fu},
-    FloatCase{0x65D890D3u, 0x4254D1F9u}, FloatCase{0x6F31A8ECu, 0x42845A89u},
+    FloatCase{0x65D890D3u, 0x4254D1F9u}, FloatCase{0x6F31A8ECu, 0x42845A89u}, FloatCase{0x3F337FFFu, 0xBEB5C2DDu},
+    FloatCase{0x3F338000u, 0xBEB5C2DAu}, FloatCase{0x3FB37FFFu, 0x3EAD2153u}, FloatCase{0x3FB38000u, 0x3EAD2156u},
+    FloatCase{0x3F7F7FFFu, 0xBB00210Bu}, FloatCase{0x3F7F8000u, 0xBB00200Bu}, FloatCase{0x3F807FFFu, 0x3B7F7E57u},
+    FloatCase{0x3F808000u, 0x3B7F8055u},
 };
 
 // erf of float: as for double, with the edge of the slow path of a small

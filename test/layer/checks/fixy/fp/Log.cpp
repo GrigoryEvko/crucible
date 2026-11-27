@@ -50,4 +50,14 @@ static_assert(bits_of(::fixy::fp::log(float_of(0x7F7FFFFFu))) == 0x42B17218u,
 static_assert(bits_of(::fixy::fp::log(float_of(0x41178FEBu))) == 0x400FE5E7u,
               "logf of a midpoint input must take the result of the list.");
 
+// The interval of the float tables that holds 1 has invc = 1 and logc = 0,
+// and in the bits 1 is at its middle.  So the fast path adds no logc to r on
+// each side of 1, and log(x) near 1 has no cancellation.
+inline constexpr std::uint32_t kOneOffset = bits_of(1.0f) - kLogFloatOffset;
+inline constexpr std::uint32_t kOneIndex = kOneOffset >> (23 - kLogFloatTableBits);
+static_assert(bits_of(kLogFloatInvc[kOneIndex]) == bits_of(1.0), "the interval of 1 must have invc = 1.");
+static_assert(bits_of(kLogFloatLogc[kOneIndex]) == bits_of(0.0), "the interval of 1 must have logc = +0.");
+static_assert((kOneOffset & ((1u << (23 - kLogFloatTableBits)) - 1u)) == 1u << (22 - kLogFloatTableBits),
+              "in the bits, 1 must be at the middle of its interval.");
+
 }  // namespace fixy::fp::detail::log_self_test

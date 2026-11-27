@@ -48,15 +48,16 @@
 //   path.  The sampled sweep gives 0.518 near 1.12, so the bound is 0.53.
 //
 // Algorithm of log(float)
-//   The fast path computes in double.  x = 2^k z with z in [0x1.66p-1,
-//   0x1.66p0) and 64 intervals.  invc_i has 29 significant bits, and the
+//   The fast path computes in double.  x = 2^k z with z in [0x1.67p-1,
+//   0x1.67p0) and 128 intervals.  invc_i has 29 significant bits, and the
 //   interval that holds 1 has invc = 1 and logc = 0.  z has 24 bits, so
 //   z * invc_i is exact in double, and r = z * invc_i - 1 is exact.
-//   log(x) = fma(k, ln2, logc_i) + (r + r^2 P(r)), P of degree 4, with a
-//   relative error of the polynomial of 2^-49.5.  The rounding test and the
+//   log(x) = (fma(k, ln2, logc_i) + r) + r^2 P(r), P of degree 3, with a
+//   relative error of the polynomial of 2^-46.6.  The rounding test and the
 //   slow path are those of exp(float) in fixy/fp/Exp.h, with log(double) in the
-//   slow path.  The fma sites of the fast path: one for k ln2, four in the
-//   polynomial, one for r + r^2 P(r).
+//   slow path.  The fma sites of the fast path: one for k ln2, three in the
+//   polynomial, one for the sum, and one for r on a target with an fma
+//   instruction.
 //   The exhaustive sweep of the 2^32 inputs against CORE-MATH proves the
 //   correct round of each input (the target bench_fp_sweep).
 //
@@ -249,67 +250,100 @@ inline constexpr LogEntry kLogTable[128] = {
 };
 // clang-format on
 
-inline constexpr int kLogFloatTableBits = 6;
-// The bits of the float 0x1.66p-1: the start of the range of z.
-inline constexpr std::uint32_t kLogFloatOffset = 0x3F330000u;
+inline constexpr int kLogFloatTableBits = 7;
+// The bits of the float 0x1.67p-1: the start of the range of z.  In the bits,
+// 1 is at the middle of interval 76, which has invc = 1 and logc = 0.
+inline constexpr std::uint32_t kLogFloatOffset = 0x3F338000u;
 inline constexpr double kLogFloatLn2 = 0x1.62e42fefa39efp-1;
 
-// The minimax polynomial of log1p(r) - r = r^2 (A0 + A1 r + ... + A4 r^4)
-// for the relative error of log1p(r).
-inline constexpr double kLogFloatA0 = -0x1.0000000000025p-1;
-inline constexpr double kLogFloatA1 = 0x1.5555555164fbdp-2;
-inline constexpr double kLogFloatA2 = -0x1.ffffffeed97f1p-3;
-inline constexpr double kLogFloatA3 = 0x1.999ff715d0416p-3;
-inline constexpr double kLogFloatA4 = -0x1.555d0bf412e6cp-3;
+// The minimax polynomial of log1p(r) - r = r^2 (A0 + A1 r + A2 r^2 + A3 r^3)
+// for the relative error of log1p(r), with an error of 2^-46.58 for |r| up
+// to 2^-8.
+inline constexpr double kLogFloatA0 = -0x1.ffffffffcab9dp-2;
+inline constexpr double kLogFloatA1 = 0x1.55555554f59c3p-2;
+inline constexpr double kLogFloatA2 = -0x1.0000d543d7f2cp-2;
+inline constexpr double kLogFloatA3 = 0x1.999b7d9f0dcf5p-3;
 
-// One interval of z of the float form: 1/c with 29 significant bits, and
-// -log of it as a double.
-struct LogFloatEntry {
-    double invc = 0.0;
-    double logc = 0.0;
-};
-
+// The intervals of z of the float form, in two tables: 1/c with 29
+// significant bits, and -log of it as a double.  A table of doubles takes
+// its index with the scale 8 of the address, so the load needs no multiply
+// of the index.  From python3 utils/tools/fp_tables.py logf.
 // clang-format off
-inline constexpr LogFloatEntry kLogFloatTable[64] = {
-    {0x1.6c16c17000000p+0, -0x1.68ac83f4c6a14p-2}, {0x1.6816817000000p+0, -0x1.5d5bde0c15f30p-2},
-    {0x1.642c859000000p+0, -0x1.522ae0718a3d8p-2}, {0x1.6058160000000p+0, -0x1.4718dc171c41bp-2},
-    {0x1.5c9882c000000p+0, -0x1.3c25278733184p-2}, {0x1.58ed231000000p+0, -0x1.314f1e34b5ce4p-2},
-    {0x1.5555555000000p+0, -0x1.269621034db92p-2}, {0x1.51d07eb000000p+0, -0x1.1bf9963b26b95p-2},
-    {0x1.4e5e0a7000000p+0, -0x1.1178e8197e47cp-2}, {0x1.4afd6a0000000p+0, -0x1.071385f4d5862p-2},
-    {0x1.47ae148000000p+0, -0x1.f991c6eb3b379p-3}, {0x1.446f865000000p+0, -0x1.e530efd771012p-3},
-    {0x1.4141414000000p+0, -0x1.d1037f1e55e7bp-3}, {0x1.3e22cbd000000p+0, -0x1.bd08738ebd8adp-3},
-    {0x1.3b13b14000000p+0, -0x1.a93ed3e8ad9e3p-3}, {0x1.3813814000000p+0, -0x1.95a5ae037017fp-3},
-    {0x1.3521cfb000000p+0, -0x1.823c16431a3c2p-3}, {0x1.323e34a000000p+0, -0x1.6f0128a556abcp-3},
-    {0x1.2f684be000000p+0, -0x1.5bf406dd43db2p-3}, {0x1.2c9fb4e000000p+0, -0x1.4913d8693b561p-3},
-    {0x1.29e412a000000p+0, -0x1.365fcb0d59016p-3}, {0x1.27350b9000000p+0, -0x1.23d712db9c202p-3},
-    {0x1.2492492000000p+0, -0x1.1178e8027e47cp-3}, {0x1.21fb781000000p+0, -0x1.fe89137fbd566p-4},
-    {0x1.1f7047e000000p+0, -0x1.da727670446a2p-4}, {0x1.1cf06ae000000p+0, -0x1.b6ac892ed5b1cp-4},
-    {0x1.1a7b961000000p+0, -0x1.9335e5bd94989p-4}, {0x1.1811812000000p+0, -0x1.700d3122ac0e1p-4},
-    {0x1.15b1e5f000000p+0, -0x1.4d31156607eacp-4}, {0x1.135c811000000p+0, -0x1.2aa04a12717a5p-4},
-    {0x1.1111111000000p+0, -0x1.08598b49e3a07p-4}, {0x1.0ecf56c000000p+0, -0x1.ccb73d0ddb2ccp-5},
-    {0x1.0c97150000000p+0, -0x1.894aa1c9fb343p-5}, {0x1.0a6810a000000p+0, -0x1.466aec7ade3e9p-5},
-    {0x1.0842108000000p+0, -0x1.0415d81e74444p-5}, {0x1.0624dd3000000p+0, -0x1.849252c48cabfp-6},
-    {0x1.0410410000000p+0, -0x1.0205648935847p-6}, {0x1.0204081000000p+0, -0x1.010157488de71p-7},
-    {0x1.0000000000000p+0, 0.0},                   {0x1.f81f820000000p-1, 0x1.fc0a890fc03e4p-7},
-    {0x1.f07c1f0000000p-1, 0x1.f829b1e783300p-6},  {0x1.e9131ac000000p-1, 0x1.77458f532dcfcp-5},
-    {0x1.e1e1e1e000000p-1, 0x1.f0a30c21162a6p-5},  {0x1.dae6077000000p-1, 0x1.341d793bbd1d1p-4},
-    {0x1.d41d41d000000p-1, 0x1.6f0d28d256b4cp-4},  {0x1.cd85689000000p-1, 0x1.a926d3a6ad563p-4},
-    {0x1.c71c71c000000p-1, 0x1.e2707722af2e6p-4},  {0x1.c0e0704000000p-1, 0x1.0d77e7a908e59p-3},
-    {0x1.bacf915000000p-1, 0x1.29552f6fff523p-3},  {0x1.b4e81b5000000p-1, 0x1.44d2b6c5b7d1ep-3},
-    {0x1.af286bd000000p-1, 0x1.5ff306ee793d4p-3},  {0x1.a98ef60000000p-1, 0x1.7ab890410d909p-3},
-    {0x1.a41a41a000000p-1, 0x1.9525a9e3456b4p-3},  {0x1.9ec8e95000000p-1, 0x1.af3c94ed0bff3p-3},
-    {0x1.999999a000000p-1, 0x1.c8ff7c59a9a22p-3},  {0x1.948b0fd000000p-1, 0x1.e27076d5af2e6p-3},
-    {0x1.8f9c190000000p-1, 0x1.fb9186b5e3e2bp-3},  {0x1.8acb90f000000p-1, 0x1.0a324e38b90e3p-2},
-    {0x1.8618618000000p-1, 0x1.1675cacaba60ep-2},  {0x1.8181818000000p-1, 0x1.22941fc0f7966p-2},
-    {0x1.7d05f41000000p-1, 0x1.2e8e2bc311d31p-2},  {0x1.78a4c81000000p-1, 0x1.3a64c56b145eap-2},
-    {0x1.745d174000000p-1, 0x1.4618bc31c5ec2p-2},  {0x1.702e05c000000p-1, 0x1.51aad874df82dp-2},
+inline constexpr double kLogFloatInvc[1 << kLogFloatTableBits] = {
+    0x1.6c16c17000000p+0, 0x1.6a13cd1000000p+0, 0x1.6816817000000p+0, 0x1.661ec6a000000p+0,
+    0x1.642c859000000p+0, 0x1.623fa77000000p+0, 0x1.6058160000000p+0, 0x1.5e75bb9000000p+0,
+    0x1.5c9882c000000p+0, 0x1.5ac056b000000p+0, 0x1.58ed231000000p+0, 0x1.571ed3c000000p+0,
+    0x1.5555555000000p+0, 0x1.5390949000000p+0, 0x1.51d07eb000000p+0, 0x1.5015015000000p+0,
+    0x1.4e5e0a7000000p+0, 0x1.4cab887000000p+0, 0x1.4afd6a0000000p+0, 0x1.49539e4000000p+0,
+    0x1.47ae148000000p+0, 0x1.460cbc8000000p+0, 0x1.446f865000000p+0, 0x1.42d6626000000p+0,
+    0x1.4141414000000p+0, 0x1.3fb0140000000p+0, 0x1.3e22cbd000000p+0, 0x1.3c995a4000000p+0,
+    0x1.3b13b14000000p+0, 0x1.3991c2c000000p+0, 0x1.3813814000000p+0, 0x1.3698df4000000p+0,
+    0x1.3521cfb000000p+0, 0x1.33ae45b000000p+0, 0x1.323e34a000000p+0, 0x1.30d1901000000p+0,
+    0x1.2f684be000000p+0, 0x1.2e025c0000000p+0, 0x1.2c9fb4e000000p+0, 0x1.2b404ad000000p+0,
+    0x1.29e412a000000p+0, 0x1.288b013000000p+0, 0x1.27350b9000000p+0, 0x1.25e2271000000p+0,
+    0x1.2492492000000p+0, 0x1.2345679000000p+0, 0x1.21fb781000000p+0, 0x1.20b470c000000p+0,
+    0x1.1f7047e000000p+0, 0x1.1e2ef3b000000p+0, 0x1.1cf06ae000000p+0, 0x1.1bb4a40000000p+0,
+    0x1.1a7b961000000p+0, 0x1.1945381000000p+0, 0x1.1811812000000p+0, 0x1.16e0689000000p+0,
+    0x1.15b1e5f000000p+0, 0x1.1485f0e000000p+0, 0x1.135c811000000p+0, 0x1.12358e7000000p+0,
+    0x1.1111111000000p+0, 0x1.0fef011000000p+0, 0x1.0ecf56c000000p+0, 0x1.0db20a9000000p+0,
+    0x1.0c97150000000p+0, 0x1.0b7e6ec000000p+0, 0x1.0a6810a000000p+0, 0x1.0953f39000000p+0,
+    0x1.0842108000000p+0, 0x1.073260a000000p+0, 0x1.0624dd3000000p+0, 0x1.05197f8000000p+0,
+    0x1.0410410000000p+0, 0x1.03091b5000000p+0, 0x1.0204081000000p+0, 0x1.0101010000000p+0,
+    0x1.0000000000000p+0, 0x1.fc07f02000000p-1, 0x1.f81f820000000p-1, 0x1.f44659e000000p-1,
+    0x1.f07c1f0000000p-1, 0x1.ecc07b3000000p-1, 0x1.e9131ac000000p-1, 0x1.e573ac9000000p-1,
+    0x1.e1e1e1e000000p-1, 0x1.de5d6e4000000p-1, 0x1.dae6077000000p-1, 0x1.d77b655000000p-1,
+    0x1.d41d41d000000p-1, 0x1.d0cb58f000000p-1, 0x1.cd85689000000p-1, 0x1.ca4b305000000p-1,
+    0x1.c71c71c000000p-1, 0x1.c3f8f02000000p-1, 0x1.c0e0704000000p-1, 0x1.bdd2b8a000000p-1,
+    0x1.bacf915000000p-1, 0x1.b7d6c3e000000p-1, 0x1.b4e81b5000000p-1, 0x1.b203640000000p-1,
+    0x1.af286bd000000p-1, 0x1.ac5701b000000p-1, 0x1.a98ef60000000p-1, 0x1.a6d01a7000000p-1,
+    0x1.a41a41a000000p-1, 0x1.a16d3f9000000p-1, 0x1.9ec8e95000000p-1, 0x1.9c2d14f000000p-1,
+    0x1.999999a000000p-1, 0x1.970e4f8000000p-1, 0x1.948b0fd000000p-1, 0x1.920fb4a000000p-1,
+    0x1.8f9c190000000p-1, 0x1.8d3018d000000p-1, 0x1.8acb90f000000p-1, 0x1.886e5f1000000p-1,
+    0x1.8618618000000p-1, 0x1.83c977b000000p-1, 0x1.8181818000000p-1, 0x1.7f405fd000000p-1,
+    0x1.7d05f41000000p-1, 0x1.7ad2209000000p-1, 0x1.78a4c81000000p-1, 0x1.767dce4000000p-1,
+    0x1.745d174000000p-1, 0x1.724287f000000p-1, 0x1.702e05c000000p-1, 0x1.6e1f76b000000p-1,
+};
+inline constexpr double kLogFloatLogc[1 << kLogFloatTableBits] = {
+    -0x1.68ac83f4c6a14p-2, -0x1.630030a4eac49p-2, -0x1.5d5bde0c15f30p-2, -0x1.57bf752e0d1fbp-2,
+    -0x1.522ae0718a3d8p-2, -0x1.4c9e09e132c3cp-2, -0x1.4718dc171c41bp-2, -0x1.419b42461e8c7p-2,
+    -0x1.3c25278733184p-2, -0x1.36b6776ba1117p-2, -0x1.314f1e34b5ce4p-2, -0x1.2bef07bec9354p-2,
+    -0x1.269621034db92p-2, -0x1.214456d32b8d4p-2, -0x1.1bf9963b26b95p-2, -0x1.16b5ccba8fb73p-2,
+    -0x1.1178e8197e47cp-2, -0x1.0c42d66ed62e3p-2, -0x1.071385f4d5862p-2, -0x1.01eae5716c691p-2,
+    -0x1.f991c6eb3b379p-3, -0x1.ef5ade51cffe6p-3, -0x1.e530efd771012p-3, -0x1.db13db1e48940p-3,
+    -0x1.d1037f1e55e7bp-3, -0x1.c6ffbc8f00f71p-3, -0x1.bd08738ebd8adp-3, -0x1.b31d8543bce3dp-3,
+    -0x1.a93ed3e8ad9e3p-3, -0x1.9f6c406689664p-3, -0x1.95a5ae037017fp-3, -0x1.8beafec18fe8cp-3,
+    -0x1.823c16431a3c2p-3, -0x1.7898d82fc4c73p-3, -0x1.6f0128a556abcp-3, -0x1.6574ebd44133ap-3,
+    -0x1.5bf406dd43db2p-3, -0x1.527e5e2a1b58dp-3, -0x1.4913d8693b561p-3, -0x1.3fb45a59128ccp-3,
+    -0x1.365fcb0d59016p-3, -0x1.2d1610fbe813ap-3, -0x1.23d712db9c202p-3, -0x1.1aa2b819bf72ap-3,
+    -0x1.1178e8027e47cp-3, -0x1.08598b8663a07p-3, -0x1.fe89137fbd566p-4, -0x1.ec7397d4a1120p-4,
+    -0x1.da727670446a2p-4, -0x1.c8857fe2c4b23p-4, -0x1.b6ac892ed5b1cp-4, -0x1.a4e763cb1bc38p-4,
+    -0x1.9335e5bd94989p-4, -0x1.8197e35d0e3f0p-4, -0x1.700d3122ac0e1p-4, -0x1.5e95a49c791cbp-4,
+    -0x1.4d31156607eacp-4, -0x1.3bdf5a731ee64p-4, -0x1.2aa04a12717a5p-4, -0x1.1973bcbd65567p-4,
+    -0x1.08598b49e3a07p-4, -0x1.eea31c026b87cp-5, -0x1.ccb73d0ddb2ccp-5, -0x1.aaef2de5b10fcp-5,
+    -0x1.894aa1c9fb343p-5, -0x1.67c94ee54bb58p-5, -0x1.466aec7ade3e9p-5, -0x1.252f32f6d183fp-5,
+    -0x1.0415d81e74444p-5, -0x1.c63d2da94aaf1p-6, -0x1.849252c48cabfp-6, -0x1.432a92f980cc1p-6,
+    -0x1.0205648935847p-6, -0x1.824489408a2aap-7, -0x1.010157488de71p-7, -0x1.0080549588b35p-8,
+    0.0, 0x1.fe02a69106789p-8, 0x1.fc0a890fc03e4p-7, 0x1.7b91b1155b11bp-6,
+    0x1.f829b1e783300p-6, 0x1.39e87ba1ebd60p-5, 0x1.77458f532dcfcp-5, 0x1.b42dd713971bfp-5,
+    0x1.f0a30c21162a6p-5, 0x1.16536ee637ae1p-4, 0x1.341d793bbd1d1p-4, 0x1.51b073c96183fp-4,
+    0x1.6f0d28d256b4cp-4, 0x1.8c345da019b21p-4, 0x1.a926d3a6ad563p-4, 0x1.c5e5492abc743p-4,
+    0x1.e2707722af2e6p-4, 0x1.fec912fbbeabbp-4, 0x1.0d77e7a908e59p-3, 0x1.1b72ad33f67a0p-3,
+    0x1.29552f6fff523p-3, 0x1.371fc1f6e8f74p-3, 0x1.44d2b6c5b7d1ep-3, 0x1.526e5e5a1b438p-3,
+    0x1.5ff306ee793d4p-3, 0x1.6d60fe601d21dp-3, 0x1.7ab890410d909p-3, 0x1.87fa06438c911p-3,
+    0x1.9525a9e3456b4p-3, 0x1.a23bc223ab563p-3, 0x1.af3c94ed0bff3p-3, 0x1.bc28673a58cd6p-3,
+    0x1.c8ff7c59a9a22p-3, 0x1.d5c216b8fbb91p-3, 0x1.e27076d5af2e6p-3, 0x1.ef0adcaec5936p-3,
+    0x1.fb9186b5e3e2bp-3, 0x1.040259530d041p-2, 0x1.0a324e38b90e3p-2, 0x1.1058bf8d24ad5p-2,
+    0x1.1675cacaba60ep-2, 0x1.1c898c09d99fbp-2, 0x1.22941fc0f7966p-2, 0x1.2895a13e286a3p-2,
+    0x1.2e8e2bc311d31p-2, 0x1.347dd9a447d55p-2, 0x1.3a64c56b145eap-2, 0x1.404308716a7e4p-2,
+    0x1.4618bc31c5ec2p-2, 0x1.4be5f963b78a1p-2, 0x1.51aad874df82dp-2, 0x1.5767718015a6cp-2,
 };
 // clang-format on
 
 // The tolerance of the rounding test of the float fast path, in units of the
-// last bit of the double result: the error 2^-48 of the fast path times 2^53,
-// with a margin of eight.
-inline constexpr std::uint64_t kLogFloatTolerance = std::uint64_t{1} << 8;
+// last bit of the double result: an error of 2^-43 times 2^53.  The error of
+// the fast path is at most about 2^-46.5 relative to the result, from the
+// polynomial and three rounds, so the margin is about eleven.
+inline constexpr std::uint64_t kLogFloatTolerance = std::uint64_t{1} << 10;
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
@@ -438,29 +472,30 @@ inline namespace CRUCIBLE_SIMD_TARGET {
         bits = (bits << shift) - (shift << 23);
     }
     std::uint32_t const offset_bits = bits - detail::kLogFloatOffset;
-    std::uint32_t const index = (offset_bits >> (23 - detail::kLogFloatTableBits)) & 63u;
+    std::uint32_t const index =
+        (offset_bits >> (23 - detail::kLogFloatTableBits)) & ((1u << detail::kLogFloatTableBits) - 1u);
     std::int32_t const exponent = static_cast<std::int32_t>(offset_bits) >> 23;
     float const reduced_input = __builtin_bit_cast(float, bits - (offset_bits & 0xff800000u));
-    detail::LogFloatEntry const& entry = detail::kLogFloatTable[index];
+    double const invc = detail::kLogFloatInvc[index];
+    double const logc = detail::kLogFloatLogc[index];
     // z has 24 bits and invc has 29, so the product is exact, and the
     // subtract of 1 is exact.
     // So an fma gives the same exact r as the multiply and the subtract, two
     // cycles sooner.  At x86-64 and x86-64-v2 the fma is a form in doubles
     // of about 100 instructions, so the multiply and the subtract stay there.
 #if defined(__FMA__) || defined(__aarch64__)
-    double const reduced = fma_of_finite(static_cast<double>(reduced_input), entry.invc, -1.0);
+    double const reduced = fma_of_finite(static_cast<double>(reduced_input), invc, -1.0);
 #else
-    double const reduced = static_cast<double>(reduced_input) * entry.invc - 1.0;
+    double const reduced = static_cast<double>(reduced_input) * invc - 1.0;
 #endif
-    double const whole = fma_of_finite(static_cast<double>(exponent), detail::kLogFloatLn2, entry.logc);
-    // A0 + A1 r + A2 r^2 + A3 r^3 + A4 r^4 in the form of Estrin: three fma
-    // deep after r^2, where the form of Horner is four fma deep after r.
+    double const whole = fma_of_finite(static_cast<double>(exponent), detail::kLogFloatLn2, logc);
+    // A0 + A1 r + A2 r^2 + A3 r^3 in the form of Estrin, and whole + r beside
+    // it: the chain is two fma deep after r^2.
     double const square = reduced * reduced;
     double const low = fma_of_finite(reduced, detail::kLogFloatA1, detail::kLogFloatA0);
-    double const high =
-        fma_of_finite(square, detail::kLogFloatA4, fma_of_finite(reduced, detail::kLogFloatA3, detail::kLogFloatA2));
+    double const high = fma_of_finite(reduced, detail::kLogFloatA3, detail::kLogFloatA2);
     double const tail = fma_of_finite(square, high, low);
-    double const result = whole + fma_of_finite(square, tail, reduced);
+    double const result = fma_of_finite(square, tail, whole + reduced);
     if (detail::is_near_float_midpoint_(result, detail::kLogFloatTolerance)) [[unlikely]] {
         return detail::log_float_slow_(value);
     }

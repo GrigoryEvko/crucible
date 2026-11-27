@@ -98,7 +98,7 @@ struct ClockChain {
 //   fixy exp double     7    3    3    0   33   5.5, the dispatch
 //   fixy exp float      4    2    2    2   33   5.5, the dispatch
 //   fixy log double     8    2    5    1   44   7.33, the dispatch
-//   fixy log float      6    2    2    3   37   6.17, the dispatch
+//   fixy log float      6    1    1    3   35   5.83, the dispatch
 //   fixy erf double    11    2    4    2   50   8.33, the dispatch
 //   fixy erf float      8    4    1    4   41   6.83, the dispatch
 //   cr_expf             6    2    1    3   30   5.0, the dispatch
@@ -115,11 +115,13 @@ struct ClockChain {
 // the guide, so the floor is a lower bound too.  The chain x + 0 * y of the
 // row adds a multiply and an add, 6 cycles:
 //   fixy exp double 33 + 6 = 39   fixy log double 37 + 6 = 43   fixy erf double 72 + 6 = 78
-//   fixy exp float  31 + 6 = 37   fixy log float  42 + 6 = 48   fixy erf float  30 + 6 = 36
+//   fixy exp float  31 + 6 = 37   fixy log float  27 + 6 = 33   fixy erf float  30 + 6 = 36
 //   cr_expf         28 + 6 = 34   cr_logf         23 + 6 = 29   cr_erff         30 + 6 = 36
 // The Horner chain of fixy erf double holds 11 dependent fma.  fixy erf float
-// and cr_erff take an Estrin form of degree 7, and cr_logf a short polynomial
-// after its table.  The floors do not count glibc, SLEEF and the double
+// and cr_erff take an Estrin form of degree 7.  After the table, fixy log
+// float takes a polynomial of degree 5 in r, and cr_logf one of degree 3.  The
+// rounding test of cr_logf admits an absolute error of about 2^-32, so more
+// inputs take its second path.  The floors do not count glibc, SLEEF and the double
 // code of CORE-MATH.  So a reference row below a floor shows a code that the
 // floor does not count.
 struct Floor {
