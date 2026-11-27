@@ -66,6 +66,7 @@
 #include <fixy/fp/FmaOfFinite.h>
 #include <fixy/fp/RoundToFloat.h>
 
+#include <cstddef>
 #include <cstdint>
 
 #ifndef CRUCIBLE_FP_STRICT_FLOOR
@@ -346,6 +347,62 @@ template <int Degree>
     return entry.value_high + ::fixy::fp::detail::fma_of_finite(offset, sum, entry.value_low);
 }
 
+// floor(t) for 0 <= t < 2^52, exact.  With SSE4.1 and on aarch64 it is the
+// round instruction.  At x86-64 the add of 2^52 rounds t to an integer, and
+// the compare takes one off when that round went up.
+[[nodiscard]] constexpr double erf_floor_(double value) noexcept {
+#if defined(__SSE4_1__) || defined(__aarch64__)
+    return __builtin_floor(value);
+#else
+    double const rounded = (value + 0x1p52) - 0x1p52;
+    return rounded > value ? rounded - 1.0 : rounded;
+#endif
+}
+
+// c0 + c1 u + ... + c7 u^7 of the first eight terms, in the form of Estrin:
+// four fma of pairs, two of pairs of pairs, and one with u^4.  The chain is
+// three fma deep after u^4, where the form of Horner is seven fma deep.
+template <std::size_t Count>
+[[nodiscard]] constexpr double erf_estrin_eight_(double point, double const (&terms)[Count]) noexcept {
+    using ::fixy::fp::detail::fma_of_finite;
+    static_assert(Count >= 8, "the form of Estrin reads eight terms");
+    double const square = point * point;
+    double const fourth_power = square * square;
+    double const first = fma_of_finite(point, terms[1], terms[0]);
+    double const second = fma_of_finite(point, terms[3], terms[2]);
+    double const third = fma_of_finite(point, terms[5], terms[4]);
+    double const fourth = fma_of_finite(point, terms[7], terms[6]);
+    double const low = fma_of_finite(square, second, first);
+    double const high = fma_of_finite(square, fourth, third);
+    return fma_of_finite(fourth_power, high, low);
+}
+
+// The fast path of erf of float below 1/2: x (2/sqrt(pi) + z P(z)), with
+// z = x^2 and P0 to P7 in the form of Estrin.  The value has the error budget
+// of erf_small_<kErfFloatSmallDegree>, which kErfFloatTolerance covers.
+[[nodiscard]] constexpr double erf_small_float_(double value) noexcept {
+    using ::fixy::fp::detail::fma_of_finite;
+    double const square = value * value;
+    double const sum = erf_estrin_eight_(square, kErfP);
+    double const tail = fma_of_finite(square, sum, kErfTwoOverRootPiLow);
+    return fma_of_finite(kErfTwoOverRootPiHigh, value, value * tail);
+}
+
+// The fast path of erf of float for 1/2 <= |x| < kErfFloatOneFrom, with the
+// terms c1 to c8 of the interval in the form of Estrin.  The index comes from
+// the float: 8 |x| is exact, and its truncation is its floor.  The offset
+// comes from the double: (|x| - 1/16) - floor(8 |x|) / 8 is exact, and it is
+// |x| minus the center 0.5625 + index / 8, as in erf_interval_.  The two
+// chains do not wait for each other.
+[[nodiscard]] constexpr double erf_interval_float_(double magnitude, float magnitude_float) noexcept {
+    using ::fixy::fp::detail::fma_of_finite;
+    auto const index = static_cast<std::uint32_t>(8.0f * magnitude_float) - 4u;
+    double const offset = fma_of_finite(-0.125, erf_floor_(8.0 * magnitude), magnitude - 0.0625);
+    ErfInterval const& entry = kErfTable[index];
+    double const sum = erf_estrin_eight_(offset, entry.terms);
+    return entry.value_high + fma_of_finite(offset, sum, entry.value_low);
+}
+
 // The midpoint inputs of the float form, from the sweep of the oracle.  A
 // midpoint input that is not in the list takes the round to even.
 [[gnu::cold, nodiscard]] constexpr float erf_float_midpoint_(std::uint32_t input_bits, double result) noexcept {
@@ -410,15 +467,18 @@ inline namespace CRUCIBLE_SIMD_TARGET {
         if (magnitude_bits > 0x7f800000u) return ::foundation::core::quiet_nan_of<float>;
         return ::foundation::core::fp::copy_sign(1.0f, value);
     }
-    float const magnitude = __builtin_bit_cast(float, magnitude_bits);
+    // The and of the sign on the float register keeps the value off the
+    // integer registers, so the chain of the result has no move there and
+    // back.  The tests read the bits.
+    float const magnitude = ::foundation::core::fp::abs(value);
     if (magnitude >= detail::kErfFloatOneFrom) return ::foundation::core::fp::copy_sign(1.0f, value);
     // A result below 2^-123 takes the slow path: the rounding test reads 24
     // bits of precision, and a subnormal float has fewer.
     if (magnitude_bits < 0x02000000u) [[unlikely]]
         return detail::erf_float_slow_(value);
     double const input = static_cast<double>(magnitude);
-    double const result = magnitude < 0.5f ? detail::erf_small_<detail::kErfFloatSmallDegree>(input)
-                                           : detail::erf_interval_<detail::kErfFloatDegree>(input);
+    double const result =
+        magnitude < 0.5f ? detail::erf_small_float_(input) : detail::erf_interval_float_(input, magnitude);
     if (detail::is_near_float_midpoint_(result, detail::kErfFloatTolerance)) [[unlikely]] {
         return detail::erf_float_slow_(value);
     }

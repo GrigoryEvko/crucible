@@ -444,13 +444,23 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     detail::LogFloatEntry const& entry = detail::kLogFloatTable[index];
     // z has 24 bits and invc has 29, so the product is exact, and the
     // subtract of 1 is exact.
+    // So an fma gives the same exact r as the multiply and the subtract, two
+    // cycles sooner.  At x86-64 and x86-64-v2 the fma is a form in doubles
+    // of about 100 instructions, so the multiply and the subtract stay there.
+#if defined(__FMA__) || defined(__aarch64__)
+    double const reduced = fma_of_finite(static_cast<double>(reduced_input), entry.invc, -1.0);
+#else
     double const reduced = static_cast<double>(reduced_input) * entry.invc - 1.0;
+#endif
     double const whole = fma_of_finite(static_cast<double>(exponent), detail::kLogFloatLn2, entry.logc);
-    double tail = fma_of_finite(reduced, detail::kLogFloatA4, detail::kLogFloatA3);
-    tail = fma_of_finite(reduced, tail, detail::kLogFloatA2);
-    tail = fma_of_finite(reduced, tail, detail::kLogFloatA1);
-    tail = fma_of_finite(reduced, tail, detail::kLogFloatA0);
-    double const result = whole + fma_of_finite(reduced * reduced, tail, reduced);
+    // A0 + A1 r + A2 r^2 + A3 r^3 + A4 r^4 in the form of Estrin: three fma
+    // deep after r^2, where the form of Horner is four fma deep after r.
+    double const square = reduced * reduced;
+    double const low = fma_of_finite(reduced, detail::kLogFloatA1, detail::kLogFloatA0);
+    double const high =
+        fma_of_finite(square, detail::kLogFloatA4, fma_of_finite(reduced, detail::kLogFloatA3, detail::kLogFloatA2));
+    double const tail = fma_of_finite(square, high, low);
+    double const result = whole + fma_of_finite(square, tail, reduced);
     if (detail::is_near_float_midpoint_(result, detail::kLogFloatTolerance)) [[unlikely]] {
         return detail::log_float_slow_(value);
     }

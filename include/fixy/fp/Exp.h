@@ -327,8 +327,18 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     if (value < detail::kExpFloatSubnormalBelow) [[unlikely]]
         return detail::exp_float_slow_(value);
     double const input = static_cast<double>(value);
-    double const scaled = detail::kExpInvLn2N * input;
-    double rounded = scaled + detail::kExpShift;
+    // With a fused multiply-add, one fma gives x N / ln2 + the shift with one
+    // round, two cycles before a multiply and an add.  So k can differ from
+    // the k of a multiply and an add near a half.  Each such k gives a reduced
+    // r inside the range of the polynomial, and the rounding test below keeps
+    // the result correctly rounded, so the float bits are the same on each
+    // level.  At x86-64 and x86-64-v2 the fma is a form in doubles of about
+    // 100 instructions, so the multiply and the add stay there.
+#if defined(__FMA__) || defined(__aarch64__)
+    double rounded = fma_of_finite(input, detail::kExpInvLn2N, detail::kExpShift);
+#else
+    double rounded = detail::kExpInvLn2N * input + detail::kExpShift;
+#endif
     std::uint64_t const shifted_bits = __builtin_bit_cast(std::uint64_t, rounded);
     rounded -= detail::kExpShift;
     double const reduced = fma_of_finite(rounded, detail::kExpNegLn2N, input);
