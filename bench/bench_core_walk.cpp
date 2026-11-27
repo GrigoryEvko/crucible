@@ -140,62 +140,84 @@ span_of(fixy::View<T const, Extent> run) noexcept {
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+// The runs of the rows.  Each row holds its own copy in its home
+// (bench::RowHome), so the distance from the runs to the frame of the timed
+// loop depends only on the code of the row.  A fixed pattern of values in
+// two runs of floats and one run of words.  The floats are small, so no sum
+// overflows.  The four views read the runs of this object, so the object
+// does not copy.
+struct Runs {
+    ::foundation::core::FixedArray<float, kElements> left{};
+    ::foundation::core::FixedArray<float, kElements> right{};
+    ::foundation::core::FixedArray<std::uint32_t, kElements> words{};
+    fixy::View<float const> run;
+    fixy::View<std::uint32_t const> word_run;
+    fixy::View<float const, kElements> left_run;
+    fixy::View<float const, kElements> right_run;
+
+    Runs() noexcept : run{left.view()}, word_run{words.view()}, left_run{left.view()}, right_run{right.view()} {
+        std::uint32_t pattern = 0x9E3779B9u;
+        for (fixy::Index<kElements> index : left.indices()) {
+            pattern = pattern * 1664525u + 1013904223u;
+            words.set(index, pattern);
+            left.set(index, static_cast<float>(pattern >> 24) / 256.0f);
+            right.set(index, static_cast<float>(pattern & 0xFFu) / 256.0f);
+        }
+    }
+    Runs(Runs const&) = delete("the four views read the runs of this object");
+    Runs& operator=(Runs const&) = delete("the four views read the runs of this object");
+};
+
+// The report of a row whose step runs on the runs in a home of its own.
+template <typename Step>
+[[nodiscard]] bench::Report run_on_runs(fixy::TextView name, Step step) {
+    return bench::run_in_home(name, []() noexcept { return Runs{}; }, step);
+}
+
 }  // namespace
 
 int main() {
     bench::elevate_priority();
 
-    // A fixed pattern of values in two runs of floats and one run of words.
-    // The floats are small, so no sum overflows.
-    ::foundation::core::FixedArray<float, kElements> left{};
-    ::foundation::core::FixedArray<float, kElements> right{};
-    ::foundation::core::FixedArray<std::uint32_t, kElements> words{};
-    std::uint32_t pattern = 0x9E3779B9u;
-    for (fixy::Index<kElements> index : left.indices()) {
-        pattern = pattern * 1664525u + 1013904223u;
-        words.set(index, pattern);
-        left.set(index, static_cast<float>(pattern >> 24) / 256.0f);
-        right.set(index, static_cast<float>(pattern & 0xFFu) / 256.0f);
-    }
-    fixy::View<float const> const run = left.view();
-    fixy::View<std::uint32_t const> const word_run = words.view();
-    fixy::View<float const, kElements> const left_run = left.view();
-    fixy::View<float const, kElements> const right_run = right.view();
-
     // Each body takes its runs through the input sink, so each call computes
     // its result again (the sink of bench_harness.h).  Each function of a row
     // is pure, so with no sink the optimizer calls it one time before the
     // timed loop.
-    bench::Report const raw_map =
-        bench::run("raw map + fold", [&] { bench::do_not_optimize(raw_map_fold(bench::make_opaque(run))); });
-    bench::Report const walk_map =
-        bench::run("walk map + fold", [&] { bench::do_not_optimize(walk_map_fold(bench::make_opaque(run))); });
-    bench::Report const ranges_map = bench::run(
-        "ranges map + fold", [&] { bench::do_not_optimize(ranges_map_fold(span_of(bench::make_opaque(run)))); });
+    bench::Report const raw_map = run_on_runs("raw map + fold", [](Runs& row) noexcept {
+        bench::do_not_optimize(raw_map_fold(bench::make_opaque(row.run)));
+    });
+    bench::Report const walk_map = run_on_runs("walk map + fold", [](Runs& row) noexcept {
+        bench::do_not_optimize(walk_map_fold(bench::make_opaque(row.run)));
+    });
+    bench::Report const ranges_map = run_on_runs("ranges map + fold", [](Runs& row) noexcept {
+        bench::do_not_optimize(ranges_map_fold(span_of(bench::make_opaque(row.run))));
+    });
     print_row("map + fold, f32, raw loop", raw_map, raw_map);
     print_row("map + fold, f32, walk", walk_map, raw_map);
     print_row("map + fold, f32, C++ ranges", ranges_map, raw_map);
 
-    bench::Report const raw_filter = bench::run(
-        "raw filter + count", [&] { bench::do_not_optimize(raw_filter_count(bench::make_opaque(word_run))); });
-    bench::Report const walk_filter = bench::run(
-        "walk filter + count", [&] { bench::do_not_optimize(walk_filter_count(bench::make_opaque(word_run))); });
-    bench::Report const ranges_filter = bench::run("ranges filter + count", [&] {
-        bench::do_not_optimize(ranges_filter_count(span_of(bench::make_opaque(word_run))));
+    bench::Report const raw_filter = run_on_runs("raw filter + count", [](Runs& row) noexcept {
+        bench::do_not_optimize(raw_filter_count(bench::make_opaque(row.word_run)));
+    });
+    bench::Report const walk_filter = run_on_runs("walk filter + count", [](Runs& row) noexcept {
+        bench::do_not_optimize(walk_filter_count(bench::make_opaque(row.word_run)));
+    });
+    bench::Report const ranges_filter = run_on_runs("ranges filter + count", [](Runs& row) noexcept {
+        bench::do_not_optimize(ranges_filter_count(span_of(bench::make_opaque(row.word_run))));
     });
     print_row("filter + count, u32, raw loop", raw_filter, raw_filter);
     print_row("filter + count, u32, walk", walk_filter, raw_filter);
     print_row("filter + count, u32, C++ ranges", ranges_filter, raw_filter);
 
-    bench::Report const raw_zip = bench::run("raw zip + fold", [&] {
-        bench::do_not_optimize(raw_zip_fold(bench::make_opaque(left_run), bench::make_opaque(right_run)));
+    bench::Report const raw_zip = run_on_runs("raw zip + fold", [](Runs& row) noexcept {
+        bench::do_not_optimize(raw_zip_fold(bench::make_opaque(row.left_run), bench::make_opaque(row.right_run)));
     });
-    bench::Report const walk_zip = bench::run("walk zip + fold", [&] {
-        bench::do_not_optimize(walk_zip_fold(bench::make_opaque(left_run), bench::make_opaque(right_run)));
+    bench::Report const walk_zip = run_on_runs("walk zip + fold", [](Runs& row) noexcept {
+        bench::do_not_optimize(walk_zip_fold(bench::make_opaque(row.left_run), bench::make_opaque(row.right_run)));
     });
-    bench::Report const ranges_zip = bench::run("ranges zip + fold", [&] {
+    bench::Report const ranges_zip = run_on_runs("ranges zip + fold", [](Runs& row) noexcept {
         bench::do_not_optimize(
-            ranges_zip_fold(span_of(bench::make_opaque(left_run)), span_of(bench::make_opaque(right_run))));
+            ranges_zip_fold(span_of(bench::make_opaque(row.left_run)), span_of(bench::make_opaque(row.right_run))));
     });
     print_row("zip + fold, f32, raw loop", raw_zip, raw_zip);
     print_row("zip + fold, f32, walk", walk_zip, raw_zip);
