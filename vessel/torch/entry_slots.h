@@ -349,17 +349,17 @@ struct InputOverflow {
             digest = ::foundation::reflect::combine_ids(
                 digest, static_cast<uint64_t>(crucible::raw_tensor_dim(meta.strides[d])));
         }
-        // The device comes through device_of, as in the content hash.  The
-        // layout, the negative and conjugate bits and the storage offset fold
-        // as in the word of a tensor (pack_tensor_word), so an input past the
-        // limit keeps each fact that changes the elements that the op reads.
-        constexpr auto kValueBits = static_cast<uint8_t>(crucible::meta_flags::IS_NEG | crucible::meta_flags::IS_CONJ);
-        const crucible::TensorDevice device = crucible::device_of(meta);
-        const uint64_t placement = static_cast<uint64_t>(static_cast<uint8_t>(meta.dtype))
-                                 | (static_cast<uint64_t>(static_cast<uint8_t>(device.type())) << 8)
-                                 | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16)
-                                 | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(meta.layout)) << 32)
-                                 | (static_cast<uint64_t>(meta.flags & kValueBits) << 40);
+        // The placement word is the word of the fields of a tensor
+        // (tensor_fields_of) with the rank field zero, because the digest
+        // folds the rank above.  The device comes through device_of, as in
+        // the content hash.  The layout, the negative and conjugate bits and
+        // the storage offset fold as in the word of a tensor
+        // (pack_tensor_word), so an input past the limit keeps each fact
+        // that changes the elements that the op reads.
+        const uint64_t placement = crucible::tensor_fields_of(meta)
+                                       .with<crucible::side::TensorRankField>(0)
+                                       .expect("the rank field holds zero")
+                                       .bits();
         const uint64_t offset_word = static_cast<uint64_t>(meta.storage_offset) * crucible::detail::kStorageOffsetMix;
         digest = ::foundation::reflect::combine_ids(digest, placement ^ offset_word);
         count = ::fixy::saturating_add(count, uint32_t{1});

@@ -782,11 +782,54 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     return ContentHash{::foundation::reflect::fmix64(body_hash_state)};
 }
 
+namespace side {
+
+// The six fields of the word of the fields of a tensor (TensorFields).
+struct TensorDtypeField final {};
+struct TensorDeviceTypeField final {};
+struct TensorDeviceIndexField final {};
+struct TensorRankField final {};
+struct TensorLayoutField final {};
+struct TensorValueBitsField final {};
+
+}  // namespace side
+
+// The fields of a tensor in its word, one byte each from bit 0: the element
+// type, the device type, the device index, the rank, the layout and the
+// negative and conjugate bits.  Bits 48 to 63 are zero.
+using TensorFields =
+    ::fixy::PackedWord<uint64_t, ::fixy::BitField<side::TensorDtypeField, 8>,
+                       ::fixy::BitField<side::TensorDeviceTypeField, 8>,
+                       ::fixy::BitField<side::TensorDeviceIndexField, 8>, ::fixy::BitField<side::TensorRankField, 8>,
+                       ::fixy::BitField<side::TensorLayoutField, 8>, ::fixy::BitField<side::TensorValueBitsField, 8>>;
+
+// The fields of meta.  The device comes through device_of.  The placement word
+// of the overflow digest of vessel/torch/entry_slots.h takes these fields with
+// the rank field zero.  Each value is a byte, so each write has no test that
+// stays in the code.
+[[nodiscard, gnu::always_inline]] inline TensorFields tensor_fields_of(const TensorMeta& meta) noexcept {
+    constexpr auto kValueBits = static_cast<uint8_t>(meta_flags::IS_NEG | meta_flags::IS_CONJ);
+    const TensorDevice device = device_of(meta);
+    return TensorFields{}
+        .with<side::TensorDtypeField>(::fixy::bit_cast<uint8_t>(meta.dtype))
+        .expect("a byte fits a field of 8 bits")
+        .with<side::TensorDeviceTypeField>(::fixy::bit_cast<uint8_t>(device.type()))
+        .expect("a byte fits a field of 8 bits")
+        .with<side::TensorDeviceIndexField>(::fixy::bit_cast<uint8_t>(device.index()))
+        .expect("a byte fits a field of 8 bits")
+        .with<side::TensorRankField>(meta.ndim)
+        .expect("a byte fits a field of 8 bits")
+        .with<side::TensorLayoutField>(::fixy::bit_cast<uint8_t>(meta.layout))
+        .expect("a byte fits a field of 8 bits")
+        .with<side::TensorValueBitsField>(static_cast<uint8_t>(meta.flags & kValueBits))
+        .expect("a byte fits a field of 8 bits");
+}
+
 // The word of one tensor in the content hash of a region.  It folds each fact
 // of the tensor that changes the elements that an op reads:
 //
 //   - The XOR fold of its extents and strides (dims, DimHash.h).
-//   - Its element type and its device, in the bits 0 to 23.  The device comes
+//   - Its element type and its device, in the bits 0 to 23 (TensorFields).  The device comes
 //     through device_of, so the word agrees with the equality of a device:
 //     one index for the host.  Each field is the byte of its value, so the
 //     element type Undefined (-1) is the byte 0xFF and sets no other field.
@@ -810,17 +853,8 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 // stored content hash and each guard word.
 [[nodiscard, gnu::always_inline]] inline uint64_t pack_tensor_word(const TensorMeta& meta,
                                                                    const DimHashDet& dims) noexcept {
-    constexpr auto kValueBits = static_cast<uint8_t>(meta_flags::IS_NEG | meta_flags::IS_CONJ);
-    const uint64_t per_dim_hash_xor = raw_dim_hash(dims);
-    const TensorDevice device = device_of(meta);
-    const uint64_t meta_packed = static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(meta.dtype))
-                               | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.type())) << 8)
-                               | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16)
-                               | (uint64_t{meta.ndim} << 24)
-                               | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(meta.layout)) << 32)
-                               | (static_cast<uint64_t>(meta.flags & kValueBits) << 40);
     const uint64_t offset_word = static_cast<uint64_t>(meta.storage_offset) * detail::kStorageOffsetMix;
-    return per_dim_hash_xor ^ meta_packed ^ offset_word;
+    return raw_dim_hash(dims) ^ tensor_fields_of(meta).bits() ^ offset_word;
 }
 
 // The whole region content-hash format, and the only place it is written.
