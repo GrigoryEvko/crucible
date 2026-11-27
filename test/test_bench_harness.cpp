@@ -767,6 +767,31 @@ void test_row_home_holds_fixed_page_offsets() {
     std::move(checks).close();
 }
 
+// The calls of the step of test_run_in_home_times_a_home, and the calls in
+// which the state of the step was not at the start of a page.
+std::uint64_t g_home_step_calls = 0;
+std::uint64_t g_home_state_misplaced = 0;
+
+// run_in_home builds the home of a row at a page, and times the step on the
+// state of that home.
+void test_run_in_home_times_a_home() {
+    ::fixy::check::Tally checks{kTest, "test_run_in_home_times_a_home"};
+    g_home_step_calls = 0;
+    g_home_state_misplaced = 0;
+    const bench::Report report = bench::run_in_home(
+        "home of a row", []() noexcept { return std::uint64_t{0}; },
+        [](std::uint64_t& count) noexcept {
+            ++count;
+            bench::mark_changed(count);
+            ++g_home_step_calls;
+            g_home_state_misplaced += page_offset_of_object(count) == 0 ? std::uint64_t{0} : std::uint64_t{1};
+        });
+    CRUCIBLE_TEST_EXPECT(checks, g_home_step_calls >= report.samples.size());
+    CRUCIBLE_TEST_EXPECT(checks, report.samples.size() != 0);
+    CRUCIBLE_TEST_EXPECT(checks, g_home_state_misplaced == 0);
+    std::move(checks).close();
+}
+
 // The number of CPUs in the affinity of the calling thread, or zero when
 // the kernel refuses the query.
 std::size_t affinity_cpu_count() {
@@ -1680,6 +1705,7 @@ int main() {
     test_cycle_floor_marks_a_row();
     test_measure_with_gives_the_state_back();
     test_row_home_holds_fixed_page_offsets();
+    test_run_in_home_times_a_home();
     test_run_pins_through_the_door_and_restores();
     test_fan_out_keeps_the_worker_affinity();
     test_core_of_run_stays_in_the_affinity();
@@ -1708,9 +1734,9 @@ int main() {
     // The count of the groups that main runs.  The group of the off-CPU top
     // runs only in a build with BPF.
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    constexpr int kNumGroups = 36;
+    constexpr int kNumGroups = 37;
 #else
-    constexpr int kNumGroups = 35;
+    constexpr int kNumGroups = 36;
 #endif
     if (g_failures == 0) {
         ::fixy::check::pass(kTest, "test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);

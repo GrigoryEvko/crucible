@@ -4016,6 +4016,19 @@ template <std::size_t Capacity, typename Body>
 [[nodiscard]] inline Report run(::fixy::FixedText<Capacity> const& name, Body&& body) {
     return run(name.view(), std::forward<Body>(body));
 }
+
+// The report of a row in a home of its own: build_row_home builds the home
+// from build and step, and run times the step on the state of the home (the
+// home of a row).  The home ends after the Run.  A row that reads its state
+// after the Run builds its home with build_row_home, and gives the home to
+// run.
+template <typename Build, typename Step>
+    requires RowHomeBuild<Build> && RowHomeStep<Step, std::invoke_result_t<Build&>>
+[[nodiscard]] inline Report run_in_home(::fixy::TextView name, Build build, Step step) {
+    auto home = build_row_home(static_cast<Build&&>(build), static_cast<Step&&>(step));
+    return run(name, *home);
+}
+
 // State of a row
 //   run_with(name, state, body) times body(state) as run(name, body) times
 //   body().  The harness holds the state by value for the whole row, the
