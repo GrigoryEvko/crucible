@@ -176,8 +176,8 @@ using crucible::vessel::schema_hash_of_fold;
 using crucible::vessel::compute_shape_hash;
 using crucible::vessel::fill_meta;
 using crucible::vessel::is_foreach_op_name;
-using crucible::vessel::phase_flag_bits;
 using crucible::vessel::push_wrapped_number;
+using crucible::vessel::training_phase_now;
 using crucible::vessel::TensorDescription;
 
 // =====================================================================
@@ -895,15 +895,14 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
 
     // -- Build TraceRing::Entry ---------------------------------------
     //
-    // Pack op_flags: 5 bits of per-op context.  The flags go in before the
-    // scalar slots, because the slots write the tag of slot 4 into the two
-    // high bits of op_flags.
-    uint8_t flags = 0;
-    if (c10::InferenceMode::is_enabled()) flags |= crucible::op_flag::INFERENCE_MODE;
-    if (c10::GradMode::is_enabled()) flags |= crucible::op_flag::GRAD_ENABLED;
-    if (is_mutable) flags |= crucible::op_flag::IS_MUTABLE;
-    flags |= phase_flag_bits(is_foreach);
-    if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
+    // The flags of the op: five fields of per-op context.  The flags go in
+    // before the scalar slots, because the slots write the tag of slot 4 into
+    // op_flags.
+    crucible::OpFlags flags = crucible::OpFlags{}.with_phase(training_phase_now(is_foreach));
+    if (c10::InferenceMode::is_enabled()) flags = flags.with_inference_mode();
+    if (c10::GradMode::is_enabled()) flags = flags.with_grad_enabled();
+    if (is_mutable) flags = flags.with_mutable();
+    if (dispatch_keys.has(c10::DispatchKey::Python)) flags = flags.with_torch_function();
 
     // The entry is built in the storage of its seal, so no code writes it
     // after the checks of the ladder.  The records of the inputs hold the

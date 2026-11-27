@@ -503,12 +503,6 @@ fold_ffi_input_overflow(crucible::vessel::TypedMeta metas, uint32_t first, uint3
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-// The op flags that a caller of crucible_dispatch_op_ex gives: each bit that
-// the native recording paths set.  The tag of slot 4 is the entry's own.
-constexpr uint8_t kCallerOpFlags = crucible::op_flag::INFERENCE_MODE | crucible::op_flag::IS_MUTABLE
-                                 | crucible::op_flag::PHASE_MASK | crucible::op_flag::TORCH_FUNCTION
-                                 | crucible::op_flag::GRAD_ENABLED;
-
 // The records that an entry keeps, as the native recording paths keep them.
 constexpr uint16_t kKeptRecords = static_cast<uint16_t>(crucible::vessel::MAX_INLINE_METAS);
 
@@ -554,7 +548,11 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
         // array.
         if (num_scalars > uint16_t{CRUCIBLE_MAX_FFI_SCALARS}) return refused_dispatch_result();
         if (uint32_t{num_inputs} + uint32_t{num_outputs} != n_metas) return refused_dispatch_result();
-        if ((op_flags & ~kCallerOpFlags) != 0) return refused_dispatch_result();
+        // The caller gives the five fields of the front end, and the tag of
+        // slot 4 is the entry's own (OpFlags::from_caller_byte).
+        ::fixy::Option<crucible::OpFlags> caller_flags = crucible::OpFlags::from_caller_byte(op_flags).ok();
+        if (caller_flags.is_none()) return refused_dispatch_result();
+        const crucible::OpFlags flags = std::move(caller_flags).expect("the test above found the flags");
         // The four arrays of the caller, tested as in crucible_dispatch_op.  A
         // count above 0 with a null pointer, or with a pointer that does not
         // have the alignment of its element, gives the action REFUSED.  A
@@ -597,7 +595,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
         // fill holds the small values by value.
         return dispatch_records(
             vigil,
-            [&, op_flags, kept_inputs, kept_outputs](crucible::TraceRing::Entry& entry) noexcept {
+            [&, flags, kept_inputs, kept_outputs](crucible::TraceRing::Entry& entry) noexcept {
                 // C→C++ boundary: the raw uint64_t becomes a strong hash type.
                 // The ladder writes the guard word from the decoded records
                 // and the scalar slots.
@@ -605,8 +603,8 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
                 entry.num_inputs = kept_inputs;
                 entry.num_outputs = kept_outputs;
                 // The flags come before the scalar slots, because the tag of
-                // slot 4 is in the two high bits of op_flags.
-                entry.op_flags = op_flags;
+                // slot 4 is in op_flags.
+                entry.op_flags = flags;
                 crucible::vessel::write_scalar_slots(entry, scalars, overflow);
             },
             metas_typed, ::foundation::core::WindowCount{uint32_t{kept_inputs} + uint32_t{kept_outputs}});
@@ -850,13 +848,13 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers o
             rec.num_outputs = te.num_outputs();
             rec.num_scalars = te.num_scalar_args();
             rec.grad_enabled = te.grad_enabled ? 1 : 0;
-            // Pack all op_flags back into one byte for on-disk format.
-            uint8_t flags = 0;
-            if (te.inference_mode) flags |= crucible::op_flag::INFERENCE_MODE;
-            if (te.is_mutable) flags |= crucible::op_flag::IS_MUTABLE;
-            flags |= (static_cast<uint8_t>(te.training_phase) & 0x3) << crucible::op_flag::PHASE_SHIFT;
-            if (te.torch_function) flags |= crucible::op_flag::TORCH_FUNCTION;
-            rec.inference_mode = flags;
+            // The four fields of the context in one byte for the format on
+            // disk (OpFlags::from_record reads it back).
+            crucible::OpFlags flags = crucible::OpFlags{}.with_phase(te.training_phase);
+            if (te.inference_mode) flags = flags.with_inference_mode();
+            if (te.is_mutable) flags = flags.with_mutable();
+            if (te.torch_function) flags = flags.with_torch_function();
+            rec.inference_mode = flags.bits();
             // The record stores the first five scalars.  An absent array leaves
             // the zeros of the record.
             uint16_t stored = 0;

@@ -193,8 +193,7 @@ enum class Layout : int8_t {
 };
 
 // The phase of the training step that recorded an operation.  The op flags
-// of a ring entry carry it in two bits (op_flag::PHASE_MASK in
-// crucible/TraceRing.h).
+// of a ring entry carry it in two bits (OpFlags of crucible/TraceRing.h).
 enum class TrainingPhase : uint8_t {
     FORWARD = 0,
     BACKWARD = 1,

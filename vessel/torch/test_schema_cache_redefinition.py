@@ -49,7 +49,7 @@ from test_record_coverage import MAX_ITERATIONS, read_trace, schema_hash  # noqa
 NAMESPACE = "crucible_redefine"
 OPERATOR = f"{NAMESPACE}::step"
 
-# The bit IS_MUTABLE of the op flags (op_flag::IS_MUTABLE of
+# The bit of the mutability of the op flags (bit 1 of OpFlags of
 # crucible/TraceRing.h), which the trace export writes in the last byte of
 # each operation record.
 IS_MUTABLE = 1 << 1

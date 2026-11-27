@@ -85,17 +85,6 @@ namespace crucible {
 // each name of the vessel, and no operator of PyTorch has that name.
 inline constexpr SchemaHash kUnrecordedNestSchema{0xb984e8ae07060156ULL};
 
-namespace op_flag {
-inline constexpr uint8_t INFERENCE_MODE = 1 << 0;
-inline constexpr uint8_t IS_MUTABLE = 1 << 1;
-inline constexpr uint8_t PHASE_MASK = 0x3 << 2;
-inline constexpr uint8_t PHASE_SHIFT = 2;
-inline constexpr uint8_t TORCH_FUNCTION = 1 << 4;
-inline constexpr uint8_t GRAD_ENABLED = 1 << 5;
-inline constexpr uint8_t SCALAR4_TYPE_MASK = 0x3 << 6;
-inline constexpr uint8_t SCALAR4_TYPE_SHIFT = 6;
-}  // namespace op_flag
-
 // How to read back an inline scalar slot. Every scalar is stored as an int64
 // bit pattern, and a double bit-cast to int64 is indistinguishable from the
 // integer holding the same bits, so the tag is the only thing that recovers
@@ -113,6 +102,165 @@ enum class ScalarType2 : uint8_t {
     FLOAT = 1,  // double, recovered with std::bit_cast
     BOOL = 2,  // canonicalised to 0 or 1 when recorded
     NONE = 3,  // an argument that boxes into None; the value is zero
+};
+
+namespace side {
+
+// The six fields of the flags of an op (OpFlags).
+struct InferenceModeField final {};
+struct MutableField final {};
+struct PhaseField final {};
+struct TorchFunctionField final {};
+struct GradEnabledField final {};
+struct FifthTagField final {};
+
+// The four fields of the tags of the scalar slots 0 to 3 (FirstFourTags).
+struct SlotZeroTagField final {};
+struct SlotOneTagField final {};
+struct SlotTwoTagField final {};
+struct SlotThreeTagField final {};
+
+// The two fields of the tags of the five scalar slots (SlotTags).
+struct FirstFourTagsField final {};
+struct LastTagField final {};
+
+}  // namespace side
+
+// The tags of the scalar slots 0 to 3 of an entry, two bits for each, slot 0
+// in the low bits.  Each byte is a word of the four fields.
+using FirstFourTags = ::fixy::PackedWord<uint8_t, ::fixy::BitField<side::SlotZeroTagField, kScalarTypeBits>,
+                                         ::fixy::BitField<side::SlotOneTagField, kScalarTypeBits>,
+                                         ::fixy::BitField<side::SlotTwoTagField, kScalarTypeBits>,
+                                         ::fixy::BitField<side::SlotThreeTagField, kScalarTypeBits>>;
+
+// The tags of the five scalar slots of an entry, in the order of a word of
+// ScalarSlotKinds: the tags of slots 0 to 3 in bits 0 to 7, and the tag of
+// slot 4 in bits 8 and 9.  Bits 10 to 15 are zero.
+using SlotTags = ::fixy::PackedWord<uint16_t, ::fixy::BitField<side::FirstFourTagsField, 8>,
+                                    ::fixy::BitField<side::LastTagField, kScalarTypeBits>>;
+
+// Why a door of the flags of an op refuses a byte from outside.
+enum class OpFlagsRefusal : uint8_t {
+    // The byte sets the tag of scalar slot 4, which only the scalar slots of
+    // an entry give.
+    TagOfAScalarSlot,
+    // A stored byte sets the gradient mode, which a trace record keeps in a
+    // byte of its own and an image of a region does not keep.
+    GradientInStoredFlags,
+    // The byte of the gradient mode of a trace record is neither 0 nor 1.
+    GradientByteNotABit,
+};
+
+// The flags of an op in one byte: the inference mode at bit 0, the mutability
+// at bit 1, the phase of the training step in bits 2 and 3, the torch function
+// mode at bit 4, the gradient mode at bit 5, and the tag of scalar slot 4 in
+// bits 6 and 7.  The front end gives the first five fields, and the scalar
+// slots of the entry give the tag.  The byte is part of an entry, a trace
+// file and an image of a region, so the layout is a format.
+//
+// A byte of the tree comes through a builder.  A byte from outside comes
+// through the door of its boundary, which refuses a pattern that no front end
+// gives: from_caller_byte for a caller of the C entries, from_record for a
+// trace file, and from_stored_byte for an image of a region.
+class OpFlags {
+    using Word =
+        ::fixy::PackedWord<uint8_t, ::fixy::BitField<side::InferenceModeField, 1>,
+                           ::fixy::BitField<side::MutableField, 1>, ::fixy::BitField<side::PhaseField, 2>,
+                           ::fixy::BitField<side::TorchFunctionField, 1>, ::fixy::BitField<side::GradEnabledField, 1>,
+                           ::fixy::BitField<side::FifthTagField, kScalarTypeBits>>;
+
+public:
+    constexpr OpFlags() noexcept = default;
+
+    // The flags of the byte of a caller of the C entries: the five fields of
+    // the front end.  A byte that sets the tag of scalar slot 4 gives the
+    // refusal TagOfAScalarSlot.  One compare.  The result is a
+    // Result<OpFlags, OpFlagsRefusal>.  The return type of each door of a
+    // byte is deduced, so the Result is named only where this class is
+    // complete.
+    [[nodiscard]] static constexpr auto from_caller_byte(uint8_t byte) noexcept {
+        using Answer = ::fixy::Result<OpFlags, OpFlagsRefusal>;
+        const OpFlags flags{word_of_(byte)};
+        if (flags.word_.get<side::FifthTagField>() != 0) return Answer{::fixy::err(OpFlagsRefusal::TagOfAScalarSlot)};
+        return Answer{flags};
+    }
+
+    // The flags of the stored byte of an image of a region: the inference
+    // mode, the mutability, the phase and the torch function mode.  A byte
+    // that sets the gradient mode or the tag of scalar slot 4 gives its
+    // refusal.
+    [[nodiscard]] static constexpr auto from_stored_byte(uint8_t byte) noexcept {
+        using Answer = ::fixy::Result<OpFlags, OpFlagsRefusal>;
+        const OpFlags flags{word_of_(byte)};
+        if (flags.word_.get<side::GradEnabledField>() != 0) {
+            return Answer{::fixy::err(OpFlagsRefusal::GradientInStoredFlags)};
+        }
+        if (flags.word_.get<side::FifthTagField>() != 0) return Answer{::fixy::err(OpFlagsRefusal::TagOfAScalarSlot)};
+        return Answer{flags};
+    }
+
+    // The flags of a trace record: the stored byte, as from_stored_byte reads
+    // it, and the gradient mode in a byte of its own, 0 or 1.  A gradient byte
+    // of another value gives the refusal GradientByteNotABit.
+    [[nodiscard]] static constexpr auto from_record(uint8_t stored, uint8_t gradient) noexcept {
+        using Answer = ::fixy::Result<OpFlags, OpFlagsRefusal>;
+        if (gradient > 1) return Answer{::fixy::err(OpFlagsRefusal::GradientByteNotABit)};
+        return from_stored_byte(stored).match(
+            [gradient](OpFlags flags) noexcept { return Answer{gradient != 0 ? flags.with_grad_enabled() : flags}; },
+            [](OpFlagsRefusal refusal) noexcept { return Answer{::fixy::err(refusal)}; });
+    }
+
+    [[nodiscard]] constexpr bool is_inference_mode() const noexcept {
+        return word_.get<side::InferenceModeField>() != 0;
+    }
+    [[nodiscard]] constexpr bool is_mutable() const noexcept { return word_.get<side::MutableField>() != 0; }
+    [[nodiscard]] constexpr TrainingPhase phase() const noexcept {
+        return ::fixy::enum_from_field<TrainingPhase, 2>(word_.get<side::PhaseField>());
+    }
+    [[nodiscard]] constexpr bool is_torch_function() const noexcept {
+        return word_.get<side::TorchFunctionField>() != 0;
+    }
+    [[nodiscard]] constexpr bool is_grad_enabled() const noexcept { return word_.get<side::GradEnabledField>() != 0; }
+    [[nodiscard]] constexpr ScalarType2 fifth_tag() const noexcept {
+        return ::fixy::enum_from_field<ScalarType2, kScalarTypeBits>(word_.get<side::FifthTagField>());
+    }
+
+    // The same flags with one field set.  Each one-bit field takes the value
+    // 1, and an enumerator of TrainingPhase and of ScalarType2 is below four,
+    // so each write keeps each bit of its value.
+    [[nodiscard]] constexpr OpFlags with_inference_mode() const noexcept {
+        return OpFlags{word_.with_low_bits<side::InferenceModeField>(uint8_t{1})};
+    }
+    [[nodiscard]] constexpr OpFlags with_mutable() const noexcept {
+        return OpFlags{word_.with_low_bits<side::MutableField>(uint8_t{1})};
+    }
+    [[nodiscard]] constexpr OpFlags with_phase(TrainingPhase phase) const noexcept {
+        return OpFlags{word_.with_low_bits<side::PhaseField>(::fixy::bit_cast<uint8_t>(phase))};
+    }
+    [[nodiscard]] constexpr OpFlags with_torch_function() const noexcept {
+        return OpFlags{word_.with_low_bits<side::TorchFunctionField>(uint8_t{1})};
+    }
+    [[nodiscard]] constexpr OpFlags with_grad_enabled() const noexcept {
+        return OpFlags{word_.with_low_bits<side::GradEnabledField>(uint8_t{1})};
+    }
+    [[nodiscard]] constexpr OpFlags with_fifth_tag(ScalarType2 tag) const noexcept {
+        return OpFlags{word_.with_low_bits<side::FifthTagField>(::fixy::bit_cast<uint8_t>(tag))};
+    }
+
+    // The byte of the flags.
+    [[nodiscard]] constexpr uint8_t bits() const noexcept { return word_.bits(); }
+
+    [[nodiscard]] friend constexpr bool operator==(OpFlags, OpFlags) noexcept = default;
+
+private:
+    constexpr explicit OpFlags(Word word) noexcept : word_{word} {}
+
+    // The fields fill the byte, so each byte is a word of the layout.
+    [[nodiscard]] static constexpr Word word_of_(uint8_t byte) noexcept {
+        return Word::from_bits(byte).expect("the fields fill the byte");
+    }
+
+    Word word_{};
 };
 
 namespace tracering_hw {
@@ -175,48 +323,52 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         // count that hold a data scalar.  A DataSlots is not trivially
         // copyable, so the entry keeps its word.
         uint8_t data_slot_bits = 0;
-        uint8_t scalar_types = 0;  // a two-bit tag for each of slots 0 to 3, with slot 4 in op_flags
-        uint8_t op_flags = 0;
+        FirstFourTags scalar_types{};  // the tags of slots 0 to 3; the tag of slot 4 is in op_flags
+        OpFlags op_flags{};
         // Zero-initialised so the content hash never sees indeterminate bytes.
         ::fixy::FixedArray<int64_t, 5> scalar_values{};
 
+        // The tag of one slot, at a position known only at run time, so the
+        // shift of the slot in the word of the five tags stays by hand.
         [[nodiscard, gnu::pure]] ScalarType2 get_scalar_type(uint32_t i) const noexcept {
             CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(i, 0u, 4u));
-            if (i < 4) {
-                return ::fixy::enum_from_field<ScalarType2, kScalarTypeBits>(scalar_types >> (i * 2));
-            }
-            return ::fixy::enum_from_field<ScalarType2, kScalarTypeBits>(op_flags >> op_flag::SCALAR4_TYPE_SHIFT);
+            return ::fixy::enum_from_field<ScalarType2, kScalarTypeBits>(packed_scalar_types()
+                                                                         >> (i * kScalarTypeBits));
         }
 
         void set_scalar_type(uint32_t i, ScalarType2 t) noexcept {
             CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(i, 0u, 4u));
-            const uint8_t bits = static_cast<uint8_t>(t) & 0x3;
-            if (i < 4) {
-                const uint8_t shift = static_cast<uint8_t>(i * 2);
-                scalar_types = static_cast<uint8_t>((scalar_types & ~(uint8_t{0x3} << shift)) | (bits << shift));
-            } else {
-                op_flags = static_cast<uint8_t>((op_flags & ~op_flag::SCALAR4_TYPE_MASK)
-                                                | (bits << op_flag::SCALAR4_TYPE_SHIFT));
-            }
+            const uint32_t shift = i * kScalarTypeBits;
+            const uint32_t others = uint32_t{packed_scalar_types()} & ~(uint32_t{0x3} << shift);
+            set_packed_scalar_types(static_cast<uint16_t>(others | (uint32_t{::fixy::bit_cast<uint8_t>(t)} << shift)));
             CRUCIBLE_POST(0, get_scalar_type(i) == t);
         }
 
         // The tags of the five slots, two bits for each slot, slot 0 in the
-        // low bits.  Slots 0 to 3 are in scalar_types, and slot 4 is in the
-        // two high bits of op_flags.
+        // low bits (SlotTags).  Slots 0 to 3 are in scalar_types, and slot 4
+        // is in op_flags.
         [[nodiscard, gnu::pure]] constexpr uint16_t packed_scalar_types() const noexcept {
-            const auto slot4 =
-                static_cast<uint16_t>((op_flags & op_flag::SCALAR4_TYPE_MASK) >> op_flag::SCALAR4_TYPE_SHIFT);
-            return static_cast<uint16_t>(scalar_types | (slot4 << 8));
+            return SlotTags{}
+                .with_fitting<side::FirstFourTagsField>(scalar_types.bits())
+                .with_low_bits<side::LastTagField>(::fixy::bit_cast<uint8_t>(op_flags.fifth_tag()))
+                .bits();
         }
 
-        // Writes the tags of the five slots from their packed form, and keeps
-        // the other bits of op_flags.
+        // Writes the tags of the five slots from the low ten bits of their
+        // packed form, and keeps the other fields of op_flags.
         constexpr void set_packed_scalar_types(uint16_t packed) noexcept {
-            scalar_types = static_cast<uint8_t>(packed & 0xFF);
-            const auto slot4 = static_cast<uint8_t>((packed >> 8) & 0x3);
-            op_flags =
-                static_cast<uint8_t>((op_flags & ~op_flag::SCALAR4_TYPE_MASK) | (slot4 << op_flag::SCALAR4_TYPE_SHIFT));
+            constexpr uint16_t kTagBits = (uint16_t{1} << (kScalarTypeBits * kScalarSlots)) - 1;
+            set_slot_tags(SlotTags::from_bits(static_cast<uint16_t>(packed & kTagBits))
+                              .expect("the mask keeps the bits of the five tags"));
+        }
+
+        // Writes the tags of the five slots, and keeps the other fields of
+        // op_flags.
+        constexpr void set_slot_tags(SlotTags tags) noexcept {
+            scalar_types =
+                FirstFourTags::from_bits(tags.get<side::FirstFourTagsField>()).expect("the four tags fill the byte");
+            op_flags = op_flags.with_fifth_tag(
+                ::fixy::enum_from_field<ScalarType2, kScalarTypeBits>(tags.get<side::LastTagField>()));
         }
 
         // The data slots of the entry, from their word, or no value when the

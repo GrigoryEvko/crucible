@@ -229,7 +229,7 @@ ROLE_STRUCTURAL, ROLE_DATA = 0, 1
 # later position is structural.
 MAX_SCHEMA_ARGUMENTS = 32
 
-# The op flags of an entry (op_flag of crucible/TraceRing.h).  Bits 2 and 3
+# The op flags of an entry (OpFlags of crucible/TraceRing.h).  Bits 2 and 3
 # hold the training phase, a TrainingPhase of crucible/Types.h that the
 # dispatch library gives (crucible_dispatch_training_phase).
 OP_INFERENCE_MODE = 1 << 0

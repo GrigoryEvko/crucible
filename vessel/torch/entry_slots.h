@@ -392,7 +392,7 @@ struct input_overflow_of<false> {
 // slots past the count hold zero with the tag INT in scalars, so the entry
 // holds them there too.  The two Views have one fixed extent, so the copy of
 // the kInlineScalars slots has no check and no count.  The tag of slot 4 is in
-// op_flags, and the other bits of op_flags stay.  O(kInlineScalars).
+// op_flags, and the other fields of op_flags stay.  O(kInlineScalars).
 inline void copy_stored_scalars(crucible::TraceRing::Entry& entry, StoredScalars const& scalars) noexcept {
     entry.num_scalar_args = static_cast<uint8_t>(scalars.stored);
     entry.set_data_slots(scalars.data);

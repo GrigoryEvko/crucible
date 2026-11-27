@@ -264,32 +264,83 @@ void test_guard_header_word() {
 // gradient mode at bit 5, and the tag of slot 4 in bits 6 and 7.  The tags of
 // slots 0 to 3 take two bits each in scalar_types, slot 0 in the low bits.
 void test_entry_flags_word() {
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::op_flag::INFERENCE_MODE == 0x01);
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::op_flag::IS_MUTABLE == 0x02);
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::op_flag::PHASE_MASK == 0x0C && crucible::op_flag::PHASE_SHIFT == 2);
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::op_flag::TORCH_FUNCTION == 0x10);
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::op_flag::GRAD_ENABLED == 0x20);
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         crucible::op_flag::SCALAR4_TYPE_MASK == 0xC0 && crucible::op_flag::SCALAR4_TYPE_SHIFT == 6);
+    using crucible::OpFlags;
+    using crucible::TrainingPhase;
+    CRUCIBLE_TEST_ASSERT(kTest, OpFlags{}.bits() == 0x00);
+    CRUCIBLE_TEST_ASSERT(kTest, OpFlags{}.with_inference_mode().bits() == 0x01);
+    CRUCIBLE_TEST_ASSERT(kTest, OpFlags{}.with_mutable().bits() == 0x02);
+    CRUCIBLE_TEST_ASSERT(kTest, OpFlags{}.with_phase(TrainingPhase::BACKWARD).bits() == 0x04);
+    CRUCIBLE_TEST_ASSERT(kTest, OpFlags{}.with_phase(TrainingPhase::OPTIMIZER).bits() == 0x08);
+    CRUCIBLE_TEST_ASSERT(kTest, OpFlags{}.with_phase(TrainingPhase::OTHER).bits() == 0x0C);
+    CRUCIBLE_TEST_ASSERT(kTest, OpFlags{}.with_torch_function().bits() == 0x10);
+    CRUCIBLE_TEST_ASSERT(kTest, OpFlags{}.with_grad_enabled().bits() == 0x20);
+    CRUCIBLE_TEST_ASSERT(kTest, OpFlags{}.with_fifth_tag(ScalarType2::FLOAT).bits() == 0x40);
+    CRUCIBLE_TEST_ASSERT(kTest, OpFlags{}.with_fifth_tag(ScalarType2::NONE).bits() == 0xC0);
+
+    const OpFlags each = OpFlags{}
+                             .with_inference_mode()
+                             .with_mutable()
+                             .with_phase(TrainingPhase::OPTIMIZER)
+                             .with_torch_function()
+                             .with_grad_enabled();
+    CRUCIBLE_TEST_ASSERT(kTest, each.bits() == 0x3B);
+    CRUCIBLE_TEST_ASSERT(kTest, each.is_inference_mode() && each.is_mutable() && each.is_torch_function()
+                                    && each.is_grad_enabled() && each.phase() == TrainingPhase::OPTIMIZER
+                                    && each.fifth_tag() == ScalarType2::INT);
 
     TraceRing::Entry entry{};
-    entry.op_flags = 0x22;
+    entry.op_flags = OpFlags{}.with_grad_enabled().with_mutable();
+    CRUCIBLE_TEST_ASSERT(kTest, entry.op_flags.bits() == 0x22);
     entry.set_scalar_type(0, ScalarType2::FLOAT);
     entry.set_scalar_type(1, ScalarType2::NONE);
     entry.set_scalar_type(2, ScalarType2::BOOL);
     entry.set_scalar_type(3, ScalarType2::INT);
     entry.set_scalar_type(4, ScalarType2::NONE);
-    CRUCIBLE_TEST_ASSERT(kTest, entry.scalar_types == 0x2D);
-    CRUCIBLE_TEST_ASSERT(kTest, entry.op_flags == 0xE2);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.scalar_types.bits() == 0x2D);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.op_flags.bits() == 0xE2);
     CRUCIBLE_TEST_ASSERT(kTest, entry.packed_scalar_types() == 0x032D);
     CRUCIBLE_TEST_ASSERT(kTest, entry.get_scalar_type(4) == ScalarType2::NONE);
     CRUCIBLE_TEST_ASSERT(kTest, entry.get_scalar_type(2) == ScalarType2::BOOL);
 
     entry.set_packed_scalar_types(0x0114);
-    CRUCIBLE_TEST_ASSERT(kTest, entry.scalar_types == 0x14);
-    CRUCIBLE_TEST_ASSERT(kTest, entry.op_flags == 0x62);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.scalar_types.bits() == 0x14);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.op_flags.bits() == 0x62);
     CRUCIBLE_TEST_ASSERT(kTest, entry.get_scalar_type(4) == ScalarType2::FLOAT);
+    // The bits of packed past the five tags go.
+    entry.set_packed_scalar_types(0xFC00);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.packed_scalar_types() == 0x0000 && entry.op_flags.bits() == 0x22);
     ::fixy::check::pass(kTest, "  test_entry_flags_word: PASSED\n");
+}
+
+// The doors of a byte from outside.  A caller of the C entries gives the five
+// fields of the front end, and the tag of slot 4 is the entry's own.  A stored
+// byte of a trace record or of an image of a region holds the four fields of
+// the context, and a trace record keeps the gradient mode in a byte of 0 or 1.
+// Each other pattern gives its refusal.
+void test_entry_flags_doors() {
+    using crucible::OpFlags;
+    using crucible::OpFlagsRefusal;
+    const auto is_refused = [](::fixy::Result<OpFlags, OpFlagsRefusal> got, OpFlagsRefusal want) noexcept {
+        return std::move(got).is_err_and([want](OpFlagsRefusal refusal) noexcept { return refusal == want; });
+    };
+    const auto bits_of = [](::fixy::Result<OpFlags, OpFlagsRefusal> got) noexcept {
+        return std::move(got).expect("the door gives the flags").bits();
+    };
+
+    CRUCIBLE_TEST_ASSERT(kTest, bits_of(OpFlags::from_caller_byte(0x3F)) == 0x3F);
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused(OpFlags::from_caller_byte(0x40), OpFlagsRefusal::TagOfAScalarSlot));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused(OpFlags::from_caller_byte(0x80), OpFlagsRefusal::TagOfAScalarSlot));
+
+    CRUCIBLE_TEST_ASSERT(kTest, bits_of(OpFlags::from_stored_byte(0x1F)) == 0x1F);
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused(OpFlags::from_stored_byte(0x20), OpFlagsRefusal::GradientInStoredFlags));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused(OpFlags::from_stored_byte(0xC0), OpFlagsRefusal::TagOfAScalarSlot));
+
+    CRUCIBLE_TEST_ASSERT(kTest, bits_of(OpFlags::from_record(0x1F, 1)) == 0x3F);
+    CRUCIBLE_TEST_ASSERT(kTest, bits_of(OpFlags::from_record(0x06, 0)) == 0x06);
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused(OpFlags::from_record(0x00, 2), OpFlagsRefusal::GradientByteNotABit));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused(OpFlags::from_record(0x20, 0), OpFlagsRefusal::GradientInStoredFlags));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused(OpFlags::from_record(0x40, 1), OpFlagsRefusal::TagOfAScalarSlot));
+    ::fixy::check::pass(kTest, "  test_entry_flags_doors: PASSED\n");
 }
 
 }  // namespace
@@ -303,6 +354,7 @@ int main() {
     test_overflow_placement_word();
     test_guard_header_word();
     test_entry_flags_word();
+    test_entry_flags_doors();
     ::fixy::check::pass(kTest, "test_record_packed_words: PASS\n");
     return 0;
 }

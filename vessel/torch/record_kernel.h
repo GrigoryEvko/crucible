@@ -1325,22 +1325,16 @@ held_tls_vigil(c10::CrucibleState const& state) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
-// Bits 2 and 3 of op_flags. `is_foreach` is a property of the operator, which
-// the unboxed path knows at compile time and the boxed path caches beside the
-// schema hash.
-[[nodiscard]] inline uint8_t phase_flag_bits(bool is_foreach, bool grad_enabled) noexcept {
-    const auto phase = static_cast<uint8_t>(derive_training_phase(is_foreach, grad_enabled));
-    return static_cast<uint8_t>((phase & 0x3) << crucible::op_flag::PHASE_SHIFT);
-}
-
 // The two functions and the type below read the modes and the dispatch keys
 // of PyTorch for one operation, so they are in an ABI region.
 //
-// For the boxed fallback, which reads the gradient mode for no flag of its own
-// and so has no value to share.
+// The phase of the operation on this thread, for the boxed fallback, which
+// reads the gradient mode for no flag of its own and so has no value to
+// share.  `is_foreach` is a property of the operator, which the unboxed path
+// knows at compile time and the boxed path caches beside the schema hash.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the flags read the modes and the dispatch keys of PyTorch for an operation")
-[[nodiscard]] inline uint8_t phase_flag_bits(bool is_foreach) noexcept {
-    return phase_flag_bits(is_foreach, c10::GradMode::is_enabled());
+[[nodiscard]] inline crucible::TrainingPhase training_phase_now(bool is_foreach) noexcept {
+    return derive_training_phase(is_foreach, c10::GradMode::is_enabled());
 }
 
 // The dispatch keys of PyTorch at the call of a recorded operator, which the
@@ -1359,16 +1353,15 @@ struct EntryDispatchKeys {
 // parameter here, a cached name search on the boxed path, one operator name
 // behind both.
 template <bool IsMutable, bool IsForeach>
-[[nodiscard]] uint8_t entry_op_flags(EntryDispatchKeys dispatch_keys) noexcept {
-    uint8_t flags = 0;
+[[nodiscard]] crucible::OpFlags entry_op_flags(EntryDispatchKeys dispatch_keys) noexcept {
     // One read, shared with the phase derivation below rather than repeated
     // inside it.
     const bool grad_enabled = c10::GradMode::is_enabled();
-    if (c10::InferenceMode::is_enabled()) flags |= crucible::op_flag::INFERENCE_MODE;
-    if (grad_enabled) flags |= crucible::op_flag::GRAD_ENABLED;
-    if constexpr (IsMutable) flags |= crucible::op_flag::IS_MUTABLE;
-    flags |= phase_flag_bits(IsForeach, grad_enabled);
-    if (dispatch_keys.keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
+    crucible::OpFlags flags = crucible::OpFlags{}.with_phase(derive_training_phase(IsForeach, grad_enabled));
+    if (c10::InferenceMode::is_enabled()) flags = flags.with_inference_mode();
+    if (grad_enabled) flags = flags.with_grad_enabled();
+    if constexpr (IsMutable) flags = flags.with_mutable();
+    if (dispatch_keys.keys.has(c10::DispatchKey::Python)) flags = flags.with_torch_function();
     return flags;
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -1413,7 +1406,7 @@ template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, c
                                            crucible::ScopeHash scope_hash, crucible::OpDepth depth) {
     // The entry is built in the storage of its seal, so the seal copies no
     // byte, and no code writes the entry after the mint.
-    const uint8_t op_flags = entry_op_flags<IsMutable, IsForeach>(dispatch_keys);
+    const crucible::OpFlags op_flags = entry_op_flags<IsMutable, IsForeach>(dispatch_keys);
     const crucible::TraceRing::SealedEntry entry{::fixy::build_sealed, [&]() noexcept {
                                                      crucible::TraceRing::Entry built{};
                                                      built.schema_hash = schema_hash;

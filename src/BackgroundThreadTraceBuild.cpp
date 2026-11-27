@@ -309,18 +309,17 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
         te.scope_hash = scope_data.at(index);
         te.callsite_hash = callsite_data.at(index);
         te.depth = depth_data.at(index);
-        te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
+        te.grad_enabled = re.op_flags.is_grad_enabled();
         te.kernel_id = classify_kernel(re.schema_hash);
 
         // The flag bits are ground truth captured at the dispatch site
         // from the schema, thread-local state and dispatch keys, not
         // reconstructed here by heuristic.
-        const uint8_t flags = re.op_flags;
-        te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
-        te.is_mutable = (flags & op_flag::IS_MUTABLE) != 0;
-        te.training_phase =
-            ::fixy::enum_from_field<TrainingPhase, 2>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
-        te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
+        const OpFlags flags = re.op_flags;
+        te.inference_mode = flags.is_inference_mode();
+        te.is_mutable = flags.is_mutable();
+        te.training_phase = flags.phase();
+        te.torch_function = flags.is_torch_function();
         // The scalar array is fixed at five entries, so a larger count
         // means the recorder wrote past it or a stored count is corrupt.
         // The check ends the process in each build, before a copy can

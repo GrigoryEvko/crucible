@@ -563,14 +563,14 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& r
         w.w(te.num_outputs());
         w.w(te.num_scalar_args());
         w.w(te.grad_enabled);
-        // One byte, laid out the same way the recording ring lays it out.
+        // One byte, laid out the same way the recording ring lays it out
+        // (OpFlags), with the four fields of the context.
         {
-            uint8_t flags = 0;
-            if (te.inference_mode) flags |= op_flag::INFERENCE_MODE;
-            if (te.is_mutable) flags |= op_flag::IS_MUTABLE;
-            flags |= (static_cast<uint8_t>(te.training_phase) & 0x3) << op_flag::PHASE_SHIFT;
-            if (te.torch_function) flags |= op_flag::TORCH_FUNCTION;
-            w.w(flags);
+            OpFlags flags = OpFlags{}.with_phase(te.training_phase);
+            if (te.inference_mode) flags = flags.with_inference_mode();
+            if (te.is_mutable) flags = flags.with_mutable();
+            if (te.torch_function) flags = flags.with_torch_function();
+            w.w(flags.bits());
         }
         w.w(std::to_underlying(te.kernel_id));
         w.w(te.depth.raw());
@@ -767,17 +767,17 @@ read_region_(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image
         if (is_count_above_limit) return ::fixy::err(r.reason_or(LoadError::count_above_limit));
         te.grad_enabled = r.read_bool();
         {
-            // The writer sets only these bits, so a byte with another bit
-            // set is not an image that the writer produced.
-            constexpr uint8_t kWrittenFlags =
-                op_flag::INFERENCE_MODE | op_flag::IS_MUTABLE | op_flag::PHASE_MASK | op_flag::TORCH_FUNCTION;
-            const uint8_t flags =
-                r.read_gated<uint8_t>([](uint8_t byte) noexcept { return (byte & ~kWrittenFlags) == 0; });
-            te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
-            te.is_mutable = (flags & op_flag::IS_MUTABLE) != 0;
-            te.training_phase =
-                ::fixy::enum_from_field<TrainingPhase, 2>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
-            te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
+            // The writer sets only the four fields of the context, so a byte
+            // that sets the gradient mode or the tag of slot 4 is not an
+            // image that the writer produced (from_stored_byte).  A refused
+            // byte reads as zero, the flags of no field.
+            const uint8_t byte = r.read_gated<uint8_t>(
+                [](uint8_t stored) noexcept { return OpFlags::from_stored_byte(stored).is_ok(); });
+            const OpFlags flags = OpFlags::from_stored_byte(byte).expect("the gate refused each other byte");
+            te.inference_mode = flags.is_inference_mode();
+            te.is_mutable = flags.is_mutable();
+            te.training_phase = flags.phase();
+            te.torch_function = flags.is_torch_function();
         }
         // The kernel id: enum_from refuses each byte that names no id, in
         // each build, and the refusal gives the error of the field.

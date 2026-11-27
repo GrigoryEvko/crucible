@@ -704,9 +704,9 @@ int main() {
                           .batch(RECORD_BATCH)
                           .core(bench::env_core())
                           .measure([&] {
-                              const CrucibleDispatchResult r =
-                                  crucible_dispatch_op_ex(handle, 0x1000000u + tick++, 1, 1, metas, 2, value_array,
-                                                          tag_array, role_array, 7, op_flag::GRAD_ENABLED);
+                              const CrucibleDispatchResult r = crucible_dispatch_op_ex(
+                                  handle, 0x1000000u + tick++, 1, 1, metas, 2, value_array, tag_array, role_array, 7,
+                                  crucible::OpFlags{}.with_grad_enabled().bits());
                               recorded += static_cast<uint64_t>(r.action == CRUCIBLE_ACTION_RECORD);
                               bench::do_not_optimize(r);
                           });

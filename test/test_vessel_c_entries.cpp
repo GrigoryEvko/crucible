@@ -294,13 +294,20 @@ void test_dispatch_pairs(CrucibleHandle handle) {
 
     // The flags of the caller: each bit that the native paths set records,
     // and a bit of the tag of slot 4 is the entry's own.
-    EXPECT(flags_action(crucible::op_flag::INFERENCE_MODE | crucible::op_flag::IS_MUTABLE
-                        | crucible::op_flag::PHASE_MASK | crucible::op_flag::TORCH_FUNCTION
-                        | crucible::op_flag::GRAD_ENABLED)
+    EXPECT(flags_action(crucible::OpFlags{}
+                            .with_inference_mode()
+                            .with_mutable()
+                            .with_phase(crucible::TrainingPhase::OTHER)
+                            .with_torch_function()
+                            .with_grad_enabled()
+                            .bits())
                == CRUCIBLE_ACTION_RECORD,
            "each flag that the native paths set records");
-    EXPECT(flags_action(uint8_t{1} << crucible::op_flag::SCALAR4_TYPE_SHIFT) == CRUCIBLE_ACTION_REFUSED,
+    EXPECT(flags_action(crucible::OpFlags{}.with_fifth_tag(crucible::ScalarType2::FLOAT).bits())
+               == CRUCIBLE_ACTION_REFUSED,
            "a bit of the tag of slot 4 in the flags of the caller is refused");
+    EXPECT(flags_action(uint8_t{0x80}) == CRUCIBLE_ACTION_REFUSED,
+           "the high bit of the tag of slot 4 in the flags of the caller is refused");
 
     // The records past the 32 that the native paths keep: the inputs past
     // them fold into the overflow digest, and a broken one is refused.

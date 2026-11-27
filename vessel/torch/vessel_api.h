@@ -306,10 +306,11 @@ enum {
 // that names no value, gives the action REFUSED.  The guard word reads the tag
 // of a data scalar but not its value, and the replay binds its value.
 //
-// op_flags holds the bits of op_flag of crucible/TraceRing.h that the native
-// paths set: INFERENCE_MODE, IS_MUTABLE, the training phase, TORCH_FUNCTION
-// and GRAD_ENABLED.  A bit of the tag of slot 4, which the entry writes, or a
-// bit that no flag names, gives the action REFUSED.
+// op_flags holds the byte of OpFlags of crucible/TraceRing.h with the five
+// fields that the native paths set: the inference mode at bit 0, the
+// mutability at bit 1, the training phase in bits 2 and 3, the torch function
+// mode at bit 4 and the gradient mode at bit 5.  A bit of the tag of slot 4 in
+// bits 6 and 7, which the entry writes, gives the action REFUSED.
 CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(
     CrucibleHandle h, uint64_t schema_hash, uint16_t num_inputs, uint16_t num_outputs, const CrucibleMeta* metas,
     uint32_t n_metas, const int64_t* scalar_values, const uint8_t* scalar_tags, const uint8_t* scalar_roles,

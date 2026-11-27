@@ -130,11 +130,11 @@ void test_scalar_count_reaches_the_digest() {
 
 // The integer 1 and the smallest positive double have one bit pattern.  The
 // slot keeps the bits, and the tag tells the two apart, inline and past the
-// slots.  The tag of slot 4 goes into the two high bits of op_flags, and the
-// other bits of op_flags stay.
+// slots.  The tag of slot 4 goes into op_flags, and the other fields of
+// op_flags stay.
 void test_tag_tells_an_integer_from_a_double() {
     constexpr int64_t kOneBits = 1;
-    constexpr uint8_t kOtherFlags = crucible::op_flag::GRAD_ENABLED | crucible::op_flag::IS_MUTABLE;
+    constexpr crucible::OpFlags kOtherFlags = crucible::OpFlags{}.with_grad_enabled().with_mutable();
     TraceRing::Entry integer{};
     integer.op_flags = kOtherFlags;
     TraceRing::Entry floating{};
@@ -152,8 +152,7 @@ void test_tag_tells_an_integer_from_a_double() {
     CRUCIBLE_TEST_ASSERT(kTest, !same_slots(integer, floating) && "the tag of slot 4 tells the two entries apart");
     CRUCIBLE_TEST_ASSERT(kTest, floating.get_scalar_type(kInlineScalars - 1) == ScalarType2::FLOAT);
     CRUCIBLE_TEST_ASSERT(kTest, integer.get_scalar_type(kInlineScalars - 1) == ScalarType2::INT);
-    CRUCIBLE_TEST_ASSERT(kTest, (floating.op_flags & static_cast<uint8_t>(~crucible::op_flag::SCALAR4_TYPE_MASK))
-                                    == kOtherFlags);
+    CRUCIBLE_TEST_ASSERT(kTest, floating.op_flags == kOtherFlags.with_fifth_tag(ScalarType2::FLOAT));
 
     constexpr uint32_t kStepSizes = 40;
     TraceRing::Entry const past_integer = entry_of(kStepSizes, kOneBits, InputOverflow{}, ScalarType2::INT);

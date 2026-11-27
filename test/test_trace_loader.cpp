@@ -322,15 +322,14 @@ static void test_encoders_round_trip_through_the_loader() {
     CRUCIBLE_TEST_ASSERT(kTest, entry.num_outputs == 0);
     CRUCIBLE_TEST_ASSERT(kTest, entry.num_scalar_args == 1);
     CRUCIBLE_TEST_ASSERT(kTest, entry.scalar_values.at(::fixy::index<0>()) == -9);
-    CRUCIBLE_TEST_ASSERT(kTest, (entry.op_flags & op_flag::GRAD_ENABLED) != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.op_flags.is_grad_enabled());
     CRUCIBLE_TEST_ASSERT(kTest, *trace.scope_hashes.get(0).expect("the trace holds one op") == record.scope_hash);
     CRUCIBLE_TEST_ASSERT(kTest, *trace.callsite_hashes.get(0).expect("the trace holds one op") == record.callsite_hash);
     CRUCIBLE_TEST_ASSERT(kTest, *trace.depths.get(0).expect("the trace holds one op") == record.depth);
     CRUCIBLE_TEST_ASSERT(kTest, entry.packed_scalar_types() == record.scalar_types);
     CRUCIBLE_TEST_ASSERT(kTest, entry.get_scalar_type(0) == ScalarType2::FLOAT
                                     && entry.get_scalar_type(4) == ScalarType2::NONE);
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         (entry.op_flags & op_flag::GRAD_ENABLED) != 0 && "the tag of slot 4 keeps the other op flags");
+    CRUCIBLE_TEST_ASSERT(kTest, entry.op_flags.is_grad_enabled() && "the tag of slot 4 keeps the other op flags");
     CRUCIBLE_TEST_ASSERT(kTest, entry.data_slots()
                                             .expect("the loader keeps a word of the inline slots")
                                             .role(crucible::ScalarSlot{::fixy::index<0>()})
@@ -418,7 +417,7 @@ static void test_first_format_loads() {
     CRUCIBLE_TEST_ASSERT(kTest, entry.schema_hash.raw() == kSchema && entry.shape_hash.raw() == kShape);
     CRUCIBLE_TEST_ASSERT(kTest, entry.num_inputs == 0 && entry.num_outputs == 1 && entry.num_scalar_args == 1);
     CRUCIBLE_TEST_ASSERT(kTest, entry.scalar_values.at(::fixy::index<0>()) == -9);
-    CRUCIBLE_TEST_ASSERT(kTest, (entry.op_flags & op_flag::GRAD_ENABLED) != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, entry.op_flags.is_grad_enabled());
     CRUCIBLE_TEST_ASSERT(kTest, entry.packed_scalar_types() == 0 && entry.get_scalar_type(0) == ScalarType2::INT);
     CRUCIBLE_TEST_ASSERT(kTest, entry.data_slots()
                                         .expect("the loader keeps a word of the inline slots")
@@ -471,6 +470,40 @@ static ::fixy::Result<LoadedTrace, TraceLoadError> load_one_op(TraceOpRecord con
                 op_bytes.view());
         });
     return load_image(image.view(), "crtrace-one-op.bin");
+}
+
+// The writers set only the four fields of the context in the flags byte of a
+// record, a gradient byte of 0 or 1, and the tags of the five slots.  A record
+// with a gradient byte of 2, the gradient mode or the tag of slot 4 in the
+// flags byte, or a tag bit past the five slots is not a record that a writer
+// produced, so the load refuses it.  The old loader took each of the four.
+static void test_flags_and_tags_that_no_writer_gives_are_refused() {
+    TraceOpRecord record{};
+    record.schema_hash = SchemaHash{0x5CA1A3ULL};
+    record.inference_mode = 0x1F;
+    record.grad_enabled = 1;
+    record.scalar_types = 0x03FF;
+    const LoadedTrace trace = load_one_op(record).expect("each field that a writer sets loads");
+    const TraceRing::Entry& entry = *trace.entries.get(0).expect("the trace holds one op");
+    CRUCIBLE_TEST_ASSERT(kTest, entry.op_flags.bits() == 0xFF && entry.packed_scalar_types() == 0x03FF);
+
+    TraceOpRecord gradient = record;
+    gradient.grad_enabled = 2;
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         is_refused_as(load_one_op(gradient), TraceLoadError::OpCorrupt) && "a gradient byte of 2");
+    TraceOpRecord stored_gradient = record;
+    stored_gradient.inference_mode = 0x20;
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_one_op(stored_gradient), TraceLoadError::OpCorrupt)
+                                    && "the gradient mode in the flags byte");
+    TraceOpRecord stored_tag = record;
+    stored_tag.inference_mode = 0x40;
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_one_op(stored_tag), TraceLoadError::OpCorrupt)
+                                    && "the tag of slot 4 in the flags byte");
+    TraceOpRecord tags = record;
+    tags.scalar_types = 0x0400;
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_one_op(tags), TraceLoadError::OpCorrupt)
+                                    && "a tag bit past the five slots");
+    ::fixy::check::pass(kTest, "  test_flags_and_tags_that_no_writer_gives_are_refused: PASSED\n");
 }
 
 // An op record with more scalars than the inline slots, or with a data slot
@@ -1321,6 +1354,7 @@ int main() {
     test_first_format_loads();
     test_recorded_first_format_trace_loads();
     test_op_with_scalars_past_the_slots_is_refused();
+    test_flags_and_tags_that_no_writer_gives_are_refused();
     test_schema_name_table_round_trip();
     test_schema_name_table_corrupt_zero_len();
     test_schema_name_table_corrupt_oversize_len();

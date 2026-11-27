@@ -342,16 +342,31 @@ decode_trace_op_(::fixy::View<std::byte const, RecordBytes> op_record, uint32_t 
     entry.num_outputs = num_outputs;
     // The check above keeps the count at most kScalarSlots.
     entry.num_scalar_args = static_cast<uint8_t>(num_scalars);
-    // The whole packed set of flags, despite the name of the field.
-    entry.op_flags = read_record_field_<uint8_t, offsetof(TraceOpRecord, inference_mode)>(op_record);
-    if (grad_enabled != 0) {
-        entry.op_flags = static_cast<uint8_t>(entry.op_flags | op_flag::GRAD_ENABLED);
-    } else {
-        entry.op_flags = static_cast<uint8_t>(entry.op_flags & static_cast<uint8_t>(~op_flag::GRAD_ENABLED));
-    }
-    // After the flags, because the tag of slot 4 is in the two high bits of
-    // op_flags.
-    entry.set_packed_scalar_types(scalar_types);
+    // The whole packed set of flags, despite the name of the field.  The
+    // writers set only the four fields of the context there, and the byte of
+    // the gradient mode holds 0 or 1 (OpFlags::from_record).  The tags hold
+    // only the bits of the five slots.  A record of another pattern is not a
+    // record that a writer produced.
+    const auto stored_flags = read_record_field_<uint8_t, offsetof(TraceOpRecord, inference_mode)>(op_record);
+    const bool has_flags = OpFlags::from_record(stored_flags, grad_enabled)
+                               .match(
+                                   [&entry](OpFlags flags) noexcept {
+                                       entry.op_flags = flags;
+                                       return true;
+                                   },
+                                   [](OpFlagsRefusal) noexcept { return false; });
+    if (!has_flags) [[unlikely]]
+        return ::fixy::err(TraceLoadError::OpCorrupt);
+    // After the flags, because the tag of slot 4 is in op_flags.
+    const bool has_tags = SlotTags::from_bits(scalar_types)
+                              .match(
+                                  [&entry](SlotTags tags) noexcept {
+                                      entry.set_slot_tags(tags);
+                                      return true;
+                                  },
+                                  [] noexcept { return false; });
+    if (!has_tags) [[unlikely]]
+        return ::fixy::err(TraceLoadError::OpCorrupt);
     uint16_t lane = 0;
     const auto scalar_block = record_block_<offsetof(TraceOpRecord, scalar_values), kTraceScalarBlockBytes>(op_record);
     using ScalarLane = ::fixy::Index<decltype(entry.scalar_values)::size()>;

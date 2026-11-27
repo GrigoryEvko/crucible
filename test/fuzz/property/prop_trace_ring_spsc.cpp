@@ -106,8 +106,12 @@ void fill_random_entry(crucible::fuzz::prop::Rng& rng, TraceRing::Entry& e) noex
     e.num_scalar_args = static_cast<uint8_t>(rng.next32() & 0xFFu);
     e.set_data_slots(crucible::DataSlots::from_bits(static_cast<uint8_t>(rng.next32() & 0x1Fu))
                          .expect("five bits name only the inline slots"));
-    e.scalar_types = static_cast<uint8_t>(rng.next32() & 0xFFu);
-    e.op_flags = static_cast<uint8_t>(rng.next32() & 0xFFu);
+    // The flags of the front end, then the tags of the five slots, which
+    // write the tag of slot 4 into the flags.  Each bit of the two bytes is
+    // random.
+    e.op_flags = crucible::OpFlags::from_caller_byte(static_cast<uint8_t>(rng.next32() & 0x3Fu))
+                     .expect("the six low bits hold no tag of a scalar slot");
+    e.set_packed_scalar_types(static_cast<uint16_t>(rng.next32() & 0x3FFu));
     for (auto const position : e.scalar_values.indices())
         e.scalar_values.set(position, static_cast<int64_t>(rng.next64()));
 }

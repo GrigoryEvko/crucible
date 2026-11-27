@@ -34,7 +34,7 @@ crucible::TraceRing::Entry make_entry(SchemaHash schema_hash) {
     e.num_inputs = 1;
     e.num_outputs = 1;
     e.num_scalar_args = 0;
-    e.op_flags = 0;
+    e.op_flags = crucible::OpFlags{};
     return e;
 }
 
