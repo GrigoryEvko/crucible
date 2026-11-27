@@ -502,11 +502,10 @@ BackgroundThread::BackgroundThread(BackgroundThreadKey const& /*key*/, ::foundat
 }
 
 ::fixy::Box<BgBuildWork> BackgroundThread::make_commit_work(::foundation::effects::Alloc alloc, uint32_t count) {
-    ::fixy::Box<BgBuildWork> work = ::fixy::mint_box<BgBuildWork>(alloc);
-    work->commit_only = true;
-    work->commit_count = count;
-    work->meta_floor = meta_floor_();
-    return work;
+    MetaIndex const meta_floor = meta_floor_();
+    return ::fixy::mint_box_built<BgBuildWork>(alloc, [count, meta_floor]() noexcept {
+        return BgBuildWork{.commit_only = true, .commit_count = count, .meta_floor = meta_floor};
+    });
 }
 
 // The foreground appends the records of an op before its ring entry, so a
@@ -590,22 +589,27 @@ BackgroundThread::prepare_iteration_build_work(::foundation::effects::Alloc allo
 
     ::fixy::Option<::fixy::Box<BgBuildWork>> built{::fixy::none};
     if (completed_len > 0) {
-        ::fixy::Box<BgBuildWork> work = ::fixy::mint_box<BgBuildWork>(alloc);
-        work->reset_point = applied_reset_.peek_relaxed();
-        work->numerics = stream_numerics_;
-        // Each buffer takes the oldest completed_len held ops, in order.
+        // Each buffer takes the oldest completed_len held ops, in order.  The
+        // object starts in the storage of the Box.
         PendingOps const& held = pending_ops_;
-        work->trace = ::fixy::mint_heap_array_with<TraceRing::Entry>(
-            alloc, completed_len, [&held](size_t index) noexcept { return held.entry(index); });
-        work->meta_starts = ::fixy::mint_heap_array_with<MetaIndex>(
-            alloc, completed_len, [&held](size_t index) noexcept { return held.meta_start(index); });
-        work->scope_hashes = ::fixy::mint_heap_array_with<ScopeHash>(
-            alloc, completed_len, [&held](size_t index) noexcept { return held.scope_hash(index); });
-        work->callsite_hashes = ::fixy::mint_heap_array_with<CallsiteHash>(
-            alloc, completed_len, [&held](size_t index) noexcept { return held.callsite_hash(index); });
-        work->depths = ::fixy::mint_heap_array_with<OpDepth>(
-            alloc, completed_len, [&held](size_t index) noexcept { return held.depth(index); });
-        built = ::fixy::some(std::move(work));
+        StreamPoint const reset_point = applied_reset_.peek_relaxed();
+        NumericsHash const numerics = stream_numerics_;
+        built = ::fixy::some(
+            ::fixy::mint_box_built<BgBuildWork>(alloc, [&held, alloc, completed_len, reset_point, numerics]() noexcept {
+                return BgBuildWork{
+                    .reset_point = reset_point,
+                    .numerics = numerics,
+                    .trace = ::fixy::mint_heap_array_with<TraceRing::Entry>(
+                        alloc, completed_len, [&held](size_t index) noexcept { return held.entry(index); }),
+                    .meta_starts = ::fixy::mint_heap_array_with<MetaIndex>(
+                        alloc, completed_len, [&held](size_t index) noexcept { return held.meta_start(index); }),
+                    .scope_hashes = ::fixy::mint_heap_array_with<ScopeHash>(
+                        alloc, completed_len, [&held](size_t index) noexcept { return held.scope_hash(index); }),
+                    .callsite_hashes = ::fixy::mint_heap_array_with<CallsiteHash>(
+                        alloc, completed_len, [&held](size_t index) noexcept { return held.callsite_hash(index); }),
+                    .depths = ::fixy::mint_heap_array_with<OpDepth>(
+                        alloc, completed_len, [&held](size_t index) noexcept { return held.depth(index); })};
+            }));
     }
 
     // The last K ops begin the next iteration, and the ring keeps them.
@@ -937,13 +941,20 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(Input&& in, Output&& out, ::fi
                                                         depths_key);
         });
     };
+    // The body of the frame of the batch: it fills the batch from the ring,
+    // and gives the count of the ops.
+    auto const fill = [&pop](BgTraceBatch& into) noexcept {
+        into.count = pop(into);
+        return into.count;
+    };
 
     while (true) {
         if (owner.stop_requested.peek()) break;
 
-        batch->count = pop(*batch);
+        auto [count, filled] = ::fixy::with_mut(std::move(batch), fill);
+        batch = std::move(filled);
 
-        if (batch->count == 0) {
+        if (count == 0) {
             idle.pause_or_sleep(ctx);
             continue;
         }
@@ -953,9 +964,9 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(Input&& in, Output&& out, ::fi
         batch = ::fixy::mint_box<BgTraceBatch>(alloc);
     }
 
-    batch->count = pop(*batch);
-    if (batch->count > 0) {
-        detail::bg_pipeline::push_item(ctx, out, std::move(batch));
+    auto [count, filled] = ::fixy::with_mut(std::move(batch), fill);
+    if (count > 0) {
+        detail::bg_pipeline::push_item(ctx, out, std::move(filled));
     }
 
     std::move(out).close(ctx);
@@ -974,27 +985,33 @@ void BackgroundThread::Pipeline::DetectIterationFn(Input&& in, Output&& out, ::f
         if (detail::bg_pipeline::is_end_of_stream(received)) break;
 
         // The channel gives the batch in a Box, which ends it after the
-        // loop.  The stage reads the ops through this reference.
+        // loop.  The stage reads the count and then each op in a read frame
+        // of the Box.  A body of such a frame captures only the slot, so it
+        // stores no borrow of the batch in the owner.
         ::fixy::Box<BgTraceBatch> const batch = std::move(received).expect("the test above found an item");
-        BgTraceBatch const& ops = *batch;
 
         // The drain stage fills at most BATCH_SIZE ops.  The one test of the
         // count proves the slot of each op, so the loop checks no slot.
-        const uint32_t op_count = ops.count;
+        const uint32_t op_count =
+            ::foundation::core::with_view(batch, [](BgTraceBatch const& ops) noexcept { return ops.count; });
         if (op_count > BATCH_SIZE) [[unlikely]] {
             ::fixy::fatal("a trace batch holds {} ops, more than BATCH_SIZE", op_count);
         }
         for (uint32_t i = 0; i < op_count; ++i) {
             const BatchSlot slot = BatchSlot::check(i).expect("the test of the count bounds each slot");
-            const TraceRing::Entry& entry = ops.entries.at(slot);
+            const auto [entry, meta_start, scope_hash, callsite_hash, depth] =
+                ::foundation::core::with_view(batch, [slot](BgTraceBatch const& ops) noexcept {
+                    return ::fixy::Record<TraceRing::Entry, MetaIndex, ScopeHash, CallsiteHash, OpDepth>{
+                        ops.entries.at(slot), ops.meta_starts.at(slot), ops.scope_hashes.at(slot),
+                        ops.callsite_hashes.at(slot), ops.depths.at(slot)};
+                });
             owner.apply_due_reset_();
             ++owner.stream_ops_;
 
-            const MetaIndex meta_start = ops.meta_starts.at(slot);
             owner.pending_ops_.push(alloc, entry,
                                     HeldRecordPositions{.meta_start = meta_start,
                                                         .record_start = owner.take_record_start_(entry, meta_start)},
-                                    ops.scope_hashes.at(slot), ops.callsite_hashes.at(slot), ops.depths.at(slot));
+                                    scope_hash, callsite_hash, depth);
 
             if (owner.detector_.check(alloc, entry.schema_hash, entry.shape_hash)) {
                 ::fixy::Option<::fixy::Box<BgBuildWork>> work = owner.prepare_iteration_build_work(alloc);
@@ -1014,7 +1031,7 @@ void BackgroundThread::Pipeline::DetectIterationFn(Input&& in, Output&& out, ::f
             .boundaries = owner.detector_.boundaries_detected.get(),
             .period = owner.detector_.confirmed ? DetectorPeriod::Confirmed : DetectorPeriod::Searching});
 
-        detail::bg_pipeline::push_item(ctx, out, owner.make_commit_work(alloc, ops.count));
+        detail::bg_pipeline::push_item(ctx, out, owner.make_commit_work(alloc, op_count));
     }
     std::move(out).close(ctx);
     std::move(in).close(ctx);
@@ -1031,21 +1048,24 @@ void BackgroundThread::Pipeline::BuildTraceFn(Input&& in, Output&& out, ::fixy::
             in.template receive_waiting<detail::bg_pipeline::StagePolicy>(ctx);
         if (detail::bg_pipeline::is_end_of_stream(received)) break;
 
-        ::fixy::Box<BgBuildWork> const work = std::move(received).expect("the test above found an item");
+        // The stage takes the work out of its Box, so it holds the work alone.
+        BgBuildWork const work = std::move(received).expect("the test above found an item").consume();
 
-        if (work->commit_only) {
+        if (work.commit_only) {
             // Forward the marker downstream so total_processed advances
             // only after every preceding graph has been published.
             // Bumping here instead races the publish stage: the
             // foreground can see the counter catch up, dispatch, and find
             // no pending region, or an active region whose plan is still
             // being computed.
-            ::fixy::Box<BgGraphPublish> publish = ::fixy::mint_box<BgGraphPublish>(ctx.cap().alloc);
-            publish->kind = BgGraphPublish::Kind::Commit;
-            publish->commit_count = work->commit_count;
-            publish->meta_floor = work->meta_floor;
-            publish->reset_point = work->reset_point;
-            detail::bg_pipeline::push_item(ctx, out, std::move(publish));
+            ::fixy::Box<BgGraphPublish> marker =
+                ::fixy::mint_box_built<BgGraphPublish>(ctx.cap().alloc, [&work]() noexcept {
+                    return BgGraphPublish{.kind = BgGraphPublish::Kind::Commit,
+                                          .commit_count = work.commit_count,
+                                          .meta_floor = work.meta_floor,
+                                          .reset_point = work.reset_point};
+                });
+            detail::bg_pipeline::push_item(ctx, out, std::move(marker));
             continue;
         }
 
@@ -1055,7 +1075,7 @@ void BackgroundThread::Pipeline::BuildTraceFn(Input&& in, Output&& out, ::fixy::
         // come while the build stage is mid-graph.  The commit markers carry
         // the floor of the metadata log, so a skipped work releases nothing
         // of its own.
-        if (work->reset_point != owner.requested_reset()) continue;
+        if (work.reset_point != owner.requested_reset()) continue;
         (void)owner.works_built_.bump();
 
         // One epoch of the build scratch covers this work item.  The graph
@@ -1082,15 +1102,15 @@ void BackgroundThread::Pipeline::BuildTraceFn(Input&& in, Output&& out, ::fixy::
         ::foundation::effects::Alloc const alloc = ctx.cap().alloc;
         owner.build_scratch_.arena.with_epoch([&build_state, &meta_log, alloc, &work,
                                                &publish](TraceScratch::Epoch& epoch) noexcept {
-            BackgroundThread::build_trace_(build_state, meta_log, alloc, epoch, work->trace.view(),
-                                           work->meta_starts.view(), work->scope_hashes.view(),
-                                           work->callsite_hashes.view(), work->depths.view(), work->numerics)
+            BackgroundThread::build_trace_(build_state, meta_log, alloc, epoch, work.trace.view(),
+                                           work.meta_starts.view(), work.scope_hashes.view(),
+                                           work.callsite_hashes.view(), work.depths.view(), work.numerics)
                 .match(
                     [&](BuiltTrace trace) noexcept {
                         publish = ::fixy::some(
                             ::fixy::mint_box<BgGraphPublish>(alloc, BgGraphPublish{.kind = BgGraphPublish::Kind::Region,
                                                                                    .region = std::move(trace.region),
-                                                                                   .reset_point = work->reset_point}));
+                                                                                   .reset_point = work.reset_point}));
                     },
                     [](BuildRefusal /*refusal*/) noexcept {});
         });
@@ -1136,9 +1156,11 @@ void BackgroundThread::Pipeline::MakeRegionFn(Input&& in, BgSinkProducerHandle&&
         }
         idle.reset();
 
-        ::fixy::Box<BgGraphPublish> publish = std::move(received).expect("the test above found an item");
+        // The stage takes the message out of its Box, so it holds the message
+        // alone.
+        BgGraphPublish message = std::move(received).expect("the test above found an item").consume();
 
-        if (publish->kind == BgGraphPublish::Kind::Commit) {
+        if (message.kind == BgGraphPublish::Kind::Commit) {
             // The marker sits strictly after every publish message from
             // the same and earlier batches, so the release and the bump
             // happen after every publish above.  A reset does not drop a
@@ -1146,8 +1168,8 @@ void BackgroundThread::Pipeline::MakeRegionFn(Input&& in, BgSinkProducerHandle&&
             // reset.  The release comes first, so a caller that sees the
             // count after a flush sees the tail too.  The bump's release
             // pairs with the foreground's acquire load.
-            owner.release_meta_log(PublishStage{}, publish->meta_floor);
-            (void)owner.total_processed.bump_by(PublishStage{}, publish->commit_count);
+            owner.release_meta_log(PublishStage{}, message.meta_floor);
+            (void)owner.total_processed.bump_by(PublishStage{}, message.commit_count);
             // The count comes first, and then the notify wakes each flush
             // that parks.  With no flush that parks, the notify is one fence
             // and one load.
@@ -1165,13 +1187,12 @@ void BackgroundThread::Pipeline::MakeRegionFn(Input&& in, BgSinkProducerHandle&&
         // mid-graph.  A request can come between this check and the
         // publication, so the foreground does the same check when it takes
         // a region.  The region memory frees when its parts end here.
-        BuiltRegion region = std::move(publish->region);
-        const StreamPoint reset_point = publish->reset_point;
+        const StreamPoint reset_point = message.reset_point;
         if (reset_point != owner.requested_reset()) {
             continue;
         }
 
-        owner.publish_region(bg, PublishStage{}, std::move(region), reset_point);
+        owner.publish_region(bg, PublishStage{}, std::move(message.region), reset_point);
     }
 }
 
@@ -1199,8 +1220,13 @@ void BackgroundThread::start_(::fixy::InitLoadCtx const& startup, PlanTarget con
     world_size_ = target.world_size;
     device_capability_ = target.device_capability;
     rearm_stop_();
-    if (!pipeline_->has_started) {
-        pipeline_->has_started = true;
+    auto [is_first_start, pipeline] = ::fixy::with_mut(std::move(pipeline_), [](Pipeline& held) noexcept {
+        bool const is_first = !held.has_started;
+        held.has_started = true;
+        return is_first;
+    });
+    pipeline_ = std::move(pipeline);
+    if (is_first_start) {
         // The first op of the ring owns the first record that the log has
         // not released.  A later start keeps the cursor, because the ring
         // keeps the ops that the last pipeline did not read.

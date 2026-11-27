@@ -556,11 +556,11 @@ struct BgBuildWork {
     // built from the held op.  An iteration has at most
     // IterationDetector::MAX_PERIOD ops, so the five buffers take at most 90
     // bytes for each op, 22.5 MiB together.  A commit-only marker holds none.
-    ::fixy::HeapArray<TraceRing::Entry> trace;
-    ::fixy::HeapArray<MetaIndex> meta_starts;
-    ::fixy::HeapArray<ScopeHash> scope_hashes;
-    ::fixy::HeapArray<CallsiteHash> callsite_hashes;
-    ::fixy::HeapArray<OpDepth> depths;
+    ::fixy::HeapArray<TraceRing::Entry> trace{};
+    ::fixy::HeapArray<MetaIndex> meta_starts{};
+    ::fixy::HeapArray<ScopeHash> scope_hashes{};
+    ::fixy::HeapArray<CallsiteHash> callsite_hashes{};
+    ::fixy::HeapArray<OpDepth> depths{};
 };
 
 // Lifetime: a Box owns each message.  The producing stage owns the Box until
