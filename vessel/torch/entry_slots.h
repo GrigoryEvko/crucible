@@ -509,19 +509,18 @@ using GuardHeader = ::fixy::PackedWord<
     // data slots come from the entry and not through its DataSlots, because
     // the entry of a C caller is not yet checked here.
     const uint32_t stored = ::fixy::min(uint32_t{entry.num_scalar_args}, uint32_t{kInlineScalars});
-    const uint32_t tag_mask = (uint32_t{1} << (crucible::kScalarTypeBits * stored)) - 1;
-    const uint32_t data_mask = (uint32_t{1} << stored) - 1;
-    const uint64_t header =
-        GuardHeader{}
-            .with_fitting<side::GuardInputCountField>(entry.num_inputs)
-            .with_fitting<side::GuardScalarCountField>(entry.num_scalar_args)
-            .with_fitting<side::GuardDepthField>(depth.raw())
-            .with<side::GuardTagsField>(static_cast<uint16_t>(entry.packed_scalar_types() & tag_mask))
-            .expect("the mask keeps the tags of the stored slots")
-            .with<side::GuardDataSlotsField>(static_cast<uint8_t>(entry.data_slot_bits & data_mask))
-            .expect("the mask keeps the data slots of the stored slots")
-            .bits();
-    const uint32_t data_bits = uint32_t{entry.data_slot_bits} & data_mask;
+    const uint32_t tags =
+        uint32_t{entry.packed_scalar_types()} & ((uint32_t{1} << (crucible::kScalarTypeBits * stored)) - 1);
+    const uint32_t data_bits = uint32_t{entry.data_slot_bits} & ((uint32_t{1} << stored) - 1);
+    // At most five slots are stored, so each mask keeps at most the width of
+    // its field, and the low bits of the field are each bit of the value.
+    const uint64_t header = GuardHeader{}
+                                .with_fitting<side::GuardInputCountField>(entry.num_inputs)
+                                .with_fitting<side::GuardScalarCountField>(entry.num_scalar_args)
+                                .with_fitting<side::GuardDepthField>(depth.raw())
+                                .with_low_bits<side::GuardTagsField>(tags)
+                                .with_low_bits<side::GuardDataSlotsField>(data_bits)
+                                .bits();
 
     uint64_t word = ::foundation::reflect::combine_ids(kGuardSeed, header);
     for (crucible::TensorMeta const& input : inputs)
