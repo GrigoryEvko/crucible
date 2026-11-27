@@ -1140,6 +1140,11 @@ enum class PauseBasis : std::uint8_t {
     RunDelay,
 };
 
+// A count of the voluntary switches of the measuring thread, as its status
+// gives it in a reading of the pause check.
+enum class VoluntarySwitches : std::uint64_t {
+};
+
 // What the pause check reads at the start and at the end of a sampled loop:
 // the clocks and the switches of the measuring thread, its run delay, and the
 // run delay of each thread of the process.  basis is NotMeasured when a read
@@ -1148,9 +1153,16 @@ struct PauseReading {
     PauseBasis basis = PauseBasis::NotMeasured;
     std::uint64_t wall_ns = 0;
     std::uint64_t cpu_ns = 0;
-    std::uint64_t voluntary_switches = 0;
+    VoluntarySwitches voluntary_switches{};
     ThreadDelay own{};
     ::fixy::FixedList<ThreadDelay, kPauseThreads> others{};
+};
+
+// The counts of the voluntary switches that a test plants in the two readings
+// of the pause check of a Run (Run::pause_switches_for_test).
+struct PlantedSwitches {
+    VoluntarySwitches before{};
+    VoluntarySwitches after{};
 };
 
 // The pause of one Run (the pause check).
@@ -1289,6 +1301,18 @@ template <std::size_t Capacity>
         }
     }
     return pause;
+}
+
+// A reading with the count of voluntary switches that a test plants in place
+// of the count of the status (Run::pause_switches_for_test).  The clocks and
+// the run delays stay as the host gave them.  A reading that did not read
+// stays NotMeasured, so a plant cannot make a failed read look measured.
+template <class Role>
+[[nodiscard]] constexpr ::fixy::Side<Role, PauseReading>
+with_planted_switches(::fixy::Side<Role, PauseReading> const& reading_side, VoluntarySwitches planted) noexcept {
+    PauseReading reading = reading_side.value();
+    if (reading.basis != PauseBasis::NotMeasured) reading.voluntary_switches = planted;
+    return ::fixy::side_as<Role>(std::move(reading));
 }
 
 // The first decimal number of a text, after the blanks that lead it, or none.
@@ -1467,7 +1491,7 @@ inline void fill_own_pause(OwnTexts const& texts, WindowClock const& clock, Paus
     const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
     reading.wall_ns = clock.wall_ns;
     reading.cpu_ns = clock.cpu_ns;
-    reading.voluntary_switches = std::move(switches).value_or(0);
+    reading.voluntary_switches = VoluntarySwitches{std::move(switches).value_or(0)};
     reading.own = std::move(own).value_or(ThreadDelay{});
     reading.own.tid = ::fixy::process::current_thread(startup);
     reading.basis = PauseBasis::LostTime;
@@ -2939,6 +2963,20 @@ public:
         return *this;
     }
 
+    // A door for a test of the pause check.  The two readings of the Run
+    // give the planted counts of voluntary switches in place of the counts
+    // of the status of the measuring thread.  The clocks, the lost time and
+    // the run delays stay the readings of the host.  Thus the test states if
+    // the measuring thread slept, and a block of that thread in the kernel
+    // cannot change the basis of the judgment.  A Run with no plant reads
+    // the counts of the kernel.
+    [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
+    Run& pause_switches_for_test(::fixy::TestRunnerCtx const& test, PlantedSwitches planted) noexcept {
+        static_cast<void>(test);
+        planted_switches_ = ::fixy::some(planted);
+        return *this;
+    }
+
     // Cap the Run's total wall time. `ms=0` disables the cap (fall
     // back to the raw samples_ × batch iteration count). Default
     // budget is 10 seconds per Run — enough for stable p99.9 on any
@@ -3336,7 +3374,12 @@ private:
         r.wall_ns = static_cast<double>(end_ns - window.start_ns);
         r.pct = Percentiles::compute(ns_samples);
         r.samples = std::move(ns_samples);
-        r.pause = detail::pause_between(window.pause_before, pause_after);
+        r.pause = planted_switches_.match(
+            [&window, &pause_after](PlantedSwitches const& planted) noexcept {
+                return detail::pause_between(detail::with_planted_switches(window.pause_before, planted.before),
+                                             detail::with_planted_switches(pause_after, planted.after));
+            },
+            [&window, &pause_after]() noexcept { return detail::pause_between(window.pause_before, pause_after); });
         r.window_basis = r.pause.basis == PauseBasis::LostTime ? PauseBasis::LostTime : PauseBasis::NotMeasured;
         r.paused_windows = detail::paused_windows_of(window.lost_ns.view(), r.pause.basis);
 
@@ -3440,6 +3483,10 @@ private:
     // hardening is set (the policy's Topology-based pick wins).
     crucible::warden::Policy hardening_{crucible::warden::Policy::none()};
     bool have_hardening_ = false;
+
+    // The counts of voluntary switches that a test plants in the two
+    // readings of the pause check (pause_switches_for_test), or none.
+    ::fixy::Option<PlantedSwitches> planted_switches_{};
 
     // CRUCIBLE_BENCH_HARDENING=production|cloud_vm|dev_quiet|none —
     // applies the named profile to every Run that doesn't call

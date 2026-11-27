@@ -1352,42 +1352,51 @@ constexpr ::fixy::process::ThreadId kOtherTid{7};
 void test_pause_between_planted_readings() {
     using bench::side::ReadingAfter;
     using bench::side::ReadingBefore;
-    const bench::PauseReading start = with_threads({.wall_ns = 1000000, .cpu_ns = 500000, .voluntary_switches = 4});
+    const bench::PauseReading start =
+        with_threads({.wall_ns = 1000000, .cpu_ns = 500000, .voluntary_switches = bench::VoluntarySwitches{4}});
     const bench::Pause stolen = planted_pause(
         ::fixy::side_as<ReadingBefore>(start),
-        ::fixy::side_as<ReadingAfter>(with_threads({.wall_ns = 11000000, .cpu_ns = 8000000, .voluntary_switches = 4})));
+        ::fixy::side_as<ReadingAfter>(
+            with_threads({.wall_ns = 11000000, .cpu_ns = 8000000, .voluntary_switches = bench::VoluntarySwitches{4}})));
     CHECK(stolen.basis == bench::PauseBasis::LostTime && stolen.wall_ns == 10000000u);
     CHECK(stolen.lost_ns == 2500000u && stolen.own_ns() == 2500000u && stolen.is_over_bound());
 
-    const bench::PauseReading quiet = with_threads({.voluntary_switches = 4});
+    const bench::PauseReading quiet = with_threads({.voluntary_switches = bench::VoluntarySwitches{4}});
     const bench::Pause clean = planted_pause(
         ::fixy::side_as<ReadingBefore>(quiet),
-        ::fixy::side_as<ReadingAfter>(with_threads({.wall_ns = 10000000, .cpu_ns = 9950000, .voluntary_switches = 4})));
+        ::fixy::side_as<ReadingAfter>(
+            with_threads({.wall_ns = 10000000, .cpu_ns = 9950000, .voluntary_switches = bench::VoluntarySwitches{4}})));
     CHECK(clean.lost_ns == 50000u && !clean.is_over_bound());
 
-    const bench::Pause slept = planted_pause(
-        ::fixy::side_as<ReadingBefore>(with_threads({.voluntary_switches = 4, .own = {.run_delay_ns = 100}})),
-        ::fixy::side_as<ReadingAfter>(with_threads(
-            {.wall_ns = 10000000, .cpu_ns = 5000000, .voluntary_switches = 5, .own = {.run_delay_ns = 200100}})));
+    const bench::Pause slept =
+        planted_pause(::fixy::side_as<ReadingBefore>(with_threads(
+                          {.voluntary_switches = bench::VoluntarySwitches{4}, .own = {.run_delay_ns = 100}})),
+                      ::fixy::side_as<ReadingAfter>(with_threads({.wall_ns = 10000000,
+                                                                  .cpu_ns = 5000000,
+                                                                  .voluntary_switches = bench::VoluntarySwitches{5},
+                                                                  .own = {.run_delay_ns = 200100}})));
     CHECK(slept.basis == bench::PauseBasis::RunDelay && slept.own_ns() == 200000u && !slept.is_over_bound());
 
     // A thread that slept and then waited 2 ms in 4 arrivals lost its core.
     // The same 2 ms in 100 arrivals are the wakes of a parked thread.
-    const bench::Pause shared = planted_pause(
-        ::fixy::side_as<ReadingBefore>(quiet),
-        ::fixy::side_as<ReadingAfter>(with_threads(
-            {.wall_ns = 10000000, .voluntary_switches = 5, .own = {.run_delay_ns = 2000000, .arrivals = 4}})));
+    const bench::Pause shared =
+        planted_pause(::fixy::side_as<ReadingBefore>(quiet),
+                      ::fixy::side_as<ReadingAfter>(with_threads({.wall_ns = 10000000,
+                                                                  .voluntary_switches = bench::VoluntarySwitches{5},
+                                                                  .own = {.run_delay_ns = 2000000, .arrivals = 4}})));
     CHECK(shared.basis == bench::PauseBasis::RunDelay && shared.is_over_bound());
-    const bench::Pause parked = planted_pause(
-        ::fixy::side_as<ReadingBefore>(quiet),
-        ::fixy::side_as<ReadingAfter>(with_threads(
-            {.wall_ns = 10000000, .voluntary_switches = 5, .own = {.run_delay_ns = 2000000, .arrivals = 100}})));
+    const bench::Pause parked =
+        planted_pause(::fixy::side_as<ReadingBefore>(quiet),
+                      ::fixy::side_as<ReadingAfter>(with_threads({.wall_ns = 10000000,
+                                                                  .voluntary_switches = bench::VoluntarySwitches{5},
+                                                                  .own = {.run_delay_ns = 2000000, .arrivals = 100}})));
     CHECK(parked.own_ns() == 2000000u && !parked.is_over_bound());
 
     // The thread 7 waited 1.5 ms in 3 arrivals, and the thread 9 waited 5 ms in
     // 1000 arrivals.  The check names the thread 7, whose delay is a pause.  The
     // thread 8 is only in the later reading, so it counts nothing.
-    const bench::PauseReading busy = with_threads({.wall_ns = 10000000, .cpu_ns = 10000000, .voluntary_switches = 4});
+    const bench::PauseReading busy =
+        with_threads({.wall_ns = 10000000, .cpu_ns = 10000000, .voluntary_switches = bench::VoluntarySwitches{4}});
     const bench::PauseReading late = with_other_delay(
         with_other_delay(with_other_delay(busy, {.tid = kOtherTid, .run_delay_ns = 1500000, .arrivals = 3}),
                          {.tid = ::fixy::process::ThreadId{9}, .run_delay_ns = 5000000, .arrivals = 1000}),
@@ -1408,29 +1417,63 @@ void test_pause_between_planted_readings() {
 
     const bench::Pause unread =
         planted_pause(::fixy::side_as<ReadingBefore>(bench::PauseReading{}),
-                      ::fixy::side_as<ReadingAfter>(with_threads({.wall_ns = 10000000, .voluntary_switches = 4})));
+                      ::fixy::side_as<ReadingAfter>(
+                          with_threads({.wall_ns = 10000000, .voluntary_switches = bench::VoluntarySwitches{4}})));
     CHECK(unread.basis == bench::PauseBasis::NotMeasured && !unread.is_over_bound());
 }
 
-// A planted pause of 2 ms.  A hog thread starts before the measurement and
+// A plant replaces the count of voluntary switches of a reading and keeps
+// its clocks and its run delays.  A reading that did not read stays
+// NotMeasured, so the plant gives no pause for it.
+void test_planted_switches_replace_only_the_count() {
+    using bench::side::ReadingAfter;
+    using bench::side::ReadingBefore;
+    using bench::detail::with_planted_switches;
+    const auto start = ::fixy::side_as<ReadingBefore>(
+        with_threads({.wall_ns = 1000000, .cpu_ns = 500000, .voluntary_switches = bench::VoluntarySwitches{4}}));
+    const auto end = ::fixy::side_as<ReadingAfter>(with_threads({.wall_ns = 11000000,
+                                                                 .cpu_ns = 8000000,
+                                                                 .voluntary_switches = bench::VoluntarySwitches{4},
+                                                                 .own = {.run_delay_ns = 2500000, .arrivals = 2}}));
+    const bench::Pause slept = planted_pause(with_planted_switches(start, bench::VoluntarySwitches{0}),
+                                             with_planted_switches(end, bench::VoluntarySwitches{1}));
+    CHECK(slept.basis == bench::PauseBasis::RunDelay && slept.wall_ns == 10000000u && slept.lost_ns == 2500000u);
+    CHECK(slept.own.run_delay_ns == 2500000u && slept.own.arrivals == 2u && slept.is_over_bound());
+
+    const auto slept_end = ::fixy::side_as<ReadingAfter>(
+        with_threads({.wall_ns = 11000000, .cpu_ns = 8000000, .voluntary_switches = bench::VoluntarySwitches{9}}));
+    const bench::Pause stolen = planted_pause(with_planted_switches(start, bench::VoluntarySwitches{3}),
+                                              with_planted_switches(slept_end, bench::VoluntarySwitches{3}));
+    CHECK(stolen.basis == bench::PauseBasis::LostTime && stolen.own_ns() == 2500000u);
+
+    const bench::Pause unread = planted_pause(
+        with_planted_switches(::fixy::side_as<ReadingBefore>(bench::PauseReading{}), bench::VoluntarySwitches{0}),
+        with_planted_switches(end, bench::VoluntarySwitches{1}));
+    CHECK(unread.basis == bench::PauseBasis::NotMeasured && !unread.is_over_bound());
+}
+
+// The report of a Run with a planted pause of 2 ms, or none when the host
+// gives no CPU to pin.  A hog thread starts before the measurement and
 // sleeps.  In the sampled loop, the body asks for the hog and spins until it
 // is done.  The hog pins itself to the CPU of the measuring thread and takes
 // that CPU for 2 ms of its own CPU time, so the measuring thread cannot run
 // for those 2 ms.  The steal column of /proc/stat counts ticks of 10 ms and
-// reads such a pause as zero.  The pause check reports at least 1.9 ms of lost
-// time and marks the run.  The test runs on loaded CPUs, so it checks only
-// that the planted pause is caught.
-void test_planted_pause_is_caught() {
+// reads such a pause as zero.  At the next call, the body sleeps for 50 us.
+// The thread then makes a voluntary switch in the window, as a block of the
+// thread in the kernel can make it on a loaded host.  The Run takes the
+// planted counts of voluntary switches in place of the counts of the kernel.
+[[nodiscard]] ::fixy::Option<bench::Report> measure_planted_pause(bench::PlantedSwitches planted) {
     namespace eff = ::foundation::effects;
     using Starter = eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>;
     constexpr std::uint64_t kHogNs = 2000000;
     constexpr std::uint64_t kPollNs = 50000;
+    constexpr std::uint64_t kSleepNs = 50000;
     constexpr std::uint32_t kTriggerCall = 40;
     const int first_cpu = []() noexcept {
         constexpr ::fixy::InitLoadCtx startup{eff::testing::init()};
         return crucible::warden::allowed_cpus(startup).first().value_or(-1);
     }();
-    if (first_cpu < 0) return;
+    if (first_cpu < 0) return ::fixy::none;
     ::fixy::Atomic<bool> is_hog_asked{false};
     ::fixy::Atomic<bool> is_hog_pinned{false};
     ::fixy::Atomic<bool> is_hog_done{false};
@@ -1451,17 +1494,25 @@ void test_planted_pause_is_caught() {
         while (now() - start < kHogNs) {}
         is_hog_done.store_release(true);
     };
-    auto measure = [&is_hog_asked, &is_hog_done, first_cpu]() noexcept {
+    auto measure = [&is_hog_asked, &is_hog_done, first_cpu, planted]() noexcept {
+        const ::fixy::InitLoadCtx startup{eff::testing::init()};
+        const auto sleeper = ::fixy::time::mint_bounded_sleep<kSleepNs>(startup);
         std::uint32_t calls = 0;
-        bench::Report report =
-            bench::Run("planted pause").core(first_cpu).samples(200).warmup(1).batch(1).measure([&]() noexcept {
-                ++calls;
-                if (calls != kTriggerCall) return;
-                is_hog_asked.store_release(true);
-                while (!is_hog_done.load_acquire()) {
-                    CRUCIBLE_SPIN_PAUSE;
-                }
-            });
+        bench::Report report = bench::Run("planted pause")
+                                   .core(first_cpu)
+                                   .samples(200)
+                                   .warmup(1)
+                                   .batch(1)
+                                   .pause_switches_for_test(kTest, planted)
+                                   .measure([&]() noexcept {
+                                       ++calls;
+                                       if (calls == kTriggerCall + 1) static_cast<void>(sleeper.sleep_for(kSleepNs));
+                                       if (calls != kTriggerCall) return;
+                                       is_hog_asked.store_release(true);
+                                       while (!is_hog_done.load_acquire()) {
+                                           CRUCIBLE_SPIN_PAUSE;
+                                       }
+                                   });
         // A body that never asked for the hog lets it end here, so the join
         // after the measure ends.
         is_hog_asked.store_release(true);
@@ -1470,29 +1521,59 @@ void test_planted_pause_is_caught() {
     auto values = ::fixy::thread::run_beside(Starter{eff::testing::bg()}, ::fixy::thread::ThreadOptions{},
                                              std::move(hog), measure)
                       .expect("the thread door starts the thread of the planted pause");
-    const bench::Report& paused = values.at(::fixy::index<1>());
-    if (!paused.pinned_cpu.is_valid()) return;
+    auto [hog_end, paused] = std::move(values);
+    if (!paused.pinned_cpu.is_valid()) return ::fixy::none;
     CHECK(is_hog_pinned.load_acquire() && is_hog_done.load_acquire());
-    // The body spins and never sleeps, so the measuring thread makes no
-    // voluntary switch in the window, and the check judges it by its lost
-    // time.  The readings open no file between their clocks.  So the read-set
-    // tracer of `loop test-step`, which stops each open, adds no switch and no
-    // arrival in the window (the pause check of bench/bench_harness.h).  The
-    // first run of each new build of the test is a traced run.
-    CHECK(paused.pause.basis == bench::PauseBasis::LostTime);
-    CHECK(paused.pause.lost_ns >= 1900000u);
-    CHECK(paused.pause.own_ns() >= 1900000u);
-    CHECK(paused.pause.is_over_bound());
-    // The window of the planted pause has its own check, and it marks that
-    // window (the windows of bench/bench_harness.h).
-    CHECK(paused.paused_windows >= 1u);
-    const ::fixy::TextView basis = paused.pause.basis == bench::PauseBasis::LostTime ? ::fixy::TextView{"lost time"}
-                                                                                     : ::fixy::TextView{"run delay"};
-    ::fixy::report(::fixy::Sink::Err,
-                   "test_bench_harness: the planted pause of 2 ms lost {} us of {} us, with a run delay of {} us.  The "
-                   "check judged it by its {}\n",
-                   paused.pause.lost_ns / 1000, paused.pause.wall_ns / 1000, paused.pause.own.run_delay_ns / 1000,
-                   basis);
+    return ::fixy::some(std::move(paused));
+}
+
+// The planted pause, with planted counts that tell the Run that the measuring
+// thread did not sleep.  The sleep of the body and a block of the thread in
+// the kernel thus cannot change the basis, and the check judges the thread by
+// its lost time.  The pause check reports at least 1.9 ms of lost time and
+// marks the run.  The test runs on loaded CPUs, so it checks only lower
+// bounds.
+void test_planted_pause_is_caught() {
+    measure_planted_pause(
+        bench::PlantedSwitches{.before = bench::VoluntarySwitches{0}, .after = bench::VoluntarySwitches{0}})
+        .match(
+            [](bench::Report paused) noexcept {
+                CHECK(paused.pause.basis == bench::PauseBasis::LostTime);
+                CHECK(paused.pause.lost_ns >= 1900000u);
+                CHECK(paused.pause.own_ns() >= 1900000u);
+                CHECK(paused.pause.is_over_bound());
+                // The window of the planted pause has its own check, and it
+                // marks that window (the windows of bench/bench_harness.h).
+                CHECK(paused.window_basis == bench::PauseBasis::LostTime && paused.paused_windows >= 1u);
+                ::fixy::report(::fixy::Sink::Err,
+                               "test_bench_harness: the planted pause of 2 ms lost {} us of {} us, with a run delay "
+                               "of {} us in {} arrivals\n",
+                               paused.pause.lost_ns / 1000, paused.pause.wall_ns / 1000,
+                               paused.pause.own.run_delay_ns / 1000, paused.pause.own.arrivals);
+            },
+            []() noexcept {});
+}
+
+// The planted pause, with planted counts that tell the Run that the measuring
+// thread slept, so the check judges the thread by its run delay.  The thread
+// waits to run while the hog holds its CPU, so its run delay holds the planted
+// pause, and the run is marked.  The windows are not judged for a thread that
+// slept.
+void test_planted_sleep_is_judged_by_run_delay() {
+    measure_planted_pause(
+        bench::PlantedSwitches{.before = bench::VoluntarySwitches{0}, .after = bench::VoluntarySwitches{1}})
+        .match(
+            [](bench::Report paused) noexcept {
+                CHECK(paused.pause.basis == bench::PauseBasis::RunDelay);
+                CHECK(paused.pause.own.run_delay_ns >= 1900000u);
+                CHECK(paused.pause.own_ns() == paused.pause.own.run_delay_ns);
+                CHECK(paused.pause.is_over_bound());
+                CHECK(paused.window_basis == bench::PauseBasis::NotMeasured && paused.paused_windows == 0u);
+                ::fixy::report(::fixy::Sink::Err,
+                               "test_bench_harness: the planted sleep ran {} us of run delay in {} arrivals\n",
+                               paused.pause.own.run_delay_ns / 1000, paused.pause.own.arrivals);
+            },
+            []() noexcept {});
 }
 
 }  // namespace
@@ -1523,7 +1604,9 @@ int main() {
     test_fan_out_core_of_a_claim();
     test_pins_of_the_threads_of_a_run();
     test_pause_between_planted_readings();
+    test_planted_switches_replace_only_the_count();
     test_planted_pause_is_caught();
+    test_planted_sleep_is_judged_by_run_delay();
     test_processor_of_stat();
     test_environment_values();
     test_texts_of_reports();
