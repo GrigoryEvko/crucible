@@ -427,6 +427,12 @@ static_assert(!holds_loose_borrow_(^^StatedAddress<void const*>, ^^Family));
 static_assert(holds_loose_borrow_(^^StatedAddress<int*>, ^^Family));
 static_assert(!ArenaKeeps<Option<void*>, Family>, "an Option names a void* with no mark: a borrow with no type");
 
+// The key of a foreign address holds a word and no pointer, and it gives no
+// pointer back, so an object of an arena keeps it, alone and in an Option.
+struct ForeignKeyOwner {};
+static_assert(ArenaKeeps<ForeignAddressKey<ForeignKeyOwner>, Family>
+              && ArenaKeeps<Option<ForeignAddressKey<ForeignKeyOwner>>, Family>);
+
 // The owner of a borrow of the base is owner_brand of
 // foundation/core/TypeParts.h: the second type argument of a Ref, a Link and
 // an ArenaRun, which state names_owner_second.  A View names no owner.  An

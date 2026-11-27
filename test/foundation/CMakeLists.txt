@@ -4047,6 +4047,35 @@ foundation_neg_compile_test(neg_core_address_key_of_word
 # device and the gate of a run of bytes are disjunctions, so their fixtures
 # take a concept depth of 3, and each regex names the part that fails.
 foundation_test(test_core_data_address)
+# The key of a foreign address.  No byte door makes one, no pointer and no
+# order comes back from one, only the members of its owner re-mint its
+# address or make the key of a word, and its mint takes a class as the owner
+# and a RunAddress as the address.  An object of an arena keeps a key and no
+# RunAddress.
+foundation_neg_compile_test(neg_core_foreign_address_key_bit_cast
+  "no matching function for call to .bit_cast<foundation::core::ForeignAddressKey<\\{anonymous\\}::Owner> >\\(const uintptr_t&\\)."
+  "required for the satisfaction of .BitValid<To>. \\[with To = foundation::core::ForeignAddressKey<<unnamed>::Owner>\\]")
+foundation_neg_compile_test(neg_core_foreign_address_key_pointer
+  "could not convert .key. from .const foundation::core::ForeignAddressKey<\\{anonymous\\}::Owner>. to .foundation::core::RunAddress."
+  "neg_core_foreign_address_key_pointer\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_foreign_address_key_ordered
+  "no match for .operator<."
+  "operand types are .const foundation::core::ForeignAddressKey<\\{anonymous\\}::Owner>. and .const foundation::core::ForeignAddressKey<\\{anonymous\\}::Owner>.")
+foundation_neg_compile_test(neg_core_foreign_address_key_remint_outside
+  "foundation::core::ForeignAddressKey<Owner>::remint_\\(foundation::core::ForeignAddressKey<Owner>, std::size_t\\) .with Owner = \\{anonymous\\}::Owner"
+  "is private within this context")
+foundation_neg_compile_test(neg_core_foreign_address_key_word_outside
+  "foundation::core::ForeignAddressKey<Owner>::of_word_\\(uintptr_t\\) .with Owner = \\{anonymous\\}::Owner"
+  "is private within this context")
+foundation_neg_compile_test(neg_core_foreign_address_key_owner_not_class
+  "no matching function for call to .mint_foreign_address_key<int>\\(foundation::core::RunAddress\\)."
+  "required for the satisfaction of .ForeignAddressOwner<Owner>. \\[with Owner = int\\]")
+foundation_neg_compile_test(neg_core_foreign_address_key_from_pointer
+  "could not convert .& byte. from .unsigned char\\*. to .foundation::core::RunAddress."
+  "neg_core_foreign_address_key_from_pointer\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_bump_arena_make_run_address
+  "use of deleted function .void foundation::core::BumpArena<Brand>::make\\(this foundation::core::BumpArena<Brand>&, Marker, Args&& ...\\) .with T = \\{anonymous\\}::HoldsAddress"
+  "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
 foundation_neg_compile_test(neg_core_data_address_null_through_key
   "static constexpr foundation::core::detail::RunAddressKey foundation::core::detail::RunAddressDoor::key\\(\\). is private within this context"
   "is_null_address")

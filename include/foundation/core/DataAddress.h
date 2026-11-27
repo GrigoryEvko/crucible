@@ -51,6 +51,7 @@
 
 #include <foundation/ByteSeal.h>
 #include <foundation/NoObject.h>
+#include <foundation/Platform.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Region.h>
@@ -319,5 +320,110 @@ template <class Pointer>
 // takes a void*.  The pointer is not null.  The caller reads the run only on
 // the device that the holder of the address states.
 [[nodiscard]] inline void* foreign_pointer(RunAddress address) noexcept { return address.address_; }
+
+// ── ForeignAddressKey ────────────────────────────────────────────────────
+
+// The word of a ForeignAddressKey: the bits of its address.  A key holds its
+// word as a private member, and only the private constructor of a key takes a
+// word, so a word makes no key outside the members of its owner and the mint.
+// No integer and no order comes back from a key.
+enum class ForeignAddressWord : std::uintptr_t {
+};
+
+// A class that owns the keys of the foreign addresses that its objects hold:
+// the one class whose members re-mint an address from such a key.
+template <class Owner>
+concept ForeignAddressOwner = std::is_class_v<Owner> && !std::is_const_v<Owner> && !std::is_volatile_v<Owner>;
+
+template <class Owner>
+    requires ForeignAddressOwner<Owner>
+class ForeignAddressKey;
+
+// The key of the address, which Owner holds and re-mints (the definition
+// follows the key).  The mint is a friend of each key.
+template <class Owner>
+    requires ForeignAddressOwner<Owner>
+[[nodiscard]] ForeignAddressKey<Owner> mint_foreign_address_key(RunAddress address) noexcept;
+
+// The key of an address that a foreign ABI gave, for an object that outlives
+// the call that gave it, such as a record of an arena.  A key compares for
+// equality and gives the AddressKey of its address.  It has no order and no
+// hash of its own, because an address changes from run to run, and an order
+// of addresses breaks the same bits on each run.  No pointer and no integer
+// comes back from a key.
+//
+// Owner is the one class whose members re-mint a RunAddress from a key, with
+// remint_.  So no other code reaches the bytes at the address of a key.
+// mint_foreign_address_key is the one door from a RunAddress, so each key
+// holds the address of a RunAddress, which is not null.  The class carries
+// no_start_over_bytes, so no byte door of the base makes a key or a class
+// that holds one: the bit cast and the decode of the Scalar family, the
+// decode of the Protocol family and each start of life over bytes refuse it.
+//
+// The copy is trivial and the key holds no pointer, so a holder of a key
+// stays trivially copyable, and an object of an arena can hold a key.  The
+// word zero, which no key holds, is the empty value of an Option of a key, so
+// that Option takes one word.
+template <class Owner>
+    requires ForeignAddressOwner<Owner>
+class[[= ::foundation::lifetime::no_start_over_bytes{}]] ForeignAddressKey {
+    ForeignAddressWord word_{};
+
+    friend Owner;
+    template <class KeyOwner>
+        requires ForeignAddressOwner<KeyOwner>
+    friend ForeignAddressKey<KeyOwner> mint_foreign_address_key(RunAddress address) noexcept;
+
+    constexpr explicit ForeignAddressKey(ForeignAddressWord word) noexcept : word_{word} {}
+
+    // The key of a word that the owner gives in place of the address of a
+    // foreign ABI, such as a synthetic address of a test, which is an integer
+    // from its start.  The word is not zero, because zero is the empty value
+    // of an Option of a key.  Only the members of Owner call it, so each key
+    // of a word comes from a door of the owner.  A constant word of zero is a
+    // compile error.  O(1).
+    [[nodiscard]] static constexpr ForeignAddressKey of_word_(std::uintptr_t word) noexcept {
+        CRUCIBLE_FATAL_INVARIANT(word != 0);
+        return ForeignAddressKey{ForeignAddressWord{word}};
+    }
+
+    // The RunAddress bytes below the address of the key, or no value for a
+    // count of bytes at or past the address.  Only the members of Owner call
+    // it.  A foreign ABI gave the address, so the door cannot prove that the
+    // bytes live, and the caller reads them only on the device that its
+    // record states.  O(1).
+    [[nodiscard]] static Option<RunAddress> remint_(ForeignAddressKey key, std::size_t bytes) noexcept {
+        std::uintptr_t const value = std::to_underlying(key.word_);
+        if (bytes >= value) return Option<RunAddress>{none};
+        return mint_foreign_run_address(__builtin_bit_cast(void*, value - bytes));
+    }
+
+public:
+    // The empty value of an Option of a key, and its test.  Each takes the key
+    // that only the storage of an Option builds.
+    [[nodiscard]] static constexpr ForeignAddressKey niche_empty(niche_key<ForeignAddressKey> const& /*key*/) noexcept {
+        return ForeignAddressKey{ForeignAddressWord{}};
+    }
+    [[nodiscard]] constexpr bool is_niche_empty(niche_key<ForeignAddressKey> const& /*key*/) const noexcept {
+        return word_ == ForeignAddressWord{};
+    }
+
+    // The key of the address, for a lookup such as the key of a storage.
+    [[nodiscard]] AddressKey address_key() const noexcept {
+        return mint_address_key(__builtin_bit_cast(void const*, std::to_underlying(word_)));
+    }
+
+    [[nodiscard]] friend constexpr bool operator==(ForeignAddressKey const& left,
+                                                   ForeignAddressKey const& right) noexcept {
+        return left.word_ == right.word_;
+    }
+};
+
+// The key of the address, which Owner holds and re-mints.  O(1).
+template <class Owner>
+    requires ForeignAddressOwner<Owner>
+[[nodiscard]] ForeignAddressKey<Owner> mint_foreign_address_key(RunAddress address) noexcept {
+    return ForeignAddressKey<Owner>{ForeignAddressWord{__builtin_bit_cast(std::uintptr_t, foreign_pointer(address))}};
+}
 
 }  // namespace foundation::core

@@ -1232,6 +1232,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::DataAddress,
      "the address of a run of data and its device: the address changes from run to run, so it is never a value in "
      "a kernel signature"},
+    {^^::foundation::core::ForeignAddressKey,
+     "the key of an address that a foreign ABI gave: it changes from run to run, so it is never a value in a kernel "
+     "signature"},
     {^^::foundation::core::Identity,
      "the run-time identity of one brand instance: it changes from run to run, so it is never a value in a kernel "
      "signature"},

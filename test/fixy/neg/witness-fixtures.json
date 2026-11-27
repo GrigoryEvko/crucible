@@ -662,6 +662,11 @@
       "constructor": "(?<!~)\\bFixedListSlotsDoor\\("
     },
     {
+      "name": "neg_witness_core_foreignaddresskey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bForeignAddressKey\\("
+    },
+    {
       "name": "neg_witness_core_foreigntext_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bForeignText\\("
@@ -2380,6 +2385,10 @@
     },
     {
       "type": "foundation::core::DataAddress<std::byte>",
+      "header": "foundation/core/DataAddress.h"
+    },
+    {
+      "type": "foundation::core::ForeignAddressKey<foundation::core::RunAddress>",
       "header": "foundation/core/DataAddress.h"
     },
     {

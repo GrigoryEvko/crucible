@@ -79,6 +79,7 @@
 #include <foundation/core/ArenaFrame.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/BumpArena.h>
+#include <foundation/core/DataAddress.h>
 #include <foundation/core/PackedWord.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/RunSet.h>
@@ -159,6 +160,7 @@ inline constexpr std::meta::info leaf_payload_families[] = {
     ^^::fixy::Saturated,  // a value and a clamped flag; no row
     ^^::foundation::core::PackedWord,  // one unsigned word of bit fields; no row
     ^^::foundation::core::BumpArena,  // an arena holds storage and no effect row
+    ^^::foundation::core::ForeignAddressKey,  // one word of the key of an address, with no pointer; no row
 };
 
 [[nodiscard]] consteval bool is_specialization(std::meta::info type) noexcept {

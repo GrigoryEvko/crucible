@@ -998,6 +998,10 @@ witness <foundation/core/DataAddress.h> no-match | foundation::core::RunAddress 
 witness <foundation/core/DataAddress.h> private | foundation::core::detail::RunAddressKey | foundation::core::detail::RunAddressKey{}
 witness <foundation/core/DataAddress.h> deleted | foundation::core::detail::RunAddressDoor | foundation::core::detail::RunAddressDoor{}
 witness <foundation/core/DataAddress.h> no-match | foundation::core::DataAddress<std::byte> | foundation::core::DataAddress<std::byte>{forge::rvalue<void*>(), forge::rvalue<std::byte>()}
+# A ForeignAddressKey has a private constructor from its word, and only its
+# owner and mint_foreign_address_key reach it, so each key comes from a
+# RunAddress through the mint or from a word through a door of the owner.
+witness <foundation/core/DataAddress.h> private | foundation::core::ForeignAddressKey<foundation::core::RunAddress> | foundation::core::ForeignAddressKey<foundation::core::RunAddress>{forge::rvalue<foundation::core::ForeignAddressWord>()}
 # An ErasedAddress has a private constructor from a pointer to void, so each
 # erased address comes from mint_erased_address, whose gate takes an object of
 # a type that is no type of bytes and not const.

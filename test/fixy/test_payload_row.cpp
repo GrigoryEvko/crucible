@@ -51,10 +51,10 @@ static_assert(sizeof(c::detail::transparent_payload_families) == 19 * sizeof(std
               "The nine containers (WriteOnce, FixedArray, HeapArray, RunSet, ArenaRunSet, FrameRunSetSlot, "
               "ArenaRun, ArenaParcel, std::vector) hide their elements, a Box hides its object, and an Option hides "
               "its payload.  A new wrapper that unwraps is one line here.");
-static_assert(std::size(c::detail::leaf_payload_families) == 3,
-              "Three families are admitted as leaves: a Saturated value, a PackedWord and a BumpArena.  Every "
-              "entry is a claim that the template hides no effect row, which is why a leaf needs a line rather "
-              "than falling through to a default.");
+static_assert(std::size(c::detail::leaf_payload_families) == 4,
+              "Four families are admitted as leaves: a Saturated value, a PackedWord, a BumpArena and a "
+              "ForeignAddressKey.  Every entry is a claim that the template hides no effect row, which is why a "
+              "leaf needs a line rather than falling through to a default.");
 
 // The row a payload carries is a type, and the types below are the ones
 // a stage's admission check compares.  Instantiating each as a runtime

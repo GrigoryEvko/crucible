@@ -381,12 +381,17 @@ inline constexpr ByteCopyAllowance byte_copy_ledger[] = {
      "a ring cell holds a word, so the word stays trivially copyable.  Only claim_box with the key of the authority "
      "gives the object of a word, only the members of the authority build that key, and the authority claims only "
      "the words that its own ring holds.  So a byte image of a word gives a word that no door claims"},
+    {^^::foundation::core::ForeignAddressKey,
+     "a record that holds a key, such as the descriptor of a tensor, stays trivially copyable, so a byte copy of "
+     "the record only copies a real key that a mint made.  The key carries no_start_over_bytes, so each byte door "
+     "of the base refuses a key made from bytes (neg_core_foreign_address_key_bit_cast, "
+     "neg_tensor_meta_bit_cast, neg_tensor_meta_protocol_decode)"},
 };
 
 // The ledger only shrinks.  Lower this count in the commit that removes an
 // entry.  A new entry also needs a higher count, so the change shows the
 // reason of that entry to its reviewer.
-inline constexpr std::size_t byte_copy_ledger_size = 8;
+inline constexpr std::size_t byte_copy_ledger_size = 9;
 static_assert(std::size(byte_copy_ledger) == byte_copy_ledger_size,
               "the byte-copy ledger changed size.  Lower byte_copy_ledger_size when an entry leaves.  A new entry "
               "needs a reason that a reviewer accepts, and then a higher count");

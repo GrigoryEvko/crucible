@@ -1,8 +1,10 @@
 // The compile-time checks of foundation/core/DataAddress.h.
 #include <foundation/core/DataAddress.h>
 
+#include <foundation/Lifetime.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/Scalar.h>
 
 #include <concepts>
 #include <cstddef>
@@ -104,6 +106,24 @@ static_assert(!ForeignRunPointer<void const*> && !ForeignRunPointer<float const*
 
 // An empty run gives no address, also in a constant evaluation.
 static_assert(mint_run_address(View<unsigned char>{}, 0).is_none());
+
+// The key of a foreign address is one word, and an Option of it is one word
+// too, because no key holds the word zero.  Its copy is trivial, so a holder
+// stays trivially copyable, and it holds no pointer, so an arena can hold it.
+// No byte door makes a key: the bit cast and the decode of the Scalar family
+// and each start of life over bytes refuse it.  It compares for equality and
+// has no order, no offset and no hash of its own.
+struct KeyOwner {};
+using Key = ForeignAddressKey<KeyOwner>;
+static_assert(sizeof(Key) == sizeof(void*) && sizeof(Option<Key>) == sizeof(void*));
+static_assert(std::is_trivially_copyable_v<Key> && std::is_trivially_copyable_v<Option<Key>>);
+static_assert(std::is_standard_layout_v<Key> && std::is_standard_layout_v<Option<Key>>);
+static_assert(!BitValid<Key> && !DecodableFrom<Key, std::uintptr_t>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<Key>);
+static_assert(std::equality_comparable<Key> && !Ordered<Key> && !Offsets<Key>);
+static_assert(!std::is_default_constructible_v<Key> && !std::is_constructible_v<Key, std::uintptr_t>
+              && !std::is_constructible_v<Key, RunAddress>);
+static_assert(ForeignAddressOwner<KeyOwner> && !ForeignAddressOwner<int> && !ForeignAddressOwner<KeyOwner const>);
 
 }  // namespace detail::data_address_checks
 }  // namespace foundation::core

@@ -1760,6 +1760,11 @@ fixy_neg_compile_test(neg_federation_admittance_const_admission
 # Verified -> Unverified has no edge in admitted_retags; the member
 # retag fails its constraint and the note names RetagAllowed with the
 # two tags.
+# The tag of an object by reference names the object, so the mint refuses a
+# temporary, which ends at the end of the full expression.
+fixy_neg_compile_test(neg_tagged_reference_of_temporary
+  "use of deleted function .void fixy::mint_tagged\\(std::remove_reference_t<_Rhs>&&\\)"
+  "the tag names its object by reference, and a temporary object ends at the end of the full expression")
 fixy_neg_compile_test(neg_tagged_retag_not_admitted
   "constraints not satisfied"
   "satisfaction of .RetagAllowed<Tag, NewTag>."

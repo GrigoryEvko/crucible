@@ -203,6 +203,9 @@ using ::foundation::core::to;
 // foreign_c_str does.
 using ::foundation::core::DataAddress;
 using ::foundation::core::DeviceIdentity;
+using ::foundation::core::ForeignAddressKey;
+using ::foundation::core::ForeignAddressOwner;
+using ::foundation::core::mint_foreign_address_key;
 using ::foundation::core::mint_foreign_run_address;
 using ::foundation::core::mint_run_address;
 using ::foundation::core::RunAddress;

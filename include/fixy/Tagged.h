@@ -323,8 +323,19 @@ class Tagged;
 // Sanitized, Verified or Validated, comes from retag and from nothing
 // else.
 template <typename Tag, typename T>
-    requires MintableTagOf<Tag, T>
+    requires MintableTagOf<Tag, T> && (!std::is_reference_v<T>)
 [[nodiscard]] constexpr Tagged<T, Tag> mint_tagged(T value) noexcept(std::is_nothrow_move_constructible_v<T>);
+
+// The tag of an object that the caller holds, by reference.  The tag names
+// the object, so it lives no longer than the object, and the deleted
+// overload refuses a temporary, which ends at the end of the full expression.
+template <typename Tag, typename T>
+    requires MintableTagOf<Tag, T> && std::is_lvalue_reference_v<T>
+[[nodiscard]] constexpr Tagged<T, Tag> mint_tagged(std::remove_reference_t<T>& value CRUCIBLE_LIFETIMEBOUND) noexcept;
+template <typename Tag, typename T>
+    requires MintableTagOf<Tag, T> && std::is_lvalue_reference_v<T>
+void mint_tagged(std::remove_reference_t<T>&& value) =
+    delete("the tag names its object by reference, and a temporary object ends at the end of the full expression");
 
 // Moves the value under a new tag along an admitted edge.  The member
 // form Tagged::retag<To>() forwards here.
@@ -382,8 +393,11 @@ private:
         : impl_{key_{}, std::move(v), typename lattice_type::element_type{}} {}
 
     template <typename S, typename U>
-        requires MintableTagOf<S, U>
+        requires MintableTagOf<S, U> && (!std::is_reference_v<U>)
     friend constexpr Tagged<U, S> mint_tagged(U value) noexcept(std::is_nothrow_move_constructible_v<U>);
+    template <typename S, typename U>
+        requires MintableTagOf<S, U> && std::is_lvalue_reference_v<U>
+    friend constexpr Tagged<U, S> mint_tagged(std::remove_reference_t<U>& value) noexcept;
 
     template <typename To, typename U, typename From>
         requires RetagAllowed<From, To>
@@ -465,9 +479,15 @@ public:
 };
 
 template <typename Tag, typename T>
-    requires MintableTagOf<Tag, T>
+    requires MintableTagOf<Tag, T> && (!std::is_reference_v<T>)
 [[nodiscard]] constexpr Tagged<T, Tag> mint_tagged(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
     return Tagged<T, Tag>{std::move(value)};
+}
+
+template <typename Tag, typename T>
+    requires MintableTagOf<Tag, T> && std::is_lvalue_reference_v<T>
+[[nodiscard]] constexpr Tagged<T, Tag> mint_tagged(std::remove_reference_t<T>& value CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return Tagged<T, Tag>{value};
 }
 
 // The characters of a foreign text under the tag of its boundary.  The tag is

@@ -158,6 +158,46 @@ void test_agrees_with_plain_model() {
     });
 }
 
+// The owner of the keys of the test: the one class whose members re-mint an
+// address from a key.
+struct LineOwner {
+    using Key = ::foundation::core::ForeignAddressKey<LineOwner>;
+
+    [[nodiscard]] static Option<RunAddress> address_below(Key key, std::size_t bytes) noexcept {
+        return Key::remint_(key, bytes);
+    }
+
+    [[nodiscard]] static constexpr Key key_of_word(std::uintptr_t word) noexcept { return Key::of_word_(word); }
+};
+
+// The owner makes the key of a word that is not zero, also in a constant
+// evaluation, and two words give two keys.
+static_assert(LineOwner::key_of_word(0x1000) == LineOwner::key_of_word(0x1000)
+              && !(LineOwner::key_of_word(0x1000) == LineOwner::key_of_word(0x2000)));
+
+// A key holds the address of a RunAddress.  Two keys are equal when they hold
+// one address, and a key gives the AddressKey of its address.  The owner
+// re-mints the address, and the address of each byte below it in the run,
+// and a count of bytes at or past the address gives no address.  An Option of
+// a key holds no key with the word zero.
+void test_foreign_address_key() {
+    with_line([](auto run) noexcept {
+        RunAddress const base = mint_run_address(run, 0).expect("the line holds 64 bytes");
+        RunAddress const middle = mint_run_address(run, 9).expect("the line holds 64 bytes");
+        LineOwner::Key const key = ::foundation::core::mint_foreign_address_key<LineOwner>(middle);
+        LineOwner::Key const copied = key;
+        CRUCIBLE_FATAL_INVARIANT(key == copied);
+        CRUCIBLE_FATAL_INVARIANT(!(key == ::foundation::core::mint_foreign_address_key<LineOwner>(base)));
+        CRUCIBLE_FATAL_INVARIANT(key.address_key() == ::foundation::core::mint_address_key(foreign_pointer(middle)));
+        CRUCIBLE_FATAL_INVARIANT(LineOwner::address_below(key, 0) == Option<RunAddress>::some(middle));
+        CRUCIBLE_FATAL_INVARIANT(LineOwner::address_below(key, 9) == Option<RunAddress>::some(base));
+        CRUCIBLE_FATAL_INVARIANT(LineOwner::address_below(key, ~std::size_t{0}).is_none());
+        Option<LineOwner::Key> const held = Option<LineOwner::Key>::some(key);
+        Option<LineOwner::Key> const empty{none};
+        CRUCIBLE_FATAL_INVARIANT(held.is_some() && empty.is_none());
+    });
+}
+
 }  // namespace
 
 int main() {
@@ -167,5 +207,6 @@ int main() {
     test_foreign_round_trip();
     test_alignment();
     test_agrees_with_plain_model();
+    test_foreign_address_key();
     return 0;
 }

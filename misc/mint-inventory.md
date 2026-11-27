@@ -204,8 +204,9 @@ that the axis does not apply to the row.
 | `mint_sequence_source` | `include/fixy/Stale.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | HS14: 8 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 5 |
-| `mint_tagged(T0_1)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 28 |
-| `mint_tagged(foundation::core::ForeignText)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 28 |
+| `mint_tagged(T0_1)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 29 |
+| `mint_tagged(foundation::core::ForeignText)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 29 |
+| `mint_tagged(std::remove_reference_t<T0_1>&)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 29 |
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_wide_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
