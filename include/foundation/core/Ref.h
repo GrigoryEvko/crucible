@@ -1599,6 +1599,32 @@ template <class Body, class T>
 concept BoxFrameBody =
     BoxFrameCallable<Body, T> && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>;
 
+// The arguments of a frame door of a Box with arguments (the frame of a Box
+// with arguments, below): at least one.  Args holds the type that the door
+// deduces for each argument, so an lvalue gives a reference type and an
+// rvalue gives the type of the value.
+template <class... Args>
+concept BoxFrameArguments = (sizeof...(Args) > 0);
+
+// A callable that takes the object of a Box of T as T& and then each argument
+// with its value category with no throw, and that gives void or a value that
+// holds no borrow and fits a Record.
+template <class Body, class T, class... Args>
+concept BoxFrameCallableWith = std::is_nothrow_invocable_v<Body&&, T&, Args...>
+                            && (std::is_void_v<std::invoke_result_t<Body&&, T&, Args...>>
+                                || (HoldsNoBorrow<std::invoke_result_t<Body&&, T&, Args...>>
+                                    && RecordElement<std::remove_cv_t<std::invoke_result_t<Body&&, T&, Args...>>>));
+
+// The body of the frame door of a Box of T with arguments: the gates of
+// BoxFrameBody, with the arguments after the object.
+template <class Body, class T, class... Args>
+concept BoxFrameBodyWith = BoxFrameCallableWith<Body, T, Args...> && ::foundation::linear::HoldsNoLinearValue<Body>
+                        && StoresNoBorrowOutside<Body>;
+
+// The type that the frame door of a Box of T with arguments gives back.
+template <class Body, class T, class... Args>
+using box_frame_return_with_t = detail::frame_return_t<std::invoke_result_t<Body&&, T&, Args...>, Box<T>>;
+
 // A body whose result does not leave the frame: the refused twin of the door
 // binds to it.
 template <class Body, class T>
@@ -1620,16 +1646,25 @@ template <BoxPayload T, class Body>
     requires DroppableBoxPayload<T> && BoxFrameBody<Body, T>
 [[nodiscard]] box_frame_return_t<Body, T> with_mut(Box<T>&& box, Body&& body) noexcept;
 
+// The frame door of a Box with arguments (the definition below).
+template <BoxPayload T, class Body, class... Args>
+    requires DroppableBoxPayload<T> && BoxFrameArguments<Args...> && BoxFrameBodyWith<Body, T, Args...>
+[[nodiscard]] box_frame_return_with_t<Body, T, Args...> with_mut(Box<T>&& box, Body&& body, Args&&... args) noexcept;
+
 // The door of the frame door of a Box to the key of the frame doors (the
 // doors of the owners above foundation/core/Frame.h).  Its one member is
-// private, and the frame door is its one friend.  The invariant: the frame
-// door reads the object of the Box that moves into its frame, and the Box
-// owns that object alone.  A home owner row of utils/rule-table.txt keeps
-// this definition in this header.
+// private, and the two forms of the frame door are its friends.  The
+// invariant: the frame door reads the object of the Box that moves into its
+// frame, and the Box owns that object alone.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
 class BoxFrameKeyDoor final : ::foundation::NoObject<BoxFrameKeyDoor> {
     template <BoxPayload T, class Body>
         requires DroppableBoxPayload<T> && BoxFrameBody<Body, T>
     friend auto ::foundation::core::with_mut(Box<T>&& box, Body&& body) noexcept -> box_frame_return_t<Body, T>;
+    template <BoxPayload T, class Body, class... Args>
+        requires DroppableBoxPayload<T> && BoxFrameArguments<Args...> && BoxFrameBodyWith<Body, T, Args...>
+    friend auto ::foundation::core::with_mut(Box<T>&& box, Body&& body, Args&&... args) noexcept
+        -> box_frame_return_with_t<Body, T, Args...>;
 
     // The key of the frame doors, for the object of a Box in the frame.
     [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
@@ -1686,6 +1721,69 @@ void with_mut(Owner&& box, Body&& body) = delete(
     "with_mut takes the Box into its frame and gives it back: pass std::move(box), and keep the Box that the call "
     "returns");
 
+// Frame of a Box with arguments
+//   with_mut(std::move(box), body, args...) is the frame door of a Box with
+//   more arguments for the body: body gets the object as T& and then each
+//   argument with its value category, body(object, static_cast<Args&&>(args)
+//   ...).  An lvalue argument stays with the caller, and the body gets a
+//   reference to it.  An rvalue argument moves through the door to the body,
+//   so a body that holds no linear value takes a linear value of the caller,
+//   such as a token, as a parameter and consumes it there: the second form
+//   that the refusal of a linear body names.  The rule must-consume reads
+//   each linear parameter of the body that takes a value, so a body that
+//   leaves such a token is a finding.  The basis of the forwarding: each of
+//   with_mut and with_view calls the body exactly once on each path, with no
+//   return before the call and no second call, so a token that moves into
+//   the door always reaches the body.  The body passes the gates of the door
+//   with no arguments, and the door gives the Box back in the same way.
+//   with_view(box, body, args...) is the same form of the read frame below.
+//   build_at of foundation/core/Array.h, the other door of the base with
+//   arguments for a function, refuses a linear argument, because its make
+//   builds an element and has no place to consume a token.
+
+// The frame door of a Box with arguments.  The door calls the body exactly
+// once, and a Box with no object ends the process before the call.
+// Complexity: O(1), and the cost of the body.
+template <BoxPayload T, class Body, class... Args>
+    requires DroppableBoxPayload<T> && BoxFrameArguments<Args...> && BoxFrameBodyWith<Body, T, Args...>
+[[= ::foundation::linear::borrow_match{}]] [[nodiscard]] box_frame_return_with_t<Body, T, Args...>
+    with_mut(Box<T>&& box, Body&& body, Args&&... args) noexcept {
+    using Given = std::invoke_result_t<Body&&, T&, Args...>;
+    T& object = frame_object_(BoxFrameKeyDoor::key_(), box);
+    Box<T> held{std::move(box)};
+    if constexpr (std::is_void_v<Given>) {
+        static_cast<Body&&>(body)(object, static_cast<Args&&>(args)...);
+        return held;
+    } else {
+        return detail::frame_return_t<Given, Box<T>>{static_cast<Body&&>(body)(object, static_cast<Args&&>(args)...),
+                                                     std::move(held)};
+    }
+}
+
+template <BoxPayload T, class Body, class... Args>
+    requires DroppableBoxPayload<T> && BoxFrameArguments<Args...> && std::is_nothrow_invocable_v<Body&&, T&, Args...>
+              && (!BoxFrameCallableWith<Body, T, Args...>) && ::foundation::linear::HoldsNoLinearValue<Body>
+void with_mut(Box<T>&& box, Body&& body, Args&&... args) =
+    delete("the result of a frame door leaves the frame, so it holds no reference and no address: give a plain value");
+
+template <BoxPayload T, class Body, class... Args>
+    requires DroppableBoxPayload<T> && BoxFrameArguments<Args...> && (!::foundation::linear::HoldsNoLinearValue<Body>)
+              && std::is_invocable_v<Body&&, T&, Args...>
+void with_mut(Box<T>&& box, Body&& body, Args&&... args) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+template <BoxPayload T, class Body, class... Args>
+    requires CompleteBoxPayload<T> && (!DroppableBoxPayload<T>) && BoxFrameArguments<Args...>
+void with_mut(Box<T>&& box, Body&& body, Args&&... args) =
+    delete("a Box of a linear payload has no frame door, because the body could move the object out and leave the Box "
+           "full: take the object out with consume");
+
+template <class Owner, class Body, class... Args>
+    requires(std::is_lvalue_reference_v<Owner> || std::is_const_v<std::remove_reference_t<Owner>>)
+             && ::foundation::reflect::IsInstanceOf<std::remove_cvref_t<Owner>, ^^Box> && BoxFrameArguments<Args...>
+void with_mut(Owner&& box, Body&& body, Args&&... args) = delete(
+    "with_mut takes the Box into its frame and gives it back: pass std::move(box), and keep the Box that the call "
+    "returns");
+
 // Read frame of a Box
 //   with_view(box, body) lends the object of a Box to body as T const& in
 //   place, for the time of the call, and gives the result of body.  The Box
@@ -1735,6 +1833,44 @@ void with_view(Box<T> const& box, Body&& body) =
 template <BoxPayload T, class Body>
     requires CompleteBoxPayload<T> && LinearBoxBody<Body, T const&>
 void with_view(Box<T> const& box, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A callable that takes the object of a Box of T as T const& and then each
+// argument with its value category with no throw, and that gives void or a
+// value that holds no borrow.
+template <class Body, class T, class... Args>
+concept BoxReadCallableWith = std::is_nothrow_invocable_v<Body&&, T const&, Args...>
+                           && (std::is_void_v<std::invoke_result_t<Body&&, T const&, Args...>>
+                               || HoldsNoBorrow<std::invoke_result_t<Body&&, T const&, Args...>>);
+
+// The body of the read frame of a Box of T with arguments: the gates of
+// BoxReadBody, with the arguments after the object.
+template <class Body, class T, class... Args>
+concept BoxReadBodyWith = BoxReadCallableWith<Body, T, Args...> && ::foundation::linear::HoldsNoLinearValue<Body>
+                       && StoresNoBorrowOutside<Body>;
+
+// The read frame of a Box with arguments (the frame of a Box with arguments,
+// above): body gets the object as T const& and then each argument with its
+// value category.  The door calls the body exactly once, and a Box with no
+// object ends the process before the call.  Complexity: O(1), and the cost
+// of the body.
+template <BoxPayload T, class Body, class... Args>
+    requires CompleteBoxPayload<T> && BoxFrameArguments<Args...> && BoxReadBodyWith<Body, T, Args...>
+[[= ::foundation::linear::borrow_match{}]] auto with_view(Box<T> const& box, Body&& body, Args&&... args) noexcept {
+    return static_cast<Body&&>(body)(*box, static_cast<Args&&>(args)...);
+}
+
+template <BoxPayload T, class Body, class... Args>
+    requires CompleteBoxPayload<T> && BoxFrameArguments<Args...>
+              && std::is_nothrow_invocable_v<Body&&, T const&, Args...> && (!BoxReadCallableWith<Body, T, Args...>)
+              && ::foundation::linear::HoldsNoLinearValue<Body>
+void with_view(Box<T> const& box, Body&& body, Args&&... args) =
+    delete("the result of the read frame of a Box holds no reference and no address, because a later move or end of "
+           "the Box ends the object: give a plain value");
+
+template <BoxPayload T, class Body, class... Args>
+    requires CompleteBoxPayload<T> && BoxFrameArguments<Args...> && (!::foundation::linear::HoldsNoLinearValue<Body>)
+              && std::is_invocable_v<Body&&, T const&, Args...>
+void with_view(Box<T> const& box, Body&& body, Args&&... args) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // Size bytes of heap storage at the alignment Align, with no object in it.
 // The annotation no_start_over_bytes refuses a Hole to the checked lifetime

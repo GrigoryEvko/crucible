@@ -35,6 +35,8 @@
 //   - The setup splits one root into two tokens.  The pool of the
 //     channel takes the producer token, and the consumer handle takes
 //     the consumer token.
+//   - Each ring and each channel lives on the heap, and the row runs in
+//     the frame with_mut of its Box.
 //   - Each handle lives in the body of a frame door of
 //     fixy/concurrent/PermissionedChannel.h.  The frame opens before
 //     the timed row, and the row runs in its body.  A report owns its
@@ -146,24 +148,29 @@ bench::Report bare_mpsc_pop() {
 bench::Report wrapped_mpsc_pop() {
     auto [producer_root, consumer_perm] = bench_halves();
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(kAlloc, std::move(producer_root));
-    // The producer share goes back to the pool at the end of its frame, before
-    // the consumer frame opens.
-    auto const filled = ::fixy::concurrent::with_producer(*ch, kNondet, [](auto p) noexcept {
-        for (Item i = 0; i < kCap / 2; ++i)
-            (void)p.try_push(i);
-    });
-    CRUCIBLE_BENCH_CHECK(filled.is_some());
-    // A pop of an MPSC channel is a merge, so it takes the tag of Nondet.
-    const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
     bench::Report report{};
-    // The row reaches the linear consumer handle through a Ref.
-    ::fixy::concurrent::with_consumer(*ch, std::move(consumer_perm), [&merge, &report](auto c) noexcept {
-        report = bench::run("wrapped Permissioned MPSC.ConsumerHandle::try_pop", [&merge, popper = ::fixy::to(c)] {
-            auto v = popper->try_pop(merge);
-            bench::do_not_optimize(v);
+    // The consumer token moves through the frame door of the Box to the body,
+    // which takes it as a parameter and gives it to the consumer frame.
+    auto const pop_row = [&report](Channel& channel, auto token) noexcept {
+        // The producer share goes back to the pool at the end of its frame,
+        // before the consumer frame opens.
+        auto const filled = ::fixy::concurrent::with_producer(channel, kNondet, [](auto p) noexcept {
+            for (Item i = 0; i < kCap / 2; ++i)
+                (void)p.try_push(i);
         });
-        ::foundation::linear::drop(std::move(c));
-    });
+        CRUCIBLE_BENCH_CHECK(filled.is_some());
+        // A pop of an MPSC channel is a merge, so it takes the tag of Nondet.
+        const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
+        // The row reaches the linear consumer handle through a Ref.
+        ::fixy::concurrent::with_consumer(channel, std::move(token), [&merge, &report](auto c) noexcept {
+            report = bench::run("wrapped Permissioned MPSC.ConsumerHandle::try_pop", [&merge, popper = ::fixy::to(c)] {
+                auto v = popper->try_pop(merge);
+                bench::do_not_optimize(v);
+            });
+            ::foundation::linear::drop(std::move(c));
+        });
+    };
+    ch = ::fixy::with_mut(std::move(ch), pop_row, std::move(consumer_perm));
     return report;
 }
 
@@ -191,22 +198,25 @@ bench::Report handle_mpsc_round_trip() {
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(alloc, std::move(producer_root));
     const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
     bench::Report report{};
-    auto const lent = ::fixy::concurrent::with_producer(
-        *ch, kNondet, [&ch, &report, merge, consumer_perm = std::move(consumer_perm)](auto p) mutable noexcept {
-            ::fixy::concurrent::with_consumer(*ch, std::move(consumer_perm),
-                                              [&p, &report, merge](auto consumer) noexcept {
-                                                  Item i = 0;
-                                                  auto round = [&p, &i, merge, c = std::move(consumer)]() mutable {
-                                                      const bool pushed = p.try_push(++i);
-                                                      auto v = c.try_pop(merge);
-                                                      bench::do_not_optimize(pushed);
-                                                      bench::do_not_optimize(v);
-                                                  };
-                                                  report = bench::run("MPSC push, then ConsumerHandle::try_pop", round);
-                                                  end_round(std::move(round));
-                                              });
-        });
-    CRUCIBLE_BENCH_CHECK(lent.is_some());
+    auto const round_row = [&report, merge](Channel& channel, auto token) noexcept {
+        auto const lent = ::fixy::concurrent::with_producer(
+            channel, kNondet, [&channel, &report, merge, token = std::move(token)](auto p) mutable noexcept {
+                ::fixy::concurrent::with_consumer(
+                    channel, std::move(token), [&p, &report, merge](auto consumer) noexcept {
+                        Item i = 0;
+                        auto round = [&p, &i, merge, c = std::move(consumer)]() mutable {
+                            const bool pushed = p.try_push(++i);
+                            auto v = c.try_pop(merge);
+                            bench::do_not_optimize(pushed);
+                            bench::do_not_optimize(v);
+                        };
+                        report = bench::run("MPSC push, then ConsumerHandle::try_pop", round);
+                        end_round(std::move(round));
+                    });
+            });
+        CRUCIBLE_BENCH_CHECK(lent.is_some());
+    };
+    ch = ::fixy::with_mut(std::move(ch), round_row, std::move(consumer_perm));
     return report;
 }
 
@@ -218,24 +228,27 @@ bench::Report endpoint_mpsc_round_trip() {
     const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(alloc, std::move(producer_root));
     bench::Report report{};
-    auto const lent = ::fixy::concurrent::with_producer(
-        *ch, kNondet, [&ch, &report, consumer_perm = std::move(consumer_perm)](auto p) mutable noexcept {
-            ::fixy::concurrent::with_consumer(*ch, std::move(consumer_perm), [&p, &report](auto consumer) noexcept {
-                Item i = 0;
-                auto round =
-                    [&p, &i,
-                     endpoint = ::fixy::channels::mint_endpoint<Channel, ::fixy::channels::Direction::Consumer>(
-                         MergeCtx{::foundation::effects::testing::test()}, std::move(consumer))]() mutable {
-                        const bool pushed = p.try_push(++i);
-                        auto v = endpoint.try_recv();
-                        bench::do_not_optimize(pushed);
-                        bench::do_not_optimize(v);
-                    };
-                report = bench::run("MPSC push, then Endpoint::try_recv", round);
-                end_round(std::move(round));
+    auto const endpoint_row = [&report](Channel& channel, auto token) noexcept {
+        auto const lent = ::fixy::concurrent::with_producer(
+            channel, kNondet, [&channel, &report, token = std::move(token)](auto p) mutable noexcept {
+                ::fixy::concurrent::with_consumer(channel, std::move(token), [&p, &report](auto consumer) noexcept {
+                    Item i = 0;
+                    auto round =
+                        [&p, &i,
+                         endpoint = ::fixy::channels::mint_endpoint<Channel, ::fixy::channels::Direction::Consumer>(
+                             MergeCtx{::foundation::effects::testing::test()}, std::move(consumer))]() mutable {
+                            const bool pushed = p.try_push(++i);
+                            auto v = endpoint.try_recv();
+                            bench::do_not_optimize(pushed);
+                            bench::do_not_optimize(v);
+                        };
+                    report = bench::run("MPSC push, then Endpoint::try_recv", round);
+                    end_round(std::move(round));
+                });
             });
-        });
-    CRUCIBLE_BENCH_CHECK(lent.is_some());
+        CRUCIBLE_BENCH_CHECK(lent.is_some());
+    };
+    ch = ::fixy::with_mut(std::move(ch), endpoint_row, std::move(consumer_perm));
     return report;
 }
 

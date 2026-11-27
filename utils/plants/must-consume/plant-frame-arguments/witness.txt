@@ -1,0 +1,14 @@
+# The frames of a Box with arguments forward an rvalue argument to the body
+# (the frame of a Box with arguments of foundation/core/Ref.h), so the body
+# owns each token that moves into a door.  A body of with_mut that ignores
+# its token gives the line unconsumed, and a body of with_view that consumes
+# its token on one path gives the line unconsumed-on-path.  The directory src/
+# has the enforce mode error, and the tree holds no ledger of must-consume, so
+# each counted line is a compile error.
+compile frames src/frames.cpp must-consume=on
+flag frames -freflection
+exit frames fail
+finding frames must-consume unconsumed src/frames.cpp:31:31 | planted::frame_ignores_its_token::(lambda)::operator(): token (planted::Token)
+finding frames must-consume unconsumed-on-path src/frames.cpp:43:37 | planted::view_consumes_on_one_path::(lambda)::operator(): token (planted::Token)
+error frames src/frames.cpp:31 | quarantine: unconsumed planted::frame_ignores_its_token::(lambda)::operator(): token (planted::Token); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error frames src/frames.cpp:43 | quarantine: unconsumed-on-path planted::view_consumes_on_one_path::(lambda)::operator(): token (planted::Token); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error

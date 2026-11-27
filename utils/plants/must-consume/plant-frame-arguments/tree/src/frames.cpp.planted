@@ -1,0 +1,52 @@
+// The frames of a Box with arguments (the frame of a Box with arguments of
+// foundation/core/Ref.h) forward an rvalue argument to the body, so the body
+// owns it.  A body of with_mut that ignores its token, and a body of
+// with_view that consumes its token on one path, leave the token with no
+// consume.
+#include <foundation/Linear.h>
+#include <foundation/core/Ref.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+[[nodiscard]] bool should_give() noexcept;
+
+// The body of with_mut ignores the token that moves into the door.
+::foundation::core::Box<int> frame_ignores_its_token(::foundation::core::Box<int>&& box) noexcept {
+    return ::foundation::core::with_mut(
+        std::move(box),
+        [](int& object, Token token) noexcept {
+            static_cast<void>(token);
+            object += 1;
+        },
+        Token{1});
+}
+
+// The body of with_view consumes the token that moves into the door on one
+// path.
+int view_consumes_on_one_path(::foundation::core::Box<int> const& box) noexcept {
+    return ::foundation::core::with_view(
+        box,
+        [](int const& object, Token token) noexcept {
+            if (should_give()) {
+                sink(std::move(token));
+            }
+            return object;
+        },
+        Token{2});
+}
+
+}  // namespace planted

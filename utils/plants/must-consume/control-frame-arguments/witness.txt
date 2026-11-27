@@ -1,0 +1,9 @@
+# The rule reads each linear parameter of a body of the frames of a Box with
+# arguments (foundation/core/Ref.h), and admits each form of this unit: a body
+# of with_mut and a body of with_view that consume their token on each path,
+# and a body that reads an lvalue argument that its caller consumes.  The
+# directory src/ has the enforce mode error, and the unit compiles with no
+# line of the rule.
+compile frames src/frames.cpp must-consume=on
+flag frames -freflection
+exit frames pass

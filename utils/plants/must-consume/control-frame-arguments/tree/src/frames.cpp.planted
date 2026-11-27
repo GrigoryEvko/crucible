@@ -1,0 +1,64 @@
+// The frames of a Box with arguments (the frame of a Box with arguments of
+// foundation/core/Ref.h) forward an rvalue argument to the body, so the body
+// owns it.  A body of with_mut and a body of with_view that consume the token
+// on each path, and a body that takes an lvalue argument by reference, give no
+// line of the rule.
+#include <foundation/Linear.h>
+#include <foundation/core/Ref.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+[[nodiscard]] bool should_give() noexcept;
+
+// The body of with_mut consumes the token that moves into the door.
+::foundation::core::Box<int> frame_consumes_its_token(::foundation::core::Box<int>&& box) noexcept {
+    return ::foundation::core::with_mut(
+        std::move(box),
+        [](int& object, Token token) noexcept {
+            sink(std::move(token));
+            object += 1;
+        },
+        Token{1});
+}
+
+// The body of with_view consumes the token that moves into the door on each
+// path.
+int view_consumes_on_each_path(::foundation::core::Box<int> const& box) noexcept {
+    return ::foundation::core::with_view(
+        box,
+        [](int const& object, Token token) noexcept {
+            if (should_give()) {
+                sink(std::move(token));
+            } else {
+                ::foundation::linear::drop(std::move(token));
+            }
+            return object;
+        },
+        Token{2});
+}
+
+// The body of with_mut reads an lvalue argument through a reference, and the
+// caller consumes it.
+::foundation::core::Box<int> frame_reads_a_lent_token(::foundation::core::Box<int>&& box) noexcept {
+    Token held{3};
+    ::foundation::core::Box<int> back = ::foundation::core::with_mut(
+        std::move(box), [](int& object, Token const& token) noexcept { object += token.handle; }, held);
+    sink(std::move(held));
+    return back;
+}
+
+}  // namespace planted

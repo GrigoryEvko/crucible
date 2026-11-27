@@ -5,8 +5,10 @@
 #include <fixy/Ctx.h>
 #include <fixy/ScopedView.h>
 #include <fixy/check/Check.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/permissions/Permission.h>
 
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
@@ -326,6 +328,75 @@ void test_read_frame_of_moved_from_aborts(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_FATAL_INVARIANT(value == 4);
 }
 
+// The frame doors with arguments give each argument to the body as an
+// lvalue reference after the object.  The body writes one argument and moves
+// out of another, and the caller sees each change, because no argument moves
+// into the frame.
+void test_frame_with_arguments() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+    {
+        Box<CountedObject> held = mint_box<CountedObject>(alloc, 5);
+        Box<CountedObject> spare = mint_box<CountedObject>(alloc, 6);
+        int total = 0;
+        CRUCIBLE_FATAL_INVARIANT(live_objects == 2);
+        auto [label, back] = ::foundation::core::with_mut(
+            std::move(held),
+            [](CountedObject& object, int& sum, Box<CountedObject>& other) noexcept {
+                sum += object.label();
+                Box<CountedObject> const ended{std::move(other)};
+                return object.label();
+            },
+            total, spare);
+        CRUCIBLE_FATAL_INVARIANT(label == 5 && total == 5 && live_objects == 1);
+        held = std::move(back);
+        int const read = ::foundation::core::with_view(
+            held, [](CountedObject const& object, int const& extra) noexcept { return object.label() + extra; }, total);
+        CRUCIBLE_FATAL_INVARIANT(read == 10);
+        held = ::foundation::core::with_mut(
+            std::move(held), [](CountedObject& /*object*/, int& sum) noexcept { sum = 0; }, total);
+        CRUCIBLE_FATAL_INVARIANT(total == 0 && live_objects == 1);
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
+}
+
+// The tags of the two tokens of test_frame_consumes_a_forwarded_token.  Each
+// is a pure tag.
+struct FrameTokenTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct ReadFrameTokenTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+
+// An rvalue argument moves through the door to the body, and the body takes
+// the token by value and consumes it.  Each door calls the body exactly once,
+// so the body consumes each token one time.
+void test_frame_consumes_a_forwarded_token() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    Box<CountedObject> held = mint_box<CountedObject>(alloc, 7);
+    int calls = 0;
+    auto token = ::foundation::permissions::mint_permission_root<FrameTokenTag>();
+    held = ::foundation::core::with_mut(
+        std::move(held),
+        [&calls](CountedObject& object, auto taken) noexcept {
+            calls += object.label() == 7 ? 1 : 0;
+            ::foundation::linear::drop(std::move(taken));
+        },
+        std::move(token));
+    CRUCIBLE_FATAL_INVARIANT(calls == 1);
+    auto read_token = ::foundation::permissions::mint_permission_root<ReadFrameTokenTag>();
+    int const label = ::foundation::core::with_view(
+        held,
+        [&calls](CountedObject const& object, auto taken) noexcept {
+            ++calls;
+            ::foundation::linear::drop(std::move(taken));
+            return object.label();
+        },
+        std::move(read_token));
+    CRUCIBLE_FATAL_INVARIANT(label == 7 && calls == 2);
+}
+
 // A class that holds a Box as a private member reads the object of the Box
 // through the owner door, with its own key.
 class OwnerOfBox {
@@ -642,6 +713,8 @@ int main() {
     test_read_frame();
     test_read_frame_of_moved_from_aborts(test);
     test_owner_door(test);
+    test_frame_with_arguments();
+    test_frame_consumes_a_forwarded_token();
     test_each_alignment();
     test_agrees_with_plain_model();
     test_box_of_a_declared_type();
