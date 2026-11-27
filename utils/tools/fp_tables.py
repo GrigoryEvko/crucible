@@ -718,11 +718,16 @@ def double_of_bits(bits: int) -> float:
 
 # ── log, double ────────────────────────────────────────────────────
 #
-# The fast path takes x = 2^e y with y in [sqrt2/2, sqrt2), the interval i of [i 2^-9, (i + 1) 2^-9) of y, and
-# a 10-bit inverse r_i of it, so z = r_i y - 1 is exact.  The path near 1 takes r = x - 1.  The slow path takes
-# the reduction of the fast path and a second one: k2 = round(z 2^16) and r2 nearest 1 / (1 + k2 2^-16).
+# The fast path takes x = 2^e y with y in [0x1.6ap-1, 0x1.6ap0), as the table method of ARM does: t = bits(x) -
+# bits(0x1.6ap-1), e = t >> 52 with its sign, and the row i = (t >> 43) mod 512.  The rows split the range of y
+# into steps of 2^-10 below 1 and of 2^-9 above 1, which are the steps of 2^43 in the bits.  A 10-bit inverse
+# r_i of each row gives an exact z = r_i y - 1.  The path near 1 takes r = x - 1.  The slow path takes the
+# reduction of the fast path and a second one: k2 = round(z 2^16) and r2 nearest 1 / (1 + k2 2^-16).
 
-LOG_FIRST = range(362, 725)
+# The start of the range of y, and the counts of the rows below 1 and above 1.
+LOG_START = Fraction(724, 1024)
+LOG_ROWS_BELOW = 300
+LOG_ROWS_ABOVE = 212
 LOG_SECOND_STEP = 16
 # The path near 1: 1 - 2^-9 <= x < 1 + 2^-9.
 LOG_NEAR = Fraction(1, 2**9)
@@ -771,33 +776,43 @@ def ten_bit_inverse(low: Fraction, high: Fraction) -> Fraction:
     return best
 
 
-def log_first_table() -> list[tuple[int, Fraction, float, float, float]]:
-    """Return (i, r_i, l1, l2, l3) for each interval: -log(r_i) = l1 + l2 + l3 with l1 a multiple of 2^-42.
+def log_intervals() -> list[tuple[Fraction, Fraction]]:
+    """Return the interval [low, high) of y of each row of the first table, in the order of the rows."""
+    below = [(LOG_START + Fraction(step, 1024), LOG_START + Fraction(step + 1, 1024)) for step in range(LOG_ROWS_BELOW)]
+    above = [(1 + Fraction(step, 512), 1 + Fraction(step + 1, 512)) for step in range(LOG_ROWS_ABOVE)]
+    if below[-1][1] != 1 or above[-1][1] != 2 * LOG_START:
+        raise SystemExit("fp_tables: the rows of the first table do not split [0x1.6ap-1, 0x1.6ap0)")
+    return below + above
 
-    r_i = 1 for the two intervals next to 1, so -log(r_i) = 0 there.  O(363) logs.
+
+def log_first_table() -> list[tuple[tuple[Fraction, Fraction], Fraction, float, float, float]]:
+    """Return ((low, high), r_i, l1, l2, l3) for each row: -log(r_i) = l1 + l2 + l3 with l1 a multiple of 2^-42.
+
+    r_i = 1 for the three rows from 1 - 2^-9 to 1 + 2^-9, so -log(r_i) = 0 there.  O(512) logs.
     """
     rows = []
-    for index in LOG_FIRST:
-        low, high = Fraction(index, 512), Fraction(index + 1, 512)
-        inverse = Fraction(1) if index in (511, 512) else ten_bit_inverse(low, high)
+    for low, high in log_intervals():
+        is_near = 1 - LOG_NEAR <= low < 1 + LOG_NEAR
+        inverse = Fraction(1) if is_near else ten_bit_inverse(low, high)
         value = -mp.log(mp.mpf(inverse.numerator) / inverse.denominator)
         part1 = round_to_multiple(value, -42)
         part2 = round_double(value - part1)
         part3 = round_double(value - part1 - mp.mpf(part2))
-        rows.append((index, inverse, round_double(part1), part2, part3))
+        rows.append(((low, high), inverse, round_double(part1), part2, part3))
     return rows
 
 
-def log_reduction_width(rows: list[tuple[int, Fraction, float, float, float]]) -> tuple[Fraction, bool]:
+def log_reduction_width(
+    rows: list[tuple[tuple[Fraction, Fraction], Fraction, float, float, float]],
+) -> tuple[Fraction, bool]:
     """Return the largest |r_i y - 1| over each interval, and whether each z = fma(r_i, y, -1) is exact.
 
     y = M 2^-52 for y >= 1 and M 2^-53 below 1, with an integer M.  r_i y - 1 is an integer N over 2^(52 + q),
-    with r_i = R 2^-q.  The fma is exact when each such |N| is below 2^53.  O(363).
+    with r_i = R 2^-q.  The fma is exact when each such |N| is below 2^53.  O(512).
     """
     widest = Fraction(0)
     is_exact = True
-    for index, inverse, _, _, _ in rows:
-        low, high = Fraction(index, 512), Fraction(index + 1, 512)
+    for (low, high), inverse, _, _, _ in rows:
         widest = max(widest, abs(inverse * low - 1), abs(inverse * high - 1))
         is_exact = is_exact and is_exact_reduction(inverse, low, high)
     return widest, is_exact
@@ -856,7 +871,7 @@ def print_log_block(
     fast: Sequence[float],
     near: Sequence[float],
     slow_parts: Sequence[float],
-    rows: list[tuple[int, Fraction, float, float, float]],
+    rows: list[tuple[tuple[Fraction, Fraction], Fraction, float, float, float]],
     second_rows: list[tuple[int, float, float, float, float]],
 ) -> None:
     """Print the block of constants and tables of Log.h, from `// clang-format off` to `// clang-format on`.
@@ -879,14 +894,13 @@ def print_log_block(
         *(f"inline constexpr double kLogB{index} = {hex_double(value)};" for index, value in enumerate(near, 1)),
         "// The Taylor coefficients (-1)^(n+1) / n of the slow path, in two doubles to n = 5.",
         *(f"inline constexpr double kLogSlow{name} = {hex_double(value)};" for name, value in slow_parts),
-        "// For each interval [i 2^-9, (i + 1) 2^-9) of y, i from 362 to 724: the inverse r_i of 10 or fewer",
-        "// significant bits (1 for i = 511 and 512), then -log(r_i) in three doubles, the first a multiple of 2^-42.",
-        "// Below i = 512 the row holds r_i/2, so the reduction multiplies it by 2y, which has the exponent of 1.",
+        "// For each row i of y, steps of 2^-10 from 0x1.6ap-1 to 1 and steps of 2^-9 from 1 to 0x1.6ap0: the",
+        "// inverse r_i of 10 or fewer significant bits (1 for the three rows from 1 - 2^-9 to 1 + 2^-9), then",
+        "// -log(r_i) in three doubles, the first a multiple of 2^-42.",
         f"inline constexpr LogEntry kLogFirst[{len(rows)}] = {{",
         *(
-            f"    {{{hex_double(float(inverse / 2 if index < 512 else inverse))}, {hex_double(part1)},"
-            f" {hex_double(part2)}, {hex_double(part3)}}},"
-            for index, inverse, part1, part2, part3 in rows
+            f"    {{{hex_double(float(inverse))}, {hex_double(part1)}, {hex_double(part2)}, {hex_double(part3)}}},"
+            for _, inverse, part1, part2, part3 in rows
         ),
         "};",
         f"// For each k2 from {first} to {last}: r2, the double nearest 1 / (1 + k2 2^-16), then -log(r2) in three",
@@ -929,6 +943,24 @@ def print_log() -> None:
         f"// first reduction: |z| <= 2^{log2_of_fraction(width)}, z exact: {is_exact},"
         f" smallest |l1 + l2| off 1: 2^{log2_of_fraction(smallest_first)},"
         f" |-log r - l1 - l2| <= 2^{log2_of_fraction(table_error)}, with l3: 2^{log2_of_fraction(table_rest3)}"
+    )
+    # The fast path takes FastTwoSum(e ln2_high + l1, z): for e = 0 off 1, the |l1| of each row must be at least
+    # each |z| of the row.  O(512).
+    smallest_ratio = min(
+        abs(Fraction(part1)) / max(abs(inverse * low - 1), abs(inverse * high - 1))
+        for (low, high), inverse, part1, _, _ in rows
+        if inverse != 1
+    )
+    if not is_exact or smallest_ratio < 1:
+        raise SystemExit("fp_tables: the first reduction is not exact, or a row has |l1| below its |z|")
+    print(f"// each row off 1 has |l1| >= {float(smallest_ratio):.3f} times its largest |z|")
+    # e != 0: |log x| >= |e| ln2 - |log y| >= |e| (ln2 - the largest |log y|), so the errors in e count over
+    # that, with the factor exponent_factor >= 1 / (ln2 - the largest |log y|).
+    largest_log_y = dyadic_above(max(-mp.log(mpf_of(LOG_START)), mp.log(mpf_of(2 * LOG_START))))
+    exponent_factor = dyadic_above(1 / (mp.log(2) - mpf_of(largest_log_y)))
+    print(
+        f"// |log y| <= 2^{log2_of_fraction(largest_log_y)}, so |log x| >= |e| / {float(exponent_factor):.6f} for"
+        " e != 0"
     )
     ln2 = mp.log(2)
     ln2_a = round_to_multiple(ln2, -42)
@@ -1001,7 +1033,7 @@ def print_log() -> None:
         second_rows,
         (second_width, slow_reach, width),
         (table_rest3, second_error, ln2_rest3),
-        u,
+        (u, exponent_factor),
     )
     print_log_block(
         (round_double(ln2_a), ln2_low, round_double(ln2_b), ln2_c), fast, near, slow_parts, rows, second_rows
@@ -1012,7 +1044,7 @@ def log_fast_budget(
     coefficients: Sequence[float],
     reach: Fraction,
     poly_error: Fraction,
-    rows: list[tuple[int, Fraction, float, float, float]],
+    rows: list[tuple[tuple[Fraction, Fraction], Fraction, float, float, float]],
     u: Fraction,
     ln2_low: float,
     ln2_gap: Fraction,
@@ -1087,12 +1119,13 @@ def log_slow_budget(
     second_rows: list[tuple[int, float, float, float, float]],
     widths: tuple[Fraction, Fraction, Fraction],
     rests: tuple[Fraction, Fraction, Fraction],
-    u: Fraction,
+    units: tuple[Fraction, Fraction],
 ) -> None:
     """Print the relative error budget of the slow path, in the order of its operations.  Exact.
 
     widths holds the largest |z2|, the bound R of |z_hi + w| (it is a little larger) and the largest |z1|.
-    rests holds the rests of the first table and of the second table, and of ln2 in three parts.  The path, with
+    rests holds the rests of the first table and of the second table, and of ln2 in three parts.  units holds
+    u and the factor F of the regime e != 0, with |log x| >= |e| / F.  The path, with
     x = 2^e y, |e| <= 1074, and z1 = r1 y - 1 exact:
       - k2 = round(z1 2^16), and z2 = (r2 - 1) + r2 z1 = z_hi + w + t exactly: r2 - 1 is exact, r2 z1 is an exact
         pair (p_hi, p_lo), (s_hi, s_lo) = TwoSum(r2 - 1, p_hi), (m, t) = TwoSum(s_lo, p_lo), and (z_hi, w) =
@@ -1114,10 +1147,11 @@ def log_slow_budget(
       - near 1 with k2 != 0: |z1| > 2^-17, |log x| >= |z1| (1 - 2^-10), |z2| <= the largest |z2|, and |t| <=
         t_near |z1|, with the largest |r2| of the entries |k2| <= 128.
       - off 1 with e = 0: |log x| >= log(1 + 2^-9) > 1/513.
-      - e != 0: |log x| >= |e| ln2 - ln2 / 2 >= |e| ln2 / 2, and 2 / ln2 < 2.886.
+      - e != 0: |log x| >= |e| ln2 - |log y| >= |e| / F, as F (ln2 - the largest |log y|) >= 1.
     """
     second_width, reach, first_width = widths
     first_rest, second_error, ln2_rest = rests
+    u, exponent_factor = units
     add_dd = 3 * u * u / (1 - 4 * u)
     times_dd = 5 * u * u
     times_fp = 2 * u * u
@@ -1171,7 +1205,7 @@ def log_slow_budget(
     # less terms of 2^-34 or less.
     first_tail = first_width / (1 - first_width) + 1075 * Fraction(1, 2**43) + Fraction(1, 2**42)
     near_tail = second_width / (1 - second_width) / (Fraction(1, 2**17) * (1 - Fraction(1, 2**10)))
-    most_partial = max(1 + first_tail * Fraction(2886, 1000), 1 + first_tail * 513, 1 + near_tail) + Fraction(1, 2**30)
+    most_partial = max(1 + first_tail * exponent_factor, 1 + first_tail * 513, 1 + near_tail) + Fraction(1, 2**30)
     if most_partial >= 3:
         raise SystemExit(f"fp_tables: a partial sum of the slow log can be 2^{log2_of_fraction(most_partial)} |log x|")
     two_level, direct = 13, 7
@@ -1181,7 +1215,7 @@ def log_slow_budget(
         u * u * (1 + u) ** 3 * most_partial
         + t_relative * (1 + (1 + u) * z_hi_most + (1 + u) ** 2 * z_hi_most**2)
         + 4 * u * u * (1 + u) * z_hi_most
-        + u * Fraction(1, 2**85) * Fraction(2886, 1000)
+        + u * Fraction(1, 2**85) * exponent_factor
     )
     low_most = (two_level * u * middle_most + direct_most) * (1 + u) ** (two_level + direct)
     sum_rounds = (two_level + direct) * u * low_most
@@ -1195,12 +1229,12 @@ def log_slow_budget(
     near_one += sum_rounds
     absolute = relative_z * reach + t_most * t_coefficient + first_rest + second_error
     off_one = 513 * absolute + sum_rounds
-    exponent = Fraction(2886, 1000) * (absolute + ln2_rest) + sum_rounds
+    exponent = exponent_factor * (absolute + ln2_rest) + sum_rounds
     regimes = [
         ("near 1, k2 = 0", at_one),
         ("near 1, k2 != 0", near_one),
         ("off 1, e = 0: the absolute errors over 1/513", off_one),
-        ("e != 0: the absolute errors and e (ln2 - its three parts), over |e| ln2 / 2", exponent),
+        ("e != 0: the absolute errors and e (ln2 - its three parts), over |e| / F", exponent),
     ]
     print("// log slow path: the relative error in each regime")
     for title, value in regimes:

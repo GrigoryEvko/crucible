@@ -49,36 +49,31 @@ static_assert(bits_of(log_accurate_(double_of(0x3FF0000800000001ULL))) == 0x3EDF
 static_assert(bits_of(log_accurate_(double_of(0x0000000000000001ULL))) == 0xC0874385446D71C3ULL,
               "the slow path of the smallest subnormal must be the correctly rounded value.");
 
-// The tables of log(double): the two intervals next to 1 have r = 1 and
-// -log(r) = 0, as does the entry k2 = 0.  So the path near 1 and the slow path
-// near 1 add no table value.  The row of the interval 511 holds r/2 = 1/2, as
-// each row below 512 does.
-[[nodiscard]] consteval bool is_identity(LogEntry const& entry, double stored_inverse) noexcept {
-    return bits_of(entry.inverse) == bits_of(stored_inverse) && bits_of(entry.high) == 0 && bits_of(entry.middle) == 0
+// The tables of log(double): the three rows from 1 - 2^-9 to 1 + 2^-9 have
+// r = 1 and -log(r) = 0, as does the entry k2 = 0.  So the path near 1 and the
+// slow path near 1 add no table value.
+[[nodiscard]] consteval bool is_identity(LogEntry const& entry) noexcept {
+    return bits_of(entry.inverse) == bits_of(1.0) && bits_of(entry.high) == 0 && bits_of(entry.middle) == 0
         && bits_of(entry.low) == 0;
 }
-static_assert(is_identity(kLogFirst[kLogFirstOne], 0.5) && is_identity(kLogFirst[kLogFirstOne + 1], 1.0),
-              "the intervals 511 and 512 must have r = 1 and -log(r) = 0.");
-static_assert(is_identity(kLogSecond[kLogSecondCenter], 1.0), "the entry k2 = 0 must have r2 = 1 and -log(r2) = 0.");
-
-// The rows below 512 hold r_i/2, in [1/2, 1), and the other rows hold r_i, in
-// [1/2, 1] too, as r_i is near 1/y with y in [1, sqrt2).  So each stored inverse
-// is in [1/2, 1].  O(363).
-[[nodiscard]] consteval bool has_halved_low_rows() noexcept {
-    for (LogEntry const& entry : kLogFirst) {
-        if (entry.inverse < 0.5 || entry.inverse > 1.0) return false;
-    }
-    return true;
-}
-static_assert(has_halved_low_rows(), "each stored inverse must be in [1/2, 1].");
+static_assert(is_identity(kLogFirst[kLogFirstOne - 2]) && is_identity(kLogFirst[kLogFirstOne - 1])
+                  && is_identity(kLogFirst[kLogFirstOne]),
+              "the three rows from 1 - 2^-9 to 1 + 2^-9 must have r = 1 and -log(r) = 0.");
+static_assert(is_identity(kLogSecond[kLogSecondCenter]), "the entry k2 = 0 must have r2 = 1 and -log(r2) = 0.");
 static_assert(sizeof(LogEntry) == 32 && alignof(LogEntry) == 32, "a row must fill half a line of the cache.");
+
+// The rows follow the bits of y from kLogOffset: the row of y = 1 is the
+// step (bits(1) - kLogOffset) >> 43, and the 512 rows end at 2 kLogOffset.
+static_assert(((bits_of(1.0) - kLogOffset) >> 43) == kLogFirstOne, "the row of y = 1 must be kLogFirstOne.");
+static_assert(((bits_of(2.0 * double_of(kLogOffset)) - kLogOffset) >> 43) == kLogRowMask + 1,
+              "the 512 rows must end at twice the start of the range of y.");
 
 // Each inverse r_i has 10 or fewer significant bits, and each l1 is a
 // multiple of 2^-42.  So z = fma(r_i, y, -1) is exact, and e ln2_high + l1 is
-// exact.  O(363).
+// exact.  O(512).
 [[nodiscard]] consteval bool has_short_inverses_and_l1() noexcept {
     for (LogEntry const& entry : kLogFirst) {
-        std::uint64_t const inverse_fraction = bits_of(entry.inverse) & kLogFractionMask;
+        std::uint64_t const inverse_fraction = bits_of(entry.inverse) & ((std::uint64_t{1} << 52) - 1);
         if ((inverse_fraction & ((std::uint64_t{1} << 43) - 1)) != 0) return false;
         double const scaled = entry.high * 0x1p42;
         if (bits_of(scaled) != bits_of(static_cast<double>(static_cast<std::int64_t>(scaled)))) return false;

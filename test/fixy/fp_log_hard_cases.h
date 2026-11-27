@@ -6,15 +6,15 @@
 //
 // The list has two parts:
 //   - the four hardest inputs of the list log.wc of CORE-MATH in each range:
-//     the subnormal inputs, the path near 1, e = 0 (x in [sqrt2/2, sqrt2)),
+//     the subnormal inputs, the path near 1, x in [sqrt2/2, sqrt2),
 //     |e| above 1000, and the inputs above 1 and below 1 of the block of the
 //     list of Lefevre and of the block of the BaCSeL search at -m 48.  The
 //     comment gives the distance to the nearest midpoint in units of the last
 //     place.  The first input of the block of Lefevre above 1 is the hardest
 //     input of the whole list.
 //   - the edges of the paths: 1, the neighbors of 1, the two edges of the
-//     path near 1, the edges of k2 = 0 of the slow path, the edges of the
-//     reduction at sqrt2 and sqrt2/2, the smallest and the largest subnormal
+//     path near 1, the edges of k2 = 0 of the slow path, the neighbors of
+//     sqrt2 and sqrt2/2, the smallest and the largest subnormal
 //     input, the smallest normal input, the largest finite input, 2, 1/2 and
 //     the double nearest e.
 
@@ -76,10 +76,10 @@ inline constexpr ::fixy::FixedArray<HardCase, 54> kLogHardCases{
     HardCase{0x3FF0000800000001ULL, 0x3EDFFFF80006AAA8ULL},  // above 1 + 2^-17: k2 = 1
     HardCase{0x3FEFFFF000000000ULL, 0xBEE0000400015556ULL},  // 1 - 2^-17: z 2^16 = -1/2 rounds to k2 = 0
     HardCase{0x3FEFFFEFFFFFFFFFULL, 0xBEE0000400025556ULL},  // below 1 - 2^-17: k2 = -1
-    HardCase{0x3FF6A09E667F3BCCULL, 0x3FD62E42FEFA39EEULL},  // below sqrt2: e = 0, i = 724
-    HardCase{0x3FF6A09E667F3BCDULL, 0x3FD62E42FEFA39F0ULL},  // above sqrt2: e = 1, i = 362
-    HardCase{0x3FE6A09E667F3BCCULL, 0xBFD62E42FEFA39F1ULL},  // below sqrt2/2: e = -1, i = 724
-    HardCase{0x3FE6A09E667F3BCDULL, 0xBFD62E42FEFA39EEULL},  // above sqrt2/2: e = 0, i = 362
+    HardCase{0x3FF6A09E667F3BCCULL, 0x3FD62E42FEFA39EEULL},  // below sqrt2
+    HardCase{0x3FF6A09E667F3BCDULL, 0x3FD62E42FEFA39F0ULL},  // above sqrt2
+    HardCase{0x3FE6A09E667F3BCCULL, 0xBFD62E42FEFA39F1ULL},  // below sqrt2/2
+    HardCase{0x3FE6A09E667F3BCDULL, 0xBFD62E42FEFA39EEULL},  // above sqrt2/2
     HardCase{0x0000000000000001ULL, 0xC0874385446D71C3ULL},  // the smallest subnormal input
     HardCase{0x000FFFFFFFFFFFFFULL, 0xC086232BDD7ABCD2ULL},  // the largest subnormal input
     HardCase{0x0010000000000000ULL, 0xC086232BDD7ABCD2ULL},  // the smallest normal input

@@ -608,9 +608,9 @@ constexpr ::fixy::FixedArray<Region, 4> kExpFastRegions{
 }
 
 // The bounds of the sweep fast-bound of log, from the budget of
-// fixy/fp/Log.h: eps_fast = 2^-68.77 absolute, rounded up to 2^-68.76, and
+// fixy/fp/Log.h: eps_fast = 2^-69.20 absolute, rounded up to 2^-69.19, and
 // eps_near = 2^-69.41 relative, rounded up to 2^-69.40.
-constexpr double kLogFastBound = 0x1.2e5588f9a7e39p-69;
+constexpr double kLogFastBound = 0x1.c0d2771113e65p-70;
 constexpr double kLogNearBound = 0x1.8406003b2ae42p-70;
 
 // The regions of the sweep fast-bound of log: each positive finite input,
@@ -685,7 +685,7 @@ void take_error(LargestError& largest, double error, double input) noexcept {
     double const ln2 = 0x1.62e42fefa39efp-1;
     ::fixy::report(::fixy::Sink::Out,
                    "bench_fp_sweep: log of {} inputs: the fast pair, largest absolute error 2^{} at {}, bound "
-                   "2^-68.76, {} slow calls; the pair near 1, largest relative error 2^{} at {}, bound 2^-69.40, {} "
+                   "2^-69.19, {} slow calls; the pair near 1, largest relative error 2^{} at {}, bound 2^-69.40, {} "
                    "slow calls; the slow path, largest relative error 2^{} at {}, bound 2^-137.15\n",
                    inputs, ::fixy::Fixed<3>{::fixy::fp::log(fast.value) / ln2}, fast.input, fast_slow_calls,
                    ::fixy::Fixed<3>{::fixy::fp::log(near.value) / ln2}, near.input, near_slow_calls,

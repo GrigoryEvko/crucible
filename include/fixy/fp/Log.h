@@ -34,32 +34,32 @@
 //   functions are in the inline namespace CRUCIBLE_SIMD_TARGET, so a program
 //   can link the bodies of two levels and compare their results.
 //
-// Algorithm of log(double): the reduction of CORE-MATH, a rounding test of
-// Ziv, and a slow path in three doubles.  u = 2^-53, and RN is the round to
-// nearest.
-//   x = 2^e y with y in [sqrt2/2, sqrt2).  m is the significand with its
-//     leading bit: y = m 2^-52, but y = m 2^-53 and e takes one more when m
-//     is 0x16a09e667f3bcd or more.  A subnormal x takes a shift of its bits
-//     that puts its leading bit at bit 52, so |e| <= 1074.
-//   i = floor(512 y) is from 362 to 724.  r_i has 10 or fewer significant
-//     bits, and r_i = 1 for i = 511 and 512.  So z = fma(r_i, y, -1) is
-//     exact, with |z| <= 2^-8.88.  Below i = 512 the table holds r_i/2, and
-//     the fma reads 2y, so y needs no exponent of its own.  -log(r_i) = l1 +
-//     l2 + l3 in three doubles, l1 a multiple of 2^-42.  ln2 has the same
-//     form: ln2_high (42 bits) + ln2_low, or ln2_high + ln2_middle (40 bits) +
-//     ln2_third.
+// Algorithm of log(double): the reduction of the table method of ARM with the
+// inverses of 10 bits of CORE-MATH, a rounding test of Ziv, and a slow path in
+// three doubles.  u = 2^-53, and RN is the round to nearest.
+//   x = 2^e y with y in [0x1.6ap-1, 0x1.6ap0).  t = bits(x) - bits(0x1.6ap-1)
+//     holds e in its top 12 bits with the sign, and the row i in its next 9
+//     bits, and bits(x) less e in the exponent gives y.  A subnormal x takes
+//     a shift of its bits that puts its leading bit at bit 52, so |e| <= 1074.
+//   The 512 rows split the range of y into steps of 2^-10 below 1 and of 2^-9
+//     above 1.  r_i has 10 or fewer significant bits, and r_i = 1 for the
+//     three rows from 1 - 2^-9 to 1 + 2^-9.  So z = fma(r_i, y, -1) is exact,
+//     with |z| <= 2^-9.00.  -log(r_i) = l1 + l2 + l3 in three doubles, l1 a
+//     multiple of 2^-42.  ln2 has the same form: ln2_high (42 bits) +
+//     ln2_low, or ln2_high + ln2_middle (40 bits) + ln2_third.
 //   The fast path, for each x out of the path near 1:
 //     A = e ln2_high + l1 is exact: two multiples of 2^-42 below 2^10.
-//     (h, l) = FastTwoSum(A, z), because |A| > |z|.
+//     (h, l) = FastTwoSum(A, z), because |A| > |z|: for e = 0, the |l1| of
+//       each row is at least 1.98 times each |z| of the row.
 //     p = z^2 (P2 + z (P3 + P4 z + z^2 (P5 + P6 z))), the minimax polynomial
 //       of log1p(z) - z for the absolute error.
 //     l = RN(e ln2_low + RN(p + RN(l + l2))), the last step as one fma.
-//     Then |h + l - log(x)| <= eps_fast = 2^-68.77, absolute.
+//     Then |h + l - log(x)| <= eps_fast = 2^-69.20, absolute.
 //     The rounding test: with E = 2^-68.5, if RN(h + RN(l + E)) and
 //     RN(h + RN(l - E)) are the same value, that value is the correctly
 //     rounded result, because RN is monotone and log(x) is between the two
 //     sums.  Each sum takes an inner round of at most u |l + E|, so the test
-//     needs a margin of 2^-68.60.
+//     needs a margin of 2^-69.01.
 //   The path near 1, for 1 - 2^-9 <= x < 1 + 2^-9: r = x - 1 is exact.
 //     (q_hi, q_lo) = TwoProduct(r, r), R = B1 + r (B2 + r (B3 + r (B4 +
 //     r B5))), c = RN(RN(r q_hi) R), (h, l0) = FastTwoSum(r, -q_hi/2), and
@@ -68,7 +68,7 @@
 //     and it needs 2^-69.25 |r|.
 //   The slow path computes log(x) in three doubles with a relative error
 //     eps_acc = 2^-137.16, and rounds that sum to nearest in each bit.
-//     k2 = round(z 2^16) through the add of 0x1.8p52, |k2| <= 139, and r2 is
+//     k2 = round(z 2^16) through the add of 0x1.8p52, |k2| <= 128, and r2 is
 //     the double nearest 1 / (1 + k2 2^-16).  z2 = (r2 - 1) + r2 z = z_hi +
 //     w + t exactly, from a TwoProduct and three TwoSums: the last one gives
 //     the pair (z_hi, w), and t is the error of the second.  |z2| <= 2^-17.00.
@@ -84,15 +84,15 @@
 //     symmetric, so the round of h + m + l takes their absolute values.
 //
 // Error budget of the fast path, from `fp_tables.py log` (exact fractions)
-//   R = 2^-8.88 bounds |z|.  The absolute errors of h + l:
-//     the polynomial, a bound for each |z| <= R    2^-70.21
-//     the rounds of the polynomial                 2^-70.17
+//   R = 2^-9.00 bounds |z|.  The absolute errors of h + l:
+//     the polynomial, a bound for each |z| <= R    2^-71.04
+//     the rounds of the polynomial                 2^-70.41
 //     -log(r_i) - l1 - l2                          2^-97.01
 //     e (ln2 - ln2_high - ln2_low), |e| <= 1075    2^-91.95
 //     the round of l + l2                          2^-95.42
-//     the round of p + (l + l2)                    2^-71.76
-//     the round of e ln2_low + l                   2^-71.76
-//     the sum: eps_fast                            2^-68.77
+//     the round of p + (l + l2)                    2^-72.00
+//     the round of e ln2_low + l                   2^-72.00
+//     the sum: eps_fast                            2^-69.20
 //
 // Error budget of the path near 1, from `fp_tables.py log` (exact fractions)
 //   The rounding errors, relative to |r| <= 2^-9:
@@ -113,17 +113,17 @@
 //     f(z_hi + w), H on z_hi only                  2^-157.79
 //     the round of w^2/2                           2^-177.00
 //     the polynomial, a bound for each |z2| <= R2  2^-141.25
-//   |t| <= 2^-114.87, and |t| <= 2^-105.00 |z| when r_i = 1 and k2 != 0.  The
+//   |t| <= 2^-114.99, and |t| <= 2^-105.00 |z| when r_i = 1 and k2 != 0.  The
 //   errors in t, the rounds of z_hi t and of RN(z_hi^2) t, the parts that
 //   z2^2/2 drops and the rest of f(z2) - f(z_hi + w), are at most 2^-50.99 |t|.
-//   The tables: -log(r_i) to 2^-151.01, -log(r2) to 2^-170.02, and ln2 to
-//   2^-140.33.  Each partial sum h is at most 2^1.06 |log(x)|, so |l| <=
-//   2^-97.52 |log(x)|, and the 20 rounds of l cost 2^-146.20 |log(x)|.
+//   The tables: -log(r_i) to 2^-151.01, -log(r2) to 2^-171.01, and ln2 to
+//   2^-140.33.  Each partial sum h is at most 2^1.00 |log(x)|, so |l| <=
+//   2^-97.58 |log(x)|, and the 20 rounds of l cost 2^-146.26 |log(x)|.
 //   The relative error in each case:
 //     r_i = 1, e = 0, k2 = 0: z2 = z, t = 0        2^-137.16
 //     r_i = 1, e = 0, k2 != 0: |z| > 2^-17         2^-137.16
 //     r_i != 1, e = 0: |log(x)| > 1/513            2^-141.79
-//     e != 0: |log(x)| >= |e| ln2 / 2              2^-138.79
+//     e != 0: |log(x)| >= |e| / 2.88628            2^-138.79
 //     the largest: eps_acc                         2^-137.16
 //   A relative error e gives a distance of at most 2e between the mantissas,
 //   so the slow path is at most 2^-136.16 from log(x) in the mantissa.
@@ -199,17 +199,16 @@ namespace fixy::fp::detail {
 // first to below the second.
 inline constexpr std::uint64_t kLogNearLow = 0x3FEFF00000000000ULL;
 inline constexpr std::uint64_t kLogNearHigh = 0x3FF0080000000000ULL;
-// The 52 bits of the fraction of a double.
-inline constexpr std::uint64_t kLogFractionMask = (std::uint64_t{1} << 52) - 1;
-// The smallest significand m (with its leading bit) for which m 2^-52 is
-// above sqrt2.  Such an m gives y = m 2^-53.
-inline constexpr std::uint64_t kLogSqrt2Significand = 0x16a09e667f3bcdULL;
-// The first interval i of kLogFirst, and the row of the interval of 1, which
-// has r = 1 and -log(r) = 0.
-inline constexpr std::uint64_t kLogFirstIndex = 362;
-inline constexpr std::uint64_t kLogFirstOne = 511 - kLogFirstIndex;
+// The bits of 0x1.6ap-1, the start of the range of y.  A step of 2^43 in the
+// bits of y is a row of kLogFirst: 2^-10 below 1 and 2^-9 above 1.
+inline constexpr std::uint64_t kLogOffset = 0x3FE6A00000000000ULL;
+// The mask of the row in the bits of x - kLogOffset, shifted down by 43.
+inline constexpr std::uint64_t kLogRowMask = 511;
+// The row that starts at y = 1.  It and the two rows below it hold the path
+// near 1, with r = 1 and -log(r) = 0.
+inline constexpr std::uint64_t kLogFirstOne = 300;
 // The row of k2 = 0 in kLogSecond.
-inline constexpr std::int32_t kLogSecondCenter = 139;
+inline constexpr std::int32_t kLogSecondCenter = 128;
 // The add of this value rounds a double of magnitude below 2^51 to an
 // integer, and the low 32 bits of its result hold that integer.
 inline constexpr double kLogShift = 0x1.8p52;
@@ -313,7 +312,7 @@ inline constexpr double kLogFloatLogc[1 << kLogFloatTableBits] = {
 // polynomial and three rounds, so the margin is about eleven.
 inline constexpr std::uint64_t kLogFloatTolerance = std::uint64_t{1} << 10;
 
-// The reduction of a positive finite x = 2^e y, with y in [sqrt2/2, sqrt2).
+// The reduction of a positive finite x = 2^e y, with y in [0x1.6ap-1, 0x1.6ap0).
 struct LogReduction {
     // z = r_i y - 1, exact.
     double reduced = 0.0;
@@ -341,19 +340,17 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 }
 
 // The reduction of the bits of a positive finite x, after log_normal_bits_
-// for a subnormal x.  i = floor(512 y) is from 362 to 724, and r_i has 10 or
-// fewer significant bits, so the fma is exact.  The fma reads m 2^-52 in
-// [1, 2), which is 2y below i = 512, where the row holds r_i/2.  So the
-// product is r_i y in each case.
+// for a subnormal x, in the form of the table method of ARM.  t = bits(x) -
+// kLogOffset holds e in its top 12 bits with the sign, and the row in its
+// next 9 bits.  The subtract of e from the exponent of x gives y.  The row
+// has an r_i of 10 or fewer significant bits, so the fma is exact.  Each step
+// wraps modulo 2^64, so the wrapped exponent of a subnormal x gives e too.
 [[nodiscard, gnu::always_inline]] constexpr LogReduction log_reduce_(std::uint64_t bits) noexcept {
     using ::fixy::fp::detail::fma_of_finite;
-    std::uint64_t const significand = (bits & kLogFractionMask) | (std::uint64_t{1} << 52);
-    // 1 when m >= kLogSqrt2Significand, as the add then carries into bit 53.
-    // An add has no compare, so the hardening of compares adds no check here.
-    std::uint64_t const is_high = (significand + ((std::uint64_t{1} << 53) - kLogSqrt2Significand)) >> 53;
-    std::int64_t const exponent = (static_cast<std::int64_t>(bits) >> 52) - 1023 + static_cast<std::int64_t>(is_high);
-    std::uint64_t const position = (significand >> (43 + is_high)) - kLogFirstIndex;
-    double const fraction = __builtin_bit_cast(double, (bits & kLogFractionMask) | (std::uint64_t{1023} << 52));
+    std::uint64_t const offset_bits = bits - kLogOffset;
+    std::uint64_t const position = (offset_bits >> 43) & kLogRowMask;
+    std::int64_t const exponent = static_cast<std::int64_t>(offset_bits) >> 52;
+    double const fraction = __builtin_bit_cast(double, bits - (offset_bits & (std::uint64_t{0xfff} << 52)));
     double const reduced = fma_of_finite(kLogFirst[position].inverse, fraction, -1.0);
     return LogReduction{reduced, position, static_cast<double>(exponent)};
 }
@@ -376,7 +373,7 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     LogReduction const reduction = log_reduce_(bits);
     LogEntry const& first = kLogFirst[reduction.position];
     double const scale = reduction.scale;
-    // k2 = round(z 2^16) from the low bits of the add of the shift, |k2| <= 139.
+    // k2 = round(z 2^16) from the low bits of the add of the shift, |k2| <= 128.
     std::uint64_t const shifted_bits = __builtin_bit_cast(std::uint64_t, reduction.reduced * 0x1p16 + kLogShift);
     auto const steps = static_cast<std::int32_t>(static_cast<std::uint32_t>(shifted_bits));
     LogEntry const& second = kLogSecond[static_cast<std::uint64_t>(steps + kLogSecondCenter)];
