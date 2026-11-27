@@ -301,6 +301,10 @@ struct InlineScalarSlot final {};
 struct ScalarTagsField final {};
 struct DataSlotsField final {};
 
+// The two fields of the word of StorageGeneration.
+struct GenerationCountField final {};
+struct GenerationUnknownField final {};
+
 }  // namespace side
 
 // The index of one inline scalar slot of an op, in its role.
@@ -490,39 +494,55 @@ using AllocatorEpoch = ::fixy::Id<AllocatorEpochTag, uint32_t>;
 //
 // The count and the period are local to one process, as an address is, so no
 // file and no hash holds the word.
+//
+// The word is a PackedWord of 32 bits with two fields: the count or the
+// period in bits 0 to 30, and the unknown bit at bit 31.
 class StorageGeneration {
+    using Word = ::fixy::PackedWord<uint32_t, ::fixy::BitField<side::GenerationCountField, 31>,
+                                    ::fixy::BitField<side::GenerationUnknownField, 1>>;
+
+    // The bits of a count or a period that the count field keeps.
+    static constexpr uint32_t kCountMask = (uint32_t{1} << 31) - 1;
+
 public:
     constexpr StorageGeneration() noexcept = default;
 
     [[nodiscard]] static constexpr StorageGeneration known(AllocationCount count) noexcept {
-        const uint32_t low = count.raw() & COUNT_MASK;
-        return StorageGeneration{low == 0 ? 1U : low};
+        const uint32_t low = count.raw() & kCountMask;
+        return StorageGeneration{Word{}
+                                     .with<side::GenerationCountField>(low == 0 ? 1U : low)
+                                     .expect("the mask keeps the bits of the count field")};
     }
 
     [[nodiscard]] static constexpr StorageGeneration unknown(AllocatorEpoch epoch) noexcept {
-        return StorageGeneration{UNKNOWN_BIT | (epoch.raw() & COUNT_MASK)};
+        const Word period = Word{}
+                                .with<side::GenerationCountField>(epoch.raw() & kCountMask)
+                                .expect("the mask keeps the bits of the count field");
+        return StorageGeneration{period.with<side::GenerationUnknownField>(1).expect("the unknown field holds a bit")};
     }
 
-    [[nodiscard]] constexpr uint32_t raw() const noexcept { return generation_; }
+    [[nodiscard]] constexpr uint32_t raw() const noexcept { return word_.bits(); }
 
     // True for a storage whose allocator gave it a generation.
     [[nodiscard]] constexpr bool is_known() const noexcept {
-        return generation_ != 0 && (generation_ & UNKNOWN_BIT) == 0;
+        return word_.bits() != 0 && word_.get<side::GenerationUnknownField>() == 0;
     }
 
     // True for a storage that the front end read in a period of its
     // allocator, with no generation of that allocator.
-    [[nodiscard]] constexpr bool is_unknown() const noexcept { return (generation_ & UNKNOWN_BIT) != 0; }
+    [[nodiscard]] constexpr bool is_unknown() const noexcept { return word_.get<side::GenerationUnknownField>() != 0; }
 
-    constexpr auto operator<=>(const StorageGeneration&) const noexcept = default;
+    // The order of two generations is the order of their words.
+    [[nodiscard]] friend constexpr bool operator==(StorageGeneration, StorageGeneration) noexcept = default;
+    [[nodiscard]] friend constexpr std::strong_ordering operator<=>(StorageGeneration left,
+                                                                    StorageGeneration right) noexcept {
+        return left.raw() <=> right.raw();
+    }
 
 private:
-    static constexpr uint32_t UNKNOWN_BIT = uint32_t{1} << 31;
-    static constexpr uint32_t COUNT_MASK = UNKNOWN_BIT - 1;
+    constexpr explicit StorageGeneration(Word word) noexcept : word_{word} {}
 
-    constexpr explicit StorageGeneration(uint32_t generation) noexcept : generation_{generation} {}
-
-    uint32_t generation_ = 0;
+    Word word_{};
 };
 
 // Distinct hash types that cannot be passed for one another. Zero means unset.
