@@ -564,17 +564,33 @@ static void test_external_reads_follow_the_region() {
     const crucible::ValidatedOp first_op = crucible::test::certify_synthetic_op(sealed_entry, first_records);
     const crucible::ValidatedOp second_op = crucible::test::certify_synthetic_op(sealed_entry, second_records);
 
+    // A live op with the record of one output and no input.  Its inputs are
+    // the empty prefix of its records.
+    crucible::TraceRing::Entry output_entry{};
+    output_entry.num_outputs = 1;
+    auto const sealed_output_entry = crucible::test::seal_entry(output_entry);
+    const crucible::ValidatedOp output_op = crucible::test::certify_synthetic_op(sealed_output_entry, first_records);
+    CRUCIBLE_TEST_ASSERT(kTest, first_op.input_records().size() == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, output_op.metas().size() == 1u);
+    CRUCIBLE_TEST_ASSERT(kTest, output_op.input_records().size() == 0u);
+
     CrucibleContext ctx{g_test.alloc};
     auto context_key = crucible::mint_context_key(g_test);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(context_key, *external_region));
     const auto first_reads =
-        ctx.with_compiled(context_key, [&ctx = ::fixy::as_const(ctx), &first_op, &second_op, first_data,
+        ctx.with_compiled(context_key, [&ctx = ::fixy::as_const(ctx), &first_op, &second_op, &output_op, first_data,
                                         second_data](crucible::CompiledScope& scope) noexcept {
             auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
             const auto held = [&ctx, &pv] noexcept { return ctx.pool().slot_ptr(SlotId{1}, pv); };
             // The activation lists no read.
             scope.bind_external_reads(OpIndex{0}, first_op);
             CRUCIBLE_TEST_ASSERT(kTest, held().is_none());
+            // The list holds the read of input 0 of op 0.  A live op with no
+            // input has no record for it, and its output record binds nothing.
+            scope.list_external_reads(OpIndex{0});
+            scope.bind_external_reads(OpIndex{0}, output_op);
+            CRUCIBLE_TEST_ASSERT(kTest, held().is_none());
+            scope.rewind_external_reads();
             // The list holds the one read of op 0, and a rewind gives it again.
             scope.list_external_reads(OpIndex{0});
             scope.bind_external_reads(OpIndex{0}, first_op);
