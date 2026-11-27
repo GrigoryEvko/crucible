@@ -52,4 +52,19 @@ static_assert(bits_of(::fixy::fp::erf(float_of(0x007FFFFFu))) == 0x00906EB9u,
 static_assert(bits_of(::fixy::fp::erf(float_of(0x407AD444u))) == 0x3F7FFFFFu,
               "erff below the edge to 1 must be the largest float below 1.");
 
+// A row of the float table is its terms and no padding, and it fills one
+// cache line, so the address of a row is a shift of the index.
+static_assert(sizeof(ErfFloatInterval) == sizeof(ErfFloatInterval{}.terms),
+              "a row of kErfFloatTable must hold only its terms.");
+static_assert(sizeof(ErfFloatInterval) == __GCC_CONSTRUCTIVE_SIZE, "a row of kErfFloatTable must fill one cache line.");
+static_assert(static_cast<int>(sizeof(ErfFloatInterval{}.terms) / sizeof(double)) == kErfFloatDegree + 1,
+              "a row of kErfFloatTable must hold the terms of degree 0 to kErfFloatDegree.");
+
+// The last interval holds kErfFloatOneFrom, so each |x| below it has a row.
+static_assert(static_cast<double>(kErfFloatFirst + kErfFloatIntervals - 1) / 16.0
+                  <= static_cast<double>(kErfFloatOneFrom),
+              "the last interval of kErfFloatTable must start at or before kErfFloatOneFrom.");
+static_assert(static_cast<double>(kErfFloatOneFrom) < static_cast<double>(kErfFloatFirst + kErfFloatIntervals) / 16.0,
+              "the last interval of kErfFloatTable must hold kErfFloatOneFrom.");
+
 }  // namespace fixy::fp::detail::erf_self_test

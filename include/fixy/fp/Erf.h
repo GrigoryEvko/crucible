@@ -44,21 +44,25 @@
 //   interval (the step of the Horner loop and the last fma).
 //
 // Algorithm of erf(float)
-//   The fast path is the double path with fewer terms: P cut to degree 7
-//   below 1/2, and the Taylor polynomials cut to degree 8.  A cut of a Taylor
-//   polynomial is the Taylor polynomial of the lower degree, with an error of
-//   about 2^-44 relative to erf.  A cut of the minimax P drops the terms of
-//   P8 and P9, which give at most 2^-40.7 relative to erf.  The rounding test
-//   admits an error of 2^-38.  |x| >= 0x1.f5a88ap+1 gives ±1.  The rounding
-//   test and the slow path are those of exp(float) in fixy/fp/Exp.h, with
-//   erf(double) in the slow path, and each result below 2^-123 takes the slow
-//   path.  The fma sites of the fast path are those of the double path.
-//   The exhaustive sweep of the 2^32 inputs against CORE-MATH proves the
-//   correct round of each input (the target bench_fp_sweep).
+//   |x| < 1/2: the double path with P cut to degree 7.  The cut drops the
+//     terms of P8 and P9, which give at most 2^-40.7 relative to erf.
+//   1/2 <= |x| < 0x1.f5a88ap+1: 55 intervals of width 1/16 in kErfFloatTable.
+//     On each, erf is the minimax polynomial of degree 7 in t = |x| - c for
+//     the relative error, with an error of 2^-52.4.  t is exact.
+//   |x| >= 0x1.f5a88ap+1 gives ±1.
+//   The two polynomials take the form of Estrin.  The rounding test admits an
+//   error of 2^-38.  The rounding test and the slow path are those of
+//   exp(float) in fixy/fp/Exp.h, with erf(double) in the slow path, and each
+//   result below 2^-123 takes the slow path.  The fma sites of the fast path:
+//   the seven of the form of Estrin, the tail and the last fma below 1/2, and
+//   the fma of t and the seven of the form of Estrin in an interval.  The
+//   exhaustive sweep of the 2^32 inputs against CORE-MATH proves the correct
+//   round of each input (the target bench_fp_sweep).
 //
 // Tables
 //   `python3 utils/tools/fp_tables.py erf` prints each table and constant of
-//   this header with the pinned mpmath.
+//   the double path, and `python3 utils/tools/fp_tables.py erff` prints
+//   kErfFloatTable, with the pinned mpmath.
 
 #include <foundation/Platform.h>
 #include <foundation/core/Float.h>
@@ -95,9 +99,9 @@ inline constexpr float kErfFloatOneFrom = 0x1.f5a88ap+1f;
 inline constexpr int kErfIntervals = 44;
 inline constexpr int kErfDegree = 11;
 // The degree of P below 1/2, and the degrees of the fast path of the float
-// form, in the intervals and in z.
+// form, in the intervals of kErfFloatTable and in z.
 inline constexpr int kErfSmallDegree = 9;
-inline constexpr int kErfFloatDegree = 8;
+inline constexpr int kErfFloatDegree = 7;
 inline constexpr int kErfFloatSmallDegree = 7;
 
 // One interval [1/2 + i/8, 1/2 + (i + 1)/8): erf at its center in two parts,
@@ -291,9 +295,85 @@ inline constexpr ErfInterval kErfTable[kErfIntervals] = {
 
 // The tolerance of the rounding test of the float fast path, in units of the
 // last bit of the double result: an error of 2^-38 times 2^53.  The error of
-// the fast path is at most about 2^-40.7, from the cut of P, so the margin is
-// about six.
+// the fast path is at most about 2^-40.7, from the cut of P below 1/2, so the
+// margin is about six.  The polynomials of kErfFloatTable have a relative
+// error of 2^-52.4.
 inline constexpr std::uint64_t kErfFloatTolerance = std::uint64_t{1} << 15;
+
+// The intervals of the float form above 1/2: interval i covers
+// [i/16, (i + 1)/16) for i from kErfFloatFirst, and the last one holds
+// kErfFloatOneFrom.  A row holds the coefficients c0 to c7 of the minimax
+// polynomial of degree 7 in the offset from the center of the interval, for
+// the relative error of erf.  A row is 64 bytes, one cache line, so the
+// address of a row is a shift.
+struct alignas(64) ErfFloatInterval {
+    double terms[8] = {};
+};
+
+inline constexpr int kErfFloatFirst = 8;
+inline constexpr int kErfFloatIntervals = 55;
+
+// From python3 utils/tools/fp_tables.py erff.  The largest relative error of
+// the table polynomials is 2^-52.40.
+// clang-format off
+inline constexpr ErfFloatInterval kErfFloatTable[kErfFloatIntervals] = {
+    {{0x1.1855a5fd3dd50p-1, 0x1.b3aafcc275036p-1, -0x1.cee5ac8e92bbbp-2, -0x1.fa02983d0b575p-4, 0x1.77cd746cbd593p-3, -0x1.fa6e567a456e7p-10, -0x1.8de754d69659ep-5, 0x1.004de680295cap-7}},
+    {{0x1.32a54cb8db67ap-1, 0x1.96164fafd8de9p-1, -0x1.e23a7ea0c9ad9p-2, -0x1.3f5ee156bab41p-4, 0x1.70e468a3df2c4p-3, -0x1.3da6771b3d5e4p-6, -0x1.69ed9bf74d6f1p-5, 0x1.8c81eb24b0dc7p-7}},
+    {{0x1.4b13713ad3513p-1, 0x1.7791b886e7408p-1, -0x1.ecef423109bf9p-2, -0x1.15c3c5cf22420p-5, 0x1.5f688fc93778dp-3, -0x1.1da63bf3a9cf4p-5, -0x1.38427ce39995ep-5, 0x1.f9e6af5e7c00ep-7}},
+    {{0x1.61955607dd15dp-1, 0x1.58a445da7c750p-1, -0x1.ef6c246a0f670p-2, 0x1.e83e0d9be210ep-8, 0x1.44cc6553609f7p-3, -0x1.87d3c306de4c9p-5, -0x1.f90b10b7282d4p-6, 0x1.222280c4829a1p-6}},
+    {{0x1.762870f720c6fp-1, 0x1.39ccc1b136d5cp-1, -0x1.ea4feea4e4747p-2, 0x1.715e5952dd8e1p-5, 0x1.22cdbd83cbcd5p-3, -0x1.da50a9aa19761p-5, -0x1.754dc1016287cp-6, 0x1.35095bea596c4p-6}},
+    {{0x1.88d1cd474a2e0p-1, 0x1.1b7e98fe26219p-1, -0x1.de65a22ce141cp-2, 0x1.40686a3f1ad84p-4, 0x1.f6b0cbb21f61fp-4, -0x1.09c7c928b8581p-4, -0x1.da752ab749c77p-7, 0x1.362bca9a65916p-6}},
+    {{0x1.999d4192a5715p-1, 0x1.fc3ee5d1524b1p-2, -0x1.cc990045b55cbp-2, 0x1.b37338e6974e6p-4, 0x1.a0d120c87b9e2p-4, -0x1.19bb2b68a38f2p-4, -0x1.a110f768babebp-8, 0x1.272f89ee3f286p-6}},
+    {{0x1.a89c850b7d54dp-1, 0x1.c40b0729ed548p-2, -0x1.b5eaaef0a234ap-2, 0x1.0847c7dad3ad2p-3, 0x1.47de0ba6da1d7p-4, -0x1.1d9de7fa3faf3p-4, 0x1.30ffb8a460c35p-10, 0x1.0aa14b8b1612cp-6}},
+    {{0x1.b5e62fce16096p-1, 0x1.8eed36b886d93p-2, -0x1.9b64a06e50708p-2, 0x1.2bb6e2c74d725p-3, 0x1.dee3261cb6278p-5, -0x1.1699608e26cd9p-4, 0x1.fdff36650616cp-8, 0x1.c759d4b791ec5p-7}},
+    {{0x1.c194b1d49a184p-1, 0x1.5d4fd33729013p-2, -0x1.7e0f4f045addep-2, 0x1.444bc66c39d01p-3, 0x1.356dbf16fad41p-5, -0x1.0643de8bef042p-4, 0x1.b281aee4128f0p-7, 0x1.6ba144867f56dp-7}},
+    {{0x1.cbc54b476248ep-1, 0x1.2f7cc3fe6f422p-2, -0x1.5ee8429e36debp-2, 0x1.52a8395f9d49cp-3, 0x1.313761ba3ca4ap-6, -0x1.dcf845bc4a914p-5, 0x1.1e1420b68ceb6p-6, 0x1.0924b75967eb8p-7}},
+    {{0x1.d4970f9ce00d9p-1, 0x1.059f59af7a904p-2, -0x1.3eda354de36c5p-2, 0x1.57b85ad43f626p-3, 0x1.8e913b98ae61bp-10, -0x1.a2893c9098611p-5, 0x1.4d3a90afe38a8p-6, 0x1.4cf57cbcc3375p-8}},
+    {{0x1.dc29fb60715b0p-1, 0x1.bf8e1b1ca2274p-3, -0x1.1eb7095e5d6d4p-2, 0x1.549ea6f7aae08p-3, -0x1.b10f12f3690f7p-7, -0x1.61420d219a196p-5, 0x1.674f1f6a4e348p-6, 0x1.25692125e7578p-9}},
+    {{0x1.e29e22a89d767p-1, 0x1.7bd5c7df3fe98p-3, -0x1.fe674494077c1p-3, 0x1.4a9feacf89a68p-3, -0x1.a00826906bd1cp-6, -0x1.1cf0e96533820p-5, 0x1.6e0d2ed4e4c40p-6, -0x1.35f8fdcecf1c1p-12}},
+    {{0x1.e812fc64db36ap-1, 0x1.3fda6bc016990p-3, -0x1.c1cb278627921p-3, 0x1.3b105123172e2p-3, -0x1.1e6457bb18568p-5, -0x1.b1f647dd36106p-6, 0x1.640a533498b7fp-6, -0x1.3da42214aab46p-9}},
+    {{0x1.eca6ccd709544p-1, 0x1.0b3f52ce8c37fp-3, -0x1.8885019f63c6dp-3, 0x1.274275fc9302fp-3, -0x1.57f73699a6317p-5, -0x1.3076a35ea03c3p-6, 0x1.4c6ae03d8e78fp-6, -0x1.0be2d29b1439cp-8}},
+    {{0x1.f0762fde45ee7p-1, 0x1.bb1c972f23e49p-4, -0x1.5341e3c01b58ep-3, 0x1.107929f6f1776p-3, -0x1.7e1b34f97615fp-5, -0x1.73b625ea7412ap-7, 0x1.2a97ee14f06a3p-6, -0x1.595d869b02871p-8}},
+    {{0x1.f39bc242e43e6p-1, 0x1.6c7e64e7281c5p-4, -0x1.2274b86835fd3p-3, 0x1.efb890e5c8167p-4, -0x1.92c7db1684723p-5, -0x1.45477e08b86fcp-8, 0x1.01fc6165c66b9p-6, -0x1.8844932fcdbb2p-8}},
+    {{0x1.f62fe80272419p-1, 0x1.297db960e4f5dp-4, -0x1.ecb83b087c04fp-4, 0x1.bce18363ca57fp-4, -0x1.985aaf7764f4dp-5, 0x1.cd953e2693954p-12, 0x1.ab9a0b8e75102p-7, -0x1.9b5e38aab46b3p-8}},
+    {{0x1.f848acb544e95p-1, 0x1.e1d4cf1e24501p-5, -0x1.9e12e1fde5552p-4, 0x1.8a27806df39f9p-4, -0x1.91674e5eb3d78p-5, 0x1.3bc755aec4dadp-8, 0x1.51bc5381b0213p-7, -0x1.96b274708e7a1p-8}},
+    {{0x1.f9f9ba8d3c733p-1, 0x1.83298d7172109p-5, -0x1.58d101f905a75p-4, 0x1.58f1456f85e53p-4, -0x1.808d1850b8cadp-5, 0x1.0c1bd9b153a93p-7, 0x1.f61e9d89c3516p-8, -0x1.7f0821c456354p-8}},
+    {{0x1.fb54641aebbc9p-1, 0x1.34ac36ad8dafap-5, -0x1.1c8ec267f9404p-4, 0x1.2a52c5d84128bp-4, -0x1.68541c02b4536p-5, 0x1.5afe401880918p-7, 0x1.565b2d7be715dp-8, -0x1.596b18a03d38bp-8}},
+    {{0x1.fc67bcf2d7b8fp-1, 0x1.e85c449e377efp-6, -0x1.d177f166c07c5p-5, 0x1.fe23b7584aaa4p-5, -0x1.4b12109613c70p-5, 0x1.8d9905d570c55p-7, 0x1.92650342ca745p-9, -0x1.2ac505d9088a2p-8}},
+    {{0x1.fd40bd6d7a785p-1, 0x1.7f5188610ddc8p-6, -0x1.7954423f7c998p-5, 0x1.af5baae337febp-5, -0x1.2ad77c7cbc950p-5, 0x1.a7b8c48fee6ecp-7, 0x1.46646efaef56cp-10, -0x1.ef1a75ec237cep-9}},
+    {{0x1.fdea6e062d0c9p-1, 0x1.2a875b5ffab59p-6, -0x1.2f3178cd6dcd4p-5, 0x1.68d1c45b93addp-5, -0x1.09648ed3aef12p-5, 0x1.ad8b151a7bd7ap-7, -0x1.e9a6019024109p-13, -0x1.87234ac4bcbc3p-9}},
+    {{0x1.fe6e1742f7cf5p-1, 0x1.cd5ec93c1243ap-7, -0x1.e2ff3aaacb385p-6, 0x1.2aa4e5823c7bdp-5, -0x1.d049842dbebdcp-6, 0x1.a34edb2b3ffb7p-7, -0x1.676e5981ce79fp-10, -0x1.23b071b82a18ap-9}},
+    {{0x1.fed37386190fbp-1, 0x1.61beae53b72c2p-7, -0x1.7d6193f22c3c0p-6, 0x1.e947279e3b4fep-6, -0x1.906031b97d09ep-6, 0x1.8d14d62be198ep-7, -0x1.1f245e69b7086p-9, -0x1.92584bd3ea7acp-10}},
+    {{0x1.ff20e0a7ba8c2p-1, 0x1.0d1d69569b839p-7, -0x1.2a8ca0dc02752p-6, 0x1.8cc071b70932ap-6, -0x1.54a149f1b09fep-6, 0x1.6e9137b55ffaap-7, -0x1.6577ed39b6358p-9, -0x1.e9c23e0d72b8ep-11}},
+    {{0x1.ff5b8fb26f5f6p-1, 0x1.9646f35a7663cp-8, -0x1.cf68ed9311b0bp-7, 0x1.3e8735b5a66cbp-6, -0x1.1e1612d027073p-6, 0x1.4afd8e6f2f18bp-7, -0x1.8c375170091e1p-9, -0x1.c799fe7378d7ap-12}},
+    {{0x1.ff87b1913e853p-1, 0x1.30499b5039596p-8, -0x1.64964201ec8bap-7, 0x1.fa73d7eafb79dp-7, -0x1.daa30221421e3p-7, 0x1.2509444d81e40p-7, -0x1.99482a2e34ffep-9, -0x1.40408213eb8b3p-15}},
+    {{0x1.ffa89fe5b3625p-1, 0x1.c4412bf4b8f35p-9, -0x1.100f347126cf0p-7, 0x1.8ebda07671ba8p-7, -0x1.850c6a31c9b9fp-7, 0x1.fdac860dfdc26p-8, -0x1.927d03d0f0764p-9, 0x1.0ff5e6f4335d5p-12}},
+    {{0x1.ffc10194fcb64p-1, 0x1.4d78bba8ca621p-9, -0x1.9ba107a443e02p-8, 0x1.36f273fbc040cp-7, -0x1.3b38716ac7d24p-7, 0x1.b3fe0182535c5p-8, -0x1.7d3fe7df6ab05p-9, 0x1.ea31dd16593a0p-12}},
+    {{0x1.ffd2eae369a07p-1, 0x1.e7f232d9e266cp-10, -0x1.34c7442dd48d9p-8, 0x1.e066bed070961p-8, -0x1.f914f3c42fb4ap-8, 0x1.6f4664ed78371p-8, -0x1.5e5991079ffc1p-9, 0x1.39cbb0c0b3419p-11}},
+    {{0x1.ffdff92db56e5p-1, 0x1.6235fbd7a4373p-10, -0x1.cb5e029b9e56ap-9, 0x1.6fa4c7ef274a9p-8, -0x1.903a089a835b7p-8, 0x1.30f12e0cba5a5p-8, -0x1.39d21b6970774p-9, 0x1.5d3f82cd2cd5bp-11}},
+    {{0x1.ffe96a78a04a9p-1, 0x1.fe41cd9bb4f2cp-11, -0x1.52d7b28966c0cp-9, 0x1.16c192d86a1a9p-8, -0x1.39bfce9510ffdp-8, 0x1.f376a7869d54bp-9, -0x1.12e6cef99f9b5p-9, 0x1.66acd4eb82984p-11}},
+    {{0x1.fff0312b010b5p-1, 0x1.6caa0d3583018p-11, -0x1.efb729f4cf75bp-10, 0x1.a2da7cebe12cbp-9, -0x1.e6c27a24bc725p-9, 0x1.93b1f4d8da09cp-9, -0x1.d82050aa9819ap-10, 0x1.5cd7dd10b09adp-11}},
+    {{0x1.fff50456dab8cp-1, 0x1.0295ef6591865p-11, -0x1.679880e95a4dap-10, 0x1.37d38e3a5c918p-9, -0x1.75b3708aebb36p-9, 0x1.4231c4b4988fep-9, -0x1.8e264764a01fcp-10, 0x1.45c3b64cccad5p-11}},
+    {{0x1.fff86cfd3e657p-1, 0x1.6be02102b353dp-12, -0x1.02b157780d6afp-10, 0x1.cc1d886861169p-10, -0x1.1bff6f12ec8cfp-9, 0x1.fc0f77bd80e83p-10, -0x1.4a3320bd3ebcap-10, 0x1.267f8bd0cd633p-11}},
+    {{0x1.fffad0b901755p-1, 0x1.fc0d55470cf5ep-13, -0x1.7121aff5e820dp-11, 0x1.506d6992f7e01p-10, -0x1.ab595d3ecd67ap-10, 0x1.8bdd79da9d457p-10, -0x1.0d9b090eab08ep-10, 0x1.031aba5abee5ap-11}},
+    {{0x1.fffc7a37857d2p-1, 0x1.5feada379d8a5p-13, -0x1.05304df58f3a9p-11, 0x1.e79c081b860bcp-11, -0x1.3e5dbe33237f4p-10, 0x1.30eb2081d9c33p-10, -0x1.b1d493af919dcp-11, 0x1.bd587d04927b4p-12}},
+    {{0x1.fffd9fdeabccep-1, 0x1.e3bcf436a1a48p-14, -0x1.6e953111ef0a1p-12, 0x1.5e3edf67686f7p-11, -0x1.d5be67c0547bep-11, 0x1.d07d9ff9d2736p-11, -0x1.58328f5efe2a9p-11, 0x1.76d42ed4655dbp-12}},
+    {{0x1.fffe68f4fa777p-1, 0x1.49e17724f4cddp-14, -0x1.fe48c44e229c3p-13, 0x1.f2bd95d76f24ap-12, -0x1.57388cb12cda0p-11, 0x1.5decc25c2cadcp-11, -0x1.0d7499d1f4d55p-11, 0x1.35933399e4bd0p-12}},
+    {{0x1.fffef1960d85dp-1, 0x1.be6abbb10a4cdp-15, -0x1.6040381a8c314p-13, 0x1.5fff1dde9eefep-12, -0x1.f0c933efa955dp-12, 0x1.04cbf4a5b31c6p-11, -0x1.a07f150b79321p-12, 0x1.f68dd27b39960p-13}},
+    {{0x1.ffff4db27f146p-1, 0x1.2bb5cc22e5cd8p-15, -0x1.e25894899f526p-14, 0x1.ec8a8e5a72795p-13, -0x1.64256ae0a3bfcp-12, 0x1.80a836c1740b9p-12, -0x1.3dea401b0a235p-12, 0x1.915de07818839p-13}},
+    {{0x1.ffff8b500e77cp-1, 0x1.8f4ccca7fc769p-16, -0x1.478cffe305945p-14, 0x1.559f04adde4efp-13, -0x1.f9e1577d69b28p-13, 0x1.18bda53c0e884p-12, -0x1.df8634c26e46ep-13, 0x1.3bb5c6ee34a81p-13}},
+    {{0x1.ffffb43555b5fp-1, 0x1.07ebd2a2d26c8p-16, -0x1.b93e442a37f27p-15, 0x1.d5cf15159cda1p-14, -0x1.63f5e1469cb15p-13, 0x1.95a03acec4f0ap-13, -0x1.656e5e284af9dp-13, 0x1.e98c43833c7f2p-14}},
+    {{0x1.ffffcf23ff5fcp-1, 0x1.5a2adfa0b492cp-17, -0x1.26c88270759ebp-15, 0x1.40473572b9932p-14, -0x1.f057cbde5909fp-14, 0x1.22178d1c49bc5p-13, -0x1.0765b6181aa76p-13, 0x1.765b3e9481e6ap-14}},
+    {{0x1.ffffe0bd3e852p-1, 0x1.c282cd3957a73p-18, -0x1.86ad6dfa44fa5p-16, 0x1.b0f313f039f84p-15, -0x1.56e44abecdec7p-14, 0x1.9ad1ecfe4ea8ap-14, -0x1.7fe4033244255p-14, 0x1.1a8184c03c364p-14}},
+    {{0x1.ffffec2641a9ep-1, 0x1.22df29821407dp-18, -0x1.00c902a6cfd95p-16, 0x1.22234eb886702p-15, -0x1.d57a181c9f4ddp-15, 0x1.200c283b5a4e4p-14, -0x1.14b4c32811562p-14, 0x1.a4f966edc6d1ep-15}},
+    {{0x1.fffff37d63a36p-1, 0x1.74adc8f405eecp-19, -0x1.4ed4228e44856p-17, 0x1.81918baea931dp-16, -0x1.3e81b17a0091bp-15, 0x1.9004a3610941fp-15, -0x1.8aa1ba3e6d2d0p-15, 0x1.35cd4e3ab8296p-15}},
+    {{0x1.fffff82cdcf1bp-1, 0x1.d9c73698fa87dp-20, -0x1.b11017ec67116p-18, 0x1.fc0dfadf65484p-17, -0x1.ac4e03cd2e0bep-16, 0x1.131806b5a4338p-15, -0x1.1672ef66b8fc9p-15, 0x1.c2882c9115099p-16}},
+    {{0x1.fffffb248c39dp-1, 0x1.2acee2f5ec66ap-20, -0x1.15cc570408a39p-18, 0x1.4be757bbb75f9p-17, -0x1.1d6aa5f8d2273p-16, 0x1.76c5937d4ae9bp-16, -0x1.84dffc3d7db73p-16, 0x1.43c8315edb532p-16}},
+    {{0x1.fffffd01f36afp-1, 0x1.75fa8dbc840bap-21, -0x1.6186da0133f62p-19, 0x1.ae023231e1b59p-18, -0x1.790812f7c910ep-17, 0x1.f9c25656cedf5p-17, -0x1.0cc666842f6f4p-16, 0x1.cc170a6171e9cp-17}},
+    {{0x1.fffffe2ba0ea5p-1, 0x1.d06ad6ecde88ep-22, -0x1.be46aa8edc9b0p-20, 0x1.143860c7840f0p-18, -0x1.edaba78faee6bp-18, 0x1.52138a96f01e2p-17, -0x1.6fca538eea2f8p-17, 0x1.43404047a6425p-17}},
+    {{0x1.fffffee3cc32cp-1, 0x1.1e1e857adb8ddp-22, -0x1.1769ce5f2a6f4p-20, 0x1.5fe5d479b057cp-19, -0x1.405d865c92e07p-18, 0x1.bfc94feba1942p-18, -0x1.f245d5f854bfcp-18, 0x1.c142452f9f491p-18}},
+};
+// clang-format on
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
@@ -388,19 +468,17 @@ template <std::size_t Count>
     return fma_of_finite(kErfTwoOverRootPiHigh, value, value * tail);
 }
 
-// The fast path of erf of float for 1/2 <= |x| < kErfFloatOneFrom, with the
-// terms c1 to c8 of the interval in the form of Estrin.  The index comes from
-// the float: 8 |x| is exact, and its truncation is its floor.  The offset
-// comes from the double: (|x| - 1/16) - floor(8 |x|) / 8 is exact, and it is
-// |x| minus the center 0.5625 + index / 8, as in erf_interval_.  The two
-// chains do not wait for each other.
+// The fast path of erf of float for 1/2 <= |x| < kErfFloatOneFrom: the
+// polynomial of the row of kErfFloatTable in the form of Estrin, with no add
+// after it.  The index comes from the float: 16 |x| is exact, and its
+// truncation is its floor.  The offset comes from the double:
+// (|x| - 1/32) - floor(16 |x|) / 16 is exact, and it is |x| minus the center
+// of the interval.  The two chains do not wait for each other.
 [[nodiscard]] constexpr double erf_interval_float_(double magnitude, float magnitude_float) noexcept {
     using ::fixy::fp::detail::fma_of_finite;
-    auto const index = static_cast<std::uint32_t>(8.0f * magnitude_float) - 4u;
-    double const offset = fma_of_finite(-0.125, erf_floor_(8.0 * magnitude), magnitude - 0.0625);
-    ErfInterval const& entry = kErfTable[index];
-    double const sum = erf_estrin_eight_(offset, entry.terms);
-    return entry.value_high + fma_of_finite(offset, sum, entry.value_low);
+    auto const index = static_cast<std::uint32_t>(16.0f * magnitude_float) - static_cast<std::uint32_t>(kErfFloatFirst);
+    double const offset = fma_of_finite(-0.0625, erf_floor_(16.0 * magnitude), magnitude - 0.03125);
+    return erf_estrin_eight_(offset, kErfFloatTable[index].terms);
 }
 
 // The midpoint inputs of the float form, from the sweep of the oracle.  A
