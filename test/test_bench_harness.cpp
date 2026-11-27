@@ -682,6 +682,91 @@ void test_measure_with_gives_the_state_back() {
     std::move(checks).close();
 }
 
+// The page offsets of the frames in which the body of a Run ran, each one
+// time, in the order of their first call.
+struct FramePlaces {
+    ::fixy::FixedList<std::uint64_t, 8> offsets{};
+};
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test reads the addresses of stack frames and of a home of a row")
+
+// The page offset of an address.
+[[nodiscard]] std::uint64_t page_offset_of(void const* address) noexcept {
+    return std::bit_cast<std::uintptr_t>(address) % bench::kRowHomeBytes;
+}
+
+// The page offset of an object.
+template <typename T>
+[[nodiscard]] std::uint64_t page_offset_of_object(T const& object) noexcept {
+    return page_offset_of(&object);
+}
+
+// Keeps the page offset of the frame of the caller, one time.  The function
+// is always inline, so the frame is the frame of its caller.
+[[gnu::always_inline]] inline void note_frame(FramePlaces& places) noexcept {
+    const std::uint64_t offset = page_offset_of(__builtin_frame_address(0));
+    for (std::uint64_t const known : places.offsets) {
+        if (known == offset) return;
+    }
+    static_cast<void>(places.offsets.append(offset));
+}
+
+// A body of a Run with its state on the stack, which keeps the page offset of
+// its frame in places.  Each call gives a closure of the same type.
+[[nodiscard]] auto plain_frame_body(FramePlaces& places) noexcept {
+    return [&places]() noexcept { note_frame(places); };
+}
+
+// Calls measure from a frame that is about one kilobyte deeper on the stack.
+template <typename Measure>
+[[gnu::noinline]] bench::Report measure_deeper(Measure const& measure) {
+    ::fixy::FixedArray<std::uint8_t, 1000> pad{};
+    bench::mark_changed(pad);
+    return measure();
+}
+
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// True when the two records hold the same offsets in the same order.
+[[nodiscard]] bool has_same_places(FramePlaces const& first, FramePlaces const& second) noexcept {
+    if (first.offsets.size() != second.offsets.size()) return false;
+    for (std::size_t position = 0; position < first.offsets.size(); ++position) {
+        if (*first.offsets.get(position).expect("the position is below the size")
+            != *second.offsets.get(position).expect("the two sizes are equal"))
+            return false;
+    }
+    return true;
+}
+
+// A home of a row starts at a page, and its step runs in frames at the same
+// page offsets when the caller of the Run is at two depths of the stack (the
+// home of a row of bench/bench_harness.h).  A body with its state on the
+// stack runs at page offsets that move with the depth, so the test can see a
+// move.
+void test_row_home_holds_fixed_page_offsets() {
+    ::fixy::check::Tally checks{kTest, "test_row_home_holds_fixed_page_offsets"};
+    auto home = bench::build_row_home([]() noexcept { return FramePlaces{}; },
+                                      [](FramePlaces& places) noexcept { note_frame(places); });
+    CRUCIBLE_TEST_EXPECT(checks, page_offset_of_object(home->state) == 0);
+    bench::Run run{"frame of a home"};
+    static_cast<void>(run.samples(16).warmup(1).batch(1).no_pin());
+
+    static_cast<void>(run.measure(*home));
+    const FramePlaces home_at_top = home->state;
+    home->state = FramePlaces{};
+    static_cast<void>(measure_deeper([&run, &home]() { return run.measure(*home); }));
+    CRUCIBLE_TEST_EXPECT(checks, home_at_top.offsets.size() != 0);
+    CRUCIBLE_TEST_EXPECT(checks, has_same_places(home_at_top, home->state));
+
+    FramePlaces plain_at_top{};
+    static_cast<void>(run.measure(plain_frame_body(plain_at_top)));
+    FramePlaces plain_deeper{};
+    static_cast<void>(measure_deeper([&run, &plain_deeper]() { return run.measure(plain_frame_body(plain_deeper)); }));
+    CRUCIBLE_TEST_EXPECT(checks, plain_at_top.offsets.size() != 0);
+    CRUCIBLE_TEST_EXPECT(checks, !has_same_places(plain_at_top, plain_deeper));
+    std::move(checks).close();
+}
+
 // The number of CPUs in the affinity of the calling thread, or zero when
 // the kernel refuses the query.
 std::size_t affinity_cpu_count() {
@@ -1594,6 +1679,7 @@ int main() {
     test_sink_keeps_each_value();
     test_cycle_floor_marks_a_row();
     test_measure_with_gives_the_state_back();
+    test_row_home_holds_fixed_page_offsets();
     test_run_pins_through_the_door_and_restores();
     test_fan_out_keeps_the_worker_affinity();
     test_core_of_run_stays_in_the_affinity();
@@ -1619,7 +1705,13 @@ int main() {
     test_run_measures_in_windows();
     test_windows_judge_no_sleep();
 
-    constexpr int kNumGroups = 27;
+    // The count of the groups that main runs.  The group of the off-CPU top
+    // runs only in a build with BPF.
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+    constexpr int kNumGroups = 36;
+#else
+    constexpr int kNumGroups = 35;
+#endif
     if (g_failures == 0) {
         ::fixy::check::pass(kTest, "test_bench_harness: PASS ({} groups, 0 failures)\n", kNumGroups);
         return 0;

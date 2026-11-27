@@ -2866,6 +2866,91 @@ struct Compare {
     return c;
 }
 
+// Home of a row
+//   A Run times its body in its own function, Run::measure, whose frame is
+//   on the stack below the frame of its caller.  A row whose object lives in
+//   the frame of main then depends on the distance from that object to the
+//   frame of the loop.  That distance changes with the size of the frame of
+//   main, so a change in another row changes the time of the row.
+//
+//   A RowHome holds the state of a row and the step of its body at the start
+//   of a page of its own.  A Run of a home calls measure through a door whose
+//   frame starts at a page (call_on_page_frame), so the frame of the loop
+//   also starts at a fixed page offset.  The distance then depends only on
+//   the code of the row, on each run and with each layout of the stack.  A
+//   row with its state on the stack keeps the distance of its build.
+
+// The alignment of a home of a row and of the frame of its door: one page.
+inline constexpr std::size_t kRowHomeBytes = 4096;
+
+// The state of a row and the step of its body, at the start of a page.  The
+// step takes the state as an lvalue in each call of the body.  The home
+// lives in a Box (build_row_home), so a state that cannot move, such as a
+// Vigil, is built in place.
+template <typename State, typename Step>
+struct alignas(kRowHomeBytes) RowHome {
+    State state;
+    Step step;
+};
+
+// A step of a home: a call on the state as an lvalue that does not throw,
+// and whose result holds no borrow.
+template <typename Step, typename State>
+concept RowHomeStep = !std::is_reference_v<State> && std::is_nothrow_invocable_v<Step&, State&>
+                   && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Step&, State&>>;
+
+// A build of the state of a home: a call that gives the state as a prvalue
+// and does not throw.
+template <typename Build>
+concept RowHomeBuild = std::is_nothrow_invocable_v<Build&> && !std::is_reference_v<std::invoke_result_t<Build&>>
+                    && !std::is_void_v<std::invoke_result_t<Build&>>;
+
+namespace detail {
+
+// True for a RowHome.
+template <typename T>
+inline constexpr bool is_row_home_v = false;
+template <typename State, typename Step>
+inline constexpr bool is_row_home_v<RowHome<State, Step>> = true;
+
+// The body of a Run of a home: one call of the step on the state.
+template <typename State, typename Step>
+struct HomeBody {
+    RowHome<State, Step>& home;
+
+    [[gnu::always_inline]] void operator()() noexcept { static_cast<void>(home.step(home.state)); }
+};
+
+// An object at the start of a page in a frame.  GCC aligns the stack of a
+// function with such a local to the page.
+struct alignas(kRowHomeBytes) PageAnchor {
+    std::uint8_t byte = 0;
+};
+
+// Calls call in a frame that starts at a page.  The frame of the callee of
+// call then starts at a fixed distance from a page, whatever the depth and
+// the random offset of the stack of the caller.  The anchor stays in memory,
+// so the alignment of the frame stays.  Complexity: one call, and at most
+// one page of stack.
+template <typename Call>
+[[nodiscard, gnu::noinline]] auto call_on_page_frame(Call const& call) -> std::invoke_result_t<Call const&> {
+    PageAnchor anchor{};
+    mark_changed(anchor);
+    return call();
+}
+
+}  // namespace detail
+
+// A Box of the home of a row: the state that build gives, built in place,
+// and the step.  Complexity: one allocation of whole pages.
+template <typename Build, typename Step>
+    requires RowHomeBuild<Build> && RowHomeStep<Step, std::invoke_result_t<Build&>>
+[[nodiscard]] ::fixy::Box<RowHome<std::invoke_result_t<Build&>, Step>> build_row_home(Build build, Step step) noexcept {
+    using Home = RowHome<std::invoke_result_t<Build&>, Step>;
+    return ::fixy::mint_box_built<Home>(::foundation::effects::testing::test().alloc,
+                                        [&build, &step]() noexcept { return Home{build(), step}; });
+}
+
 // ── Run: fluent builder + measurement loop ─────────────────────────
 
 class Run {
@@ -3052,7 +3137,11 @@ public:
     // timed loop.  A measure that GCC inlines into a small main gets the
     // registers and the alignment of main, and a call of a cold function
     // before it moves the loops into main.cold.
+    //
+    // A home of a row takes the overload after this one, so its loop always
+    // runs in a frame at a fixed page offset (the home of a row).
     template <typename Body>
+        requires(!detail::is_row_home_v<std::remove_cvref_t<Body>>)
     [[nodiscard, gnu::noinline]] Report measure(Body&& body) const {
         MeasureOpening opening = open_();
         const CpuId pinned_cpu = opening.pin.cpu;
@@ -3148,6 +3237,15 @@ public:
             close_window_(window);
         }
         return close_(std::move(opening), window, ns_samples, LoopCounts{.filled = filled, .batch = batch});
+    }
+
+    // Times the step of a home on its state (the home of a row).  The call
+    // goes through the door of a page frame, so the frame of the loop and
+    // the home have fixed page offsets.
+    template <typename State, typename Step>
+    [[nodiscard]] Report measure(RowHome<State, Step>& home) const {
+        return detail::call_on_page_frame(
+            [this, &home]() noexcept { return measure(detail::HomeBody<State, Step>{home}); });
     }
 
 private:
@@ -3918,7 +4016,6 @@ template <std::size_t Capacity, typename Body>
 [[nodiscard]] inline Report run(::fixy::FixedText<Capacity> const& name, Body&& body) {
     return run(name.view(), std::forward<Body>(body));
 }
-
 // State of a row
 //   run_with(name, state, body) times body(state) as run(name, body) times
 //   body().  The harness holds the state by value for the whole row, the
