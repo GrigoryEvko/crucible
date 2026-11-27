@@ -51,14 +51,26 @@ static_assert(bits_of(log_accurate_(double_of(0x0000000000000001ULL))) == 0xC087
 
 // The tables of log(double): the two intervals next to 1 have r = 1 and
 // -log(r) = 0, as does the entry k2 = 0.  So the path near 1 and the slow path
-// near 1 add no table value.
-[[nodiscard]] consteval bool is_identity(LogEntry const& entry) noexcept {
-    return bits_of(entry.inverse) == bits_of(1.0) && bits_of(entry.high) == 0 && bits_of(entry.middle) == 0
+// near 1 add no table value.  The row of the interval 511 holds r/2 = 1/2, as
+// each row below 512 does.
+[[nodiscard]] consteval bool is_identity(LogEntry const& entry, double stored_inverse) noexcept {
+    return bits_of(entry.inverse) == bits_of(stored_inverse) && bits_of(entry.high) == 0 && bits_of(entry.middle) == 0
         && bits_of(entry.low) == 0;
 }
-static_assert(is_identity(kLogFirst[kLogFirstOne]) && is_identity(kLogFirst[kLogFirstOne + 1]),
+static_assert(is_identity(kLogFirst[kLogFirstOne], 0.5) && is_identity(kLogFirst[kLogFirstOne + 1], 1.0),
               "the intervals 511 and 512 must have r = 1 and -log(r) = 0.");
-static_assert(is_identity(kLogSecond[kLogSecondCenter]), "the entry k2 = 0 must have r2 = 1 and -log(r2) = 0.");
+static_assert(is_identity(kLogSecond[kLogSecondCenter], 1.0), "the entry k2 = 0 must have r2 = 1 and -log(r2) = 0.");
+
+// The rows below 512 hold r_i/2, in [1/2, 1), and the other rows hold r_i, in
+// [1/2, 1] too, as r_i is near 1/y with y in [1, sqrt2).  So each stored inverse
+// is in [1/2, 1].  O(363).
+[[nodiscard]] consteval bool has_halved_low_rows() noexcept {
+    for (LogEntry const& entry : kLogFirst) {
+        if (entry.inverse < 0.5 || entry.inverse > 1.0) return false;
+    }
+    return true;
+}
+static_assert(has_halved_low_rows(), "each stored inverse must be in [1/2, 1].");
 static_assert(sizeof(LogEntry) == 32 && alignof(LogEntry) == 32, "a row must fill half a line of the cache.");
 
 // Each inverse r_i has 10 or fewer significant bits, and each l1 is a

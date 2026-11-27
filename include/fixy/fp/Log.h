@@ -43,9 +43,11 @@
 //     that puts its leading bit at bit 52, so |e| <= 1074.
 //   i = floor(512 y) is from 362 to 724.  r_i has 10 or fewer significant
 //     bits, and r_i = 1 for i = 511 and 512.  So z = fma(r_i, y, -1) is
-//     exact, with |z| <= 2^-8.88.  -log(r_i) = l1 + l2 + l3 in three doubles,
-//     l1 a multiple of 2^-42.  ln2 has the same form: ln2_high (42 bits) +
-//     ln2_low, or ln2_high + ln2_middle (40 bits) + ln2_third.
+//     exact, with |z| <= 2^-8.88.  Below i = 512 the table holds r_i/2, and
+//     the fma reads 2y, so y needs no exponent of its own.  -log(r_i) = l1 +
+//     l2 + l3 in three doubles, l1 a multiple of 2^-42.  ln2 has the same
+//     form: ln2_high (42 bits) + ln2_low, or ln2_high + ln2_middle (40 bits) +
+//     ln2_third.
 //   The fast path, for each x out of the path near 1:
 //     A = e ln2_high + l1 is exact: two multiples of 2^-42 below 2^10.
 //     (h, l) = FastTwoSum(A, z), because |A| > |z|.
@@ -340,7 +342,9 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The reduction of the bits of a positive finite x, after log_normal_bits_
 // for a subnormal x.  i = floor(512 y) is from 362 to 724, and r_i has 10 or
-// fewer significant bits, so the fma is exact.
+// fewer significant bits, so the fma is exact.  The fma reads m 2^-52 in
+// [1, 2), which is 2y below i = 512, where the row holds r_i/2.  So the
+// product is r_i y in each case.
 [[nodiscard, gnu::always_inline]] constexpr LogReduction log_reduce_(std::uint64_t bits) noexcept {
     using ::fixy::fp::detail::fma_of_finite;
     std::uint64_t const significand = (bits & kLogFractionMask) | (std::uint64_t{1} << 52);
@@ -349,7 +353,7 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     std::uint64_t const is_high = (significand + ((std::uint64_t{1} << 53) - kLogSqrt2Significand)) >> 53;
     std::int64_t const exponent = (static_cast<std::int64_t>(bits) >> 52) - 1023 + static_cast<std::int64_t>(is_high);
     std::uint64_t const position = (significand >> (43 + is_high)) - kLogFirstIndex;
-    double const fraction = __builtin_bit_cast(double, (bits & kLogFractionMask) | ((1023 - is_high) << 52));
+    double const fraction = __builtin_bit_cast(double, (bits & kLogFractionMask) | (std::uint64_t{1023} << 52));
     double const reduced = fma_of_finite(kLogFirst[position].inverse, fraction, -1.0);
     return LogReduction{reduced, position, static_cast<double>(exponent)};
 }

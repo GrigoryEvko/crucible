@@ -881,10 +881,12 @@ def print_log_block(
         *(f"inline constexpr double kLogSlow{name} = {hex_double(value)};" for name, value in slow_parts),
         "// For each interval [i 2^-9, (i + 1) 2^-9) of y, i from 362 to 724: the inverse r_i of 10 or fewer",
         "// significant bits (1 for i = 511 and 512), then -log(r_i) in three doubles, the first a multiple of 2^-42.",
+        "// Below i = 512 the row holds r_i/2, so the reduction multiplies it by 2y, which has the exponent of 1.",
         f"inline constexpr LogEntry kLogFirst[{len(rows)}] = {{",
         *(
-            f"    {{{hex_double(float(inverse))}, {hex_double(part1)}, {hex_double(part2)}, {hex_double(part3)}}},"
-            for _, inverse, part1, part2, part3 in rows
+            f"    {{{hex_double(float(inverse / 2 if index < 512 else inverse))}, {hex_double(part1)},"
+            f" {hex_double(part2)}, {hex_double(part3)}}},"
+            for index, inverse, part1, part2, part3 in rows
         ),
         "};",
         f"// For each k2 from {first} to {last}: r2, the double nearest 1 / (1 + k2 2^-16), then -log(r2) in three",

@@ -97,7 +97,7 @@ struct ClockChain {
 //   code              fma  mul  add  cvt  ops   floor
 //   fixy exp double    12    2    8    0   46   7.67, the dispatch
 //   fixy exp float      5    1    1    2   29   4.83, the dispatch
-//   fixy log double     6    3   10    1   58   9.67, the dispatch
+//   fixy log double     6    3   10    1   54   9.0, the dispatch
 //   fixy log float      6    1    1    3   35   5.83, the dispatch
 //   fixy erf double    11    2    4    2   33   6.5, the fma pipes
 //   fixy erf float      8    4    1    4   32   6.0, the fma pipes
@@ -134,7 +134,7 @@ struct Floor {
         case Function::Exp:
             return is_double ? Floor{46.0 / 6.0, 49.0} : Floor{29.0 / 6.0, 34.0};
         case Function::Log:
-            return is_double ? Floor{58.0 / 6.0, 52.0} : Floor{34.0 / 6.0, 29.0};
+            return is_double ? Floor{54.0 / 6.0, 52.0} : Floor{34.0 / 6.0, 29.0};
         case Function::Erf:
             return is_double ? Floor{13.0 / 2.0, 78.0} : Floor{6.0, 36.0};
         default:
