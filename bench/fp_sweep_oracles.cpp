@@ -147,6 +147,29 @@ double error_of_pair(Function function, ::fixy::Side<side::Input, double> input,
     return error < 0.0 ? -error : error;
 }
 
+double error_of_triple(Function function, ::fixy::Side<side::Input, double> input, Triple triple) noexcept {
+    // 400 bits hold the sum of three doubles exactly, and f(x) far past the
+    // error 2^-137 that the sweep measures.
+    mpfr_t argument;
+    mpfr_t exact;
+    mpfr_t sum;
+    mpfr_init2(argument, 53);
+    mpfr_init2(exact, 400);
+    mpfr_init2(sum, 400);
+    mpfr_set_d(argument, input.value(), MPFR_RNDN);
+    static_cast<void>(apply(function, exact, argument));
+    mpfr_set_d(sum, triple.high, MPFR_RNDN);
+    mpfr_add_d(sum, sum, triple.middle, MPFR_RNDN);
+    mpfr_add_d(sum, sum, triple.low, MPFR_RNDN);
+    mpfr_sub(sum, sum, exact, MPFR_RNDN);
+    mpfr_div(sum, sum, exact, MPFR_RNDN);
+    double const error = mpfr_get_d(sum, MPFR_RNDN);
+    mpfr_clear(argument);
+    mpfr_clear(exact);
+    mpfr_clear(sum);
+    return error < 0.0 ? -error : error;
+}
+
 }  // namespace fp_sweep
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

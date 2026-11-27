@@ -11,16 +11,33 @@
 //                                    that are not the correctly rounded result
 //                                    of CORE-MATH.  For a correctly rounded
 //                                    function that count must be zero
-//   bench_fp_sweep hard exp          each input of the list on standard input,
+//   bench_fp_sweep hard exp|log      each input of the list on standard input,
 //                                    a list .wc of CORE-MATH with one input in
 //                                    hexadecimal on each line, against
 //                                    CORE-MATH and the round of MPFR, through
-//                                    exp and through its slow path on its own
+//                                    the function and through its slow path on
+//                                    its own.  For log, the relative error of
+//                                    the three doubles of the slow path before
+//                                    the round must be at most its eps_acc
 //   bench_fp_sweep fast-bound exp    the relative error of the pair hi + lo of
 //                                    the fast path of exp(double) against MPFR
 //                                    on a sample: it must be at most eps_fast
 //                                    of the budget of fixy/fp/Exp.h.  The
 //                                    sweep also gives the rate of the slow path
+//   bench_fp_sweep fast-bound log    on a sample, the absolute error of the
+//                                    pair of the fast path of log(double), the
+//                                    relative error of the pair of its path
+//                                    near 1, and the relative error of the
+//                                    three doubles of its slow path, against
+//                                    MPFR: each must be at most its bound of
+//                                    the budget of fixy/fp/Log.h.  The sweep
+//                                    also gives the rates of the slow path
+//   bench_fp_sweep subnormal log     2^28 subnormal inputs through log and
+//                                    through its slow path against the round
+//                                    of MPFR, and the distance of log(x) to the
+//                                    nearest midpoint, from the three doubles
+//                                    of the slow path: the sweep gives the
+//                                    closest input
 //
 //   bench_fp_sweep fma TYPE          the fma of a target with no fused
 //                                    multiply-add against the exact form and
@@ -76,7 +93,7 @@ constexpr std::uint64_t kFmaRounds = std::uint64_t{1} << 24;
         case Function::Exp:
             return 0.5;
         case Function::Log:
-            return 0.53;
+            return 0.5;
         case Function::Erf:
             return 0.8;
         default:
@@ -86,7 +103,9 @@ constexpr std::uint64_t kFmaRounds = std::uint64_t{1} << 24;
 
 // A correctly rounded double function: each result of its sweep must be the
 // result of CORE-MATH.
-[[nodiscard]] constexpr bool is_correctly_rounded(Function function) noexcept { return function == Function::Exp; }
+[[nodiscard]] constexpr bool is_correctly_rounded(Function function) noexcept {
+    return function == Function::Exp || function == Function::Log;
+}
 
 [[nodiscard]] ::fixy::TextView name_of(Function function) noexcept {
     switch (function) {
@@ -427,46 +446,88 @@ constexpr double kExpFastBound = 0x1.c0d2771113e65p-66;
 // characters.  It has static storage, as the one reader of standard input.
 ::fixy::os::LineReader<256> g_list_reader;
 
+// The bound of the three doubles of the slow path of log: eps_acc = 2^-137.16
+// of the budget of fixy/fp/Log.h, rounded up to 2^-137.15.
+constexpr double kLogSlowBound = 0x1.cd70b35cd634cp-138;
+
+// The domain of the slow path of log(double): each positive finite input.
+[[nodiscard]] bool is_in_log_slow_domain(double value) noexcept {
+    return value > 0.0 && ::fixy::bit_cast<std::uint64_t>(value) < 0x7FF0000000000000ULL;
+}
+
+// The three doubles of the slow path of log, for a positive finite input.
+[[nodiscard]] Triple log_slow_triple(double value) noexcept {
+    ::fixy::fp::detail::LogSum const sum = ::fixy::fp::detail::log_accurate_sum_(value);
+    return Triple{sum.high, sum.middle, sum.low};
+}
+
+// The slow path on its own, or none for an input out of its domain.
+[[nodiscard]] ::fixy::Option<double> slow_path_of(Function function, double input) noexcept {
+    if (function == Function::Exp) {
+        if (!is_in_slow_domain(input)) return ::fixy::none;
+        return ::fixy::some(::fixy::fp::detail::exp_accurate_(input));
+    }
+    if (!is_in_log_slow_domain(input)) return ::fixy::none;
+    return ::fixy::some(::fixy::fp::detail::log_accurate_(input));
+}
+
 // The counts of the sweep hard.
 struct HardCounts {
     std::uint64_t inputs = 0;
-    std::uint64_t exp_wrong = 0;
+    std::uint64_t function_wrong = 0;
     std::uint64_t slow_wrong = 0;
     std::uint64_t oracles_differ = 0;
+    double largest_slow_error = 0.0;
+    double largest_slow_input = 0.0;
 };
 
-void check_hard_input(double input, HardCounts& counts) noexcept {
+void check_hard_input(Function function, double input, HardCounts& counts) noexcept {
     ++counts.inputs;
-    double const expected = correctly_rounded(Function::Exp, input);
-    double const by_mpfr = rounded_by_mpfr(Function::Exp, ::fixy::side_as<side::Input>(input));
-    if (!agree(by_mpfr, expected)) {
+    double const expected = correctly_rounded(function, input);
+    double const by_mpfr = rounded_by_mpfr(function, ::fixy::side_as<side::Input>(input));
+    // A NaN of each oracle has the bits of its own library, as for a negative
+    // input of log.
+    bool const are_both_nan = ::fixy::fp::is_nan(by_mpfr) && ::fixy::fp::is_nan(expected);
+    if (!are_both_nan && !agree(by_mpfr, expected)) {
         if (counts.oracles_differ < kShownMismatches) {
             ::fixy::report(::fixy::Sink::Out, "  the oracles differ at {}: CORE-MATH {}, MPFR {}\n", input, expected,
                            by_mpfr);
         }
         ++counts.oracles_differ;
     }
-    double const got = ::fixy::fp::exp(input);
+    double const got = ours(function, input);
     if (!agree(got, expected)) {
-        if (counts.exp_wrong < kShownMismatches) {
-            ::fixy::report(::fixy::Sink::Out, "  exp of {} gives {}, and the correct round is {}\n", input, got,
-                           expected);
+        if (counts.function_wrong < kShownMismatches) {
+            ::fixy::report(::fixy::Sink::Out, "  {} of {} gives {}, and the correct round is {}\n", name_of(function),
+                           input, got, expected);
         }
-        ++counts.exp_wrong;
+        ++counts.function_wrong;
     }
-    if (!is_in_slow_domain(input)) return;
-    double const slow = ::fixy::fp::detail::exp_accurate_(input);
-    if (!agree(slow, expected)) {
-        if (counts.slow_wrong < kShownMismatches) {
-            ::fixy::report(::fixy::Sink::Out, "  the slow path of {} gives {}, and the correct round is {}\n", input,
-                           slow, expected);
-        }
-        ++counts.slow_wrong;
+    slow_path_of(function, input)
+        .match(
+            [&](double slow) {
+                if (agree(slow, expected)) return;
+                if (counts.slow_wrong < kShownMismatches) {
+                    ::fixy::report(::fixy::Sink::Out, "  the slow path of {} gives {}, and the correct round is {}\n",
+                                   input, slow, expected);
+                }
+                ++counts.slow_wrong;
+            },
+            [] {});
+    // log(1) = 0 has no relative error, and its slow path gives three zeros.
+    if (function != Function::Log || !is_in_log_slow_domain(input)
+        || ::fixy::bit_cast<std::uint64_t>(input) == ::fixy::bit_cast<std::uint64_t>(1.0)) {
+        return;
+    }
+    double const error = error_of_triple(function, ::fixy::side_as<side::Input>(input), log_slow_triple(input));
+    if (error > counts.largest_slow_error) {
+        counts.largest_slow_error = error;
+        counts.largest_slow_input = input;
     }
 }
 
 // Each input of the list on standard input.  O(the count of the lines).
-[[nodiscard]] int sweep_hard_exp() noexcept {
+[[nodiscard]] int sweep_hard(Function function) noexcept {
     ::fixy::InitLoadCtx const ctx{::foundation::effects::host::InitOwner::mint_init_context()};
     HardCounts counts{};
     bool has_ended = false;
@@ -476,7 +537,8 @@ void check_hard_input(double input, HardCounts& counts) noexcept {
             [&](::fixy::Option<::fixy::TextView> line) {
                 line.match(
                     [&](::fixy::TextView text) {
-                        parse_hex_double(text).match([&](double input) { check_hard_input(input, counts); }, [] {});
+                        parse_hex_double(text).match([&](double input) { check_hard_input(function, input, counts); },
+                                                     [] {});
                     },
                     [&]() { has_ended = true; });
             },
@@ -487,11 +549,20 @@ void check_hard_input(double input, HardCounts& counts) noexcept {
         return 2;
     }
     ::fixy::report(::fixy::Sink::Out,
-                   "bench_fp_sweep: exp of the hard list: {} inputs, {} not correctly rounded through exp, {} through "
+                   "bench_fp_sweep: {} of the hard list: {} inputs, {} not correctly rounded through {}, {} through "
                    "the slow path, {} where CORE-MATH and MPFR differ\n",
-                   counts.inputs, counts.exp_wrong, counts.slow_wrong, counts.oracles_differ);
-    bool const holds =
-        counts.inputs > 0 && counts.exp_wrong == 0 && counts.slow_wrong == 0 && counts.oracles_differ == 0;
+                   name_of(function), counts.inputs, counts.function_wrong, name_of(function), counts.slow_wrong,
+                   counts.oracles_differ);
+    bool holds =
+        counts.inputs > 0 && counts.function_wrong == 0 && counts.slow_wrong == 0 && counts.oracles_differ == 0;
+    if (function == Function::Log) {
+        double const in_bits = ::fixy::fp::log(counts.largest_slow_error) / 0x1.62e42fefa39efp-1;
+        ::fixy::report(::fixy::Sink::Out,
+                       "bench_fp_sweep: the three doubles of the slow path of log: largest relative error 2^{} at "
+                       "{}, bound 2^-137.15\n",
+                       ::fixy::Fixed<3>{in_bits}, counts.largest_slow_input);
+        holds = holds && counts.largest_slow_error <= kLogSlowBound;
+    }
     return holds ? 0 : 1;
 }
 
@@ -536,22 +607,186 @@ constexpr ::fixy::FixedArray<Region, 4> kExpFastRegions{
     return largest <= kExpFastBound ? 0 : 1;
 }
 
+// The bounds of the sweep fast-bound of log, from the budget of
+// fixy/fp/Log.h: eps_fast = 2^-68.77 absolute, rounded up to 2^-68.76, and
+// eps_near = 2^-69.41 relative, rounded up to 2^-69.40.
+constexpr double kLogFastBound = 0x1.2e5588f9a7e39p-69;
+constexpr double kLogNearBound = 0x1.8406003b2ae42p-70;
+
+// The regions of the sweep fast-bound of log: each positive finite input,
+// e = 0 and e = 1 with each interval of the first reduction, the path near 1,
+// the inputs near 1 with |k2| <= 2, the subnormal inputs, and the largest
+// exponents.
+constexpr ::fixy::FixedArray<Region, 7> kLogFastRegions{
+    bits(0x0000000000000001ULL, 0x7FEFFFFFFFFFFFFFULL),
+    values(0x1.6a09e667f3bccp-1, 0x1.6a09e667f3bcdp0),
+    values(0x1.6a09e667f3bccp0, 0x1.6a09e667f3bcdp1),
+    values(1.0 - 0x1p-9, 1.0 + 0x1p-9),
+    values(1.0 - 0x1p-15, 1.0 + 0x1p-15),
+    bits(0x0000000000000001ULL, 0x000FFFFFFFFFFFFFULL),
+    values(0x1p1022, 1.7976931348623157e308),
+};
+
+// The largest error of a part of the sweep fast-bound of log.
+struct LargestError {
+    double value = 0.0;
+    double input = 0.0;
+};
+
+void take_error(LargestError& largest, double error, double input) noexcept {
+    if (error > largest.value) {
+        largest.value = error;
+        largest.input = input;
+    }
+}
+
+// The pair of the fast path or of the path near 1, and the three doubles of
+// the slow path, on each input of the regions.  O(7 * kRegionCount).
+[[nodiscard]] int sweep_fast_bound_log() noexcept {
+    LargestError fast{};
+    LargestError near{};
+    LargestError slow{};
+    std::uint64_t inputs = 0;
+    std::uint64_t fast_slow_calls = 0;
+    std::uint64_t near_slow_calls = 0;
+    std::uint64_t const one_bits = ::fixy::bit_cast<std::uint64_t>(1.0);
+    for (Region const& region : kLogFastRegions) {
+        for (std::uint64_t index = 0; index < kRegionCount; ++index) {
+            double const input = input_of(region, index);
+            std::uint64_t bits_of_input = ::fixy::bit_cast<std::uint64_t>(input);
+            if (!is_in_log_slow_domain(input) || bits_of_input == one_bits) continue;
+            ++inputs;
+            ::fixy::Side<side::Input, double> const side_input = ::fixy::side_as<side::Input>(input);
+            take_error(slow, error_of_triple(Function::Log, side_input, log_slow_triple(input)), input);
+            bool const is_near = bits_of_input - ::fixy::fp::detail::kLogNearLow
+                               < ::fixy::fp::detail::kLogNearHigh - ::fixy::fp::detail::kLogNearLow;
+            if (is_near) {
+                ::fixy::fp::detail::DoubleWord const pair = ::fixy::fp::detail::log_near_pair_(input);
+                double const margin = (input - 1.0) * ::fixy::fp::detail::kLogNearMargin;
+                double const upper = pair.high + (pair.low + margin);
+                double const lower = pair.high + (pair.low - margin);
+                if (::fixy::bit_cast<std::uint64_t>(upper) != ::fixy::bit_cast<std::uint64_t>(lower)) ++near_slow_calls;
+                take_error(near, error_of_pair(Function::Log, side_input, Pair{pair.high, pair.low}), input);
+                continue;
+            }
+            if ((bits_of_input >> 52) == 0) bits_of_input = ::fixy::fp::detail::log_normal_bits_(bits_of_input);
+            ::fixy::fp::detail::DoubleWord const pair =
+                ::fixy::fp::detail::log_pair_(::fixy::fp::detail::log_reduce_(bits_of_input));
+            double const upper = pair.high + (pair.low + ::fixy::fp::detail::kLogMargin);
+            double const lower = pair.high + (pair.low - ::fixy::fp::detail::kLogMargin);
+            if (::fixy::bit_cast<std::uint64_t>(upper) != ::fixy::bit_cast<std::uint64_t>(lower)) ++fast_slow_calls;
+            // The absolute error: the relative error times |log(x)|, which is at
+            // most |hi| (1 + 2^-50).
+            double const magnitude = pair.high < 0.0 ? -pair.high : pair.high;
+            double const relative = error_of_pair(Function::Log, side_input, Pair{pair.high, pair.low});
+            take_error(fast, relative * magnitude * (1.0 + 0x1p-50), input);
+        }
+    }
+    double const ln2 = 0x1.62e42fefa39efp-1;
+    ::fixy::report(::fixy::Sink::Out,
+                   "bench_fp_sweep: log of {} inputs: the fast pair, largest absolute error 2^{} at {}, bound "
+                   "2^-68.76, {} slow calls; the pair near 1, largest relative error 2^{} at {}, bound 2^-69.40, {} "
+                   "slow calls; the slow path, largest relative error 2^{} at {}, bound 2^-137.15\n",
+                   inputs, ::fixy::Fixed<3>{::fixy::fp::log(fast.value) / ln2}, fast.input, fast_slow_calls,
+                   ::fixy::Fixed<3>{::fixy::fp::log(near.value) / ln2}, near.input, near_slow_calls,
+                   ::fixy::Fixed<3>{::fixy::fp::log(slow.value) / ln2}, slow.input);
+    bool const holds = fast.value <= kLogFastBound && near.value <= kLogNearBound && slow.value <= kLogSlowBound;
+    return holds ? 0 : 1;
+}
+
+// The count of the inputs of the sweep subnormal.
+constexpr std::uint64_t kSubnormalCount = std::uint64_t{1} << 28;
+
+// The distance of log(x) to the nearest midpoint in units of the last place
+// of the result, from the three doubles of the slow path and their round.
+// The three doubles are within 2^-136 of log(x) in the mantissa, far below
+// each distance that the sweep reports.  delta = log(x) - result is a pair:
+// high - result is exact, as the two are at most one unit apart.
+[[nodiscard]] double midpoint_distance(Triple triple, double result) noexcept {
+    double const sign = result < 0.0 ? -1.0 : 1.0;
+    double const magnitude = sign * result;
+    ::fixy::fp::detail::DoubleWord const head =
+        ::fixy::fp::detail::two_sum_(sign * triple.high - magnitude, sign * triple.middle);
+    double const delta_low = head.low + sign * triple.low;
+    double const unit = ::fixy::bit_cast<double>(::fixy::bit_cast<std::uint64_t>(magnitude) + 1) - magnitude;
+    bool const is_high_zero = (::fixy::bit_cast<std::uint64_t>(head.high) << 1) == 0;
+    bool const is_above = head.high > 0.0 || (is_high_zero && delta_low > 0.0);
+    double const half =
+        is_above ? unit * 0.5
+                 : (magnitude - ::fixy::bit_cast<double>(::fixy::bit_cast<std::uint64_t>(magnitude) - 1)) * 0.5;
+    double const delta_high = is_above ? head.high : -head.high;
+    double const delta_rest = is_above ? delta_low : -delta_low;
+    return ((half - delta_high) - delta_rest) / unit;
+}
+
+// 2^28 subnormal inputs from a Weyl walk of their bits, through log and its
+// slow path against the round of MPFR.  O(kSubnormalCount).
+[[nodiscard]] int sweep_subnormal_log() noexcept {
+    std::uint64_t log_wrong = 0;
+    std::uint64_t slow_wrong = 0;
+    double closest = 1.0;
+    double closest_input = 0.0;
+    Region const region = bits(0x0000000000000001ULL, 0x000FFFFFFFFFFFFFULL);
+    for (std::uint64_t index = 0; index < kSubnormalCount; ++index) {
+        double const input = input_of(region, index);
+        double const expected = rounded_by_mpfr(Function::Log, ::fixy::side_as<side::Input>(input));
+        double const got = ::fixy::fp::log(input);
+        double const slow = ::fixy::fp::detail::log_accurate_(input);
+        if (!agree(got, expected)) {
+            if (log_wrong < kShownMismatches) {
+                ::fixy::report(::fixy::Sink::Out, "  log of {} gives {}, and the round of MPFR is {}\n", input, got,
+                               expected);
+            }
+            ++log_wrong;
+        }
+        if (!agree(slow, expected)) {
+            if (slow_wrong < kShownMismatches) {
+                ::fixy::report(::fixy::Sink::Out, "  the slow path of {} gives {}, and the round of MPFR is {}\n",
+                               input, slow, expected);
+            }
+            ++slow_wrong;
+        }
+        double const distance = midpoint_distance(log_slow_triple(input), slow);
+        if (distance < closest) {
+            closest = distance;
+            closest_input = input;
+        }
+    }
+    ::fixy::report(::fixy::Sink::Out,
+                   "bench_fp_sweep: log of {} subnormal inputs: {} not correctly rounded through log, {} through the "
+                   "slow path, the closest midpoint 2^{} units in the last place at {}\n",
+                   kSubnormalCount, log_wrong, slow_wrong,
+                   ::fixy::Fixed<2>{::fixy::fp::log(closest) / 0x1.62e42fefa39efp-1}, closest_input);
+    return log_wrong == 0 && slow_wrong == 0 ? 0 : 1;
+}
+
 [[nodiscard]] int run_sweep(::fixy::os::Args const& arguments) noexcept {
     ::fixy::Option<::fixy::CText> const kind = arguments.get(1);
     ::fixy::Option<::fixy::CText> const name = arguments.get(2);
     if (arguments.size() != 3 || kind.is_none() || name.is_none()) {
         ::fixy::report(::fixy::Sink::Err, "usage: bench_fp_sweep float|double exp|log|erf, bench_fp_sweep fma "
-                                          "float|double, or bench_fp_sweep hard|fast-bound exp\n");
+                                          "float|double, bench_fp_sweep hard|fast-bound exp|log, or bench_fp_sweep "
+                                          "subnormal log\n");
         return 2;
     }
     ::fixy::TextView const kind_text = ::fixy::Option<::fixy::CText>{kind}.expect("the count is three").view();
     ::fixy::TextView const name_text = ::fixy::Option<::fixy::CText>{name}.expect("the count is three").view();
     if (kind_text == "hard" || kind_text == "fast-bound") {
-        if (name_text != "exp") {
-            ::fixy::report(::fixy::Sink::Err, "usage: bench_fp_sweep hard exp, or bench_fp_sweep fast-bound exp\n");
+        bool const is_exp = name_text == "exp";
+        if (!is_exp && name_text != "log") {
+            ::fixy::report(::fixy::Sink::Err, "usage: bench_fp_sweep hard exp|log, or bench_fp_sweep fast-bound "
+                                              "exp|log\n");
             return 2;
         }
-        return kind_text == "hard" ? sweep_hard_exp() : sweep_fast_bound_exp();
+        if (kind_text == "hard") return sweep_hard(is_exp ? Function::Exp : Function::Log);
+        return is_exp ? sweep_fast_bound_exp() : sweep_fast_bound_log();
+    }
+    if (kind_text == "subnormal") {
+        if (name_text != "log") {
+            ::fixy::report(::fixy::Sink::Err, "usage: bench_fp_sweep subnormal log\n");
+            return 2;
+        }
+        return sweep_subnormal_log();
     }
     if (kind_text == "fma") {
         ::fixy::TextView const type_text = ::fixy::Option<::fixy::CText>{name}.expect("the count is three").view();

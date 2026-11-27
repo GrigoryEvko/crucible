@@ -15,6 +15,8 @@
 //                                    double
 //   error_of_pair(function, x, p)    |p.high + p.low - f(x)| / f(x), with f(x)
 //                                    and the sum at 300 bits
+//   error_of_triple(function, x, t)  |t.high + t.middle + t.low - f(x)| /
+//                                    f(x), with f(x) and the sum at 400 bits
 //
 // bench/fp_sweep_oracles.cpp holds the doors in a region of the C ABI of the
 // two libraries.  Only the preset bench builds them (CRUCIBLE_FP_SWEEP), and
@@ -57,5 +59,15 @@ struct Pair {
 };
 
 [[nodiscard]] double error_of_pair(Function function, ::fixy::Side<side::Input, double> input, Pair pair) noexcept;
+
+// A value as the unevaluated sum high + middle + low of three doubles.
+struct Triple {
+    double high = 0.0;
+    double middle = 0.0;
+    double low = 0.0;
+};
+
+[[nodiscard]] double error_of_triple(Function function, ::fixy::Side<side::Input, double> input,
+                                     Triple triple) noexcept;
 
 }  // namespace fp_sweep

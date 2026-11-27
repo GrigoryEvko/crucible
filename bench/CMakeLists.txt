@@ -581,8 +581,8 @@ endif()
 # leaves it off.  The sweep is no bench: it measures no time, and `loop bench`
 # does not list it.  Its tests with the label fp_sweep are tests of the build
 # of the nightly preset bench, so the nightly entry runs them in its `loop
-# test` of that build, each time that an input of a test changes: six of exp,
-# log and erf, and on x86_64 two of fp::fma with no fused multiply-add
+# test` of that build, each time that an input of a test changes: eleven of
+# exp, log and erf, and on x86_64 two of fp::fma with no fused multiply-add
 # (bench/fp_sweep_fma.h).
 #
 # The sweep reads the library core_math_reference above.  GMP
@@ -673,6 +673,16 @@ if(_fp_sweep_ready)
   set_tests_properties(fp_sweep_exp_hard PROPERTIES TIMEOUT 3600 LABELS "fp_sweep")
   add_test(NAME fp_sweep_exp_fast_bound COMMAND bench_fp_sweep fast-bound exp)
   set_tests_properties(fp_sweep_exp_fast_bound PROPERTIES TIMEOUT 3600 LABELS "fp_sweep")
+  # The correct round of log(double): each input of the list log.wc, the
+  # errors of its three paths against the bounds of its budget, and 2^28
+  # subnormal inputs against MPFR with the closest midpoint.
+  add_test(NAME fp_sweep_log_hard
+           COMMAND sh -c "\"$<TARGET_FILE:bench_fp_sweep>\" hard log < \"${_core_math_directory}/src/binary64/log/log.wc\"")
+  set_tests_properties(fp_sweep_log_hard PROPERTIES TIMEOUT 3600 LABELS "fp_sweep")
+  add_test(NAME fp_sweep_log_fast_bound COMMAND bench_fp_sweep fast-bound log)
+  set_tests_properties(fp_sweep_log_fast_bound PROPERTIES TIMEOUT 3600 LABELS "fp_sweep")
+  add_test(NAME fp_sweep_log_subnormal COMMAND bench_fp_sweep subnormal log)
+  set_tests_properties(fp_sweep_log_subnormal PROPERTIES TIMEOUT 3600 LABELS "fp_sweep")
   # The baseline unit of the fma sweep compiles for x86-64, which has no fused
   # multiply-add, so its fp::fma is the form in doubles.  The other units
   # compile for the host, and their fp::fma is the instruction, the second
