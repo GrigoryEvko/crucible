@@ -3,7 +3,7 @@
 // exp of a double and of a float, with the same bits on each target and each
 // level of the instruction set.
 //
-//   fixy::fp::exp(double)   error of at most 0.52 units in the last place
+//   fixy::fp::exp(double)   the correctly rounded result for each input
 //   fixy::fp::exp(float)    the correctly rounded result for each input
 //
 // Each function is total.  A NaN gives the canonical quiet NaN quiet_nan_of<T>,
@@ -13,53 +13,158 @@
 // writes errno or a flag of the floating-point unit on purpose, and no caller
 // can read a flag of them.
 //
-// Mode of the register
+// Mode of the register: a precondition
 //   Each function assumes the default mode of the floating-point unit: the
 //   round to nearest with ties to even, no flush of a subnormal result to
-//   zero, and no read of a subnormal input as zero.  Another mode changes the
-//   bits.  PyTorch can set the flush of subnormal values in the vessel
-//   process, and then a subnormal result changes.  A kernel scope proves the
-//   mode through its FpScope token, not this header.
+//   zero, and no read of a subnormal input as zero.  The proof of the correct
+//   round below holds only in that mode, and another mode changes the bits.
+//   A kernel scope proves the mode through its FpScope token
+//   (foundation/os/FpControl.h).  A caller with no token states the mode in a
+//   comment at its call.  PyTorch can set the flush of subnormal values in the
+//   vessel process, and then a subnormal result changes.  A device backend
+//   that flushes subnormal values cannot take these bodies for an input with
+//   a subnormal result.
 //
 // Operations
 //   Each operation is an add, a subtract or a multiply of IEEE 754, a fused
 //   multiply-add of detail::fma_of_finite (fixy/fp/FmaOfFinite.h), an integer
-//   operation on the bits, a read of the table, or a conversion between float
+//   operation on the bits, a read of a table, or a conversion between float
 //   and double.  The order of the operations is the order of the source.  The
 //   build contracts no multiply and add (-ffp-contract=off, the floor
 //   crucible_fp_strict), so each fma is an explicit fma_of_finite.  It rounds
 //   one time on each target: the instruction at x86-64-v3, x86-64-v4 and
-//   aarch64, a form in doubles at x86-64 and x86-64-v2.  So each level gives
-//   the same bits.  A NaN input returns quiet_nan_of<T> before the first fma,
-//   so no fma takes a NaN.  The functions are in the
-//   inline namespace CRUCIBLE_SIMD_TARGET, so a program can link the bodies of
-//   two levels and compare their results.
+//   aarch64, a form in doubles at x86-64 and x86-64-v2.  A NaN input returns
+//   quiet_nan_of<T> before the first fma, so no fma takes a NaN.  The
+//   functions are in the inline namespace CRUCIBLE_SIMD_TARGET, so a program
+//   can link the bodies of two levels and compare their results.
 //
-// Algorithm of exp(double): the table method of Tang, as in glibc and ARM
-// optimized-routines.
-//   k = round(x * 128 / ln2), by the add and the subtract of 0x1.8p52.
-//   r = x - k * ln2/128 in two parts, through two fma.  |r| <= ln2/256 and a
-//     little more.
-//   2^(k/128) = s * (1 + tail): s is the double nearest 2^(j/128) for j = k mod
-//     128, with the exponent of k/128 added to its bits, and tail is the
-//     relative error of s.
-//   exp(x) = s + s * (tail + r + r^2 * (C2 + r C3) + r^4 * (C4 + r C5)).
-//   The polynomial is the minimax polynomial of exp(r) for the relative error
-//   on |r| <= ln2/256, with an error of 2^-65.4.
-//   A result past the normal range scales s by 2^-1009 or 2^1022 and then
-//   multiplies by an exact power of two.  A subnormal result first rounds at
-//   its own precision through an add of 1 in two parts, so it rounds one time.
-//   The fma sites: two in the reduction, four in the polynomial, one in the
-//   last step, and three in the cold path of a large result.
+// Algorithm of exp(double): the table method of Tang, a rounding test of Ziv,
+// and a slow path in three doubles.  u = 2^-53, and RN is the round to
+// nearest.
+//   k = round(x * 128 / ln2) through the add and the subtract of 0x1.8p52.  At
+//     x86-64-v3, x86-64-v4 and aarch64 one fma gives x * 128/ln2 + 0x1.8p52
+//     with one round.  The other levels take a multiply and an add, because
+//     their fma is a form of about 100 instructions.  The two can give a
+//     different k near a half.  Each k gives |r| <= (1/2 + 2^-35) ln2/128, and
+//     each path gives the correctly rounded result for each such k.  So the
+//     bits are the same on each level.
+//   j = k mod 128, s = the double nearest 2^(j/128) with the exponent of
+//     k/128 added to its bits, and 2^(j/128) = s (1 + tau), with |tau| <= u.
+//     The table holds tail = RN(tau).
+//   The fast path, for 2^-54 <= |x| < 512:
+//     r1 = x - k L1 is exact: |k| < 2^17, and L1 has 36 bits.
+//     r_hi = RN(r1 - k L2), and r_lo = RN(RN(r1 - r_hi) - k L2).
+//     q = (tail + r_lo) (1 + r_hi) + r_hi^2 (C2 + C3 r_hi + r_hi^2 (C4 + C5 r_hi)).
+//     hi = RN(s + s r_hi), and lo = RN(s q + RN(s + s r_hi - hi)).
+//     Then |hi + lo - exp(x)| <= eps_fast exp(x), with eps_fast = 2^-65.20.
+//     The rounding test: with E = 2^-65 hi, if RN(hi + RN(lo + E)) and
+//     RN(hi + RN(lo - E)) are the same value, that value is the correctly
+//     rounded result, because RN is monotone and exp(x) is between the two
+//     sums.  Each sum takes an inner round of at most u |lo + E|, so the test
+//     needs a margin of eps_fast + u |lo| + u E <= 2^-65.17 |hi|.  About one
+//     input in 3000 does not pass, and the slow path takes it.  |hi| is at
+//     least 2^-739, so E is a normal double, and the round of a subnormal
+//     part of the path costs at most 2^-1075, below 2^-336 |hi|.
+//   The edge path, for |x| >= 512, an infinity and a NaN: a NaN gives the
+//     canonical NaN, x above 0x1.62e42fefa39efp+9 gives +inf, x at or below
+//     -0x1.74910d52d3052p+9 gives +0, and x below -0x1.6232bdd7abcd2p+9 (a
+//     subnormal result) takes the slow path.  Each other x takes the fast
+//     path with s scaled by 2^-1009 or 2^1022, so each value is normal, and
+//     the result scales back with one exact multiply.
+//   The slow path computes exp(x) / 2^(k >> 7) in three doubles with a
+//     relative error eps_acc = 2^-120.19, and rounds that sum to nearest in
+//     each bit.  r = x - k ln2/128 comes from four parts of ln2/128: the
+//     first two have 35 bits, so their products with k (18 bits) are exact,
+//     and the sum is exact to 2^-166.  exp(r) = 1 + r + r^2 Q(r), with the
+//     Taylor polynomial of degree 11: 1/n! in two doubles to n = 6, in one
+//     double after it.  Q comes from a Horner sum in pairs of doubles.
+//     2^(j/128) = s (1 + tail + low), with a second table of the low parts.
+//     A subnormal result adds 2^(-1022 - (k >> 7)) before the round, so the
+//     sum rounds at the precision of the subnormal result, and the subtract
+//     of that power after the round is exact.  The path takes a multiply and
+//     an add for k at each level, so its bits are the same on each level.
+//
+// Error budget of the fast path, from `fp_tables.py exp` (exact fractions)
+//   R = 2^-8.53 bounds |r_hi| and |r|.  The errors of U, with
+//   exp(x) = s (1 + U), in absolute units:
+//     the rounds of P' (times r_hi^2)              2^-70.06
+//     the round of r_hi^2 (times P')               2^-71.06
+//     the round of q                               2^-71.06
+//     tau r_hi^2 P', which q drops                 2^-71.29
+//     the second-order part of r_lo, dropped       2^-79.58
+//     tau - tail, the rounds of t and of a         2^-106.2 or less
+//     the sum, over (1 + tau) exp(r)               2^-68.77
+//   The relative errors of hi + lo:
+//     the polynomial, a bound for each |r| <= R    2^-65.35
+//     the errors of U                              2^-68.77
+//     the round of lo, with |lo| <= 2^-18.05 |hi|  2^-71.05
+//     r - r_hi - r_lo, with |k| <= 2^17            2^-81.51
+//     the round of the error of hi                 2^-106
+//     the sum: eps_fast                            2^-65.20
+//
+// Error budget of the slow path, from `fp_tables.py exp` (exact fractions)
+//   The double-word operations take the bounds of Joldes, Muller and
+//   Popescu (ACM Transactions on Mathematical Software 44(2), 2017): 2u^2 for
+//   an add of a double (algorithm 4) and a product with a double
+//   (algorithm 9), 3u^2 / (1 - 4u) for an add of two pairs (algorithm 6), and
+//   5u^2 for a product of two pairs (algorithm 12).
+//     Q, the Horner sum                            2^-105.66 absolute
+//     r^2 in a pair of doubles                     2^-120.25 absolute
+//     w = r^2 Q in a pair of doubles               2^-120.20 absolute
+//     the sums of W and of the result              2^-155.17 or less
+//     the polynomial, a bound for each |r| <= R    2^-130.50
+//     the tables and the reduction                 2^-161.17 or less
+//     the sum, relative: eps_acc                   2^-120.19
+//   A relative error e gives a distance of at most 2e between the mantissas,
+//   so the slow path is at most 2^-119.19 from exp(x) in the mantissa, and
+//   at most 2^-68.19 units of 2^-1074 for a subnormal result.
+//
+// Coverage of the correct round, from `fp_tables.py exp-coverage`
+//   The round of the slow path is correct for x if no boundary of the round
+//   is between exp(x) and the sum of the three doubles.  So each range of x
+//   needs a bound of the distance of exp(x) to the nearest midpoint, larger
+//   than the error of the path.  A list of hard cases bounds the distance of
+//   each input off the list, and the subcommand measures each input on it.
+//     |x| < 2^-54: exp(x) is between 1 + x and 1 + x + x^2, the nearest
+//       midpoints are 1 - 2^-54 and 1 + 2^-53, so the result is 1, and
+//       1 + x rounds to 1 too.  No search is necessary.
+//     2^-54 <= |x| < 2^-30: an own exhaustive check.  exp increases with x, so
+//       for each of the 12.6 million midpoints m in the range, the two doubles
+//       next to ln(m) are the nearest to m.  The smallest distance is
+//       2^-58.60 units in the last place at 0x1.9e9cbbfd6080bp-31, a relative
+//       2^-110.60: a margin of 9.59 bits.  The list of CORE-MATH agrees with
+//       the check in each binade from 2^-53, and it does not hold the 4096
+//       inputs below 2^-53 and the 1792 inputs below -2^-54 that the check
+//       finds.
+//     2^-30 <= |x| with a result from 2^-1074 to 2^1024: Lefevre and Muller,
+//       "Worst cases for correct rounding of the elementary functions in
+//       double precision", ARITH 15 (2001), property 1: a mantissa distance
+//       of at most 2^-112 gives the correct round in each of the four modes,
+//       for each double x with |x| >= 2^-30.  The search ignores the
+//       subnormal format, and each midpoint of the subnormal format is a
+//       double or a midpoint of 53 bits, so the property holds there too.  A
+//       margin of 7.19 bits.
+//     The same range, second source: the list exp.wc of CORE-MATH
+//       (BaCSeL, all modes): each input off the list is at least 2^-42 units
+//       in the last place from a boundary, a relative 2^-95, and 2^-44 in
+//       [-2^-11, -2^-12).  The hardest input on the list is
+//       -0x1.12d31a20fb38bp+5, 2^-59.25 units, a relative 2^-111.69: a
+//       margin of 8.50 bits.  For a subnormal result the list has the
+//       threshold 2^-34 units of 2^-1074, and its hardest input is 2^-49.38
+//       units at -0x1.6d9f7dd15f748p+9: a margin of 19.19 bits.
+//     A result between 2^-1075 and 2^-1074: the only boundary is 2^-1075,
+//       and the input next to ln(2^-1075), -0x1.74910d52d3051p+9, is 2^-44.20
+//       units from it.  exp increases with x, so each other input is farther.
+//     The edges of +inf and +0 come from ln(2^1024 - 2^970) and ln(2^-1075).
 //
 // Algorithm of exp(float)
 //   The fast path computes in double with the same reduction in one fma and
 //   a polynomial of degree 3 (error 2^-41.2).  When the double result is within
 //   2^13 units of its last bit of a float midpoint, the round can be wrong, and
 //   the slow path takes the input.  The slow path rounds exp(double) of the
-//   input, whose error is below one unit of a double.  So the round is wrong
-//   only when that result is a float midpoint (fixy/fp/RoundToFloat.h), and the
-//   sweep of the oracle lists each such input.  One unsigned compare of the
+//   input, the correctly rounded double.  So the round is wrong only when that
+//   result is a float midpoint (fixy/fp/RoundToFloat.h), and the sweep of the
+//   oracle lists each such input.  One unsigned compare of the
 //   bits sends each |x| above 0x1.5d589ep+6, each infinity and each NaN to a
 //   cold path: a NaN gives the canonical NaN, the edges give +inf and +0, and
 //   each other input takes the slow path.  So a result below 2^-126 always
@@ -100,11 +205,40 @@ inline constexpr double kExpNegLn2N = -0x1.62e42fefa39efp-8;
 // integer, and the low 32 bits of its result hold that integer.
 inline constexpr double kExpShift = 0x1.8p52;
 
+// ln2/128 in four parts for the slow path.  The first two parts have 35 bits.
+inline constexpr double kExpLn2Part0 = 0x1.62e42fefc0000p-8;
+inline constexpr double kExpLn2Part1 = -0x1.c610ca86c0000p-44;
+inline constexpr double kExpLn2Part2 = -0x1.c4c67fc0d0951p-83;
+inline constexpr double kExpLn2Part3 = 0x1.03cd0c99ca62ep-137;
+
 // The minimax polynomial of exp(r) = 1 + r + r^2 * (C2 + C3 r + C4 r^2 + C5 r^3).
 inline constexpr double kExpC2 = 0x1.ffffffffffdbdp-2;
 inline constexpr double kExpC3 = 0x1.5555555555767p-3;
 inline constexpr double kExpC4 = 0x1.55555cf144a31p-5;
 inline constexpr double kExpC5 = 0x1.11110f0afd377p-7;
+// The Taylor coefficients 1/n! of the slow path: a pair of doubles to n = 6,
+// one double after it.
+inline constexpr double kExpSlowC3High = 0x1.5555555555555p-3;
+inline constexpr double kExpSlowC3Low = 0x1.5555555555555p-57;
+inline constexpr double kExpSlowC4High = 0x1.5555555555555p-5;
+inline constexpr double kExpSlowC4Low = 0x1.5555555555555p-59;
+inline constexpr double kExpSlowC5High = 0x1.1111111111111p-7;
+inline constexpr double kExpSlowC5Low = 0x1.1111111111111p-63;
+inline constexpr double kExpSlowC6High = 0x1.6c16c16c16c17p-10;
+inline constexpr double kExpSlowC6Low = -0x1.f49f49f49f49fp-65;
+inline constexpr double kExpSlowC7 = 0x1.a01a01a01a01ap-13;
+inline constexpr double kExpSlowC8 = 0x1.a01a01a01a01ap-16;
+inline constexpr double kExpSlowC9 = 0x1.71de3a556c734p-19;
+inline constexpr double kExpSlowC10 = 0x1.27e4fb7789f5cp-22;
+inline constexpr double kExpSlowC11 = 0x1.ae64567f544e4p-26;
+
+// The edges of the double form: exp(x) rounds to +inf above the first, to +0
+// at or below the second, and is below 2^-1022 below the third.
+inline constexpr double kExpLargestFinite = 0x1.62e42fefa39efp+9;
+inline constexpr double kExpZeroAtOrBelow = -0x1.74910d52d3052p+9;
+inline constexpr double kExpNormalFrom = -0x1.6232bdd7abcd2p+9;
+// The margin of the rounding test of the fast path, relative to hi.
+inline constexpr double kExpMargin = 0x1p-65;
 // The polynomial of degree 3 of the fast path of the float form.
 inline constexpr double kExpFloatC2 = 0x1.0000087d18c49p-1;
 inline constexpr double kExpFloatC3 = 0x1.5555567d2e78ep-3;
@@ -181,6 +315,44 @@ inline constexpr std::uint64_t kExpTable[2 * 128] = {
     0x3C8A64A931D185EEULL, 0x3FEFD0765B6E4540ULL, 0xBC8E37BAE43BE3EDULL, 0x3FEFDBFDAD9CBE14ULL,
     0x3C77893B4D91CD9DULL, 0x3FEFE7C1819E90D8ULL, 0x3C5305C14160CC89ULL, 0x3FEFF3C22B8F71F1ULL,
 };
+
+// For each j of 0 to 127, the bits of low_j, the double nearest
+// tau_j - tail_j, where tau_j = (2^(j/128) - s_j) / s_j exactly.  So
+// |tau_j - tail_j - low_j| <= 2^-161.18.  Only the slow path reads it.
+inline constexpr std::uint64_t kExpTailLow[128] = {
+    0x0000000000000000ULL, 0x3928A7A22972BA14ULL, 0x391F6015898E4B03ULL, 0x3912BE8EE4A92D46ULL,
+    0x39244C922A9B2B23ULL, 0xB909F8ED95DFFFC4ULL, 0x390B9B11AD82685FULL, 0xB9369DB4B68C9A5EULL,
+    0xB93594DFEEF9B094ULL, 0xB908C623DD8DF7D1ULL, 0x38BDD33EE7C61A9FULL, 0xB906227050942779ULL,
+    0x39378A37793BD990ULL, 0x38F1D779FC7A1B5BULL, 0x392EAB1EBB431B52ULL, 0xB9204C46906DE1D2ULL,
+    0x3927CA91BA6AB110ULL, 0x39250E6BAC42D66EULL, 0x3916B479BCC6155DULL, 0xB9375B3F3662487DULL,
+    0xB925A6C4849FFA0AULL, 0xB923C59FA185A630ULL, 0xB923375C863A5887ULL, 0x39156342D8A461EEULL,
+    0xB9273CE42E5ADDF9ULL, 0x39248346F20E387FULL, 0xB920AC00CA787E82ULL, 0x393F5534006E9372ULL,
+    0x39092A971C02FAE6ULL, 0xB8DF2E946F6FCA50ULL, 0xB92C7B41C67538E0ULL, 0xB8FD31CD36BC8363ULL,
+    0xB8F17ADBE862E719ULL, 0x392FB553BC0BD3C7ULL, 0x38EDAE4E9501C824ULL, 0xB9106E77DBE52DEBULL,
+    0xB9329A3D89B24B82ULL, 0xB901F89E2E4F5B79ULL, 0xB8FA967549FBEA82ULL, 0x3925411DB4CBE19BULL,
+    0xB9278E17B6B693C4ULL, 0x38D3E0285B53F920ULL, 0x38EEAFA2E5163902ULL, 0xB912A218D08C9A72ULL,
+    0x38EFD123547EAC09ULL, 0x391A4BA941299385ULL, 0xB9060CF17A743180ULL, 0x392F7CAB07500CDEULL,
+    0x3919C294119C9A68ULL, 0xB91839D9478815D7ULL, 0xB91B1D7B433942B5ULL, 0xB9286B714E6F971AULL,
+    0xB91D759E0525A7D9ULL, 0x392629C71C8AB284ULL, 0xB924DC0D0A5A4B39ULL, 0x38EAA4BD416621E1ULL,
+    0x393680601784AB98ULL, 0xB8C0A7377E6B7108ULL, 0x393A0E5DE64BEC26ULL, 0xB8FBDDB44B66B447ULL,
+    0x38F018F24491A23AULL, 0xB920383ABB54A836ULL, 0x392E3C5ED6541AFFULL, 0xB8FA8A0B5ADE8A2CULL,
+    0xB93B9B1E8AAD39E1ULL, 0x3901453EA30680A3ULL, 0xB909CBF3CCFB7000ULL, 0xB91E8D954E6A625BULL,
+    0x3908136D5AC775B9ULL, 0x38F5A2192235A2F9ULL, 0xB91B801749F1D00AULL, 0xB938471DE9D202ECULL,
+    0x3918D9B80F69CB44ULL, 0x393688850663DEAEULL, 0xB90609145D671D93ULL, 0x392D02879520C4F3ULL,
+    0x3938E0F32DAEC100ULL, 0xB8E30B605606AEB9ULL, 0x391820E7FFB04DA4ULL, 0x3901A30D577B03B1ULL,
+    0x392D2B74A6EAD83DULL, 0xB8FAE023DCDD75C8ULL, 0x38DAD5EFD6C431A0ULL, 0x3934C7F97D918464ULL,
+    0x38F2C5BB4EF23D71ULL, 0x3900A5A13D8DE6CFULL, 0x38FCB34A84321CA0ULL, 0x3925A88AF1867412ULL,
+    0x391D2B69CD832D47ULL, 0xB8CE45C28BFA24C4ULL, 0x392E14263C54CB83ULL, 0xB8D43B0E44DC78FCULL,
+    0x392EE48CD2B75F73ULL, 0x3931DE03750EA1CCULL, 0xB8D8F6A981A59CFCULL, 0xB92238F080694D21ULL,
+    0xB9111391BF5631FEULL, 0x3937D08ED677681FULL, 0x38E8C250A062B600ULL, 0x39288FD5911A5304ULL,
+    0x38F3CF21DC6C9A48ULL, 0xB93180C598014BB6ULL, 0x38EBD0D1EB17359AULL, 0xB93B01A8E1AD9B15ULL,
+    0x390DFDF3962EAF5BULL, 0xB9247E1E12FC579AULL, 0x390FAE3DA7F85D20ULL, 0xB8D2DA68B71D5321ULL,
+    0xB9033448A23A8C15ULL, 0x392025BB1FA1B33AULL, 0x3920714F32819D5FULL, 0x391151E6A7FB3018ULL,
+    0x391CE5D0A1C6B509ULL, 0x392A284A92E86855ULL, 0x38FF6243AFBC590DULL, 0xB91D3ABD36D3B354ULL,
+    0xB921F8F5E10BD823ULL, 0x391F8671B6297C6BULL, 0x38E75370E9EBDF79ULL, 0x38F6D3102F96455FULL,
+    0xB92E6B4F781F7888ULL, 0x39190345DEC48C57ULL, 0x3916A17C820F20C7ULL, 0x3929D7AEAD50488DULL,
+    0xB919997FDEFCBA87ULL, 0x39239204DC998B01ULL, 0xB918647AD17DA270ULL, 0x38C0EB807D62D95CULL,
+};
 // clang-format on
 
 // The float form: its inputs past the edges.  exp(x) rounds to +inf above
@@ -199,12 +371,10 @@ inline constexpr std::uint32_t kExpFloatFastBitsTwice = __builtin_bit_cast(std::
 // with a margin of two.
 inline constexpr std::uint64_t kExpFloatTolerance = std::uint64_t{1} << 13;
 
-// The parts of the reduction that the path of a large result reads.
-struct ExpScale {
-    // The bits of s_j with the exponent of k/128 added.
-    std::uint64_t scale_bits = 0;
-    // The bits of k + 0x1.8p52: the low 32 bits hold k.
-    std::uint64_t shifted_bits = 0;
+// A value as the unevaluated sum high + low of two doubles.
+struct DoubleWord {
+    double high = 0.0;
+    double low = 0.0;
 };
 
 inline namespace CRUCIBLE_SIMD_TARGET {
@@ -214,27 +384,218 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     return static_cast<std::uint32_t>(__builtin_bit_cast(std::uint64_t, value) >> 52);
 }
 
-// exp of an input with 512 <= |x| < 1024: s * (1 + sum) with the exponent of
-// s past the normal range.  A positive k scales s down by 2^1009 and the
-// result up by 2^1009, and the last multiply overflows to +inf where the
-// result does.  A negative k scales s up by 2^1022.  When the scaled result is
-// below 1, the final multiply by 2^-1022 gives a subnormal value, so the add
-// of 1 in two parts rounds the result at the precision of that subnormal
-// value first, and the final multiply is exact.
-[[gnu::cold, gnu::noinline, nodiscard]] constexpr double exp_past_range_(double sum, ExpScale reduction) noexcept {
-    if ((reduction.shifted_bits & 0x80000000u) == 0) {
-        double const scale = __builtin_bit_cast(double, reduction.scale_bits - (std::uint64_t{1009} << 52));
-        return ::fixy::fp::detail::fma_of_finite(scale, sum, scale) * 0x1p1009;
+// first + second with each bit: the two-sum of Knuth, 6 operations.
+[[nodiscard, gnu::always_inline]] constexpr DoubleWord two_sum_(double first, double second) noexcept {
+    double const sum = first + second;
+    double const second_part = sum - first;
+    double const first_part = sum - second_part;
+    return DoubleWord{sum, (first - first_part) + (second - second_part)};
+}
+
+// first + second with each bit when the exponent of first is at least the
+// exponent of second: the fast two-sum of Dekker, 3 operations.
+[[nodiscard, gnu::always_inline]] constexpr DoubleWord fast_two_sum_(double first, double second) noexcept {
+    double const sum = first + second;
+    return DoubleWord{sum, second - (sum - first)};
+}
+
+// left * right with each bit, through one fma.
+[[nodiscard, gnu::always_inline]] constexpr DoubleWord two_product_(double left, double right) noexcept {
+    double const product = left * right;
+    return DoubleWord{product, ::fixy::fp::detail::fma_of_finite(left, right, -product)};
+}
+
+// The double-word operations of Joldes, Muller and Popescu, "Tight and
+// rigorous error bounds for basic building blocks of double-word arithmetic"
+// (ACM Transactions on Mathematical Software 44(2), 2017).  Each input pair
+// has high = RN(high + low), and so has each result.  The bounds are relative
+// to the exact result of the operation on the inputs.
+
+// A pair plus a double, algorithm 4: an error of at most 2u^2.
+[[nodiscard, gnu::always_inline]] constexpr DoubleWord dw_plus_fp_(DoubleWord value, double addend) noexcept {
+    DoubleWord const sum = two_sum_(value.high, addend);
+    return fast_two_sum_(sum.high, value.low + sum.low);
+}
+
+// A pair plus a pair, algorithm 6: an error of at most 3u^2 / (1 - 4u).
+[[nodiscard, gnu::always_inline]] constexpr DoubleWord dw_plus_dw_(DoubleWord first, DoubleWord second) noexcept {
+    DoubleWord const high = two_sum_(first.high, second.high);
+    DoubleWord const low = two_sum_(first.low, second.low);
+    DoubleWord const middle = fast_two_sum_(high.high, high.low + low.high);
+    return fast_two_sum_(middle.high, low.low + middle.low);
+}
+
+// A pair times a double, algorithm 9: an error of at most 2u^2.
+[[nodiscard, gnu::always_inline]] constexpr DoubleWord dw_times_fp_(DoubleWord value, double factor) noexcept {
+    DoubleWord const product = two_product_(value.high, factor);
+    return fast_two_sum_(product.high, ::fixy::fp::detail::fma_of_finite(value.low, factor, product.low));
+}
+
+// A pair times a pair, algorithm 12: an error of at most 5u^2.
+[[nodiscard, gnu::always_inline]] constexpr DoubleWord dw_times_dw_(DoubleWord first, DoubleWord second) noexcept {
+    DoubleWord const product = two_product_(first.high, second.high);
+    double const low_product = first.low * second.low;
+    double const cross = ::fixy::fp::detail::fma_of_finite(first.high, second.low, low_product);
+    double const cross_sum = ::fixy::fp::detail::fma_of_finite(first.low, second.high, cross);
+    return fast_two_sum_(product.high, product.low + cross_sum);
+}
+
+// The round to nearest of high + middle + low, for high > 0 below the
+// largest finite value.  middle is the error of the round of high + middle
+// and a small part more, and low is at most half a unit in the last place of
+// middle.  So the sum rounds as high + middle, unless middle is half the gap
+// to a neighbor of high, exactly.  There the sign of low decides.  The gaps
+// above and below high differ at a power of two.
+[[nodiscard]] constexpr double round_triple_(double high, double middle, double low) noexcept {
+    std::uint64_t const high_bits = __builtin_bit_cast(std::uint64_t, high);
+    double const above = __builtin_bit_cast(double, high_bits + 1);
+    double const below = __builtin_bit_cast(double, high_bits - 1);
+    std::uint64_t const middle_bits = __builtin_bit_cast(std::uint64_t, middle);
+    if (middle_bits == __builtin_bit_cast(std::uint64_t, (above - high) * 0.5)) {
+        if (low > 0.0) return above;
+        if (low < 0.0) return high;
+    } else if (middle_bits == __builtin_bit_cast(std::uint64_t, (below - high) * 0.5)) {
+        if (low < 0.0) return below;
+        if (low > 0.0) return high;
     }
-    double const scale = __builtin_bit_cast(double, reduction.scale_bits + (std::uint64_t{1022} << 52));
-    double result = ::fixy::fp::detail::fma_of_finite(scale, sum, scale);
-    if (result < 1.0) {
-        double const low = ::fixy::fp::detail::fma_of_finite(scale, sum, scale - result);
-        double const high = 1.0 + result;
-        double const rest = ((1.0 - high) + result) + low;
-        result = (high + rest) - 1.0;
+    return high + middle;
+}
+
+// hi + lo of the fast path, with the bits of s less scale_shift.  The fast
+// path takes a shift of 0, and the edge path scales s by 2^-1009 or 2^1022.
+// The error of hi + lo is the budget eps_fast of the comment of the header,
+// for each x with |k| <= 2^17 and a normal scaled s.
+[[nodiscard, gnu::always_inline]] constexpr DoubleWord exp_pair_(double value, std::uint64_t scale_shift) noexcept {
+    using ::fixy::fp::detail::fma_of_finite;
+    // r1 = x - k L1 is exact, so the multiply and the add of the levels with
+    // no fused multiply-add give the bits of the fma.
+#if defined(__FMA__) || defined(__aarch64__)
+    double rounded = fma_of_finite(value, kExpInvLn2N, kExpShift);
+    std::uint64_t const shifted_bits = __builtin_bit_cast(std::uint64_t, rounded);
+    rounded -= kExpShift;
+    double const reduced_first = fma_of_finite(rounded, kExpNegLn2HiN, value);
+#else
+    double rounded = kExpInvLn2N * value + kExpShift;
+    std::uint64_t const shifted_bits = __builtin_bit_cast(std::uint64_t, rounded);
+    rounded -= kExpShift;
+    double const reduced_first = value + rounded * kExpNegLn2HiN;
+#endif
+    double const reduced = fma_of_finite(rounded, kExpNegLn2LoN, reduced_first);
+    double const reduced_low = fma_of_finite(rounded, kExpNegLn2LoN, reduced_first - reduced);
+    std::uint64_t const index = 2 * (shifted_bits & kExpTableMask);
+    double const tail = __builtin_bit_cast(double, kExpTable[index]);
+    double const scale =
+        __builtin_bit_cast(double, kExpTable[index + 1] + (shifted_bits << (52 - kExpTableBits)) - scale_shift);
+    double const squared = reduced * reduced;
+    double const low_pair = fma_of_finite(reduced, kExpC3, kExpC2);
+    double const high_pair = fma_of_finite(reduced, kExpC5, kExpC4);
+    double const tail_sum = tail + reduced_low;
+    double const small_terms = fma_of_finite(tail_sum, reduced, tail_sum);
+    double const polynomial = fma_of_finite(squared, high_pair, low_pair);
+    double const rest = fma_of_finite(squared, polynomial, small_terms);
+    double const high = fma_of_finite(scale, reduced, scale);
+    // s - hi is exact: hi is within 2^-8.4 of s.
+    double const high_error = fma_of_finite(scale, reduced, scale - high);
+    return DoubleWord{high, fma_of_finite(scale, rest, high_error)};
+}
+
+// The slow path: exp(x) correctly rounded for 2^-54 <= |x| and each x from
+// above kExpZeroAtOrBelow to kExpLargestFinite, with a subnormal result too.
+// It computes y = exp(x) / 2^(k >> 7) in three doubles with the relative
+// error eps_acc of the comment of the header, and rounds their sum.  The
+// coverage table of that comment shows that no boundary of the round is that
+// close to exp(x).
+[[gnu::cold, gnu::noinline, nodiscard]] constexpr double exp_accurate_(double value) noexcept {
+    using ::fixy::fp::detail::fma_of_finite;
+    // k from a multiply and an add on each level, |k| <= 137602.
+    double rounded = kExpInvLn2N * value + kExpShift;
+    std::uint64_t const shifted_bits = __builtin_bit_cast(std::uint64_t, rounded);
+    rounded -= kExpShift;
+    auto const count = static_cast<std::int32_t>(static_cast<std::uint32_t>(shifted_bits));
+    std::int32_t const power = count >> kExpTableBits;
+    auto const entry = static_cast<std::uint64_t>(count) & kExpTableMask;
+    // r = x - k ln2/128 in three doubles.  k P0 and k P1 are exact, so is
+    // x - k P0, and each sum below is exact but the last.
+    double const reduced_first = value - rounded * kExpLn2Part0;
+    DoubleWord const reduced_pair = two_sum_(reduced_first, -(rounded * kExpLn2Part1));
+    DoubleWord const product2 = two_product_(rounded, kExpLn2Part2);
+    double const product3 = rounded * kExpLn2Part3;
+    DoubleWord const middle = two_sum_(reduced_pair.low, -product2.high);
+    double const last = (middle.low - product2.low) - product3;
+    DoubleWord const head = two_sum_(reduced_pair.high, middle.high);
+    DoubleWord const tail = two_sum_(head.low, last);
+    DoubleWord const reduced = fast_two_sum_(head.high, tail.high);
+    double const reduced_last = tail.low;
+    // Q = 1/2 + r/6 + ... + r^9/11!: the part of degree 7 to 11 in doubles on
+    // the high part of r, then a Horner sum in pairs of doubles.
+    double horner = fma_of_finite(reduced.high, kExpSlowC11, kExpSlowC10);
+    horner = fma_of_finite(reduced.high, horner, kExpSlowC9);
+    horner = fma_of_finite(reduced.high, horner, kExpSlowC8);
+    horner = fma_of_finite(reduced.high, horner, kExpSlowC7);
+    DoubleWord sum = dw_plus_dw_(DoubleWord{kExpSlowC6High, kExpSlowC6Low}, dw_times_fp_(reduced, horner));
+    sum = dw_plus_dw_(DoubleWord{kExpSlowC5High, kExpSlowC5Low}, dw_times_dw_(reduced, sum));
+    sum = dw_plus_dw_(DoubleWord{kExpSlowC4High, kExpSlowC4Low}, dw_times_dw_(reduced, sum));
+    sum = dw_plus_dw_(DoubleWord{kExpSlowC3High, kExpSlowC3Low}, dw_times_dw_(reduced, sum));
+    DoubleWord const quotient = dw_plus_fp_(dw_times_dw_(reduced, sum), 0.5);
+    DoubleWord const curve = dw_times_dw_(dw_times_dw_(reduced, reduced), quotient);
+    // V = r + r^2 Q = v1 + v3 + v4.
+    DoubleWord const v1 = two_sum_(reduced.high, curve.high);
+    DoubleWord const v2 = two_sum_(reduced.low, curve.low);
+    DoubleWord const v3 = two_sum_(v1.low, v2.high);
+    double const v4 = (v2.low + v3.low) + reduced_last;
+    // W = tau + V + tau V = w1 + w3 + w_rest, with tau = tail + low.
+    double const tail_high = __builtin_bit_cast(double, kExpTable[2 * entry]);
+    double const tail_low = __builtin_bit_cast(double, kExpTailLow[entry]);
+    DoubleWord const cross = two_product_(tail_high, v1.high);
+    double const cross_rest = fma_of_finite(tail_high, v3.high, tail_low * v1.high);
+    DoubleWord const w1 = two_sum_(v1.high, tail_high);
+    DoubleWord const w2 = two_sum_(w1.low, cross.high);
+    DoubleWord const w3 = two_sum_(w2.high, v3.high);
+    double const w_rest = ((((w2.low + w3.low) + cross.low) + tail_low) + v4) + cross_rest;
+    // y = s (1 + W) = z1 + z3 + z_rest, with s = 2^(j/128) rounded, in [1, 2).
+    double const scale = __builtin_bit_cast(double, kExpTable[2 * entry + 1] + (entry << (52 - kExpTableBits)));
+    DoubleWord const p1 = two_product_(scale, w1.high);
+    DoubleWord const p3 = two_product_(scale, w3.high);
+    DoubleWord const z1 = fast_two_sum_(scale, p1.high);
+    DoubleWord const z2 = two_sum_(z1.low, p1.low);
+    DoubleWord const z3 = two_sum_(z2.high, p3.high);
+    double const z_rest = ((z2.low + z3.low) + p3.low) + scale * w_rest;
+    // A subnormal result adds G = 2^(-1022 - (k >> 7)): G + y is in [G, 2G),
+    // where the step of the doubles is the step of the subnormal result.
+    bool const is_subnormal = value < kExpNormalFrom;
+    double const offset = is_subnormal ? __builtin_bit_cast(double, static_cast<std::uint64_t>(1 - power) << 52) : 0.0;
+    DoubleWord const top = two_sum_(offset, z1.high);
+    DoubleWord const second = two_sum_(top.low, z3.high);
+    DoubleWord const head_pair = fast_two_sum_(top.high, second.high);
+    DoubleWord const rest_pair = two_sum_(head_pair.low, second.low + z_rest);
+    double const result = round_triple_(head_pair.high, rest_pair.high, rest_pair.low);
+    if (!is_subnormal) {
+        // The result is normal, so the add of k >> 7 to its exponent is exact.
+        return __builtin_bit_cast(double, __builtin_bit_cast(std::uint64_t, result)
+                                              + (static_cast<std::uint64_t>(power) << 52));
     }
-    return result * 0x1p-1022;
+    // result - G is exact, and each multiply is exact.
+    double const fraction =
+        (result - offset) * __builtin_bit_cast(double, static_cast<std::uint64_t>(2045 + power) << 52);
+    return fraction * 0x1p-1022;
+}
+
+// The edge path: |x| >= 512, an infinity and a NaN.
+[[gnu::cold, gnu::noinline, nodiscard]] constexpr double exp_edge_(double value) noexcept {
+    if ((__builtin_bit_cast(std::uint64_t, value) << 1) > 0xFFE0000000000000ULL)
+        return ::foundation::core::quiet_nan_of<double>;
+    if (value > kExpLargestFinite) return ::foundation::core::infinity_of<double>;
+    if (value <= kExpZeroAtOrBelow) return 0.0;
+    if (value < kExpNormalFrom) return exp_accurate_(value);
+    bool const is_positive = value > 0.0;
+    std::uint64_t const shift =
+        is_positive ? std::uint64_t{1009} << 52 : std::uint64_t{0} - (std::uint64_t{1022} << 52);
+    DoubleWord const pair = exp_pair_(value, shift);
+    double const margin = pair.high * kExpMargin;
+    double const upper = pair.high + (pair.low + margin);
+    double const lower = pair.high + (pair.low - margin);
+    if (__builtin_islessgreater(upper, lower)) return exp_accurate_(value);
+    return is_positive ? upper * 0x1p1009 : upper * 0x1p-1022;
 }
 
 // The midpoint inputs of the float form: each input whose exp(double) is a
@@ -257,44 +618,21 @@ namespace fixy::fp {
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 [[nodiscard]] constexpr double exp(double value) noexcept {
-    using ::fixy::fp::detail::fma_of_finite;
-    std::uint32_t top = detail::exp_top12_(value) & 0x7ffu;
+    std::uint32_t const top = detail::exp_top12_(value) & 0x7ffu;
     std::uint32_t constexpr tiny_top = 0x3c9u;  // the top of 2^-54
     std::uint32_t constexpr large_top = 0x408u;  // the top of 512
-    std::uint32_t constexpr huge_top = 0x409u;  // the top of 1024
     if (top - tiny_top >= large_top - tiny_top) [[unlikely]] {
-        if (top - tiny_top >= 0x80000000u) {
-            // |x| < 2^-54: exp(x) rounds to 1, and 1 + x gives that round.
-            return 1.0 + value;
-        }
-        if (top >= huge_top) {
-            std::uint64_t const bits = __builtin_bit_cast(std::uint64_t, value);
-            if (bits == 0xfff0000000000000ULL) return 0.0;
-            if (top >= 0x7ffu)
-                return (bits & 0x000fffffffffffffULL) != 0 ? ::foundation::core::quiet_nan_of<double> : value;
-            return (bits >> 63) != 0 ? 0.0 : ::foundation::core::infinity_of<double>;
-        }
-        top = 0;
+        // |x| < 2^-54: exp(x) rounds to 1, and 1 + x gives that round.
+        if (top < tiny_top) return 1.0 + value;
+        return detail::exp_edge_(value);
     }
-    double const scaled = detail::kExpInvLn2N * value;
-    double rounded = scaled + detail::kExpShift;
-    std::uint64_t const shifted_bits = __builtin_bit_cast(std::uint64_t, rounded);
-    rounded -= detail::kExpShift;
-    double reduced = fma_of_finite(rounded, detail::kExpNegLn2HiN, value);
-    reduced = fma_of_finite(rounded, detail::kExpNegLn2LoN, reduced);
-    std::uint64_t const index = 2 * (shifted_bits & detail::kExpTableMask);
-    double const tail = __builtin_bit_cast(double, detail::kExpTable[index]);
-    std::uint64_t const scale_bits = detail::kExpTable[index + 1] + (shifted_bits << (52 - detail::kExpTableBits));
-    double const reduced_squared = reduced * reduced;
-    double const low_pair = fma_of_finite(reduced, detail::kExpC3, detail::kExpC2);
-    double const high_pair = fma_of_finite(reduced, detail::kExpC5, detail::kExpC4);
-    double sum = fma_of_finite(reduced_squared, low_pair, tail + reduced);
-    sum = fma_of_finite(reduced_squared * reduced_squared, high_pair, sum);
-    if (top == 0) [[unlikely]] {
-        return detail::exp_past_range_(sum, detail::ExpScale{scale_bits, shifted_bits});
-    }
-    double const scale = __builtin_bit_cast(double, scale_bits);
-    return fma_of_finite(scale, sum, scale);
+    detail::DoubleWord const pair = detail::exp_pair_(value, 0);
+    double const margin = pair.high * detail::kExpMargin;
+    double const upper = pair.high + (pair.low + margin);
+    double const lower = pair.high + (pair.low - margin);
+    if (__builtin_islessgreater(upper, lower)) [[unlikely]]
+        return detail::exp_accurate_(value);
+    return upper;
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET

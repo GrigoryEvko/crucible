@@ -18,13 +18,19 @@
 // patterns of the type with a Weyl step, so it holds each class of input:
 // the signs, the subnormal values, the infinities and the NaNs.  The second
 // part walks the values of the domain where the function is not constant,
-// with an even step.  The digest is FNV-1a of 64 bits over the bits of each
-// result, in the order of the sample.
+// with an even step.  exp(double) has two more parts: the hard inputs of
+// fp_exp_hard_cases.h through exp, and the same inputs in the domain of the
+// slow path through the slow path on its own.  So each level runs the fast
+// path, the edge path and the slow path on the hard inputs.  The digest is
+// FNV-1a of 64 bits over the bits of each result, in the order of the
+// sample.
 
 #include <fixy/Core.h>
 #include <fixy/fp/Erf.h>
 #include <fixy/fp/Exp.h>
 #include <fixy/fp/Log.h>
+
+#include "fp_exp_hard_cases.h"
 
 #include <cstdint>
 
@@ -112,6 +118,31 @@ template <FpUnit Unit>
 }
 
 template <FpUnit Unit>
+[[gnu::noinline, nodiscard]] double probe_exp_slow(double value) noexcept {
+    return ::fixy::fp::detail::exp_accurate_(value);
+}
+
+// The digest of exp(double) on its sample, then on the hard inputs through
+// exp, then on the hard inputs in the domain of the slow path through the
+// slow path.  O(2 * kSampleCount).
+template <FpUnit Unit>
+[[nodiscard]] std::uint64_t digest_of_exp_double() noexcept {
+    std::uint64_t digest = digest_of_double<Unit>(probe_exp_double<Unit>, kExpDomain);
+    for (::test_fp_exp::HardCase const& item : ::test_fp_exp::kExpHardCases) {
+        digest = fold_word(
+            digest, ::fixy::bit_cast<std::uint64_t>(probe_exp_double<Unit>(::fixy::bit_cast<double>(item.input))));
+    }
+    for (::test_fp_exp::HardCase const& item : ::test_fp_exp::kExpHardCases) {
+        double const input = ::fixy::bit_cast<double>(item.input);
+        double const magnitude = input < 0.0 ? -input : input;
+        bool const is_in_domain = !(magnitude < 0x1p-54) && input > ::fixy::fp::detail::kExpZeroAtOrBelow
+                               && !(input > ::fixy::fp::detail::kExpLargestFinite);
+        if (is_in_domain) digest = fold_word(digest, ::fixy::bit_cast<std::uint64_t>(probe_exp_slow<Unit>(input)));
+    }
+    return digest;
+}
+
+template <FpUnit Unit>
 [[gnu::noinline, nodiscard]] float probe_exp_float(float value) noexcept {
     return ::fixy::fp::exp(value);
 }
@@ -139,7 +170,7 @@ template <FpUnit Unit>
 template <FpUnit Unit>
 [[nodiscard]] FpDigests fp_digests_of_this_unit() noexcept {
     FpDigests digests{};
-    digests.exp_double = digest_of_double<Unit>(probe_exp_double<Unit>, kExpDomain);
+    digests.exp_double = digest_of_exp_double<Unit>();
     digests.exp_float = digest_of_float<Unit>(probe_exp_float<Unit>, kExpFloatDomain);
     digests.log_double = digest_of_double<Unit>(probe_log_double<Unit>, kLogDomain);
     digests.log_float = digest_of_float<Unit>(probe_log_float<Unit>, kLogDomain);

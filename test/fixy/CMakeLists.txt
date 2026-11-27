@@ -7814,6 +7814,12 @@ target_compile_definitions(test_fp_elementary PRIVATE CRUCIBLE_TEST_HAS_V1_UNIT=
                                                       CRUCIBLE_TEST_HAS_V3_UNIT=${_fp_has_v3_unit}
                                                       CRUCIBLE_TEST_HAS_V4_UNIT=${_fp_has_v4_unit})
 
+# test_fp_exp_double checks the correct round of exp(double): the hard inputs
+# of fp_exp_hard_cases.h through exp and through the slow path on its own,
+# and a sample of 2^16 inputs against the pinned digest of CORE-MATH, through
+# exp and through the slow path again.
+fixy_test(test_fp_exp_double)
+
 # test_fp_erf_float_exhaustive runs erf of float of fixy/fp on each of the
 # 2^32 floats, in 4 parts, against the pinned digests of CORE-MATH and the
 # round of erf(double).  The float form has no run-time rounding test, so this
