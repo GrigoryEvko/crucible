@@ -856,6 +856,43 @@ void test_two_runs_with_two_tails_settle_within_the_lifts() {
                         divergences.at(::fixy::index<0>()), divergences.at(::fixy::index<1>()));
 }
 
+void test_a_period_holds_only_with_a_full_window() {
+    // The short path of check() reads no length of the window while a period
+    // holds.  The walk feeds random bodies, breaks each period with an op that
+    // no body holds, and then restarts after a divergence or resets.  After
+    // each op and each restart, a period holds only with a window of K keys.
+    uint64_t state = 11;
+    IterationDetector d;
+    uint32_t ops_in_a_period = 0;
+    const auto check_the_window = [&d, &ops_in_a_period]() {
+        CRUCIBLE_TEST_ASSERT(kTest, d.period_ == 0 || d.signature_len.get() == K);
+        ops_in_a_period += d.period_ != 0 ? 1u : 0u;
+    };
+    for (uint32_t round = 0; round < 48; ++round) {
+        ::fixy::FixedList<Op, 24> body{};
+        const auto length = static_cast<uint32_t>(5 + next_random(state) % 20);
+        for (uint32_t position = 0; position < length; ++position)
+            static_cast<void>(
+                body.append(Op{1 + next_random(state) % 4, position % 3}).expect("a random body has at most 24 ops"));
+        const uint64_t ops = (3 + next_random(state) % 5) * length;
+        for (uint64_t n = 0; n < ops; ++n) {
+            const Op op = op_at(body.view(), BodyOffset{static_cast<uint32_t>(n % length)});
+            static_cast<void>(d.check(kAlloc, SchemaHash{op.schema}, ShapeHash{op.shape}));
+            check_the_window();
+        }
+        static_cast<void>(d.check(kAlloc, SchemaHash{0x9000 + round}, ShapeHash{}));
+        check_the_window();
+        const uint64_t next_step = next_random(state) % 3;
+        if (next_step == 0) d.restart_after_divergence(kDivergentOp);
+        if (next_step == 1) d.reset();
+        check_the_window();
+    }
+    // The walk held a period on some ops, so the check above read the case
+    // that the short path takes.
+    CRUCIBLE_TEST_ASSERT(kTest, ops_in_a_period > 0);
+    ::fixy::check::pass(kTest, "  test_period_needs_full_window:   PASSED ({} ops in a period)\n", ops_in_a_period);
+}
+
 void test_reset_clears_everything() {
     IterationDetector d;
     const auto body = inference_mlp_body();
@@ -934,8 +971,9 @@ int main() {
     test_power_of_a_short_root_has_a_unique_phase();
     test_equal_groups_replay_through_the_foreground();
     test_two_runs_with_two_tails_settle_within_the_lifts();
+    test_a_period_holds_only_with_a_full_window();
     test_reset_clears_everything();
     test_typestate_witness_minting();
-    ::fixy::check::pass(kTest, "test_iteration_detector: 21 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_iteration_detector: 22 groups, all passed\n");
     return 0;
 }

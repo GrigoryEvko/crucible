@@ -228,25 +228,25 @@ struct IterationDetector {
     // table, and a break builds it again in O(history).  An accepted period
     // costs O(P) one time.  The ring and the table grow through the
     // allocation capability.
-    [[nodiscard]] bool check(::foundation::effects::Alloc alloc, SchemaHash schema_hash,
-                             ShapeHash shape_hash = ShapeHash{}) {
+    //
+    // The door is in line in its caller, and it holds the path of each op
+    // while a period holds and the ring has room: no call, so no register of
+    // the search costs the path a save.  A period is accepted only after the
+    // window holds K keys, and each rewind of the window drops the period,
+    // so the path reads no length of the window.  Each other op goes to
+    // check_searching_, out of line.
+    [[nodiscard]] CRUCIBLE_INLINE bool check(::foundation::effects::Alloc alloc, SchemaHash schema_hash,
+                                             ShapeHash shape_hash = ShapeHash{}) {
         ops_since_boundary.bump();
         const uint64_t key = key_of_(schema_hash, shape_hash);
-        append_(alloc, key);
-        const uint64_t op_index = pos_;
-        ++pos_;
-
-        // The bump is in bounds, because the guard admits it only while the
-        // length is below K.
-        if (signature_len.get() < K) signature_len.bump();
-        if (signature_len.get() < K) return false;
-
-        if (period_ != 0) {
+        if (period_ != 0 && has_room_()) [[likely]] {
+            write_key_(key);
+            const uint64_t op_index = pos_;
+            ++pos_;
             if (op_index + 1 == next_boundary_ + K) return verify_boundary_(alloc);
             return false;
         }
-        const uint64_t start = op_index + 1 - K;
-        return search_(start, link_window_(start));
+        return check_searching_(alloc, key);
     }
 
     // The oldest op that a future report of a boundary can put in its
@@ -359,7 +359,32 @@ private:
     }
 
     // The ring holds the ops from held_from_() up to pos_.
-    [[nodiscard]] uint64_t held_from_() const noexcept { return base_ == 0 ? 0 : base_ - 1; }
+    [[nodiscard]] CRUCIBLE_INLINE uint64_t held_from_() const noexcept { return base_ == 0 ? 0 : base_ - 1; }
+
+    // True when the ring has a slot for the op at pos_ with no growth and no
+    // eviction.  An empty ring has no slot.
+    [[nodiscard]] CRUCIBLE_INLINE bool has_room_() const noexcept { return pos_ + 1 - held_from_() <= keys_.size(); }
+
+    // The path of each op that check() does not take: a growth or an eviction
+    // of the ring, a window that is not full yet, and the search.  Out of
+    // line, so its registers stay out of the path of check().
+    [[nodiscard]] CRUCIBLE_NOINLINE bool check_searching_(::foundation::effects::Alloc alloc, uint64_t key) {
+        append_(alloc, key);
+        const uint64_t op_index = pos_;
+        ++pos_;
+
+        // The bump is in bounds, because the guard admits it only while the
+        // length is below K.
+        if (signature_len.get() < K) signature_len.bump();
+        if (signature_len.get() < K) return false;
+
+        if (period_ != 0) {
+            if (op_index + 1 == next_boundary_ + K) return verify_boundary_(alloc);
+            return false;
+        }
+        const uint64_t start = op_index + 1 - K;
+        return search_(start, link_window_(start));
+    }
 
     // Makes room in the ring for the op at pos_.  The ring grows while it is
     // below its largest capacity.  At the largest capacity, the oldest ops
@@ -419,6 +444,12 @@ private:
 
     void append_(::foundation::effects::Alloc alloc, uint64_t key) {
         make_room_(alloc);
+        write_key_(key);
+    }
+
+    // Writes the key of the op at pos_ and its prefix fingerprints into the
+    // ring, which has room for it.
+    CRUCIBLE_INLINE void write_key_(uint64_t key) noexcept {
         const uint64_t poly_before = prefix_poly_before_(pos_);
         const uint64_t sum_before = prefix_sum_before_(pos_);
         keys_.set_masked(pos_, key);
