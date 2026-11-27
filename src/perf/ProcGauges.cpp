@@ -184,128 +184,136 @@ std::size_t ProcGauges::readable_count() const noexcept {
     return count;
 }
 
-::fixy::TextView ProcGauges::read_scratch_(::fixy::CText path) noexcept {
-    ScratchText& text = *scratch_;
-    if (::foundation::os::read_file(path, text).is_err() || text.size() == SCRATCH_BYTES) return ::fixy::TextView{};
-    return text.view();
+template <class Parse>
+uint64_t ProcGauges::parse_scratch_(::fixy::CText path, Parse parse) noexcept {
+    auto [reading, scratch] =
+        ::fixy::with_mut(std::move(scratch_), [path, &parse](ScratchText& text) noexcept -> uint64_t {
+            if (::foundation::os::read_file(path, text).is_err() || text.size() == 0 || text.size() == SCRATCH_BYTES) {
+                return UNAVAILABLE;
+            }
+            return parse(::fixy::TextView{text.view()});
+        });
+    scratch_ = std::move(scratch);
+    return reading;
 }
 
 uint64_t ProcGauges::read_slab_total_bytes_() noexcept {
     if (!is_slabinfo_readable_) return UNAVAILABLE;
-    ::fixy::TextView const text = read_scratch_(kSlabinfoPath);
-    if (text.size() == 0) return UNAVAILABLE;
-    // The file opens with a version line and a column-name comment line, then
-    // carries one line per cache:
-    //   "<name> <active_objs> <num_objs> <objsize> ..."
-    // A product or a sum past 64 bits gives no reading.
-    Read total = ::fixy::some(uint64_t{0});
-    for_each_line(after_lines(text, 2), [&total](::fixy::TextView line) noexcept {
-        skip_blanks(line);
-        skip_word(line);
-        static_cast<void>(take_decimal(line));
-        Read num_objs = take_decimal(line);
-        Read objsize = take_decimal(line);
-        total = add_read(total, std::move(num_objs).and_then([&objsize](uint64_t count) noexcept {
-            return std::move(objsize).and_then(
-                [count](uint64_t size) noexcept { return ::fixy::checked_mul(count, size); });
-        }));
+    return parse_scratch_(kSlabinfoPath, [](::fixy::TextView text) noexcept {
+        // The file opens with a version line and a column-name comment line,
+        // then carries one line per cache:
+        //   "<name> <active_objs> <num_objs> <objsize> ..."
+        // A product or a sum past 64 bits gives no reading.
+        Read total = ::fixy::some(uint64_t{0});
+        for_each_line(after_lines(text, 2), [&total](::fixy::TextView line) noexcept {
+            skip_blanks(line);
+            skip_word(line);
+            static_cast<void>(take_decimal(line));
+            Read num_objs = take_decimal(line);
+            Read objsize = take_decimal(line);
+            total = add_read(total, std::move(num_objs).and_then([&objsize](uint64_t count) noexcept {
+                return std::move(objsize).and_then(
+                    [count](uint64_t size) noexcept { return ::fixy::checked_mul(count, size); });
+            }));
+        });
+        return std::move(total).value_or(UNAVAILABLE);
     });
-    return std::move(total).value_or(UNAVAILABLE);
 }
 
 uint64_t ProcGauges::read_hardirq_total_count_() noexcept {
     if (!is_interrupts_readable_) return UNAVAILABLE;
-    ::fixy::TextView const text = read_scratch_(kInterruptsPath);
-    if (text.size() == 0) return UNAVAILABLE;
-    // A header line of CPU names comes first, then one line per interrupt:
-    //   "  <N>:  <count_cpu0>  <count_cpu1>  ...  <handler_name>"
-    Read total = ::fixy::some(uint64_t{0});
-    for_each_line(after_lines(text, 1), [&total](::fixy::TextView line) noexcept {
-        skip_blanks(line);
-        skip_past(line, ':');
-        // The handler name follows the last count, so the first non-digit
-        // ends the per-CPU columns.
-        for (;;) {
+    return parse_scratch_(kInterruptsPath, [](::fixy::TextView text) noexcept {
+        // A header line of CPU names comes first, then one line per
+        // interrupt:
+        //   "  <N>:  <count_cpu0>  <count_cpu1>  ...  <handler_name>"
+        Read total = ::fixy::some(uint64_t{0});
+        for_each_line(after_lines(text, 1), [&total](::fixy::TextView line) noexcept {
             skip_blanks(line);
-            if (leading_count(line, is_decimal_digit) == 0) break;
-            total = add_read(total, take_decimal(line));
-        }
+            skip_past(line, ':');
+            // The handler name follows the last count, so the first non-digit
+            // ends the per-CPU columns.
+            for (;;) {
+                skip_blanks(line);
+                if (leading_count(line, is_decimal_digit) == 0) break;
+                total = add_read(total, take_decimal(line));
+            }
+        });
+        return std::move(total).value_or(UNAVAILABLE);
     });
-    return std::move(total).value_or(UNAVAILABLE);
 }
 
 uint64_t ProcGauges::read_napi_poll_total_() noexcept {
     if (!is_softnet_stat_readable_) return UNAVAILABLE;
-    ::fixy::TextView rest = read_scratch_(kSoftnetStatPath);
-    if (rest.size() == 0) return UNAVAILABLE;
-    // One hex-formatted line per CPU.  Column 0 is packets_processed.  The
-    // last line counts also when no newline ends it.
-    Read total = ::fixy::some(uint64_t{0});
-    while (rest.size() > 0) {
-        std::size_t const newline = position_of(rest, '\n');
-        ::fixy::TextView line = prefix(rest, newline);
-        skip_blanks(line);
-        total = add_read(total, take_hex(line));
-        rest = suffix(rest, newline + 1);
-    }
-    return std::move(total).value_or(UNAVAILABLE);
+    return parse_scratch_(kSoftnetStatPath, [](::fixy::TextView rest) noexcept {
+        // One hex-formatted line per CPU.  Column 0 is packets_processed.
+        // The last line counts also when no newline ends it.
+        Read total = ::fixy::some(uint64_t{0});
+        while (rest.size() > 0) {
+            std::size_t const newline = position_of(rest, '\n');
+            ::fixy::TextView line = prefix(rest, newline);
+            skip_blanks(line);
+            total = add_read(total, take_hex(line));
+            rest = suffix(rest, newline + 1);
+        }
+        return std::move(total).value_or(UNAVAILABLE);
+    });
 }
 
 uint64_t ProcGauges::read_skb_drop_reason_total_() noexcept {
     if (!is_snmp_readable_) return UNAVAILABLE;
-    ::fixy::TextView const text = read_scratch_(kSnmpPath);
-    if (text.size() == 0) return UNAVAILABLE;
-    // The file pairs a header line of column names with a value line, per
-    // protocol, and both lines open with the same protocol prefix.  The
-    // second "Ip: " is therefore the value line.
-    std::size_t const header = position_of(text, ::fixy::TextView{"Ip: "});
-    if (header == text.size()) return 0;
-    ::fixy::TextView const after_header = suffix(text, header);
-    std::size_t const header_end = position_of(after_header, '\n');
-    if (header_end == after_header.size()) return 0;
-    ::fixy::TextView const rest = suffix(after_header, header_end + 1);
-    std::size_t const values = position_of(rest, ::fixy::TextView{"Ip: "});
-    if (values == rest.size()) return 0;
-    // The Ip columns run: <fwd> <default_ttl> <inreceives> <inhdr_errors>
-    // <inaddr_errors> <forwdatagrams> <inunknown_protos> <indiscards>
-    // <indelivers> <outrequests> <outdiscards> <outnoroutes> ...
-    // The two discard counters are columns 7 and 10.  The walk reads at
-    // most 16 columns.
-    ::fixy::TextView line = line_of(suffix(rest, values + 4));
-    Read in_discards = ::fixy::some(uint64_t{0});
-    Read out_discards = ::fixy::some(uint64_t{0});
-    for (std::size_t column = 0; line.size() > 0 && column < 16; ++column) {
-        Read const value = take_decimal(line);
-        if (column == 7) in_discards = value;
-        if (column == 10) out_discards = value;
-    }
-    return add_read(in_discards, out_discards).value_or(UNAVAILABLE);
+    return parse_scratch_(kSnmpPath, [](::fixy::TextView text) noexcept -> uint64_t {
+        // The file pairs a header line of column names with a value line, per
+        // protocol, and both lines open with the same protocol prefix.  The
+        // second "Ip: " is therefore the value line.
+        std::size_t const header = position_of(text, ::fixy::TextView{"Ip: "});
+        if (header == text.size()) return 0;
+        ::fixy::TextView const after_header = suffix(text, header);
+        std::size_t const header_end = position_of(after_header, '\n');
+        if (header_end == after_header.size()) return 0;
+        ::fixy::TextView const rest = suffix(after_header, header_end + 1);
+        std::size_t const values = position_of(rest, ::fixy::TextView{"Ip: "});
+        if (values == rest.size()) return 0;
+        // The Ip columns run: <fwd> <default_ttl> <inreceives> <inhdr_errors>
+        // <inaddr_errors> <forwdatagrams> <inunknown_protos> <indiscards>
+        // <indelivers> <outrequests> <outdiscards> <outnoroutes> ...
+        // The two discard counters are columns 7 and 10.  The walk reads at
+        // most 16 columns.
+        ::fixy::TextView line = line_of(suffix(rest, values + 4));
+        Read in_discards = ::fixy::some(uint64_t{0});
+        Read out_discards = ::fixy::some(uint64_t{0});
+        for (std::size_t column = 0; line.size() > 0 && column < 16; ++column) {
+            Read const value = take_decimal(line);
+            if (column == 7) in_discards = value;
+            if (column == 10) out_discards = value;
+        }
+        return add_read(in_discards, out_discards).value_or(UNAVAILABLE);
+    });
 }
 
 uint64_t ProcGauges::read_tcp_recv_buffer_max_() noexcept {
     if (!is_proc_net_tcp_readable_) return UNAVAILABLE;
-    ::fixy::TextView const text = read_scratch_(kProcNetTcpPath);
-    if (text.size() == 0) return UNAVAILABLE;
-    // A header line comes first, then one line per socket:
-    //   "  sl  local_address rem_address st tx_queue rx_queue tr ..."
-    // The queue pair is one hex field of the form "XXXXXXXX:XXXXXXXX".
-    Read max_rx = ::fixy::some(uint64_t{0});
-    for_each_line(after_lines(text, 1), [&max_rx](::fixy::TextView line) noexcept {
-        // sl, local_address, rem_address and st
-        for (int field = 0; field < 4; ++field) {
+    return parse_scratch_(kProcNetTcpPath, [](::fixy::TextView text) noexcept {
+        // A header line comes first, then one line per socket:
+        //   "  sl  local_address rem_address st tx_queue rx_queue tr ..."
+        // The queue pair is one hex field of the form "XXXXXXXX:XXXXXXXX".
+        Read max_rx = ::fixy::some(uint64_t{0});
+        for_each_line(after_lines(text, 1), [&max_rx](::fixy::TextView line) noexcept {
+            // sl, local_address, rem_address and st
+            for (int field = 0; field < 4; ++field) {
+                skip_blanks(line);
+                skip_word(line);
+            }
+            // tx_queue, up to the colon
             skip_blanks(line);
-            skip_word(line);
-        }
-        // tx_queue, up to the colon
-        skip_blanks(line);
-        skip_past(line, ':');
-        // rx_queue
-        Read rx = take_hex(line);
-        max_rx = std::move(max_rx).and_then([&rx](uint64_t largest) noexcept {
-            return std::move(rx).map([largest](uint64_t queue) noexcept { return ::fixy::max(largest, queue); });
+            skip_past(line, ':');
+            // rx_queue
+            Read rx = take_hex(line);
+            max_rx = std::move(max_rx).and_then([&rx](uint64_t largest) noexcept {
+                return std::move(rx).map([largest](uint64_t queue) noexcept { return ::fixy::max(largest, queue); });
+            });
         });
+        return std::move(max_rx).value_or(UNAVAILABLE);
     });
-    return std::move(max_rx).value_or(UNAVAILABLE);
 }
 
 uint64_t ProcGauges::read_block_queue_depth_max_() const noexcept {
@@ -341,13 +349,13 @@ uint64_t ProcGauges::read_printk_ring_bytes_free_() const noexcept {
 uint64_t ProcGauges::read_thp_split_total_() noexcept {
 #ifdef CRUCIBLE_SENSE_HUB_EXTENDED
     if (!is_vmstat_readable_) return UNAVAILABLE;
-    ::fixy::TextView const text = read_scratch_(kVmstatPath);
-    if (text.size() == 0) return UNAVAILABLE;
-    // Every line of the file has the form "<name> <value>".
-    return add_read(add_read(value_after_key(text, ::fixy::TextView{"thp_split_page "}),
-                             value_after_key(text, ::fixy::TextView{"thp_split_pmd "})),
-                    value_after_key(text, ::fixy::TextView{"thp_split_pud "}))
-        .value_or(UNAVAILABLE);
+    return parse_scratch_(kVmstatPath, [](::fixy::TextView text) noexcept {
+        // Every line of the file has the form "<name> <value>".
+        return add_read(add_read(value_after_key(text, ::fixy::TextView{"thp_split_page "}),
+                                 value_after_key(text, ::fixy::TextView{"thp_split_pmd "})),
+                        value_after_key(text, ::fixy::TextView{"thp_split_pud "}))
+            .value_or(UNAVAILABLE);
+    });
 #else
     // The vmstat file is read only in the extended build.
     return UNAVAILABLE;
@@ -358,39 +366,39 @@ uint64_t ProcGauges::read_thp_split_total_() noexcept {
 
 uint64_t ProcGauges::read_numa_hit_ratio_x100_() noexcept {
     if (!is_vmstat_readable_) return UNAVAILABLE;
-    ::fixy::TextView const text = read_scratch_(kVmstatPath);
-    if (text.size() == 0) return UNAVAILABLE;
-    Read hit = value_after_key(text, ::fixy::TextView{"numa_hit "});
-    Read miss = value_after_key(text, ::fixy::TextView{"numa_miss "});
-    return std::move(hit)
-        .and_then([&miss](uint64_t hits) noexcept {
-            return std::move(miss).map([hits](uint64_t misses) noexcept {
-                return proc_text::numa_hit_ratio_x100(proc_text::NumaCounts{.hit = hits, .miss = misses});
-            });
-        })
-        .value_or(UNAVAILABLE);
+    return parse_scratch_(kVmstatPath, [](::fixy::TextView text) noexcept {
+        Read hit = value_after_key(text, ::fixy::TextView{"numa_hit "});
+        Read miss = value_after_key(text, ::fixy::TextView{"numa_miss "});
+        return std::move(hit)
+            .and_then([&miss](uint64_t hits) noexcept {
+                return std::move(miss).map([hits](uint64_t misses) noexcept {
+                    return proc_text::numa_hit_ratio_x100(proc_text::NumaCounts{.hit = hits, .miss = misses});
+                });
+            })
+            .value_or(UNAVAILABLE);
+    });
 }
 
 uint64_t ProcGauges::read_tcp_established_current_() noexcept {
     if (!is_snmp_readable_) return UNAVAILABLE;
-    ::fixy::TextView const text = read_scratch_(kSnmpPath);
-    if (text.size() == 0) return UNAVAILABLE;
-    // The second "Tcp: " line carries the values.  CurrEstab is column 8,
-    // counting from zero.
-    std::size_t const header = position_of(text, ::fixy::TextView{"Tcp: "});
-    if (header == text.size()) return 0;
-    ::fixy::TextView const after_header = suffix(text, header);
-    std::size_t const header_end = position_of(after_header, '\n');
-    if (header_end == after_header.size()) return 0;
-    ::fixy::TextView const rest = suffix(after_header, header_end + 1);
-    std::size_t const values = position_of(rest, ::fixy::TextView{"Tcp: "});
-    if (values == rest.size()) return 0;
-    ::fixy::TextView line = line_of(suffix(rest, values + 5));
-    Read value = ::fixy::some(uint64_t{0});
-    for (int column = 0; column <= 8; ++column) {
-        value = take_decimal(line);
-    }
-    return std::move(value).value_or(UNAVAILABLE);
+    return parse_scratch_(kSnmpPath, [](::fixy::TextView text) noexcept -> uint64_t {
+        // The second "Tcp: " line carries the values.  CurrEstab is column 8,
+        // counting from zero.
+        std::size_t const header = position_of(text, ::fixy::TextView{"Tcp: "});
+        if (header == text.size()) return 0;
+        ::fixy::TextView const after_header = suffix(text, header);
+        std::size_t const header_end = position_of(after_header, '\n');
+        if (header_end == after_header.size()) return 0;
+        ::fixy::TextView const rest = suffix(after_header, header_end + 1);
+        std::size_t const values = position_of(rest, ::fixy::TextView{"Tcp: "});
+        if (values == rest.size()) return 0;
+        ::fixy::TextView line = line_of(suffix(rest, values + 5));
+        Read value = ::fixy::some(uint64_t{0});
+        for (int column = 0; column <= 8; ++column) {
+            value = take_decimal(line);
+        }
+        return std::move(value).value_or(UNAVAILABLE);
+    });
 }
 
 ProcGauges::LoadAverages ProcGauges::read_loadavg_x100_() const noexcept {

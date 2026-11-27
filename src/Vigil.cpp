@@ -99,8 +99,11 @@ NumericsHash Vigil::prepare_start_(::fixy::InitLoadCtx const& startup, ::fixy::O
 Vigil::~Vigil() = default;
 
 ContentHash Vigil::head_hash() const noexcept {
-    return cipher_.match([](::fixy::Box<Cipher> const& cipher) noexcept { return cipher->head(); },
-                         []() noexcept { return ContentHash{}; });
+    return cipher_.match(
+        [](::fixy::Box<Cipher> const& cipher) noexcept {
+            return ::foundation::core::with_view(cipher, [](Cipher const& store) noexcept { return store.head(); });
+        },
+        []() noexcept { return ContentHash{}; });
 }
 
 bool Vigil::rollback() {

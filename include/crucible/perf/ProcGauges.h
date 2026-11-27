@@ -85,11 +85,14 @@ private:
     // init, and a device plugged in afterwards needs a fresh instance.
     ::fixy::FixedList<BlockStatPath, MAX_BLOCK_DEVS> block_stat_paths_{};
 
-    // Reads the file at path into the scratch buffer.  The text is empty
-    // when the read fails, and when the file fills the buffer, because the
-    // file can then hold more than the buffer and a sum over part of it is
-    // wrong.
-    [[nodiscard]] ::fixy::TextView read_scratch_(::fixy::CText path) noexcept;
+    // Reads the file at path into the scratch buffer, and gives the reading
+    // that parse takes from the text, in the frame of the buffer.  It gives
+    // UNAVAILABLE when the read fails, when the file is empty, and when the
+    // file fills the buffer, because the file can then hold more than the
+    // buffer and a sum over part of it is wrong.  parse takes a TextView and
+    // gives a uint64_t.
+    template <class Parse>
+    [[nodiscard]] uint64_t parse_scratch_(::fixy::CText path, Parse parse) noexcept;
 
     // A reader that cannot read its file or cannot parse it returns
     // UNAVAILABLE.

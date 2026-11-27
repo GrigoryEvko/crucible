@@ -140,13 +140,9 @@ public:
         // A watchdog with no source has no counter.  A source can also
         // lack the counter, on an older kernel or without the capability
         // to load it.  That is an absence of signal, not evidence of
-        // health.
-        CRUCIBLE_LET_ELSE(
-            sched,
-            senses_.match(
-                [](::fixy::Box<::crucible::perf::Senses> const& senses) noexcept { return senses->sched_switch(); },
-                []() noexcept { return ::fixy::Option<::fixy::Ref<::crucible::perf::SchedSwitch const>>{}; }),
-            WatchdogVerdict::InsufficientData);
+        // health.  The count comes after the read of the clock, which the
+        // caller made.
+        CRUCIBLE_LET_ELSE(count, read_context_switches_(), WatchdogVerdict::InsufficientData);
 
         // A failed read gives no reading.  The boot clock never goes
         // back, so a reading before the start of the window is a reading
@@ -161,7 +157,6 @@ public:
         if (now_ns < window_started_ns_) [[unlikely]] {
             return WatchdogVerdict::InsufficientData;
         }
-        const uint64_t count = sched->context_switches();
 
         if (window_started_ns_ == 0) {
             window_started_ns_ = now_ns;
@@ -238,6 +233,24 @@ public:
     ~DeadlineWatchdog() noexcept = default;
 
 private:
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+    // The count of the context switches of the source, or none for a
+    // watchdog with no source and for a source with no counter.  The read
+    // frame of the Box of the source gives the count as a value.
+    [[nodiscard]] ::fixy::Option<uint64_t> read_context_switches_() const noexcept {
+        return senses_.match(
+            [](::fixy::Box<::crucible::perf::Senses> const& senses) noexcept {
+                return ::foundation::core::with_view(senses, [](::crucible::perf::Senses const& source) noexcept {
+                    return source.sched_switch().map(
+                        [](::fixy::Ref<::crucible::perf::SchedSwitch const> sched) noexcept {
+                            return sched->context_switches();
+                        });
+                });
+            },
+            []() noexcept { return ::fixy::Option<uint64_t>{}; });
+    }
+#endif
+
     WatchdogSource senses_{};
     uint32_t miss_budget_ = 0;
     uint64_t window_ns_ = 0;
