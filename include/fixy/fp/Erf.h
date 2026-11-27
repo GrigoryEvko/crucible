@@ -46,31 +46,31 @@
 //   interval (the step of the Horner loop and the last fma).
 //
 // Algorithm of erf(float)
-//   |x| < 1/2: the double path with P cut to degree 7.  The cut drops the
-//     terms of P8 and P9, which give at most 2^-40.7 relative to erf.
+//   The form computes in double and rounds the double result to a float one
+//   time, with no rounding test and no slow path.
+//   |x| < 1/2: erf(x) = x Q(z) with z = x^2.  Q0 is the double nearest
+//     2/sqrt(pi), and Q1 to Q7 are the minimax polynomial for the relative
+//     error of erf, with an error of 2^-50.4.
 //   1/2 <= |x| < 0x1.f5a88ap+1: 55 intervals of width 1/16 in kErfFloatTable.
 //     On each, erf is the minimax polynomial of degree 7 in t = |x| - c for
 //     the relative error, with an error of 2^-52.4.  t is exact.
 //   |x| >= 0x1.f5a88ap+1 gives ±1.
-//   The two polynomials take the form of Estrin.  The rounding test admits an
-//   error of 2^-38.  The rounding test and the slow path are those of
-//   exp(float) in fixy/fp/Exp.h, with erf(double) in the slow path, and each
-//   result below 2^-123 takes the slow path.  The fma sites of the fast path:
-//   the seven of the form of Estrin, the tail and the last fma below 1/2, and
-//   the fma of t and the seven of the form of Estrin in an interval.  The
-//   exhaustive sweep of the 2^32 inputs against CORE-MATH proves the correct
-//   round of each input (the target bench_fp_sweep).
+//   The two polynomials take the form of Estrin.  The fma sites: the seven of
+//   the form of Estrin below 1/2, and the fma of t and the seven of the form
+//   of Estrin in an interval.  The test test_fp_erf_float_exhaustive of each
+//   Release build of the gate proves the correct round of each of the 2^32
+//   inputs, against the round of erf(double).  The sweep of bench_fp_sweep
+//   against CORE-MATH proves it too.
 //
 // Tables
 //   `python3 utils/tools/fp_tables.py erf` prints each table and constant of
-//   the double path, and `python3 utils/tools/fp_tables.py erff` prints
+//   the double path, and `python3 utils/tools/fp_tables.py erff` prints Q and
 //   kErfFloatTable, with the pinned mpmath.
 
 #include <foundation/Platform.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Number.h>
 #include <fixy/fp/FmaOfFinite.h>
-#include <fixy/fp/RoundToFloat.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -100,11 +100,20 @@ inline constexpr float kErfFloatOneFrom = 0x1.f5a88ap+1f;
 
 inline constexpr int kErfIntervals = 44;
 inline constexpr int kErfDegree = 11;
-// The degree of P below 1/2, and the degrees of the fast path of the float
-// form, in the intervals of kErfFloatTable and in z.
+// The degree of P below 1/2, and the degrees of the float form, in the
+// intervals of kErfFloatTable and of Q in z.
 inline constexpr int kErfSmallDegree = 9;
 inline constexpr int kErfFloatDegree = 7;
 inline constexpr int kErfFloatSmallDegree = 7;
+
+// Q(z) = Q0 + Q1 z + ... + Q7 z^7: erf(x) = x Q(z) with z = x^2 below 1/2,
+// for the float form.  Q0 is the double nearest 2/sqrt(pi), and Q1 to Q7 are
+// the minimax polynomial on [0, 1/4] for the relative error of erf.  From
+// python3 utils/tools/fp_tables.py erff.
+inline constexpr double kErfFloatQ[kErfFloatSmallDegree + 1] = {
+    0x1.20dd750429b6dp+0, -0x1.812746b03685ep-2,  0x1.ce2f219e85240p-4,  -0x1.b82ce222a5cf1p-6,
+    0x1.565b8fb485cebp-8, -0x1.c01ce0209db9bp-11, 0x1.f716e492429eep-14, -0x1.c11c77da5bbadp-17,
+};
 
 // One interval [1/2 + i/8, 1/2 + (i + 1)/8): erf at its center in two parts,
 // then the Taylor coefficients c1 to c11 at the center.
@@ -295,13 +304,6 @@ inline constexpr ErfInterval kErfTable[kErfIntervals] = {
 };
 // clang-format on
 
-// The tolerance of the rounding test of the float fast path, in units of the
-// last bit of the double result: an error of 2^-38 times 2^53.  The error of
-// the fast path is at most about 2^-40.7, from the cut of P below 1/2, so the
-// margin is about six.  The polynomials of kErfFloatTable have a relative
-// error of 2^-52.4.
-inline constexpr std::uint64_t kErfFloatTolerance = std::uint64_t{1} << 15;
-
 // The intervals of the float form above 1/2: interval i covers
 // [i/16, (i + 1)/16) for i from kErfFloatFirst, and the last one holds
 // kErfFloatOneFrom.  A row holds the coefficients c0 to c7 of the minimax
@@ -459,15 +461,10 @@ template <std::size_t Count>
     return fma_of_finite(fourth_power, high, low);
 }
 
-// The fast path of erf of float below 1/2: x (2/sqrt(pi) + z P(z)), with
-// z = x^2 and P0 to P7 in the form of Estrin.  The value has the error budget
-// of erf_small_<kErfFloatSmallDegree>, which kErfFloatTolerance covers.
+// erf of float below 1/2: x Q(z) with z = x^2, and Q of kErfFloatQ in the form
+// of Estrin.  The multiply by x is the last round of the double result.
 [[nodiscard]] constexpr double erf_small_float_(double value) noexcept {
-    using ::fixy::fp::detail::fma_of_finite;
-    double const square = value * value;
-    double const sum = erf_estrin_eight_(square, kErfP);
-    double const tail = fma_of_finite(square, sum, kErfTwoOverRootPiLow);
-    return fma_of_finite(kErfTwoOverRootPiHigh, value, value * tail);
+    return value * erf_estrin_eight_(value * value, kErfFloatQ);
 }
 
 // The fast path of erf of float for 1/2 <= |x| < kErfFloatOneFrom: the
@@ -481,15 +478,6 @@ template <std::size_t Count>
     auto const index = static_cast<std::uint32_t>(16.0f * magnitude_float) - static_cast<std::uint32_t>(kErfFloatFirst);
     double const offset = fma_of_finite(-0.0625, erf_floor_(16.0 * magnitude), magnitude - 0.03125);
     return erf_estrin_eight_(offset, kErfFloatTable[index].terms);
-}
-
-// The midpoint inputs of the float form, from the sweep of the oracle.  A
-// midpoint input that is not in the list takes the round to even.
-[[gnu::cold, nodiscard]] constexpr float erf_float_midpoint_(std::uint32_t input_bits, double result) noexcept {
-    switch (input_bits) {
-        default:
-            return static_cast<float>(result);
-    }
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
@@ -523,24 +511,6 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 
 }  // namespace fixy::fp
 
-namespace fixy::fp::detail {
-
-inline namespace CRUCIBLE_SIMD_TARGET {
-
-// The slow path of the float form: the round of erf(double), with the list of
-// the midpoint inputs.
-[[gnu::cold, gnu::noinline, nodiscard]] constexpr float erf_float_slow_(float value) noexcept {
-    double const result = ::fixy::fp::erf(static_cast<double>(value));
-    if (is_float_midpoint_(result)) [[unlikely]] {
-        return erf_float_midpoint_(__builtin_bit_cast(std::uint32_t, value), result);
-    }
-    return static_cast<float>(result);
-}
-
-}  // namespace CRUCIBLE_SIMD_TARGET
-
-}  // namespace fixy::fp::detail
-
 namespace fixy::fp {
 
 inline namespace CRUCIBLE_SIMD_TARGET {
@@ -561,16 +531,11 @@ inline namespace CRUCIBLE_SIMD_TARGET {
             return ::foundation::core::quiet_nan_of<float>;
         return ::foundation::core::fp::copy_sign(1.0f, value);
     }
-    // A result below 2^-123 takes the slow path: the rounding test reads 24
-    // bits of precision, and a subnormal float has fewer.
-    if (magnitude_bits < 0x02000000u) [[unlikely]]
-        return detail::erf_float_slow_(value);
+    // The round of the double result is the correctly rounded float for each
+    // input, a subnormal result too.  test_fp_erf_float_exhaustive proves it.
     double const input = static_cast<double>(magnitude);
     double const result =
         magnitude < 0.5f ? detail::erf_small_float_(input) : detail::erf_interval_float_(input, magnitude);
-    if (detail::is_near_float_midpoint_(result, detail::kErfFloatTolerance)) [[unlikely]] {
-        return detail::erf_float_slow_(value);
-    }
     return ::foundation::core::fp::copy_sign(static_cast<float>(result), value);
 }
 

@@ -1,8 +1,9 @@
 #pragma once
 
 // The round of a double result to a float, for the float forms of
-// fixy/fp/Exp.h, Log.h and Erf.h.  Each float form computes in double and
-// rounds one time.  The helpers here decide when that round is safe.
+// fixy/fp/Exp.h and Log.h, and for the oracle of test_fp_erf_float_exhaustive.
+// Each float form computes in double and rounds one time.  The helpers here
+// decide when that round is safe.
 //
 // Rounding test of a fast path
 //   A fast path gives a double y with a relative error of at most e.  The

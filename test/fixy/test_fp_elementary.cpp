@@ -186,14 +186,17 @@ constexpr ::fixy::FixedArray<FloatCase, 25> kLogFloatCases{
     FloatCase{0x3F808000u, 0x3B7F8055u},
 };
 
-// erf of float: as for double, with the edge of the slow path of a small
-// result (2^-123) and the edge to ±1 of the float form.
-constexpr ::fixy::FixedArray<FloatCase, 15> kErfFloatCases{
+// erf of float: as for double, with subnormal results, the results near 2^-123,
+// the edge to ±1 of the float form, and three small inputs whose round needs
+// Q0 at the double nearest 2/sqrt(pi).  erf(double) of 0x3940EAD6 is a float
+// midpoint.
+constexpr ::fixy::FixedArray<FloatCase, 18> kErfFloatCases{
     FloatCase{0x00000000u, 0x00000000u}, FloatCase{0x80000000u, 0x80000000u}, FloatCase{0x7F800000u, 0x3F800000u},
     FloatCase{0xFF800000u, 0xBF800000u}, FloatCase{0x7FC00001u, kNan32},      FloatCase{0x00000001u, 0x00000001u},
     FloatCase{0x80000001u, 0x80000001u}, FloatCase{0x007FFFFFu, 0x00906EB9u}, FloatCase{0x01FFFFFFu, 0x02106EBAu},
     FloatCase{0x02000000u, 0x02106EBBu}, FloatCase{0x3F000000u, 0x3F053F7Bu}, FloatCase{0x3F800000u, 0x3F57BB3Du},
     FloatCase{0x407AD445u, 0x3F800000u}, FloatCase{0x407AD444u, 0x3F7FFFFFu}, FloatCase{0xC07AD445u, 0xBF800000u},
+    FloatCase{0x36AEA466u, 0x36C51007u}, FloatCase{0x3940EAD6u, 0x3959AF14u}, FloatCase{0x39C0057Du, 0x39D8AC49u},
 };
 
 void test_the_special_values() {

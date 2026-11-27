@@ -44,11 +44,11 @@ static_assert(bits_of(::fixy::fp::erf(double_of(0x4017AFB48DC96626ULL))) == 0x3F
 static_assert(bits_of(::fixy::fp::erf(double_of(0x4017AFB48DC96627ULL))) == 0x3FF0000000000000ULL,
               "erf at the edge must be 1.");
 
-// The float form: 1/2, 1, a small result of the slow path, and the edge to 1.
+// The float form: 1/2, 1, a subnormal result, and the edge to 1.
 static_assert(bits_of(::fixy::fp::erf(0.5f)) == 0x3F053F7Bu, "erff(1/2) must be the correctly rounded value.");
 static_assert(bits_of(::fixy::fp::erf(1.0f)) == 0x3F57BB3Du, "erff(1) must be the correctly rounded value.");
 static_assert(bits_of(::fixy::fp::erf(float_of(0x007FFFFFu))) == 0x00906EB9u,
-              "erff of the largest subnormal takes the slow path.");
+              "erff of the largest subnormal must be the correctly rounded value.");
 static_assert(bits_of(::fixy::fp::erf(float_of(0x407AD444u))) == 0x3F7FFFFFu,
               "erff below the edge to 1 must be the largest float below 1.");
 
