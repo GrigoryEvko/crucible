@@ -1138,11 +1138,13 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     Waits waits{};
 
-    {
+    // The threads share the ring in the frame of its Box, and each thread
+    // joins before the frame ends.
+    auto const run_round = [&refused, &accepted, &finished, &ctx, &waits, &received](Ring& shared) noexcept {
         std::array<std::jthread, kProducers> producers{};
         for (std::uint32_t p = 0; p < kProducers; ++p) {
             const bool pushes_batches = (p % 2) == 1;
-            producers[p] = std::jthread([&ring, &refused, &accepted, &finished, &ctx, &waits, pushes_batches] {
+            producers[p] = std::jthread([&shared, &refused, &accepted, &finished, &ctx, &waits, pushes_batches] {
                 std::uint64_t taken = 0;
                 std::uint64_t refusals = 0;
                 // The ring is never full, so a producer never waits.  It wakes
@@ -1154,14 +1156,14 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
                     for (::fixy::Index<kBatch> const i : ::fixy::IndexRange<kBatch>{})
                         batch.set(i, i.raw() + 1);
                     for (std::uint64_t i = 0; i < kPushesPerProducer / kBatch; ++i) {
-                        const std::size_t pushed = ring->try_push_batch(batch.first(kBatch));
+                        const std::size_t pushed = shared.try_push_batch(batch.first(kBatch));
                         taken += pushed;
                         refusals += (pushed == 0) ? 1 : 0;
                         if (i % kNotifyEvery == kNotifyEvery - 1) waits.items.notify_one(ctx);
                     }
                 } else {
                     for (std::uint64_t i = 0; i < kPushesPerProducer; ++i) {
-                        if (ring->try_push(i)) {
+                        if (shared.try_push(i)) {
                             ++taken;
                         } else {
                             ++refusals;
@@ -1178,14 +1180,15 @@ static_assert(kCapacity >= kProducers * kPushesPerProducer, "the ring must hold 
 
         for (;;) {
             bool has_item = false;
-            pop_waiting(ctx, waits, [&ring, &has_item, &finished]() noexcept {
-                has_item = ring->try_pop(MpscOwner::consumer(), kNondet).is_some();
-                return has_item || (finished.load_acquire() == kProducers && ring->empty_approx(kNondet));
+            pop_waiting(ctx, waits, [&shared, &has_item, &finished]() noexcept {
+                has_item = shared.try_pop(MpscOwner::consumer(), kNondet).is_some();
+                return has_item || (finished.load_acquire() == kProducers && shared.empty_approx(kNondet));
             });
             if (!has_item) break;
             ++received;
         }
-    }
+    };
+    ring = ::fixy::with_mut(std::move(ring), run_round);
 
     if (const std::uint64_t spurious = refused.load_acquire(); spurious != 0) {
         std::fprintf(stderr, "a never-full MPSC ring refused %llu pushes: a stale head passed for a full ring\n",

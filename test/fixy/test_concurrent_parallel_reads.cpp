@@ -307,7 +307,8 @@ public:
                 [](auto shard, auto place, auto run) noexcept {
                     std::size_t position = place.first();
                     for (::fixy::Box<Word>& box : shard) {
-                        *box = element_of(run, position);
+                        Word const element = element_of(run, position);
+                        box = ::fixy::with_mut(std::move(box), [element](Word& word) noexcept { word = element; });
                         ++position;
                     }
                 },
@@ -320,7 +321,8 @@ public:
     });
     Word expected = 3;
     for (::fixy::Box<Word> const& box : boxes) {
-        if (*box != expected) return false;
+        Word const held = ::foundation::core::with_view(box, [](Word const& word) noexcept { return word; });
+        if (held != expected) return false;
         ++expected;
     }
     return true;

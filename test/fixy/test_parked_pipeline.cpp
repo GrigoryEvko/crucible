@@ -66,7 +66,9 @@ using ParcelBox = fixy::Box<Parcel>;
 
 // The label of the parcel of a Box.  The Box can be a temporary, which lives
 // until the end of the full expression of the call.
-[[nodiscard]] std::uint64_t label_of(ParcelBox const& box) noexcept { return box->label(); }
+[[nodiscard]] std::uint64_t label_of(ParcelBox const& box) noexcept {
+    return ::foundation::core::with_view(box, [](Parcel const& parcel) noexcept { return parcel.label(); });
+}
 
 // What the last stage found: the count of the items, and whether each item
 // came in its order.

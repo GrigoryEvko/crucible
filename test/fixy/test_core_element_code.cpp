@@ -113,7 +113,8 @@ void take_turn(Turn& turn) noexcept {
         default:
             return;
         case Turn::ReadBox:
-            static_cast<void>(reached_box()->label());
+            static_cast<void>(
+                core::with_view(reached_box(), [](Turning const& reached) noexcept { return reached.label(); }));
             return;
         case Turn::ReplaceBox:
             reached_box() = make_box(2);
@@ -136,7 +137,9 @@ void test_the_code_of_an_object_finds_an_empty_box() {
     reached_box() = make_box(1);
     turn_at_move = Turn::ReplaceBox;
     Turning const taken = std::move(reached_box()).consume();
-    CRUCIBLE_TEST_ASSERT(kTest, taken.label() == 1 && reached_box()->label() == 2);
+    std::uint32_t const reached_label =
+        core::with_view(reached_box(), [](Turning const& reached) noexcept { return reached.label(); });
+    CRUCIBLE_TEST_ASSERT(kTest, taken.label() == 1 && reached_label == 2);
 
     ::fixy::check::expect_dies(
         kTest,
@@ -564,7 +567,9 @@ struct Holder<BoxTag> final {
     Holder(Holder const&) = delete("an element of the box names its holder");
     Holder& operator=(Holder const&) = delete("an element of the box names its holder");
 
-    void read() const noexcept { static_cast<void>(held->is_live()); }
+    void read() const noexcept {
+        static_cast<void>(core::with_view(held, [](Ending<BoxTag> const& end) noexcept { return end.is_live(); }));
+    }
 };
 
 // The end of an owner empties it before it ends its elements, so the end of each

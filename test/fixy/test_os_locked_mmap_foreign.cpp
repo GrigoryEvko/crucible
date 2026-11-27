@@ -219,7 +219,9 @@ void expect_the_verdict_of_the_oracle(perm::Permission<PageRegion, Brand>&& owne
         .match(
             [fate](auto locked) noexcept {
                 CRUCIBLE_TEST_ASSERT(kTest, fate == PageFate::comes_back);
-                CRUCIBLE_TEST_ASSERT(kTest, locked->template advise_release_aware<DontNeed>(kCtx).is_ok());
+                locked = ::fixy::with_mut(std::move(locked), [](auto& object) noexcept {
+                    CRUCIBLE_TEST_ASSERT(kTest, object.template advise_release_aware<DontNeed>(kCtx).is_ok());
+                });
             },
             [fate](auto refusal) noexcept {
                 bool const is_lost = fate == PageFate::is_lost
@@ -244,38 +246,42 @@ void shared_memory_passes_the_test() {
                       kCtx, kAlloc, perm::mint_permission_root<PageRegion>(), foreign_of(memory),
                       ::fixy::ByteCount{2 * kPageBytes}, ::fixy::fs::FileOffset{std::int64_t{kPageBytes}})
                       .expect("a shared mapping of the last two pages of the memory");
-    ::fixy::Option<bool> const is_written = locked->with_write(kCtx, [](auto& region) noexcept {
-        bool is_stored = false;
-        for (auto const words : region.template view_at<std::uint64_t, 1>(::fixy::ByteCount{0})) {
-            words.store_release(::fixy::index<0>(), kWord);
-            is_stored = true;
-        }
-        return is_stored;
+    locked = ::fixy::with_mut(std::move(locked), [](auto& object) noexcept {
+        ::fixy::Option<bool> const is_written = object.with_write(kCtx, [](auto& region) noexcept {
+            bool is_stored = false;
+            for (auto const words : region.template view_at<std::uint64_t, 1>(::fixy::ByteCount{0})) {
+                words.store_release(::fixy::index<0>(), kWord);
+                is_stored = true;
+            }
+            return is_stored;
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, is_written == ::fixy::some(true));
+        CRUCIBLE_TEST_ASSERT(kTest, object.template advise_release_aware<DontNeed>(kCtx).is_ok());
+        ::fixy::Option<std::uint64_t> const read = object.with_read(kCtx, [](auto const& region) noexcept {
+            std::uint64_t value = 0;
+            for (auto const words : region.template view_at<std::uint64_t const, 1>(::fixy::ByteCount{0}))
+                value = words.load_acquire(::fixy::index<0>());
+            return value;
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, read == ::fixy::some(kWord));
     });
-    CRUCIBLE_TEST_ASSERT(kTest, is_written == ::fixy::some(true));
-    CRUCIBLE_TEST_ASSERT(kTest, locked->template advise_release_aware<DontNeed>(kCtx).is_ok());
-    ::fixy::Option<std::uint64_t> const read = locked->with_read(kCtx, [](auto const& region) noexcept {
-        std::uint64_t value = 0;
-        for (auto const words : region.template view_at<std::uint64_t const, 1>(::fixy::ByteCount{0}))
-            value = words.load_acquire(::fixy::index<0>());
-        return value;
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, read == ::fixy::some(kWord));
 
     // The word is in the second page of the memory, and not in the first.
     auto whole = mmap::mint_locked_mmap<ReadWrite, Shared>(kCtx, kAlloc, perm::mint_permission_root<PageRegion>(),
                                                            memory.ref(), ::fixy::ByteCount{3 * kPageBytes})
                      .expect("a shared mapping of the memory");
-    ::fixy::Option<bool> const is_in_the_second_page = whole->with_read(kCtx, [](auto const& region) noexcept {
-        std::uint64_t first = kWord;
-        std::uint64_t second = 0;
-        for (auto const words : region.template view_at<std::uint64_t const, 1>(::fixy::ByteCount{0}))
-            first = words.load_acquire(::fixy::index<0>());
-        for (auto const words : region.template view_at<std::uint64_t const, 1>(kPage))
-            second = words.load_acquire(::fixy::index<0>());
-        return first == 0 && second == kWord;
+    whole = ::fixy::with_mut(std::move(whole), [](auto& object) noexcept {
+        ::fixy::Option<bool> const is_in_the_second_page = object.with_read(kCtx, [](auto const& region) noexcept {
+            std::uint64_t first = kWord;
+            std::uint64_t second = 0;
+            for (auto const words : region.template view_at<std::uint64_t const, 1>(::fixy::ByteCount{0}))
+                first = words.load_acquire(::fixy::index<0>());
+            for (auto const words : region.template view_at<std::uint64_t const, 1>(kPage))
+                second = words.load_acquire(::fixy::index<0>());
+            return first == 0 && second == kWord;
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, is_in_the_second_page == ::fixy::some(true));
     });
-    CRUCIBLE_TEST_ASSERT(kTest, is_in_the_second_page == ::fixy::some(true));
 }
 
 // Memory of one page that the caller maps as two pages: the first page comes
@@ -313,7 +319,9 @@ void a_negative_descriptor_gives_the_exclusive_back() {
     auto locked =
         mmap::mint_locked_mmap_foreign<ReadWrite, Shared>(kCtx, kAlloc, std::move(exclusive), foreign_of(memory), kPage)
             .expect("the exclusive of the refusal maps the memory");
-    CRUCIBLE_TEST_ASSERT(kTest, locked->template advise_release_aware<DontNeed>(kCtx).is_ok());
+    locked = ::fixy::with_mut(std::move(locked), [](auto& object) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, object.template advise_release_aware<DontNeed>(kCtx).is_ok());
+    });
 }
 
 // The mint of shared memory in a child process whose kernel gives the answer to

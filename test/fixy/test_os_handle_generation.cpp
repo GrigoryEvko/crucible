@@ -145,7 +145,9 @@ template <typename T>
     fixy::TextView const route{"the end of the Box of its Handle"};
     eff::Alloc const alloc = eff::testing::test().alloc;
     fixy::Box<fs::TemporaryFile> owner = fixy::mint_box<fs::TemporaryFile>(alloc, temporary_file(ctx, directory));
-    if (!owner->is_open()) return answered(route, "nothing: the open of a file under /tmp failed");
+    bool const is_open =
+        ::foundation::core::with_view(owner, [](fs::TemporaryFile const& file) noexcept { return file.is_open(); });
+    if (!is_open) return answered(route, "nothing: the open of a file under /tmp failed");
     FileRef const borrow = owner->ref();
     owner = fixy::mint_box<fs::TemporaryFile>(alloc, temporary_file(ctx, directory));
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a borrow from before the end of the descriptor reads its stale generation")

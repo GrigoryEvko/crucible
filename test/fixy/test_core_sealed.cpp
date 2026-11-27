@@ -115,13 +115,24 @@ void test_many_threads_read_beside_the_owner() {
     CRUCIBLE_TEST_ASSERT(kTest, own == kSum && total.load_acquire() == 3 * kSum);
 }
 
-// A Box of a Sealed moves, and the sealed object keeps its address.
+// A Box of a Sealed moves, and the sealed object keeps its address.  The read
+// frames of the Box read the address and the elements.
 void test_a_box_of_a_sealed_list_moves() {
-    ::fixy::Box<::fixy::Sealed<::fixy::SegmentList<std::uint64_t>>> box =
-        ::fixy::mint_box<::fixy::Sealed<::fixy::SegmentList<std::uint64_t>>>(kAlloc, make_list());
-    auto const element = (**box).get(4999).expect("the list holds 5000 elements");
-    ::fixy::Box<::fixy::Sealed<::fixy::SegmentList<std::uint64_t>>> const moved{std::move(box)};
-    CRUCIBLE_TEST_ASSERT(kTest, *element == 4999 && sum_by_get(**moved) == kSum);
+    using SealedList = ::fixy::Sealed<::fixy::SegmentList<std::uint64_t>>;
+    auto const address_in = [](::fixy::Box<SealedList> const& held) noexcept {
+        return ::foundation::core::with_view(held, [](SealedList const& sealed) noexcept {
+            return ::foundation::core::address_of(::foundation::core::to(*sealed));
+        });
+    };
+    ::fixy::Box<SealedList> box = ::fixy::mint_box<SealedList>(kAlloc, make_list());
+    ::foundation::core::Address const before = address_in(box);
+    std::uint64_t const element = ::foundation::core::with_view(box, [](SealedList const& sealed) noexcept {
+        return *(*sealed).get(4999).expect("the list holds 5000 elements");
+    });
+    ::fixy::Box<SealedList> const moved{std::move(box)};
+    std::uint64_t const sum =
+        ::foundation::core::with_view(moved, [](SealedList const& sealed) noexcept { return sum_by_get(*sealed); });
+    CRUCIBLE_TEST_ASSERT(kTest, element == 4999 && sum == kSum && address_in(moved) == before);
 }
 
 // An element that counts its ends through a Ref to an atomic counter, so two

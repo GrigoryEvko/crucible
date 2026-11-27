@@ -63,8 +63,11 @@ private:
 inline constexpr std::uint64_t kNoLabel = ~std::uint64_t{0};
 
 [[nodiscard]] std::uint64_t label_of(fixy::Option<fixy::Box<Parcel>> const& box) noexcept {
-    return box.match([](fixy::Box<Parcel> const& held) noexcept { return held->label(); },
-                     []() noexcept { return kNoLabel; });
+    return box.match(
+        [](fixy::Box<Parcel> const& held) noexcept {
+            return ::foundation::core::with_view(held, [](Parcel const& parcel) noexcept { return parcel.label(); });
+        },
+        []() noexcept { return kNoLabel; });
 }
 
 // The tag of a lend and of a pop of a merge.

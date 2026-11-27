@@ -79,7 +79,9 @@ template <class Value>
 
 // The value of a Box.  The Box can be a temporary, which lives until the end
 // of the full expression of the call.
-[[nodiscard]] Item value_of(ItemBox const& box) noexcept { return *box; }
+[[nodiscard]] Item value_of(ItemBox const& box) noexcept {
+    return ::foundation::core::with_view(box, [](Item const& item) noexcept { return item; });
+}
 
 // Waits until count reaches the goal.
 void wait_until(::fixy::Atomic<std::uint64_t> const& count, std::uint64_t goal) noexcept {

@@ -100,43 +100,49 @@ template <class Locked>
                            });
 }
 
+// Each test mints the object in a Box and writes it in the frame
+// with_mut(std::move(locked), body) of the Box.
+
 void a_discard_zeroes_private_pages() {
     auto locked =
         mmap::mint_locked_mmap_anon<WriteCopy, Anonymous>(kCtx, kAlloc, perm::mint_permission_root<PageRegion>(), kPage)
             .expect("an anonymous mapping of one page");
-    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(*locked, std::uint8_t{0xA5}));
-    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(*locked, std::uint8_t{0xA5}) == ::fixy::some(kPageBytes));
-    CRUCIBLE_TEST_ASSERT(kTest, locked->template advise_release_aware<DontNeed>(kCtx).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(*locked, std::uint8_t{0}) == ::fixy::some(kPageBytes));
-    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(*locked, std::uint8_t{0x3C}));
-    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(*locked, std::uint8_t{0x3C}) == ::fixy::some(kPageBytes));
+    locked = ::fixy::with_mut(std::move(locked), [](auto& object) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, fill_pages(object, std::uint8_t{0xA5}));
+        CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0xA5}) == ::fixy::some(kPageBytes));
+        CRUCIBLE_TEST_ASSERT(kTest, object.template advise_release_aware<DontNeed>(kCtx).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0}) == ::fixy::some(kPageBytes));
+        CRUCIBLE_TEST_ASSERT(kTest, fill_pages(object, std::uint8_t{0x3C}));
+        CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x3C}) == ::fixy::some(kPageBytes));
+    });
 }
 
 void a_reader_or_a_writer_refuses_the_discard() {
     auto locked =
         mmap::mint_locked_mmap_anon<WriteCopy, Anonymous>(kCtx, kAlloc, perm::mint_permission_root<PageRegion>(), kPage)
             .expect("an anonymous mapping of one page");
-    auto& object = *locked;
-    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(object, std::uint8_t{0x3C}));
+    locked = ::fixy::with_mut(std::move(locked), [](auto& object) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, fill_pages(object, std::uint8_t{0x3C}));
 
-    ::fixy::Option<bool> const is_read_kept = object.with_read(kCtx, [&object](auto const& region) noexcept {
-        bool const is_refused = is_readers_live(object.template advise_release_aware<DontNeed>(kCtx));
-        return is_refused && region.template view<std::uint8_t const>().is_some_and([](auto const& bytes) noexcept {
-            return bytes.walk().all_of([](std::uint8_t const& byte) noexcept { return byte == 0x3C; });
+        ::fixy::Option<bool> const is_read_kept = object.with_read(kCtx, [&object](auto const& region) noexcept {
+            bool const is_refused = is_readers_live(object.template advise_release_aware<DontNeed>(kCtx));
+            return is_refused && region.template view<std::uint8_t const>().is_some_and([](auto const& bytes) noexcept {
+                return bytes.walk().all_of([](std::uint8_t const& byte) noexcept { return byte == 0x3C; });
+            });
         });
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, is_read_kept == ::fixy::some(true));
+        CRUCIBLE_TEST_ASSERT(kTest, is_read_kept == ::fixy::some(true));
 
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a body calls a door of the lock beside a writer, and the lock refuses it")
-    ::fixy::Option<bool> const is_write_kept = object.with_write(kCtx, [&object](auto& /*region*/) noexcept {
-        return is_readers_live(object.template advise_release_aware<DontNeed>(kCtx));
-    });
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    CRUCIBLE_TEST_ASSERT(kTest, is_write_kept == ::fixy::some(true));
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a body calls a door of the lock beside a writer, and the lock refuses it")
+        ::fixy::Option<bool> const is_write_kept = object.with_write(kCtx, [&object](auto& /*region*/) noexcept {
+            return is_readers_live(object.template advise_release_aware<DontNeed>(kCtx));
+        });
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+        CRUCIBLE_TEST_ASSERT(kTest, is_write_kept == ::fixy::some(true));
 
-    // Both bodies ended, so the pool holds the exclusive again.
-    CRUCIBLE_TEST_ASSERT(kTest, object.template advise_release_aware<DontNeed>(kCtx).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0}) == ::fixy::some(kPageBytes));
+        // Both bodies ended, so the pool holds the exclusive again.
+        CRUCIBLE_TEST_ASSERT(kTest, object.template advise_release_aware<DontNeed>(kCtx).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0}) == ::fixy::some(kPageBytes));
+    });
 }
 
 // The two runs of this template mint their objects at one site, so the two
@@ -146,21 +152,23 @@ void objects_of_one_mint_site_have_their_own_pool(First&... first) {
     auto locked =
         mmap::mint_locked_mmap_anon<WriteCopy, Anonymous>(kCtx, kAlloc, perm::mint_permission_root<PageRegion>(), kPage)
             .expect("an anonymous mapping of one page");
-    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(*locked, std::uint8_t{0x3C}));
-    if constexpr (sizeof...(First) == 0) {
-        objects_of_one_mint_site_have_their_own_pool(*locked);
-    } else {
-        static_assert((std::is_same_v<First, std::remove_cvref_t<decltype(*locked)>> && ...));
-        // A reader of the second object refuses its own discard, and it does
-        // not stop the discard of the first object.
-        ::fixy::Option<bool> const is_second_kept = locked->with_read(kCtx, [&](auto const& /*region*/) noexcept {
-            bool const is_first_discarded = (first.template advise_release_aware<DontNeed>(kCtx).is_ok() && ...);
-            return is_first_discarded && is_readers_live(locked->template advise_release_aware<DontNeed>(kCtx));
-        });
-        CRUCIBLE_TEST_ASSERT(kTest, is_second_kept == ::fixy::some(true));
-        CRUCIBLE_TEST_ASSERT(kTest, ((count_bytes(first, std::uint8_t{0}) == ::fixy::some(kPageBytes)) && ...));
-        CRUCIBLE_TEST_ASSERT(kTest, count_bytes(*locked, std::uint8_t{0x3C}) == ::fixy::some(kPageBytes));
-    }
+    locked = ::fixy::with_mut(std::move(locked), [&first...](auto& object) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, fill_pages(object, std::uint8_t{0x3C}));
+        if constexpr (sizeof...(First) == 0) {
+            objects_of_one_mint_site_have_their_own_pool(object);
+        } else {
+            static_assert((std::is_same_v<First, std::remove_cvref_t<decltype(object)>> && ...));
+            // A reader of the second object refuses its own discard, and it
+            // does not stop the discard of the first object.
+            ::fixy::Option<bool> const is_second_kept = object.with_read(kCtx, [&](auto const& /*region*/) noexcept {
+                bool const is_first_discarded = (first.template advise_release_aware<DontNeed>(kCtx).is_ok() && ...);
+                return is_first_discarded && is_readers_live(object.template advise_release_aware<DontNeed>(kCtx));
+            });
+            CRUCIBLE_TEST_ASSERT(kTest, is_second_kept == ::fixy::some(true));
+            CRUCIBLE_TEST_ASSERT(kTest, ((count_bytes(first, std::uint8_t{0}) == ::fixy::some(kPageBytes)) && ...));
+            CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x3C}) == ::fixy::some(kPageBytes));
+        }
+    });
 }
 
 // A map of no byte fails with einval.  The refusal gives the exclusive back,
@@ -174,25 +182,30 @@ void a_failed_map_gives_the_exclusive_back() {
     auto locked =
         mmap::mint_locked_mmap_anon<WriteCopy, Anonymous>(kCtx, kAlloc, std::move(refusal).take_exclusive(), kPage)
             .expect("an anonymous mapping of one page");
-    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(*locked, std::uint8_t{0x5A}));
-    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(*locked, std::uint8_t{0x5A}) == ::fixy::some(kPageBytes));
+    locked = ::fixy::with_mut(std::move(locked), [](auto& object) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, fill_pages(object, std::uint8_t{0x5A}));
+        CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x5A}) == ::fixy::some(kPageBytes));
+    });
 }
 
 void an_advice_that_discards_nothing_runs_in_a_body() {
     auto locked =
         mmap::mint_locked_mmap_anon<WriteCopy, Anonymous>(kCtx, kAlloc, perm::mint_permission_root<PageRegion>(), kPage)
             .expect("an anonymous mapping of one page");
-    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(*locked, std::uint8_t{0x3C}));
-    ::fixy::Option<bool> const is_write_advised = locked->with_write(
-        kCtx, [](auto& region) noexcept { return region.template advise<mmap::advice::Sequential>(kCtx).is_ok(); });
-    ::fixy::Option<bool> const is_read_advised = locked->with_read(
-        kCtx, [](auto const& region) noexcept { return region.template advise<mmap::advice::WillNeed>(kCtx).is_ok(); });
-    CRUCIBLE_TEST_ASSERT(kTest, is_write_advised == ::fixy::some(true));
-    CRUCIBLE_TEST_ASSERT(kTest, is_read_advised == ::fixy::some(true));
-    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(*locked, std::uint8_t{0x3C}) == ::fixy::some(kPageBytes));
-    ::fixy::Option<bool> const is_one_page =
-        locked->with_read(kCtx, [](auto const& region) noexcept { return region.size() == kPage; });
-    CRUCIBLE_TEST_ASSERT(kTest, is_one_page == ::fixy::some(true));
+    locked = ::fixy::with_mut(std::move(locked), [](auto& object) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, fill_pages(object, std::uint8_t{0x3C}));
+        ::fixy::Option<bool> const is_write_advised = object.with_write(
+            kCtx, [](auto& region) noexcept { return region.template advise<mmap::advice::Sequential>(kCtx).is_ok(); });
+        ::fixy::Option<bool> const is_read_advised = object.with_read(kCtx, [](auto const& region) noexcept {
+            return region.template advise<mmap::advice::WillNeed>(kCtx).is_ok();
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, is_write_advised == ::fixy::some(true));
+        CRUCIBLE_TEST_ASSERT(kTest, is_read_advised == ::fixy::some(true));
+        CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x3C}) == ::fixy::some(kPageBytes));
+        ::fixy::Option<bool> const is_one_page =
+            object.with_read(kCtx, [](auto const& region) noexcept { return region.size() == kPage; });
+        CRUCIBLE_TEST_ASSERT(kTest, is_one_page == ::fixy::some(true));
+    });
 }
 
 void a_body_gets_a_view_of_a_range() {
@@ -202,40 +215,42 @@ void a_body_gets_a_view_of_a_range() {
     constexpr ::fixy::ByteCount kRangeStart{16};
     constexpr ::fixy::ByteCount kWordStart{64};
     constexpr ::fixy::ElementCount kRange{4};
-    ::fixy::Option<std::size_t> const written = locked->with_write(kCtx, [](auto& region) noexcept {
-        std::size_t count = 0;
-        for (auto const bytes : region.template view_at<std::uint8_t>(kRangeStart, kRange))
-            for (std::uint8_t& byte : bytes) {
-                byte = 0x7E;
-                ++count;
-            }
-        for (auto const bytes : region.template view_at<std::uint8_t, 8>(kWordStart))
-            for (std::uint8_t& byte : bytes) {
-                byte = 0x7E;
-                ++count;
-            }
-        return count;
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, written == ::fixy::some(std::size_t{12}));
-    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(*locked, std::uint8_t{0x7E}) == ::fixy::some(std::size_t{12}));
+    locked = ::fixy::with_mut(std::move(locked), [](auto& object) noexcept {
+        ::fixy::Option<std::size_t> const written = object.with_write(kCtx, [](auto& region) noexcept {
+            std::size_t count = 0;
+            for (auto const bytes : region.template view_at<std::uint8_t>(kRangeStart, kRange))
+                for (std::uint8_t& byte : bytes) {
+                    byte = 0x7E;
+                    ++count;
+                }
+            for (auto const bytes : region.template view_at<std::uint8_t, 8>(kWordStart))
+                for (std::uint8_t& byte : bytes) {
+                    byte = 0x7E;
+                    ++count;
+                }
+            return count;
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, written == ::fixy::some(std::size_t{12}));
+        CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x7E}) == ::fixy::some(std::size_t{12}));
 
-    ::fixy::Option<std::size_t> const read = locked->with_read(kCtx, [](auto const& region) noexcept {
-        std::size_t count = 0;
-        for (auto const bytes : region.template view_at<std::uint8_t const>(kRangeStart, kRange))
-            for (std::uint8_t const& byte : bytes)
-                if (byte == 0x7E) ++count;
-        for (auto const bytes : region.template view_at<std::uint8_t const, 8>(kWordStart))
-            for (std::uint8_t const& byte : bytes)
-                if (byte == 0x7E) ++count;
-        return count;
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, read == ::fixy::some(std::size_t{12}));
+        ::fixy::Option<std::size_t> const read = object.with_read(kCtx, [](auto const& region) noexcept {
+            std::size_t count = 0;
+            for (auto const bytes : region.template view_at<std::uint8_t const>(kRangeStart, kRange))
+                for (std::uint8_t const& byte : bytes)
+                    if (byte == 0x7E) ++count;
+            for (auto const bytes : region.template view_at<std::uint8_t const, 8>(kWordStart))
+                for (std::uint8_t const& byte : bytes)
+                    if (byte == 0x7E) ++count;
+            return count;
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, read == ::fixy::some(std::size_t{12}));
 
-    ::fixy::Option<bool> const is_past_the_end_refused = locked->with_read(kCtx, [](auto const& region) noexcept {
-        return region.template view_at<std::uint8_t const>(kPage, kRange).is_none()
-            && region.template view_at<std::uint8_t const, 8>(kPage).is_none();
+        ::fixy::Option<bool> const is_past_the_end_refused = object.with_read(kCtx, [](auto const& region) noexcept {
+            return region.template view_at<std::uint8_t const>(kPage, kRange).is_none()
+                && region.template view_at<std::uint8_t const, 8>(kPage).is_none();
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, is_past_the_end_refused == ::fixy::some(true));
     });
-    CRUCIBLE_TEST_ASSERT(kTest, is_past_the_end_refused == ::fixy::some(true));
 }
 
 // Sets the policy over nodes in a write body.  No reader and no writer is in
@@ -290,27 +305,29 @@ void a_write_body_sets_a_memory_policy() {
     auto locked =
         mmap::mint_locked_mmap_anon<WriteCopy, Anonymous>(kCtx, kAlloc, perm::mint_permission_root<PageRegion>(), kPage)
             .expect("an anonymous mapping of one page");
-    ::fixy::NumaNodeMask two_nodes{};
-    CRUCIBLE_TEST_ASSERT(kTest, two_nodes.insert(::fixy::NumaNodeId{0}).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, two_nodes.insert(::fixy::NumaNodeId{1}).is_ok());
-    auto const empty_mask = set_policy<::fixy::NumaPolicy::bind>(*locked, ::fixy::NumaNodeMask{});
-    auto const two_preferred = set_policy<::fixy::NumaPolicy::preferred>(*locked, two_nodes);
-    CRUCIBLE_TEST_ASSERT(kTest, empty_mask.err() == ::fixy::some(::foundation::os::Errno::einval));
-    CRUCIBLE_TEST_ASSERT(kTest, two_preferred.err() == ::fixy::some(::foundation::os::Errno::einval));
+    locked = ::fixy::with_mut(std::move(locked), [](auto& object) noexcept {
+        ::fixy::NumaNodeMask two_nodes{};
+        CRUCIBLE_TEST_ASSERT(kTest, two_nodes.insert(::fixy::NumaNodeId{0}).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, two_nodes.insert(::fixy::NumaNodeId{1}).is_ok());
+        auto const empty_mask = set_policy<::fixy::NumaPolicy::bind>(object, ::fixy::NumaNodeMask{});
+        auto const two_preferred = set_policy<::fixy::NumaPolicy::preferred>(object, two_nodes);
+        CRUCIBLE_TEST_ASSERT(kTest, empty_mask.err() == ::fixy::some(::foundation::os::Errno::einval));
+        CRUCIBLE_TEST_ASSERT(kTest, two_preferred.err() == ::fixy::some(::foundation::os::Errno::einval));
 
-    ::fixy::NumaNodeMask const allowed =
-        ::fixy::numa::read_allowed_numa_nodes(kCtx).expect("the status of the process holds its allowed nodes");
-    auto const slots = allowed.slots();
-    CRUCIBLE_TEST_ASSERT(kTest, slots.size() > 0);
-    bool const is_each_policy_set = slots.with_keys([&locked](auto const& keys) noexcept {
-        for (::fixy::NumaNodeMask::Slot const slot : keys) {
-            if (!bind_page_to_node(*locked, ::fixy::numa_node_of_slot(slot))) return false;
+        ::fixy::NumaNodeMask const allowed =
+            ::fixy::numa::read_allowed_numa_nodes(kCtx).expect("the status of the process holds its allowed nodes");
+        auto const slots = allowed.slots();
+        CRUCIBLE_TEST_ASSERT(kTest, slots.size() > 0);
+        bool const is_each_policy_set = slots.with_keys([&object](auto const& keys) noexcept {
+            for (::fixy::NumaNodeMask::Slot const slot : keys) {
+                if (!bind_page_to_node(object, ::fixy::numa_node_of_slot(slot))) return false;
+            }
+            return true;
+        });
+        if (!is_each_policy_set) {
+            ::fixy::report(::fixy::Sink::Err, "[skipped] the kernel of this host sets no memory policy\n");
         }
-        return true;
     });
-    if (!is_each_policy_set) {
-        ::fixy::report(::fixy::Sink::Err, "[skipped] the kernel of this host sets no memory policy\n");
-    }
 }
 
 // The first node that the cpuset of the process allows, or None.
@@ -346,26 +363,29 @@ void an_end_gives_the_mapping_and_the_exclusive() {
     auto locked =
         mmap::mint_locked_mmap_anon<WriteCopy, Anonymous>(kCtx, kAlloc, perm::mint_permission_root<PageRegion>(), kPage)
             .expect("an anonymous mapping of one page");
-    auto& object = *locked;
-    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(object, std::uint8_t{0x3C}));
+    [[maybe_unused]] auto [ended, held] = ::fixy::with_mut(std::move(locked), [](auto& object) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, fill_pages(object, std::uint8_t{0x3C}));
 
-    ::fixy::Option<bool> const is_refused_by_a_reader =
-        object.with_read(kCtx, [&object](auto const& /*region*/) noexcept { return is_end_refused(object); });
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a body calls a door of the lock beside a writer, and the lock refuses it")
-    ::fixy::Option<bool> const is_refused_by_a_writer =
-        object.with_write(kCtx, [&object](auto& /*region*/) noexcept { return is_end_refused(object); });
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    CRUCIBLE_TEST_ASSERT(kTest, is_refused_by_a_reader == ::fixy::some(true));
-    CRUCIBLE_TEST_ASSERT(kTest, is_refused_by_a_writer == ::fixy::some(true));
-    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x3C}) == ::fixy::some(kPageBytes));
+        ::fixy::Option<bool> const is_refused_by_a_reader =
+            object.with_read(kCtx, [&object](auto const& /*region*/) noexcept { return is_end_refused(object); });
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a body calls a door of the lock beside a writer, and the lock refuses it")
+        ::fixy::Option<bool> const is_refused_by_a_writer =
+            object.with_write(kCtx, [&object](auto& /*region*/) noexcept { return is_end_refused(object); });
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused_by_a_reader == ::fixy::some(true));
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused_by_a_writer == ::fixy::some(true));
+        CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x3C}) == ::fixy::some(kPageBytes));
 
-    auto [mapping, exclusive] = object.end_lock(kCtx).expect("no reader and no writer is in the region");
+        auto lock_end = object.end_lock(kCtx).expect("no reader and no writer is in the region");
 
-    // Each door of a lock that ended refuses its caller.
-    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x3C}).is_none());
-    CRUCIBLE_TEST_ASSERT(kTest, !fill_pages(object, std::uint8_t{0xA5}));
-    CRUCIBLE_TEST_ASSERT(kTest, is_readers_live(object.template advise_release_aware<DontNeed>(kCtx)));
-    CRUCIBLE_TEST_ASSERT(kTest, is_end_refused(object));
+        // Each door of a lock that ended refuses its caller.
+        CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x3C}).is_none());
+        CRUCIBLE_TEST_ASSERT(kTest, !fill_pages(object, std::uint8_t{0xA5}));
+        CRUCIBLE_TEST_ASSERT(kTest, is_readers_live(object.template advise_release_aware<DontNeed>(kCtx)));
+        CRUCIBLE_TEST_ASSERT(kTest, is_end_refused(object));
+        return lock_end;
+    });
+    auto [mapping, exclusive] = std::move(ended);
 
     auto region = std::move(mapping).consume();
     bool const is_kept = region.template view<std::uint8_t const>().is_some_and([](auto const& bytes) noexcept {
@@ -376,8 +396,10 @@ void an_end_gives_the_mapping_and_the_exclusive() {
 
     auto relocked = mmap::mint_locked_mmap_anon<WriteCopy, Anonymous>(kCtx, kAlloc, std::move(exclusive), kPage)
                         .expect("an anonymous mapping of one page");
-    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(*relocked, std::uint8_t{0x5A}));
-    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(*relocked, std::uint8_t{0x5A}) == ::fixy::some(kPageBytes));
+    relocked = ::fixy::with_mut(std::move(relocked), [](auto& object) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, fill_pages(object, std::uint8_t{0x5A}));
+        CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x5A}) == ::fixy::some(kPageBytes));
+    });
 
     // A kernel that sets no memory policy refuses the placement.
     ::fixy::NumaNodeId const node = first_allowed_node();
@@ -405,23 +427,25 @@ void a_shared_mapping_keeps_its_bytes() {
     auto locked = mmap::mint_locked_mmap<ReadWrite, Shared>(kCtx, kAlloc, perm::mint_permission_root<PageRegion>(),
                                                             memory.ref(), kPage)
                       .expect("a shared mapping of the sealed memory");
-    ::fixy::Option<bool> const is_written = locked->with_write(kCtx, [](auto& region) noexcept {
-        bool is_stored = false;
-        for (auto const words : region.template view_at<std::uint64_t, 1>(::fixy::ByteCount{0})) {
-            words.store_release(::fixy::index<0>(), std::uint64_t{0x9E3779B97F4A7C15});
-            is_stored = true;
-        }
-        return is_stored;
+    locked = ::fixy::with_mut(std::move(locked), [](auto& object) noexcept {
+        ::fixy::Option<bool> const is_written = object.with_write(kCtx, [](auto& region) noexcept {
+            bool is_stored = false;
+            for (auto const words : region.template view_at<std::uint64_t, 1>(::fixy::ByteCount{0})) {
+                words.store_release(::fixy::index<0>(), std::uint64_t{0x9E3779B97F4A7C15});
+                is_stored = true;
+            }
+            return is_stored;
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, is_written == ::fixy::some(true));
+        CRUCIBLE_TEST_ASSERT(kTest, object.template advise_release_aware<DontNeed>(kCtx).is_ok());
+        ::fixy::Option<std::uint64_t> const read = object.with_read(kCtx, [](auto const& region) noexcept {
+            std::uint64_t value = 0;
+            for (auto const words : region.template view_at<std::uint64_t const, 1>(::fixy::ByteCount{0}))
+                value = words.load_acquire(::fixy::index<0>());
+            return value;
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, read == ::fixy::some(std::uint64_t{0x9E3779B97F4A7C15}));
     });
-    CRUCIBLE_TEST_ASSERT(kTest, is_written == ::fixy::some(true));
-    CRUCIBLE_TEST_ASSERT(kTest, locked->template advise_release_aware<DontNeed>(kCtx).is_ok());
-    ::fixy::Option<std::uint64_t> const read = locked->with_read(kCtx, [](auto const& region) noexcept {
-        std::uint64_t value = 0;
-        for (auto const words : region.template view_at<std::uint64_t const, 1>(::fixy::ByteCount{0}))
-            value = words.load_acquire(::fixy::index<0>());
-        return value;
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, read == ::fixy::some(std::uint64_t{0x9E3779B97F4A7C15}));
 
     // A map past the end of the sealed memory gives enxio and the exclusive.
     auto refused = mmap::mint_locked_mmap<ReadWrite, Shared>(kCtx, kAlloc, perm::mint_permission_root<PageRegion>(),

@@ -105,7 +105,9 @@ void delay(::crucible::test::PhiloxStream& delays) noexcept {
 
 // The label of the parcel of a Box.  The Box can be a temporary, which lives
 // until the end of the full expression of the call.
-[[nodiscard]] std::uint64_t label_of(ParcelBox const& box) noexcept { return box->label(); }
+[[nodiscard]] std::uint64_t label_of(ParcelBox const& box) noexcept {
+    return ::foundation::core::with_view(box, [](Parcel const& parcel) noexcept { return parcel.label(); });
+}
 
 // True when the ring took the Box.  A refusal ends its Box here.
 [[nodiscard]] bool is_pushed(BoxPush&& pushed) noexcept {
@@ -140,7 +142,7 @@ void expect_a_full_ring_gives_the_box_back(::fixy::BgLoadCtx const& ctx) {
                 CRUCIBLE_FATAL_INVARIANT(is_pushed(producer.try_push(ctx, make_parcel(0))));
                 CRUCIBLE_FATAL_INVARIANT(is_pushed(producer.try_push(ctx, make_parcel(1))));
                 ParcelBox kept = box_of_refusal(producer.try_push(ctx, make_parcel(2)), cc::PushRefusal::Full);
-                CRUCIBLE_FATAL_INVARIANT(kept->label() == 2);
+                CRUCIBLE_FATAL_INVARIANT(label_of(kept) == 2);
                 CRUCIBLE_FATAL_INVARIANT(label_of(consumer.try_pop(ctx).expect("the ring is full")) == 0);
                 CRUCIBLE_FATAL_INVARIANT(is_pushed(producer.try_push(ctx, std::move(kept))));
                 std::move(producer).close(ctx);
@@ -169,7 +171,7 @@ void expect_the_timed_push_gives_the_box_back(::fixy::BgLoadCtx const& ctx) {
                     ::fixy::futex::Deadline::after(clock, nondet_of(ctx), kTimedStepNanos).expect("the clock reads");
                 ParcelBox kept = box_of_refusal(
                     producer.template push_waiting_until<ParkAtOnce>(ctx, make_parcel(2), soon), cc::PushRefusal::Full);
-                CRUCIBLE_FATAL_INVARIANT(kept->label() == 2);
+                CRUCIBLE_FATAL_INVARIANT(label_of(kept) == 2);
                 CRUCIBLE_FATAL_INVARIANT(label_of(consumer.try_pop(ctx).expect("the ring is full")) == 0);
                 ::fixy::futex::Deadline const later =
                     ::fixy::futex::Deadline::after(clock, nondet_of(ctx), kTimedStepNanos).expect("the clock reads");
@@ -201,7 +203,7 @@ void expect_a_consumer_close_gives_the_box_back(::fixy::BgLoadCtx const& ctx) {
                     ParcelBox kept = box_of_refusal(handle.template push_waiting<ParkAtOnce>(bg, make_parcel(2)),
                                                     cc::PushRefusal::ConsumerGone);
                     std::move(handle).close(bg);
-                    return kept->label();
+                    return label_of(kept);
                 };
                 auto values =
                     ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, std::move(fill_then_wait),
