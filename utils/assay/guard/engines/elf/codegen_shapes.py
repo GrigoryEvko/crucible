@@ -1373,10 +1373,17 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "scalar_fp_fma",
-        "fp::fma rounds one time, as std::fma does: one vfmadd with an FMA instruction.  For -march=x86-64 the family "
-        "calls its form in pairs of doubles, and std::fma calls fma of libm, so the family side calls a different "
-        "function and imports no function of libm",
-        calls=("foundation::core::detail::target_sse2::fma_by_pairs_",),
+        "fp::fma rounds one time, as std::fma does: one vfmadd with an FMA instruction.  The family then tests the "
+        "result for a NaN and branches to the canonical NaN, so the two branches are different.  For -march=x86-64 "
+        "the family calls its form in pairs of doubles, or inlines it and calls its cold edge, and std::fma calls fma "
+        "of libm, so the family side calls a different function and imports no function of libm.  At x86-64, in a "
+        "unit with -fharden-compares, the compares of the test of the range of the pairs form take a second test into "
+        "a trap",
+        calls=(
+            "foundation::core::detail::target_sse2::fma_by_pairs_",
+            "foundation::core::detail::target_sse2::fma_pairs_edge_",
+        ),
+        branches=True,
     ),
     Probe("scalar_fp_total_key", "fp::total_key is the shift, the or and the xor of the raw form"),
     Probe("scalar_exchange", "exchange of a word is the load and the store of std::exchange"),

@@ -22,7 +22,8 @@
 //
 // Operations
 //   As in fixy/fp/Exp.h: IEEE 754 add, subtract and multiply, explicit fma of
-//   fp::fma, integer operations on the bits and table reads, in the order of
+//   detail::fma_of_finite, integer operations on the bits and table reads, in
+//   the order of
 //   the source, under the floor crucible_fp_strict (-ffp-contract=off).  The
 //   functions are in the inline namespace CRUCIBLE_SIMD_TARGET.
 //
@@ -67,6 +68,7 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Number.h>
+#include <fixy/fp/FmaOfFinite.h>
 #include <fixy/fp/RoundToFloat.h>
 
 #include <cstdint>
@@ -313,20 +315,21 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 
 // log of x in [1 - 2^-4, 1 + 0x1.09p-4], where r = x - 1 is exact.
 [[nodiscard]] constexpr double log_near_one_(double value) noexcept {
-    using ::foundation::core::fp::fma;
+    using ::fixy::fp::detail::fma_of_finite;
     double const reduced = value - 1.0;
     double const square = reduced * reduced;
     double const cube = reduced * square;
-    double const first = fma(square, kLogB3, fma(reduced, kLogB2, kLogB1));
-    double const second = fma(square, kLogB6, fma(reduced, kLogB5, kLogB4));
-    double const third = fma(cube, kLogB10, fma(square, kLogB9, fma(reduced, kLogB8, kLogB7)));
-    double const tail = fma(cube, fma(cube, third, second), first);
+    double const first = fma_of_finite(square, kLogB3, fma_of_finite(reduced, kLogB2, kLogB1));
+    double const second = fma_of_finite(square, kLogB6, fma_of_finite(reduced, kLogB5, kLogB4));
+    double const third =
+        fma_of_finite(cube, kLogB10, fma_of_finite(square, kLogB9, fma_of_finite(reduced, kLogB8, kLogB7)));
+    double const tail = fma_of_finite(cube, fma_of_finite(cube, third, second), first);
     // -r^2/2 in two parts: the round of r^2 and its exact error, each times -1/2.
     double const half_square_high = square * -0.5;
-    double const half_square_low = fma(reduced, reduced, -square) * -0.5;
+    double const half_square_low = fma_of_finite(reduced, reduced, -square) * -0.5;
     double const high = reduced + half_square_high;
     double const low = ((reduced - high) + half_square_high) + half_square_low;
-    return fma(cube, tail, low) + high;
+    return fma_of_finite(cube, tail, low) + high;
 }
 
 // The midpoint inputs of the float form: each input whose log(double) is a
@@ -359,7 +362,7 @@ namespace fixy::fp {
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 [[nodiscard]] constexpr double log(double value) noexcept {
-    using ::foundation::core::fp::fma;
+    using ::fixy::fp::detail::fma_of_finite;
     std::uint64_t bits = __builtin_bit_cast(std::uint64_t, value);
     if (bits - detail::kLogNearLow < detail::kLogNearHigh - detail::kLogNearLow) {
         return detail::log_near_one_(value);
@@ -382,17 +385,17 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     std::int64_t const exponent = static_cast<std::int64_t>(offset_bits) >> 52;
     double const reduced_input = __builtin_bit_cast(double, bits - (offset_bits & (std::uint64_t{0xfff} << 52)));
     detail::LogEntry const& entry = detail::kLogTable[index];
-    double const reduced = fma(reduced_input, entry.invc, -1.0);
+    double const reduced = fma_of_finite(reduced_input, entry.invc, -1.0);
     double const scale = static_cast<double>(exponent);
-    double const whole = fma(scale, detail::kLogLn2Hi, entry.logc_high);
+    double const whole = fma_of_finite(scale, detail::kLogLn2Hi, entry.logc_high);
     double const high = whole + reduced;
-    double const low = ((whole - high) + reduced) + fma(scale, detail::kLogLn2Lo, entry.logc_low);
+    double const low = ((whole - high) + reduced) + fma_of_finite(scale, detail::kLogLn2Lo, entry.logc_low);
     double const square = reduced * reduced;
-    double const upper = fma(reduced, detail::kLogA4, detail::kLogA3);
-    double const lower = fma(reduced, detail::kLogA2, detail::kLogA1);
-    double const tail = fma(square, upper, lower);
-    double result = fma(square, detail::kLogA0, low);
-    result = fma(reduced * square, tail, result);
+    double const upper = fma_of_finite(reduced, detail::kLogA4, detail::kLogA3);
+    double const lower = fma_of_finite(reduced, detail::kLogA2, detail::kLogA1);
+    double const tail = fma_of_finite(square, upper, lower);
+    double result = fma_of_finite(square, detail::kLogA0, low);
+    result = fma_of_finite(reduced * square, tail, result);
     return result + high;
 }
 
@@ -423,7 +426,7 @@ namespace fixy::fp {
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 [[nodiscard]] constexpr float log(float value) noexcept {
-    using ::foundation::core::fp::fma;
+    using ::fixy::fp::detail::fma_of_finite;
     std::uint32_t bits = __builtin_bit_cast(std::uint32_t, value);
     if (bits - 0x00800000u >= 0x7f800000u - 0x00800000u) [[unlikely]] {
         // x below 2^-126, negative, an infinity or a NaN.
@@ -442,12 +445,12 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     // z has 24 bits and invc has 29, so the product is exact, and the
     // subtract of 1 is exact.
     double const reduced = static_cast<double>(reduced_input) * entry.invc - 1.0;
-    double const whole = fma(static_cast<double>(exponent), detail::kLogFloatLn2, entry.logc);
-    double tail = fma(reduced, detail::kLogFloatA4, detail::kLogFloatA3);
-    tail = fma(reduced, tail, detail::kLogFloatA2);
-    tail = fma(reduced, tail, detail::kLogFloatA1);
-    tail = fma(reduced, tail, detail::kLogFloatA0);
-    double const result = whole + fma(reduced * reduced, tail, reduced);
+    double const whole = fma_of_finite(static_cast<double>(exponent), detail::kLogFloatLn2, entry.logc);
+    double tail = fma_of_finite(reduced, detail::kLogFloatA4, detail::kLogFloatA3);
+    tail = fma_of_finite(reduced, tail, detail::kLogFloatA2);
+    tail = fma_of_finite(reduced, tail, detail::kLogFloatA1);
+    tail = fma_of_finite(reduced, tail, detail::kLogFloatA0);
+    double const result = whole + fma_of_finite(reduced * reduced, tail, reduced);
     if (detail::is_near_float_midpoint_(result, detail::kLogFloatTolerance)) [[unlikely]] {
         return detail::log_float_slow_(value);
     }

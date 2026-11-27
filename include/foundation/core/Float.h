@@ -59,18 +59,25 @@
 //   exact.  For a double, a NaN, an infinity, a subnormal input and each
 //   input past a limit go to the exact form.  The float form takes each
 //   input on its one path: a NaN or an infinity there gives the NaN or the
-//   infinity of IEEE 754, with a payload that can differ from the exact
-//   form, and an infinite operand raises the invalid flag in the two-sum,
-//   where the instruction raises none.  A unit with no floor runs the exact
-//   form for each input, because a contraction or a fast-math flag breaks
-//   the exact steps of the two forms.
+//   infinity of IEEE 754, and an infinite operand raises the invalid flag in
+//   the two-sum, where the instruction raises none.  A unit with no floor
+//   runs the exact form for each input, because a contraction or a
+//   fast-math flag breaks the exact steps of the two forms.
 //
 //   Each form calls no function of libm, and it gives the bits of the
-//   instruction for each input, under the round to nearest with no flush.
-//   Under another mode of the register the instruction follows the mode, and
-//   the forms do not, so they can give different bits there.  A NaN input or
-//   a product of an infinity gives a NaN or an infinity, and the payload of a
-//   NaN can differ between the instruction and the other forms.
+//   instruction for each input that is not a NaN result, under the round to
+//   nearest with no flush.  Under another mode of the register the
+//   instruction follows the mode, and the forms do not, so they can give
+//   different bits there.
+//
+//   Each NaN result of fp::fma is the canonical NaN quiet_nan_of<T>, on each
+//   target, in each form and in a constant evaluation.  The instruction
+//   takes the first NaN in the operand order of the form that GCC picks, and
+//   an add keeps the NaN of one operand, so the NaN of a NaN result would
+//   change with the build, the call site and the form.  The canonical step
+//   is one test of the result.  detail::fma_of_target_ is the form of the
+//   target with no such step, for the door fixy::fp::detail::fma_of_finite
+//   of callers that send no NaN.
 //
 //   The body reads the target, so fma is in the inline namespace
 //   CRUCIBLE_SIMD_TARGET (the target namespace in foundation/Platform.h).  A
@@ -259,8 +266,11 @@ template <Float T>
     using Layout = FmaLayout<T>;
     constexpr int top = 126;
     constexpr int precision = FloatBits<T>::significand_bits;
-    if (!__builtin_isfinite(left) || !__builtin_isfinite(right)) return left * right + addend;
-    if (!__builtin_isfinite(addend)) return addend;
+    // A NaN result is the canonical NaN: the add of a NaN keeps the bits of
+    // one operand, and a signaling NaN c would come back as it is.
+    if (!__builtin_isfinite(left) || !__builtin_isfinite(right))
+        return ::foundation::core::fp::canonicalize_nan(left * right + addend);
+    if (!__builtin_isfinite(addend)) return ::foundation::core::fp::canonicalize_nan(addend);
     // A zero product is exact, and the add of a zero is exact, so each sign
     // of a zero follows the add of IEEE 754.
     if (fma_is_zero_(left) || fma_is_zero_(right)) return left * right + addend;
@@ -475,19 +485,17 @@ inline constexpr int kFmaPairsAddendMost = 1022;
     return fma_pairs_core_(left, right, addend);
 }
 
-}  // namespace CRUCIBLE_SIMD_TARGET
-
-}  // namespace foundation::core::detail
-
-namespace foundation::core::fp {
-
-inline namespace CRUCIBLE_SIMD_TARGET {
-
-// a * b + c with one round (the fma).
+// a * b + c with one round by the form of the target, with no canonical
+// step for a NaN result: the instruction, a form in doubles, or the exact
+// form.  The NaN of a NaN result follows the form.  The instruction takes the
+// first NaN in the operand order of its encoding, and GCC picks the form 132,
+// 213 or 231 by the allocation of the registers, so that NaN changes with
+// the build and with the call site.  fp::fma gives the canonical NaN, and
+// fixy::fp::detail::fma_of_finite calls this form for inputs with no NaN.
 template <Float T>
-[[nodiscard]] constexpr T fma(T left, T right, T addend) noexcept {
+[[nodiscard, gnu::always_inline]] constexpr T fma_of_target_(T left, T right, T addend) noexcept {
     if consteval {
-        return detail::fma_by_integers_(left, right, addend);
+        return fma_by_integers_(left, right, addend);
     } else {
 #if defined(__FMA__) || defined(__aarch64__)
         if constexpr (std::same_as<T, float>) {
@@ -497,7 +505,38 @@ template <Float T>
         }
 #elif defined(CRUCIBLE_FP_STRICT_FLOOR) && !defined(__FAST_MATH__)
         if constexpr (std::same_as<T, float>) {
-            return detail::fma_by_double_(left, right, addend);
+            return fma_by_double_(left, right, addend);
+        } else {
+            return fma_by_pairs_(left, right, addend);
+        }
+#else
+        return fma_by_integers_(left, right, addend);
+#endif
+    }
+}
+
+}  // namespace CRUCIBLE_SIMD_TARGET
+
+}  // namespace foundation::core::detail
+
+namespace foundation::core::fp {
+
+inline namespace CRUCIBLE_SIMD_TARGET {
+
+// a * b + c with one round (the fma).  Each NaN result is the canonical NaN
+// quiet_nan_of<T>, on each target and in each form.  The exact form and the
+// form in pairs of doubles give it by their construction, so only the
+// instruction and the float form in double take the canonical step.
+template <Float T>
+[[nodiscard]] constexpr T fma(T left, T right, T addend) noexcept {
+    if consteval {
+        return detail::fma_by_integers_(left, right, addend);
+    } else {
+#if defined(__FMA__) || defined(__aarch64__)
+        return canonicalize_nan(detail::fma_of_target_(left, right, addend));
+#elif defined(CRUCIBLE_FP_STRICT_FLOOR) && !defined(__FAST_MATH__)
+        if constexpr (std::same_as<T, float>) {
+            return canonicalize_nan(detail::fma_by_double_(left, right, addend));
         } else {
             return detail::fma_by_pairs_(left, right, addend);
         }

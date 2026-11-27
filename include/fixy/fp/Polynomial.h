@@ -8,11 +8,13 @@
 // platforms. Every operation below is +, -, *, a fused multiply-add,
 // sqrt, an absolute value, a sign copy, a comparison, a conversion or a
 // bit_cast. IEEE 754 requires the fused multiply-add and sqrt to be
-// correctly rounded, so fp::fma and fp::sqrt of the base give the same
-// bits everywhere: the instruction where the target has one, and the exact
-// software form of the base where it does not.
+// correctly rounded, so the fma of the base and fp::sqrt give the same bits
+// everywhere: the instruction where the target has one, and a software form
+// of the base where it does not.  The fma is detail::fma_of_finite of
+// fixy/fp/FmaOfFinite.h, with no canonical step for a NaN result, because
+// the domain of each function is finite and no fma takes a NaN.
 //
-// Every product that feeds a sum is one fp::fma. The compiler may fuse
+// Every product that feeds a sum is one fma_of_finite. The compiler may fuse
 // a written a * b + c into one operation under -ffp-contract=on or
 // -ffp-contract=fast, when the target has a fused instruction, and leave
 // it as two roundings otherwise. The same source then gives different
@@ -28,7 +30,7 @@
 //
 // Design notes:
 //
-//  1. Every function is constexpr.  fp::fma and fp::sqrt are usable in a
+//  1. Every function is constexpr.  fma_of_finite and fp::sqrt are usable in a
 //     constant expression, so the pinned values are static assertions
 //     rather than a function that computes them and discards the result.
 //     They are in test/layer/checks/fixy/fp/Polynomial.cpp, and one
@@ -56,6 +58,7 @@
 //     domain is one turn, where the answer is accurate.
 
 #include <fixy/Core.h>
+#include <fixy/fp/FmaOfFinite.h>
 #include <foundation/contracts/Pre.h>
 
 #include <array>
@@ -68,14 +71,14 @@ namespace fixy::fp {
 namespace detail {
 
 // Evaluates coefficients[0] + point * (coefficients[1] + point * (...)) in
-// Horner form, one fp::fma for each step.  O(N) in the number of
+// Horner form, one fma_of_finite for each step.  O(N) in the number of
 // coefficients.
 template <std::size_t N>
 [[nodiscard]] constexpr float horner(float point, const std::array<float, N>& coefficients) noexcept {
     static_assert(N >= 2, "a Horner chain needs a constant term and at least one more coefficient");
     float sum = coefficients[N - 1];
     for (std::size_t k = N - 1; k-- > 0;) {
-        sum = ::fixy::fp::fma(point, sum, coefficients[k]);
+        sum = ::fixy::fp::detail::fma_of_finite(point, sum, coefficients[k]);
     }
     return sum;
 }
@@ -153,7 +156,7 @@ inline constexpr std::array<float, 5> kCosSeries{
     const float log_mantissa = offset * detail::horner(-offset, detail::kLogSeries);
 
     const float ln2 = 0x1.62E430p-1f;  // log(2)
-    return ::fixy::fp::fma(static_cast<float>(exponent), ln2, log_mantissa);
+    return ::fixy::fp::detail::fma_of_finite(static_cast<float>(exponent), ln2, log_mantissa);
 }
 
 // One turn, 2*pi as a float.  It is exactly four times the float pi/2 of
@@ -190,10 +193,11 @@ struct ReduceResult {
     // not from nearbyint. One fma adds half a unit, with the sign of the
     // angle, to the exact product and rounds once. The conversion then
     // truncates toward zero in every rounding mode.
-    const float biased_multiple = ::fixy::fp::fma(angle, two_over_pi, ::fixy::fp::copy_sign(0.5f, angle));
+    const float biased_multiple =
+        ::fixy::fp::detail::fma_of_finite(angle, two_over_pi, ::fixy::fp::copy_sign(0.5f, angle));
     const std::int32_t multiple = static_cast<std::int32_t>(biased_multiple);
 
-    const float reduced = ::fixy::fp::fma(-static_cast<float>(multiple), pi_over_two, angle);
+    const float reduced = ::fixy::fp::detail::fma_of_finite(-static_cast<float>(multiple), pi_over_two, angle);
     const std::int32_t quadrant = static_cast<std::int32_t>(static_cast<std::uint32_t>(multiple) & 0x3u);
 
     return ReduceResult{reduced, quadrant};

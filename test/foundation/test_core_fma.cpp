@@ -13,9 +13,11 @@
 // round, the error of a product as the result of a cancellation, products
 // that underflow into the subnormal range or to zero, sums near the largest
 // value, the zeros of the two signs, the infinities and the NaNs, the limits
-// of fma_by_pairs_, and random values from a fixed Philox seed.  A digest of
-// the results of the oracle over each case is a pin of the sample, and the
-// digest of each form must equal it.
+// of fma_by_pairs_, NaNs with payloads, and random values from a fixed
+// Philox seed.  Each compare reads the bits, and each NaN result must be the
+// canonical NaN quiet_nan_of<T>.  A digest of the bits of the results of the
+// oracle over each case is a pin of the sample, and the digest of each form
+// must equal it.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -55,14 +57,18 @@ template <class T>
     return ::fixy::bit_cast<Word<T>>(value);
 }
 
-// The two results agree when they have the same bits, or when the two are
-// NaNs: the payload of a NaN is not part of the FMA.
+// The two results agree when they have the same bits, also for a NaN: each
+// NaN result of fp::fma is the canonical NaN quiet_nan_of<T>.
 template <class T>
 [[nodiscard]] bool agree(T left, T right) noexcept {
-    if (::fixy::fp::is_nan(left) || ::fixy::fp::is_nan(right)) {
-        return ::fixy::fp::is_nan(left) && ::fixy::fp::is_nan(right);
-    }
     return bits_of_value(left) == bits_of_value(right);
+}
+
+// The result of the oracle, with the canonical NaN for a NaN result: the
+// oracle computes a NaN by the add of its host.
+template <class T>
+[[nodiscard]] T expected_fma(T left, T right, T addend) noexcept {
+    return ::fixy::fp::canonicalize_nan(exact_fma(left, right, addend));
 }
 
 // The offset basis of the digests of FNV-1a.
@@ -81,22 +87,21 @@ struct Counts {
     std::uint64_t exact_digest = kDigestBasis;
 };
 
-// Folds one result into a digest, one word of FNV-1a for each result.  Each
-// NaN folds the same word, because the payload of a NaN is not part of the
-// FMA.
+// Folds the bits of one result into a digest, one word of FNV-1a for each
+// result, also for a NaN.
 template <class T>
 void fold_result(std::uint64_t& digest, T value) noexcept {
-    std::uint64_t const word = ::fixy::fp::is_nan(value) ? 0x7FF8u : static_cast<std::uint64_t>(bits_of_value(value));
-    digest = (digest ^ word) * 0x100000001B3u;
+    digest = (digest ^ static_cast<std::uint64_t>(bits_of_value(value))) * 0x100000001B3u;
 }
 
 // The form in doubles of a target with no fused multiply-add: fma_by_double_
 // for a float and fma_by_pairs_ for a double.  This unit calls each form
-// directly, so each build and each target runs it.
+// directly, so each build and each target runs it.  The float form takes no
+// canonical step, as fp::fma does after it, so the test gives it the step.
 template <class T>
 [[nodiscard]] T fma_in_doubles(T left, T right, T addend) noexcept {
     if constexpr (sizeof(T) == sizeof(float)) {
-        return ::foundation::core::detail::fma_by_double_(left, right, addend);
+        return ::fixy::fp::canonicalize_nan(::foundation::core::detail::fma_by_double_(left, right, addend));
     } else {
         return ::foundation::core::detail::fma_by_pairs_(left, right, addend);
     }
@@ -117,7 +122,7 @@ template <class T>
 // with the oracle.
 template <class T>
 void check_case(T left, T right, T addend, Counts& counts) noexcept {
-    T const expected = exact_fma(left, right, addend);
+    T const expected = expected_fma(left, right, addend);
     T const computed = ::foundation::core::fp::fma(left, right, addend);
     if (!agree(computed, expected)) {
         ::fixy::report(::fixy::Sink::Err, "fma({}, {}, {}): the unit gives {}, the oracle gives {}\n",
@@ -208,6 +213,40 @@ template <class T>
     return value_of<T>(is_negative, biased - static_cast<Word<T>>(fraction_bits), 0);
 }
 
+// The NaN cases of each form: NaNs with payloads in each operand, a
+// signaling NaN, and the invalid products and sums.  Each result must have
+// the bits of the canonical NaN.  The instruction takes the first NaN in the
+// operand order of the form that GCC picks, and the exact form kept a
+// signaling c, so these cases give other NaNs with no canonical step.
+template <class T>
+void test_nan_payloads(Counts& counts) noexcept {
+    constexpr int fraction_bits = ExactLayout<T>::precision - 1;
+    constexpr std::uint64_t all_ones = (std::uint64_t{1} << ExactLayout<T>::exponent_bits) - 1;
+    constexpr std::uint64_t quiet = std::uint64_t{1} << (fraction_bits - 1);
+    T const first = value_of<T>(false, all_ones, quiet | 1u);
+    T const second = value_of<T>(false, all_ones, quiet | 2u);
+    T const third = value_of<T>(true, all_ones, quiet | 3u);
+    T const signaling = value_of<T>(false, all_ones, 4u);
+    T const infinity = ::fixy::infinity_of<T>;
+    T const two = T{2};
+    T const three = T{3};
+    check_case(first, two, three, counts);
+    check_case(two, second, three, counts);
+    check_case(two, three, third, counts);
+    check_case(first, second, three, counts);
+    check_case(first, two, third, counts);
+    check_case(two, second, third, counts);
+    check_case(first, second, third, counts);
+    check_case(signaling, two, three, counts);
+    check_case(two, three, signaling, counts);
+    check_case(T{0}, infinity, T{1}, counts);
+    check_case(T{0}, infinity, third, counts);
+    check_case(infinity, T{1}, -infinity, counts);
+    T const canonical = ::fixy::quiet_nan_of<T>;
+    CRUCIBLE_TEST_ASSERT(kTest, agree(::foundation::core::fp::fma(first, second, third), canonical));
+    CRUCIBLE_TEST_ASSERT(kTest, agree(::foundation::core::fp::fma(two, three, signaling), canonical));
+}
+
 // The hard cases with a fixed form: the ties, the cancellations, the
 // underflows, the overflows and the special values.
 template <class T>
@@ -288,6 +327,7 @@ void test_fixed_cases(Counts& counts) noexcept {
     check_case(nan, one, one, counts);
     check_case(one, nan, infinity, counts);
     check_case(one, one, nan, counts);
+    test_nan_payloads<T>(counts);
 }
 
 // The random cases of each kind.
@@ -385,18 +425,18 @@ void test_pair_limits(Counts& counts) noexcept {
         check_case(past.left, past.right, past.addend, counts);
         double const inside_core =
             ::foundation::core::detail::fma_pairs_core_(inside.left, inside.right, inside.addend);
-        CRUCIBLE_TEST_ASSERT(kTest, agree(inside_core, exact_fma(inside.left, inside.right, inside.addend)));
+        CRUCIBLE_TEST_ASSERT(kTest, agree(inside_core, expected_fma(inside.left, inside.right, inside.addend)));
         if (limit.has_witness) {
             double const past_core = ::foundation::core::detail::fma_pairs_core_(past.left, past.right, past.addend);
-            CRUCIBLE_TEST_ASSERT(kTest, !agree(past_core, exact_fma(past.left, past.right, past.addend)));
+            CRUCIBLE_TEST_ASSERT(kTest, !agree(past_core, expected_fma(past.left, past.right, past.addend)));
         }
     }
 }
 
 // The pins of the digests of the oracle over each case of the test.  A
 // change of a case changes them.
-constexpr std::uint64_t kFloatDigest = 0x668ECC77FC927B0Eu;
-constexpr std::uint64_t kDoubleDigest = 0x9084F4A1A833E655u;
+constexpr std::uint64_t kFloatDigest = 0xE1D845D1E02199B6u;
+constexpr std::uint64_t kDoubleDigest = 0x49583EB59CB5936Du;
 
 // The digest of each form that ran on each case equals the digest of the
 // oracle, and the digest of the oracle equals its pin.

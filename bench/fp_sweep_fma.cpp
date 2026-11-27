@@ -59,13 +59,10 @@ struct Tally {
 [[nodiscard]] std::uint64_t bits_of(double value) noexcept { return ::fixy::bit_cast<std::uint64_t>(value); }
 [[nodiscard]] std::uint32_t bits_of(float value) noexcept { return ::fixy::bit_cast<std::uint32_t>(value); }
 
-// The two results agree when they have the same bits, or when the two are
-// NaNs.
+// The two results agree when they have the same bits, also for a NaN: each
+// NaN result of fp::fma and of the exact form is the canonical NaN.
 template <class T>
 [[nodiscard]] bool agree(T left, T right) noexcept {
-    if (::fixy::fp::is_nan(left) || ::fixy::fp::is_nan(right)) {
-        return ::fixy::fp::is_nan(left) && ::fixy::fp::is_nan(right);
-    }
     return bits_of(left) == bits_of(right);
 }
 

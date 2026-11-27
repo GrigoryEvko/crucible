@@ -379,7 +379,7 @@ void check_double_triple(double left, double right, double addend) {
     double const fused = fp::fma(left, right, addend);
     double const expected = std_fma(left, right, addend);
     if ((std_classes(expected) & 1) != 0) {
-        CRUCIBLE_FATAL_INVARIANT(fp::is_nan(fused));
+        CRUCIBLE_FATAL_INVARIANT(bits_of_double(fused) == bits_of_double(core::quiet_nan_of<double>));
     } else {
         CRUCIBLE_FATAL_INVARIANT(bits_of_double(fused) == std_bits(expected));
     }
@@ -401,7 +401,7 @@ void check_float(float value, float other, float addend) {
     float const fused = fp::fma(value, other, addend);
     float const expected_fused = std_fma_float(value, other, addend);
     if ((std_classes_float(expected_fused) & 1) != 0) {
-        CRUCIBLE_FATAL_INVARIANT(fp::is_nan(fused));
+        CRUCIBLE_FATAL_INVARIANT(bits_of_float(fused) == bits_of_float(core::quiet_nan_of<float>));
     } else {
         CRUCIBLE_FATAL_INVARIANT(bits_of_float(fused) == std_bits_float(expected_fused));
     }

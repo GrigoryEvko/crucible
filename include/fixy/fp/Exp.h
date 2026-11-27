@@ -23,13 +23,15 @@
 //
 // Operations
 //   Each operation is an add, a subtract or a multiply of IEEE 754, a fused
-//   multiply-add of fp::fma, an integer operation on the bits, a read of the
-//   table, or a conversion between float and double.  The order of the
-//   operations is the order of the source.  The build contracts no multiply and
-//   add (-ffp-contract=off, the floor crucible_fp_strict), so each fma is an
-//   explicit fp::fma.  fp::fma rounds one time on each target: the instruction
-//   at x86-64-v3, x86-64-v4 and aarch64, the exact integer form at x86-64 and
-//   x86-64-v2.  So each level gives the same bits.  The functions are in the
+//   multiply-add of detail::fma_of_finite (fixy/fp/FmaOfFinite.h), an integer
+//   operation on the bits, a read of the table, or a conversion between float
+//   and double.  The order of the operations is the order of the source.  The
+//   build contracts no multiply and add (-ffp-contract=off, the floor
+//   crucible_fp_strict), so each fma is an explicit fma_of_finite.  It rounds
+//   one time on each target: the instruction at x86-64-v3, x86-64-v4 and
+//   aarch64, a form in doubles at x86-64 and x86-64-v2.  So each level gives
+//   the same bits.  A NaN input returns quiet_nan_of<T> before the first fma,
+//   so no fma takes a NaN.  The functions are in the
 //   inline namespace CRUCIBLE_SIMD_TARGET, so a program can link the bodies of
 //   two levels and compare their results.
 //
@@ -70,6 +72,7 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Number.h>
+#include <fixy/fp/FmaOfFinite.h>
 #include <fixy/fp/RoundToFloat.h>
 
 #include <cstdint>
@@ -213,12 +216,12 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 [[gnu::cold, gnu::noinline, nodiscard]] constexpr double exp_past_range_(double sum, ExpScale reduction) noexcept {
     if ((reduction.shifted_bits & 0x80000000u) == 0) {
         double const scale = __builtin_bit_cast(double, reduction.scale_bits - (std::uint64_t{1009} << 52));
-        return ::foundation::core::fp::fma(scale, sum, scale) * 0x1p1009;
+        return ::fixy::fp::detail::fma_of_finite(scale, sum, scale) * 0x1p1009;
     }
     double const scale = __builtin_bit_cast(double, reduction.scale_bits + (std::uint64_t{1022} << 52));
-    double result = ::foundation::core::fp::fma(scale, sum, scale);
+    double result = ::fixy::fp::detail::fma_of_finite(scale, sum, scale);
     if (result < 1.0) {
-        double const low = ::foundation::core::fp::fma(scale, sum, scale - result);
+        double const low = ::fixy::fp::detail::fma_of_finite(scale, sum, scale - result);
         double const high = 1.0 + result;
         double const rest = ((1.0 - high) + result) + low;
         result = (high + rest) - 1.0;
@@ -246,7 +249,7 @@ namespace fixy::fp {
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 [[nodiscard]] constexpr double exp(double value) noexcept {
-    using ::foundation::core::fp::fma;
+    using ::fixy::fp::detail::fma_of_finite;
     std::uint32_t top = detail::exp_top12_(value) & 0x7ffu;
     std::uint32_t constexpr tiny_top = 0x3c9u;  // the top of 2^-54
     std::uint32_t constexpr large_top = 0x408u;  // the top of 512
@@ -269,21 +272,21 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     double rounded = scaled + detail::kExpShift;
     std::uint64_t const shifted_bits = __builtin_bit_cast(std::uint64_t, rounded);
     rounded -= detail::kExpShift;
-    double reduced = fma(rounded, detail::kExpNegLn2HiN, value);
-    reduced = fma(rounded, detail::kExpNegLn2LoN, reduced);
+    double reduced = fma_of_finite(rounded, detail::kExpNegLn2HiN, value);
+    reduced = fma_of_finite(rounded, detail::kExpNegLn2LoN, reduced);
     std::uint64_t const index = 2 * (shifted_bits & detail::kExpTableMask);
     double const tail = __builtin_bit_cast(double, detail::kExpTable[index]);
     std::uint64_t const scale_bits = detail::kExpTable[index + 1] + (shifted_bits << (52 - detail::kExpTableBits));
     double const reduced_squared = reduced * reduced;
-    double const low_pair = fma(reduced, detail::kExpC3, detail::kExpC2);
-    double const high_pair = fma(reduced, detail::kExpC5, detail::kExpC4);
-    double sum = fma(reduced_squared, low_pair, tail + reduced);
-    sum = fma(reduced_squared * reduced_squared, high_pair, sum);
+    double const low_pair = fma_of_finite(reduced, detail::kExpC3, detail::kExpC2);
+    double const high_pair = fma_of_finite(reduced, detail::kExpC5, detail::kExpC4);
+    double sum = fma_of_finite(reduced_squared, low_pair, tail + reduced);
+    sum = fma_of_finite(reduced_squared * reduced_squared, high_pair, sum);
     if (top == 0) [[unlikely]] {
         return detail::exp_past_range_(sum, detail::ExpScale{scale_bits, shifted_bits});
     }
     double const scale = __builtin_bit_cast(double, scale_bits);
-    return fma(scale, sum, scale);
+    return fma_of_finite(scale, sum, scale);
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
@@ -313,7 +316,7 @@ namespace fixy::fp {
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 [[nodiscard]] constexpr float exp(float value) noexcept {
-    using ::foundation::core::fp::fma;
+    using ::fixy::fp::detail::fma_of_finite;
     std::uint32_t const magnitude = __builtin_bit_cast(std::uint32_t, value) & 0x7fffffffu;
     if (magnitude > 0x7f800000u) [[unlikely]]
         return ::foundation::core::quiet_nan_of<float>;
@@ -328,13 +331,13 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     double rounded = scaled + detail::kExpShift;
     std::uint64_t const shifted_bits = __builtin_bit_cast(std::uint64_t, rounded);
     rounded -= detail::kExpShift;
-    double const reduced = fma(rounded, detail::kExpNegLn2N, input);
+    double const reduced = fma_of_finite(rounded, detail::kExpNegLn2N, input);
     std::uint64_t const index = 2 * (shifted_bits & detail::kExpTableMask);
     double const scale =
         __builtin_bit_cast(double, detail::kExpTable[index + 1] + (shifted_bits << (52 - detail::kExpTableBits)));
-    double const pair = fma(reduced, detail::kExpFloatC3, detail::kExpFloatC2);
-    double const sum = fma(reduced * reduced, pair, reduced);
-    double const result = fma(scale, sum, scale);
+    double const pair = fma_of_finite(reduced, detail::kExpFloatC3, detail::kExpFloatC2);
+    double const sum = fma_of_finite(reduced * reduced, pair, reduced);
+    double const result = fma_of_finite(scale, sum, scale);
     if (detail::is_near_float_midpoint_(result, detail::kExpFloatTolerance)) [[unlikely]] {
         return detail::exp_float_slow_(value);
     }

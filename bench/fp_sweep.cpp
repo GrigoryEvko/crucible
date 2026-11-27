@@ -2,8 +2,8 @@
 //
 //   bench_fp_sweep float FUNCTION    each of the 2^32 floats against CORE-MATH.
 //                                    Each result must be the correctly rounded
-//                                    result.  A NaN result counts as the same
-//                                    when the oracle gives a NaN too
+//                                    result.  For a NaN of the oracle, the
+//                                    result must be the canonical NaN
 //   bench_fp_sweep double FUNCTION   a sample of doubles against MPFR: the
 //                                    largest error in units of the last place
 //                                    must be at most the bound of the header,
@@ -117,15 +117,18 @@ constexpr ::fixy::FixedArray<Function, 3> kFunctions{Function::Exp, Function::Lo
     }
 }
 
-// Two results agree when their bits are the same, or when both are a NaN.
-[[nodiscard]] bool agree(float left, float right) noexcept {
-    if (::fixy::fp::is_nan(left) && ::fixy::fp::is_nan(right)) return true;
-    return ::fixy::bit_cast<std::uint32_t>(left) == ::fixy::bit_cast<std::uint32_t>(right);
+// The result of fixy/fp agrees with the oracle when their bits are the same.
+// For a NaN of the oracle, the result must have the bits of the canonical
+// NaN quiet_nan_of<T>, because the NaN of the oracle has the bits of its own
+// library.
+[[nodiscard]] bool agree(float got, float oracle) noexcept {
+    float const expected = ::fixy::fp::is_nan(oracle) ? ::fixy::quiet_nan_of<float> : oracle;
+    return ::fixy::bit_cast<std::uint32_t>(got) == ::fixy::bit_cast<std::uint32_t>(expected);
 }
 
-[[nodiscard]] bool agree(double left, double right) noexcept {
-    if (::fixy::fp::is_nan(left) && ::fixy::fp::is_nan(right)) return true;
-    return ::fixy::bit_cast<std::uint64_t>(left) == ::fixy::bit_cast<std::uint64_t>(right);
+[[nodiscard]] bool agree(double got, double oracle) noexcept {
+    double const expected = ::fixy::fp::is_nan(oracle) ? ::fixy::quiet_nan_of<double> : oracle;
+    return ::fixy::bit_cast<std::uint64_t>(got) == ::fixy::bit_cast<std::uint64_t>(expected);
 }
 
 // Each of the 2^32 floats.  O(2^32).

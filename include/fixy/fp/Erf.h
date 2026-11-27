@@ -20,7 +20,7 @@
 //
 // Operations
 //   As in fixy/fp/Exp.h: IEEE 754 add, subtract and multiply, explicit fma of
-//   fp::fma, integer operations on the bits, table reads and one conversion
+//   detail::fma_of_finite, integer operations on the bits, table reads and one conversion
 //   of a bounded value to an integer, in the order of the source, under the
 //   floor crucible_fp_strict (-ffp-contract=off).  The functions are in the
 //   inline namespace CRUCIBLE_SIMD_TARGET.
@@ -63,6 +63,7 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Number.h>
+#include <fixy/fp/FmaOfFinite.h>
 #include <fixy/fp/RoundToFloat.h>
 
 #include <cstdint>
@@ -301,12 +302,12 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 // rounds the product one time at the precision of its result.  The low part
 // of 2/sqrt(pi) times x is then below 2^-1078, a sixteenth of the last place.
 [[nodiscard]] constexpr double erf_tiny_(double value) noexcept {
-    using ::foundation::core::fp::fma;
+    using ::fixy::fp::detail::fma_of_finite;
     if (::foundation::core::fp::abs(value) < 0x1p-1022) {
-        return fma(kErfTwoOverRootPiHigh, value, kErfTwoOverRootPiLow * value);
+        return fma_of_finite(kErfTwoOverRootPiHigh, value, kErfTwoOverRootPiLow * value);
     }
     double const scaled = value * 0x1p64;
-    return fma(kErfTwoOverRootPiHigh, scaled, kErfTwoOverRootPiLow * scaled) * 0x1p-64;
+    return fma_of_finite(kErfTwoOverRootPiHigh, scaled, kErfTwoOverRootPiLow * scaled) * 0x1p-64;
 }
 
 // erf(x) for |x| < 1/2: x (2/sqrt(pi) + z P(z)) with z = x^2, with the terms P0
@@ -314,14 +315,14 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 // last fma, so the result rounds one time beside the small error of the tail.
 template <int Degree>
 [[nodiscard]] constexpr double erf_small_(double value) noexcept {
-    using ::foundation::core::fp::fma;
+    using ::fixy::fp::detail::fma_of_finite;
     double const square = value * value;
     double sum = kErfP[Degree];
     for (int term = Degree - 1; term >= 0; --term) {
-        sum = fma(square, sum, kErfP[term]);
+        sum = fma_of_finite(square, sum, kErfP[term]);
     }
-    double const tail = fma(square, sum, kErfTwoOverRootPiLow);
-    return fma(kErfTwoOverRootPiHigh, value, value * tail);
+    double const tail = fma_of_finite(square, sum, kErfTwoOverRootPiLow);
+    return fma_of_finite(kErfTwoOverRootPiHigh, value, value * tail);
 }
 
 // erf(|x|) for 1/2 <= |x| < 6, with the Taylor terms c1 to c(Degree) of the
@@ -336,9 +337,9 @@ template <int Degree>
     ErfInterval const& entry = kErfTable[index];
     double sum = entry.terms[Degree - 1];
     for (int term = Degree - 2; term >= 0; --term) {
-        sum = ::foundation::core::fp::fma(offset, sum, entry.terms[term]);
+        sum = ::fixy::fp::detail::fma_of_finite(offset, sum, entry.terms[term]);
     }
-    return entry.value_high + ::foundation::core::fp::fma(offset, sum, entry.value_low);
+    return entry.value_high + ::fixy::fp::detail::fma_of_finite(offset, sum, entry.value_low);
 }
 
 // The midpoint inputs of the float form, from the sweep of the oracle.  A
