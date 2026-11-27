@@ -129,9 +129,11 @@
 //   the flag with acquire order and then takes the owner.  The rings of
 //   fixy/concurrent/ hold only trivially copyable values, and the Box
 //   channel holds only a Box, so the base has no channel of an owner of
-//   bytes.  Each allocator goes through the same Mailbox.  The cells and the
-//   slots of a row lie on the heap, one pointer away from their owner.  So a
-//   row of a tree whose cells lie inline is not in one series with these rows.
+//   bytes.  Each allocator goes through the same Mailbox.  The cells of a
+//   Mailbox lie inline in it, and the Mailboxes of a row lie in one array on
+//   the heap.  The slots of a row lie on the heap, one pointer away from
+//   their owner.  So a row of a tree whose cells lie one pointer away from
+//   their Mailbox is not in one series with these rows.
 //
 // Threads of a row
 //   A row of N threads runs on the CPUs of the slots 0 to N - 1 of the
@@ -221,8 +223,16 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <foundation/AlignedBytes.h>
+#include <foundation/ByteSeal.h>
+#include <foundation/ChannelBinding.h>
+#include <foundation/Linear.h>
 #include <foundation/Quarantine.h>
+#include <foundation/SoleWriterProof.h>
+#include <foundation/Transfer.h>
+#include <foundation/core/KeyedArray.h>
+#include <foundation/core/KeyedMint.h>
 #include <foundation/core/Philox.h>
+#include <foundation/core/TypeParts.h>
 #include <foundation/effects/Effect.h>
 
 #include <array>
@@ -525,10 +535,16 @@ struct BaseAdapter {
     // element door that holds the whole loop, so the loop takes one check
     // before its first write.  The barrier after each write keeps each store
     // in the code.  Only cache-scratch writes a block again, and its blocks
-    // have the natural alignment.
+    // have the natural alignment.  The block lends its byte in place only
+    // through a keyed holder (foundation/core/KeyedArray.h), so the door
+    // holds the block in a holder of a fresh brand for the loop and then
+    // takes it back.
     [[gnu::always_inline]] static void rewrite(Written<BlockAlignment::natural>& block, Stamp stamp) noexcept {
-        block.with_element(
-            0,
+        auto [bytes, key] = ::foundation::core::mint_keyed_owner(
+            ::foundation::core::keyed_heap_array_owner<std::uint8_t, alignment_bytes(BlockAlignment::natural)>,
+            std::move(block));
+        bytes.with_element(
+            key, 0,
             [stamp] [[gnu::always_inline]] (std::uint8_t& first) noexcept {
                 for (std::uint32_t write = 0; write < kRewrites; ++write) {
                     first = byte_of(stamp);
@@ -536,6 +552,7 @@ struct BaseAdapter {
                 }
             },
             [] noexcept { ::fixy::fatal("a Written block holds at least 16 bytes"); });
+        block = bytes.take(std::move(key));
     }
 
     template <BlockAlignment Align>
@@ -926,48 +943,119 @@ namespace bench_alloc {
 
 // The ring of one producer thread and one consumer thread that moves owners
 // of blocks (the hand-off).  The producer owns head_ and the consumer owns
-// tail_, each on its own cache line.
+// tail_, each on its own cache line.  Each part of a Mailbox is a part that
+// two threads can write at the same time: the cells, the two cursors of one
+// writer each, and the two tokens, which hold no byte.  So the threads of a
+// row lend one Mailbox to its producer and to its consumer at the same time.
+// A Mailbox does not move, and its end ends its two tokens, so the end of its
+// scope is the door of the tokens (scope_end_door of foundation/Linear.h).
 template <class Item>
-class Mailbox {
+class[[= ::foundation::linear::scope_end_door{}]] Mailbox {
+    // The roles of the one writer of each cursor.
+    struct push_role_ final {};
+    struct pop_role_ final {};
+
 public:
+    // One cell of the ring.  The producer claims an empty cell: it reads the
+    // mark with acquire, writes the item, and gives the cell to the consumer
+    // with a release store of the mark.  The consumer claims a full cell in
+    // the same way and gives it back.  So the item of a cell has one writer at
+    // each time, the holder of the claim, and the acquire of the mark orders
+    // the write of the last holder before it.  The doors that write the item
+    // take the token of their role, which only the Mailbox holds, so the
+    // class states synchronized{} (foundation/Transfer.h).  No door keeps a
+    // borrow that a caller gives it, so it states synchronized_by_proof{}
+    // too (foundation/core/TypeParts.h).
+    class[[= ::foundation::transfer::synchronized{}]][[= ::foundation::core::synchronized_by_proof{}]] alignas(64)
+        Cell {
+    public:
+        // The token of the one producer and of the one consumer of the cells
+        // of a Mailbox.  A token holds no byte, and only the Mailbox builds
+        // one, with the Mailbox.
+        class[[= ::foundation::linear::authority{}]][[= ::foundation::linear::linear{}]] Producer final {
+            constexpr Producer() noexcept = default;
+            friend class Mailbox;
+
+            [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+        public:
+            Producer(Producer const&) = delete("a Mailbox has one producer");
+            Producer& operator=(Producer const&) = delete("a Mailbox has one producer");
+        };
+        class[[= ::foundation::linear::authority{}]][[= ::foundation::linear::linear{}]] Consumer final {
+            constexpr Consumer() noexcept = default;
+            friend class Mailbox;
+
+            [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+        public:
+            Consumer(Consumer const&) = delete("a Mailbox has one consumer");
+            Consumer& operator=(Consumer const&) = delete("a Mailbox has one consumer");
+        };
+
+        // Claims the cell when it is empty and puts item in it, or gives item
+        // back when the cell is full.
+        [[nodiscard, gnu::always_inline]] ::fixy::Option<Item> try_claim_empty(Producer& /*producer*/,
+                                                                               Item&& item) noexcept {
+            if (is_full_.load_acquire()) return ::fixy::Option<Item>::some(std::move(item));
+            item_ = ::fixy::Option<Item>::some(std::move(item));
+            is_full_.store_release(true);
+            return ::fixy::none;
+        }
+
+        // Claims the cell when it is full and takes its item, or gives none
+        // when the cell is empty.
+        [[nodiscard, gnu::always_inline]] ::fixy::Option<Item> try_claim_full(Consumer& /*consumer*/) noexcept {
+            if (!is_full_.load_acquire()) return ::fixy::none;
+            ::fixy::Option<Item> taken =
+                ::fixy::Option<Item>::some(std::move(item_).expect("a full cell of a Mailbox holds an item"));
+            is_full_.store_release(false);
+            return taken;
+        }
+
+    private:
+        ::fixy::Atomic<bool> is_full_{false};
+        ::fixy::Option<Item> item_{};
+    };
+
     // Puts the item into the next cell, or gives it back when that cell is
     // full.
     [[nodiscard, gnu::always_inline]] ::fixy::Option<Item> try_push(Item&& item) noexcept {
-        // The producer writes only an empty cell, and the release store gives the cell to the consumer.
-        bool const is_pushed = cells_.with_masked(head_, [&item] [[gnu::always_inline]] (Cell & cell) noexcept {
-            if (cell.is_full.load_acquire()) return false;
-            cell.item = ::fixy::Option<Item>::some(std::move(item));
-            cell.is_full.store_release(true);
-            return true;
-        });
-        if (!is_pushed) return ::fixy::Option<Item>::some(std::move(item));
-        ++head_;
-        return ::fixy::none;
+        ::foundation::SoleWriterProof<Mailbox, push_role_> const proof{};
+        std::uint64_t const head = head_.load_owned(proof);
+        ::fixy::Option<Item> rest =
+            cells_.with_element(cell_of_(head), [this, &item] [[gnu::always_inline]] (Cell & cell) noexcept {
+                return cell.try_claim_empty(producer_, std::move(item));
+            });
+        if (rest.is_none()) head_.store_release(proof, head + 1);
+        return rest;
     }
 
     // The oldest item, or none when the ring is empty.
     [[nodiscard, gnu::always_inline]] ::fixy::Option<Item> try_pop() noexcept {
-        ::fixy::Option<Item> taken{};
-        // The consumer writes only a full cell, and the release store gives the cell back to the producer.
-        bool const is_taken = cells_.with_masked(tail_, [&taken] [[gnu::always_inline]] (Cell & cell) noexcept {
-            if (!cell.is_full.load_acquire()) return false;
-            taken = ::fixy::Option<Item>::some(std::move(cell.item).expect("a full cell of a Mailbox holds an item"));
-            cell.is_full.store_release(false);
-            return true;
-        });
-        if (is_taken) ++tail_;
+        ::foundation::SoleWriterProof<Mailbox, pop_role_> const proof{};
+        std::uint64_t const tail = tail_.load_owned(proof);
+        ::fixy::Option<Item> taken =
+            cells_.with_element(cell_of_(tail), [this] [[gnu::always_inline]] (Cell & cell) noexcept {
+                return cell.try_claim_full(consumer_);
+            });
+        if (taken.is_some()) tail_.store_release(proof, tail + 1);
         return taken;
     }
 
 private:
-    struct alignas(64) Cell {
-        ::fixy::Atomic<bool> is_full{false};
-        ::fixy::Option<Item> item{};
-    };
+    // The cell of a cursor: the count of the cells is a power of two.
+    [[nodiscard, gnu::always_inline]] static ::fixy::Index<kMailboxCells> cell_of_(std::uint64_t cursor) noexcept {
+        static_assert(::fixy::has_single_bit(kMailboxCells), "the cursor of a Mailbox wraps by a mask");
+        return ::fixy::Index<kMailboxCells>::check(cursor & (kMailboxCells - 1))
+            .expect("a masked cursor is below the count of the cells");
+    }
 
-    ::fixy::MaskedArray<Cell> cells_ = ::fixy::mint_masked_array<Cell>(bench_alloc(), kMailboxCells);
-    alignas(64) std::uint64_t head_ = 0;
-    alignas(64) std::uint64_t tail_ = 0;
+    ::fixy::FixedArray<Cell, kMailboxCells> cells_{};
+    alignas(64)::fixy::Atomic<std::uint64_t, ::foundation::SoleWriterProof<Mailbox, push_role_>> head_{0};
+    alignas(64)::fixy::Atomic<std::uint64_t, ::foundation::SoleWriterProof<Mailbox, pop_role_>> tail_{0};
+    [[no_unique_address]] typename Cell::Producer producer_{};
+    [[no_unique_address]] typename Cell::Consumer consumer_{};
 };
 
 }  // namespace bench_alloc
@@ -989,13 +1077,15 @@ template <class Item>
 // Gives the Mailbox of slot to body, in place, through the element door of
 // the array.  Two threads use one Mailbox at the same time: its producer
 // writes head_ and the empty cells, and its consumer writes tail_ and the
-// full cells.  The acquire and release of the flag of each cell order the
-// two, so the element is safe for these concurrent writes.  The door writes
-// no state of the array, so the threads of a row call it on one array at the
+// full cells.  Each part of a Mailbox is a part that two threads can write
+// at the same time, so the element is Synchronized.  The door writes no
+// state of the array, so the threads of a row call it on one array at the
 // same time.
 template <class Item, class Body>
 [[gnu::always_inline]] inline void with_mailbox_of(Mailboxes<Item>& boxes, bench::ThreadSlot slot,
                                                    Body&& body) noexcept {
+    static_assert(::foundation::transfer::Synchronized<Mailbox<Item>>,
+                  "the threads of a row lend one Mailbox to its producer and to its consumer at the same time");
     boxes.with_element(slot.raw(), static_cast<Body&&>(body),
                        [] noexcept { ::fixy::fatal("a slot of a row has a Mailbox"); });
 }
@@ -1102,11 +1192,45 @@ push_waiting(RowControl const& control, Mailbox<Item>& mailbox, Item&& item) noe
 //   kRow                   its RowKind
 
 // The slots of a thread that replaces random blocks, with its draws.  The
-// count of the slots is a power of two.
+// count of the slots is a power of two.  The slots lend a block in place
+// only with the key of their brand, which the state holds beside them (the
+// held key of foundation/core/KeyedMint.h).  The holder of the slots does not
+// move, so the state does not move either: a workload builds it in place,
+// and its constructor runs the first fill.
 template <class Block, std::size_t Slots>
 struct SlotState {
-    ::fixy::MaskedArray<::fixy::Option<Block>> slots =
-        ::fixy::mint_masked_array<::fixy::Option<Block>>(bench_alloc(), Slots);
+    // The brand of the slots.  Its proof has a private constructor, and the
+    // state is its one friend, so only the state mints the key of its slots.
+    struct SlotsBrand final {
+        class key_proof final {
+            friend struct SlotState;
+
+            constexpr key_proof() noexcept {}
+
+        public:
+            key_proof(key_proof const&) = delete("a proof of the key of the slots stays with its state");
+            key_proof& operator=(key_proof const&) = delete("a proof of the key of the slots stays with its state");
+        };
+    };
+
+    // The state of a thread with its draws, its slot and the count of the
+    // threads.  fill runs on the built state, so the first fill writes the
+    // slots in place.
+    template <class Fill>
+        requires std::is_nothrow_invocable_v<Fill&, SlotState&>
+    SlotState(Draws draws_of_thread, bench::ThreadSlot own_slot, ThreadCount thread_count, Fill&& fill) noexcept
+        : draws{draws_of_thread}, slot{own_slot}, threads{thread_count} {
+        fill(*this);
+    }
+
+    SlotState(SlotState const&) = delete("the slots of a thread do not move");
+    SlotState& operator=(SlotState const&) = delete("the slots of a thread do not move");
+
+    ::foundation::core::KeyedMaskedArray<::fixy::Option<Block>, SlotsBrand> slots{
+        ::fixy::mint_masked_array<::fixy::Option<Block>>(bench_alloc(), Slots)};
+    // The one key of the slots.  The key is empty, so it takes no byte.
+    [[no_unique_address]] ::foundation::core::LoanKey<SlotsBrand> slots_key{
+        ::foundation::core::mint_held_key<SlotsBrand>(typename SlotsBrand::key_proof{})};
     Draws draws;
     Tally tally{};
     bench::ThreadSlot slot{0};
@@ -1123,25 +1247,29 @@ template <AllocatorAdapter A, std::size_t Slots, std::uint32_t HandOff, class By
                                                        Bytes const& bytes_of_draw) noexcept {
     using Block = BlockOf<A, BlockAlignment::natural>;
     std::uint32_t const draw = state.draws.next();
+    // The body captures the parts of the state that it uses, and not the
+    // state, so it reaches no key of the slots.
     state.slots.with_masked(
-        draw, [&inboxes, &state, &bytes_of_draw, draw] [[gnu::always_inline]] (::fixy::Option<Block> & slot) noexcept {
+        state.slots_key, draw,
+        [&inboxes, &tally = state.tally, own = state.slot, threads = state.threads, &bytes_of_draw,
+         draw] [[gnu::always_inline]] (::fixy::Option<Block> & slot) noexcept {
             if (slot.is_some()) {
                 Block block = std::move(slot).expect("the test above found a block");
                 bool const is_handed =
-                    HandOff != 0 && state.threads.raw() > 1 && (draw >> 20) % (HandOff == 0 ? 1 : HandOff) == 0;
+                    HandOff != 0 && threads.raw() > 1 && (draw >> 20) % (HandOff == 0 ? 1 : HandOff) == 0;
                 if (is_handed) {
-                    with_mailbox_of(inboxes, next_slot(state.slot, state.threads),
-                                    [&state, &block] [[gnu::always_inline]] (Mailbox<Block> & next) noexcept {
+                    with_mailbox_of(inboxes, next_slot(own, threads),
+                                    [&tally, &block] [[gnu::always_inline]] (Mailbox<Block> & next) noexcept {
                                         ::fixy::Option<Block> rest = next.try_push(std::move(block));
                                         if (rest.is_some())
-                                            give_block<A>(state.tally,
+                                            give_block<A>(tally,
                                                           std::move(rest).expect("the test above found a block"));
                                     });
                 } else {
-                    give_block<A>(state.tally, std::move(block));
+                    give_block<A>(tally, std::move(block));
                 }
             }
-            slot = ::fixy::Option<Block>::some(take_block<A>(state.tally, bytes_of_draw(draw >> 8)));
+            slot = ::fixy::Option<Block>::some(take_block<A>(tally, bytes_of_draw(draw >> 8)));
         });
     if constexpr (HandOff != 0) {
         with_mailbox_of(inboxes, state.slot, [&state] [[gnu::always_inline]] (Mailbox<Block> & own) noexcept {
@@ -1154,17 +1282,22 @@ template <AllocatorAdapter A, std::size_t Slots, std::uint32_t HandOff, class By
     }
 }
 
-// The release of each block of the slots and of the inbox of a thread.
+// The release of each block of the slots and of the inbox of a thread.  It
+// runs after the stop, so its loop is outside each window that a row times.
+// The state lends the slots through the keyed element door, and the key stays
+// in the state, because the state is borrowed here.  The storage of the slots
+// ends with the state.  Complexity: O(Slots).
 template <AllocatorAdapter A, std::size_t Slots>
 void release_slots(Mailboxes<BlockOf<A, BlockAlignment::natural>>& inboxes,
                    SlotState<BlockOf<A, BlockAlignment::natural>, Slots>& state) noexcept {
     using Block = BlockOf<A, BlockAlignment::natural>;
-    state.slots = ::fixy::with_mut(std::move(state.slots), [&tally = state.tally](auto run) noexcept {
-        for (::fixy::Option<Block>& slot : run) {
-            if (slot.is_none()) continue;
-            give_block<A>(tally, std::move(slot).expect("the test above found a block"));
-        }
-    });
+    for (std::uint64_t position = 0; position < Slots; ++position) {
+        state.slots.with_masked(state.slots_key, position,
+                                [&tally = state.tally](::fixy::Option<Block>& slot) noexcept {
+                                    if (slot.is_none()) return;
+                                    give_block<A>(tally, std::move(slot).expect("the test above found a block"));
+                                });
+    }
     with_mailbox_of(inboxes, state.slot, [&state](Mailbox<Block>& own) noexcept {
         for (::fixy::Option<Block> received = own.try_pop(); received.is_some(); received = own.try_pop())
             give_block<A>(state.tally, std::move(received).expect("the loop test found a block"));
@@ -1196,10 +1329,10 @@ struct ReplaceWorkload {
     }
 
     [[nodiscard]] static Local start(Shared& shared, bench::ThreadSlot slot, ThreadCount threads) noexcept {
-        Local local{.draws = Draws{Kind, slot}, .slot = slot, .threads = threads};
-        for (std::size_t filled = 0; filled < Slots; ++filled)
-            replace_random_slot<A, Slots, 0>(shared.inboxes, local, bytes_of_draw);
-        return local;
+        return Local{Draws{Kind, slot}, slot, threads, [&shared](Local& local) noexcept {
+                         for (std::size_t filled = 0; filled < Slots; ++filled)
+                             replace_random_slot<A, Slots, 0>(shared.inboxes, local, bytes_of_draw);
+                     }};
     }
 
     [[nodiscard]] static Role role_of(bench::ThreadSlot /*slot*/) noexcept { return Role::producer; }
@@ -1234,10 +1367,10 @@ struct AllocTest {
     }
 
     [[nodiscard]] static Local start(Shared& shared, bench::ThreadSlot slot, ThreadCount threads) noexcept {
-        Local local{.draws = Draws{kRow, slot}, .slot = slot, .threads = threads};
-        for (std::size_t filled = 0; filled < kSlots; ++filled)
-            replace_random_slot<A, kSlots, 0>(shared.inboxes, local, pareto_bytes);
-        return local;
+        return Local{Draws{kRow, slot}, slot, threads, [&shared](Local& local) noexcept {
+                         for (std::size_t filled = 0; filled < kSlots; ++filled)
+                             replace_random_slot<A, kSlots, 0>(shared.inboxes, local, pareto_bytes);
+                     }};
     }
 
     [[nodiscard]] static Role role_of(bench::ThreadSlot /*slot*/) noexcept { return Role::producer; }
@@ -2115,9 +2248,68 @@ struct RoundWorkload {
     static constexpr std::uint32_t kReplaces = 50000;
     using Blocks = ::fixy::MaskedArray<::fixy::Option<Block>>;
 
+    // The array of kSlots empty slots.
+    [[nodiscard]] static Blocks make_blocks() noexcept {
+        return ::fixy::mint_masked_array<::fixy::Option<Block>>(bench_alloc(), kSlots);
+    }
+
+    // The blocks of one slot of one bank (the rounds).  In one round, the
+    // thread of a slot takes the blocks of one cell of one bank and gives its
+    // own blocks to its cell of the other bank, so no two threads of a round
+    // name one cell, and the join of the round orders each write before the
+    // next round.  A thread claims a cell at that step of its round, with one
+    // atomic exchange of the mark of the cell, and the end of the claim gives
+    // the mark back with a release store.  A second claim of a held cell ends
+    // the process.  Only the holder of a claim writes the blocks, so the
+    // class states synchronized{} (foundation/Transfer.h).
+    class[[= ::foundation::transfer::synchronized{}]] BankCell {
+    public:
+        // The claim of a cell: the proof of its one writer, from the claim
+        // door to the end of the claim.
+        class[[= ::foundation::linear::authority{}]] Claim final {
+            Claim(BankCell& cell, ::foundation::BindingKey<BankCell> key) noexcept : cell_{cell, key} {}
+            friend class BankCell;
+
+            ::foundation::ChannelBinding<BankCell> cell_;
+
+        public:
+            Claim(Claim const&) = delete("a claim of a cell of a bank is the one writer of the cell");
+            Claim& operator=(Claim const&) = delete("a claim of a cell of a bank is the one writer of the cell");
+            Claim(Claim&&) = delete("a claim of a cell of a bank lives in the step of its round");
+            Claim& operator=(Claim&&) = delete("a claim of a cell of a bank lives in the step of its round");
+            ~Claim() { cell_->is_claimed_.store_release(false); }
+        };
+
+        BankCell() noexcept = default;
+
+        BankCell(BankCell const&) = delete("a cell of a bank stays in its bank");
+        BankCell& operator=(BankCell const&) = delete("a cell of a bank stays in its bank");
+
+        // The claim door of the cell: one exchange of the mark takes the
+        // cell, and the writes of the blocks happen only on the thread of the
+        // claim, through with_blocks, until the claim ends.
+        [[nodiscard]] Claim claim() noexcept {
+            if (is_claimed_.exchange_acq_rel(true)) [[unlikely]] {
+                ::fixy::fatal("two threads of a round claimed one cell of a bank");
+            }
+            return Claim{*this, ::foundation::BindingKey<BankCell>{}};
+        }
+
+        // Gives the blocks of the cell to body, in place, for the holder of a
+        // claim.
+        template <class Body>
+        auto with_blocks(Claim& /*claim*/, Body&& body) noexcept {
+            return static_cast<Body&&>(body)(blocks_);
+        }
+
+    private:
+        ::fixy::Atomic<bool> is_claimed_{false};
+        Blocks blocks_ = make_blocks();
+    };
+
     struct Shared {
         // The two banks of the live blocks that one round gives to the next.
-        ::fixy::HeapArray<Blocks> banks;
+        ::fixy::HeapArray<BankCell> banks;
         ::fixy::FixedArray<Tally, kMaxThreads> tallies{};
         std::uint64_t round = 0;
         ThreadCount threads{1};
@@ -2126,15 +2318,10 @@ struct RoundWorkload {
     [[nodiscard]] static ::fixy::Box<Shared> mint_shared(ThreadCount threads) noexcept {
         ::fixy::Box<Shared> shared = ::fixy::mint_box<Shared>(bench_alloc());
         shared->banks =
-            ::fixy::mint_heap_array_with<Blocks>(bench_alloc(), 2 * std::size_t{threads.raw()},
-                                                 [](std::size_t /*position*/) noexcept { return make_blocks(); });
+            ::fixy::mint_heap_array_with<BankCell>(bench_alloc(), 2 * std::size_t{threads.raw()},
+                                                   [](std::size_t /*position*/) noexcept { return BankCell{}; });
         shared->threads = threads;
         return shared;
-    }
-
-    // The array of kSlots empty slots.
-    [[nodiscard]] static Blocks make_blocks() noexcept {
-        return ::fixy::mint_masked_array<::fixy::Option<Block>>(bench_alloc(), kSlots);
     }
 
     // The release of each block of blocks.
@@ -2147,15 +2334,20 @@ struct RoundWorkload {
     }
 
     // Gives the array of slot in bank to body, in place, through the element
-    // door of the banks.  The threads of one round call the door on the one
-    // array of the banks at the same time, and the door writes no state of
-    // that array.  Each thread of a round names other elements (the rounds),
-    // so no two threads write one element, and the join of the round orders
-    // its writes before the next round.
+    // door of the banks and a claim of the cell.  The threads of one round
+    // call the door on the one array of the banks at the same time, and the
+    // door writes no state of that array.  Each thread of a round names other
+    // cells (the rounds), so no two claims of a round meet, and the join of
+    // the round orders its writes before the next round.
     template <class Body>
     static void with_bank_of(Shared& shared, ::fixy::Index<2> bank, bench::ThreadSlot slot, Body&& body) noexcept {
-        shared.banks.with_element(bank.raw() * shared.threads.raw() + slot.raw(), static_cast<Body&&>(body),
-                                  [] noexcept { ::fixy::fatal("a bank holds each slot"); });
+        shared.banks.with_element(
+            bank.raw() * shared.threads.raw() + slot.raw(),
+            [&body](BankCell& cell) noexcept {
+                typename BankCell::Claim claim = cell.claim();
+                cell.with_blocks(claim, static_cast<Body&&>(body));
+            },
+            [] noexcept { ::fixy::fatal("a bank holds each slot"); });
     }
 
     // The body of the thread of a slot in a round.  Each thread of a round
@@ -2170,7 +2362,10 @@ struct RoundWorkload {
     // The ops of the thread of a slot in a round, with the tally of the slot.
     static void run_round_with(Shared& shared, bench::ThreadSlot slot, Tally& tally) noexcept {
         Draws draws{Kind, bench::ThreadSlot{static_cast<std::uint32_t>(slot.raw() + shared.round * kMaxThreads)}};
-        Blocks local = make_blocks();
+        // The live blocks of the thread lend a block in place only with the
+        // key of a holder of a fresh brand (foundation/core/KeyedArray.h).
+        auto [local, key] = ::foundation::core::mint_keyed_owner(
+            ::foundation::core::keyed_masked_array_owner<::fixy::Option<Block>>, make_blocks());
         if constexpr (Kind == RowKind::mstress) {
             std::uint32_t const from = static_cast<std::uint32_t>((slot.raw() + shared.round) % shared.threads.raw());
             const ::fixy::Index<2> taken_bank =
@@ -2180,17 +2375,18 @@ struct RoundWorkload {
         }
         for (std::uint32_t replace = 0; replace < kReplaces; ++replace) {
             std::uint32_t const draw = draws.next();
-            local.with_masked(draw, [&tally, draw](::fixy::Option<Block>& held) noexcept {
+            local.with_masked(key, draw, [&tally, draw](::fixy::Option<Block>& held) noexcept {
                 if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
                 held = ::fixy::Option<Block>::some(take_block<A>(tally, uniform_bytes<16, 1008>(draw >> 8)));
             });
         }
+        Blocks live = local.take(std::move(key));
         if constexpr (Kind == RowKind::mstress) {
             const ::fixy::Index<2> given_bank =
                 ::fixy::Index<2>::check(shared.round % 2).expect("a round modulo two is below two");
-            with_bank_of(shared, given_bank, slot, [&local](Blocks& given) noexcept { given = std::move(local); });
+            with_bank_of(shared, given_bank, slot, [&live](Blocks& given) noexcept { given = std::move(live); });
         } else {
-            give_each(local, tally);
+            give_each(live, tally);
         }
     }
 
@@ -2199,8 +2395,10 @@ struct RoundWorkload {
         auto const first = ::fixy::Index<kMaxThreads>::check(0).expect("a round has slot 0");
         Tally tally = shared.tallies.at(first);
         shared.banks = ::fixy::with_mut(std::move(shared.banks), [&tally](auto banks) noexcept {
-            for (Blocks& blocks : banks)
-                give_each(blocks, tally);
+            for (BankCell& cell : banks) {
+                typename BankCell::Claim claim = cell.claim();
+                cell.with_blocks(claim, [&tally](Blocks& blocks) noexcept { give_each(blocks, tally); });
+            }
         });
         shared.tallies.set(first, tally);
     }
