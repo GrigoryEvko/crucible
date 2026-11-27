@@ -187,6 +187,34 @@ void test_tensor_word() {
     ::fixy::check::pass(kTest, "  test_tensor_word: PASSED\n");
 }
 
+// The element type Undefined is the byte 0xFF of the word of a tensor, and it
+// sets no bit of another field.  So two tensors of that element type that
+// differ only in the layout, the device or the rank give two words.
+void test_undefined_dtype_keeps_each_field() {
+    const crucible::TensorMeta undefined{};
+    CRUCIBLE_TEST_ASSERT(kTest, undefined.dtype == ScalarType::Undefined);
+    CRUCIBLE_TEST_ASSERT(kTest, packed_fields_of(undefined) == 0x0000000000FF00FFULL
+                                    && "the element type Undefined sets the bits of another field");
+
+    crucible::TensorMeta sparse = undefined;
+    sparse.layout = crucible::Layout::SparseCsr;
+    crucible::TensorMeta on_device = undefined;
+    on_device.device_type = crucible::DeviceType::CUDA;
+    on_device.device_idx = 1;
+    crucible::TensorMeta conjugate = undefined;
+    conjugate.flags = crucible::meta_flags::IS_CONJ;
+    const ::fixy::FixedArray<crucible::TensorMeta, 3> others{sparse, on_device, conjugate};
+    const uint64_t undefined_word =
+        crucible::pack_tensor_word(undefined, crucible::detail::dim_hash_scalar_det(undefined));
+    for (const crucible::TensorMeta& other : others.view()) {
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::pack_tensor_word(other, crucible::detail::dim_hash_scalar_det(other))
+                                            != undefined_word
+                                        && "two tensors of the element type Undefined give one word");
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, packed_fields_of(on_device) == 0x00000000000101FFULL);
+    ::fixy::check::pass(kTest, "  test_undefined_dtype_keeps_each_field: PASSED\n");
+}
+
 // The placement word of the overflow digest: the word of a tensor with no rank
 // field.  The digest folds the rank, each extent and stride, and then the
 // placement word with the storage offset.
@@ -271,6 +299,7 @@ int main() {
     test_recipe_word();
     test_numerics_policy_word();
     test_tensor_word();
+    test_undefined_dtype_keeps_each_field();
     test_overflow_placement_word();
     test_guard_header_word();
     test_entry_flags_word();

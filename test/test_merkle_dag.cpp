@@ -633,15 +633,17 @@ two_ops(::fixy::BumpArena<crucible::DagArena>& arena, SchemaHash first, SchemaHa
     // Both were reachable from ordinary metadata, which is why these two
     // metas and not some contrived pair:
     //
-    //   meta_packed == ~0   The pack is
+    //   meta_packed == ~0   The pack was
     //                         dtype | device_type << 8 | uint8(device_idx) << 16
     //                       and ScalarType is int8_t with Undefined == -1.
-    //                       to_underlying gives int8_t(-1), which
-    //                       sign-extends to 0xFFFF'FFFF'FFFF'FFFF and swamps
-    //                       the two shifted fields as well.  Any op whose
-    //                       first input is an undefined optional tensor
-    //                       landed here.  Note the third field already has
-    //                       the uint8_t cast the other two are missing.
+    //                       to_underlying gave int8_t(-1), which
+    //                       sign-extended to 0xFFFF'FFFF'FFFF'FFFF and swamped
+    //                       each other field.  Any op whose first input was
+    //                       an undefined optional tensor landed here.  Since
+    //                       version 20 of the image, each field of the pack
+    //                       is the byte of its value, so this meta packs to
+    //                       0x00FF'00FF: the byte of the host index and the
+    //                       byte of Undefined.
     //
     //   meta_packed == 0    ScalarType::Byte is 0, DeviceType::CPU is 0, and
     //                       device index 0 is ordinary, so a uint8 tensor on

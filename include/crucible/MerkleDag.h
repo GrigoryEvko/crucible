@@ -788,7 +788,8 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 //   - The XOR fold of its extents and strides (dims, DimHash.h).
 //   - Its element type and its device, in the bits 0 to 23.  The device comes
 //     through device_of, so the word agrees with the equality of a device:
-//     one index for the host.
+//     one index for the host.  Each field is the byte of its value, so the
+//     element type Undefined (-1) is the byte 0xFF and sets no other field.
 //   - Its rank, its layout and its negative and conjugate bits, in the bits
 //     24 to 47.  A lane of extent zero and stride zero adds nothing to the
 //     fold of the dims, so only the rank tells [4, 0] from [4].
@@ -812,8 +813,8 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     constexpr auto kValueBits = static_cast<uint8_t>(meta_flags::IS_NEG | meta_flags::IS_CONJ);
     const uint64_t per_dim_hash_xor = raw_dim_hash(dims);
     const TensorDevice device = device_of(meta);
-    const uint64_t meta_packed = static_cast<uint64_t>(std::to_underlying(meta.dtype))
-                               | (static_cast<uint64_t>(std::to_underlying(device.type())) << 8)
+    const uint64_t meta_packed = static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(meta.dtype))
+                               | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.type())) << 8)
                                | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(device.index())) << 16)
                                | (uint64_t{meta.ndim} << 24)
                                | (static_cast<uint64_t>(::fixy::bit_cast<uint8_t>(meta.layout)) << 32)

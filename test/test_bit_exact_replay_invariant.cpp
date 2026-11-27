@@ -258,10 +258,13 @@ struct Built {
 // folds the tags of its scalars, and again when each op folds its depth, the
 // producer of each input and its outputs, with no slot id.  They moved again
 // when the word of each tensor folds its rank, its layout, its two value bits
-// and its storage offset.
-constexpr uint64_t kReferenceHeadContentHash = 0x58213e6cd43c7cc3ULL;
-constexpr uint64_t kReferenceTailContentHash = 0x22fae7d608128ba5ULL;
-constexpr uint64_t kReferenceMerkleHash = 0x34564ac6d6da010aULL;
+// and its storage offset.  They moved again when the word of a tensor takes
+// its element type as one byte (version 20 of the image): the output of each
+// op is a default meta of the element type Undefined, whose word changed.
+// The two builds agreed before and after, so no hidden state moved them.
+constexpr uint64_t kReferenceHeadContentHash = 0xed71784088a76930ULL;
+constexpr uint64_t kReferenceTailContentHash = 0x03ee2eac6f7824a3ULL;
+constexpr uint64_t kReferenceMerkleHash = 0xd75ee88c12838cbdULL;
 constexpr uint64_t kReferencePoolBytes = 12544;
 
 }  // namespace

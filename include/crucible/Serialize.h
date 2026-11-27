@@ -82,8 +82,14 @@ using LoadedRegionNode = ::fixy::Tagged<DagRef<RegionNode>, ::fixy::tags::source
 // flipped bit of the merkle hash, the measured time, the variant or the plan
 // loaded as a sound image.  A region of version 18 has no checksum, and the
 // version refuses it.  The image of a branch changes only its version word.
+// 20 (2026-11-27): the word of each tensor takes its element type as one byte
+// (pack_tensor_word).  The element type Undefined no longer sets the high bits
+// of the word, so the device, the rank, the layout and the two bits of such a
+// tensor reach the content hash and the guard word.  A region of version 19
+// with such a tensor holds a content hash and guard words that the current
+// code no longer computes.
 static constexpr CdagFormatVersion CDAG_VERSION =
-    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{19});
+    ::fixy::mint_tagged<::fixy::tags::source::FormatVersion>(uint32_t{20});
 
 [[nodiscard]] constexpr bool cdag_version_matches(ExternalCdagVersion disk_version) noexcept {
     return disk_version.value() == CDAG_VERSION.value();

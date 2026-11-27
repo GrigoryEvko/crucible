@@ -415,7 +415,7 @@ static void check_descriptor_images_agree() {
     // The byte length catches size drift, the hash catches content
     // drift at a stable size.
     {
-        static constexpr uint32_t EXPECTED_CDAG_VERSION = 19;
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 20;
         static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
                       "CDAG_VERSION bump detected — update wire-byte golden below "
                       "after confirming the new bytes hash to the expected value.");
@@ -442,8 +442,11 @@ static void check_descriptor_images_agree() {
         // pointer and no hash of the grad_fn: 16 bytes less for each of the 9
         // descriptors of the image, so 144 bytes less.  CDAG_VERSION 19 ends
         // the image with the 32 bytes of the checksum of each byte before it.
+        // CDAG_VERSION 20 takes the element type of a tensor as one byte.  The
+        // tensors of this region are Float, so only the version word and the
+        // checksum move the bytes.
         constexpr size_t EXPECTED_WIRE_BYTES = 1716;
-        constexpr uint64_t EXPECTED_WIRE_HASH = 0xe29f72ffea662ef1ULL;
+        constexpr uint64_t EXPECTED_WIRE_HASH = 0xda0fde7e7e034713ULL;
 
         if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
             ::fixy::report(::fixy::Sink::Err,

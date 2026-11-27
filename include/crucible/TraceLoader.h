@@ -213,10 +213,13 @@ inline constexpr uint64_t TRACE_HEADER_BYTES = 16;
 // has a guard word that folds the rank, the layout, the negative and conjugate
 // bits and the storage offset of each input (pack_tensor_word).  Version 7 has
 // the data slots of each op, and a guard word that reads the tag of a data
-// slot but not its value.  A word of an earlier version compares with no live
-// op.  The writer writes this version.  The loader reads it and the first
-// version (the first format), and it refuses each other version.
-inline constexpr uint32_t TRACE_FORMAT_VERSION = 7;
+// slot but not its value.  Version 8 has a guard word whose word of an input
+// takes the element type as one byte (pack_tensor_word), so an input of the
+// element type Undefined keeps its device, rank, layout and two bits.  A word
+// of an earlier version compares with no live op.  The writer writes this
+// version.  The loader reads it and the first version (the first format), and
+// it refuses each other version.
+inline constexpr uint32_t TRACE_FORMAT_VERSION = 8;
 
 // The length of each metadata record.  A count whose records would not fit
 // in the bytes that remain is refused before any array is sized from it.
