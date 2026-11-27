@@ -51,6 +51,19 @@ void test_fitting_writes() {
     CRUCIBLE_FATAL_INVARIANT(full.get<Data>() == 0xFFFFu && full.get<Tags>() == 0xFFFFFFFFu);
 }
 
+// with_low_bits writes the low bits of a value of each unsigned type, keeps
+// each other field, and gives the word that with gives for the masked value.
+void test_low_bit_writes() {
+    Kinds const word = Kinds::from_bits(0x7ABCu).expect("the word holds only the bits of the fields");
+    Kinds const data = word.with_low_bits<Data>(std::uint8_t{0xFF});
+    CRUCIBLE_FATAL_INVARIANT(data.bits() == 0x7EBCu && data.get<Data>() == 0x1Fu && data.get<Tags>() == 0x2BCu);
+    Kinds const tags = word.with_low_bits<Tags>(std::uint64_t{0xFFFFFFFFFFFFF001ull});
+    CRUCIBLE_FATAL_INVARIANT(tags.bits() == 0x7801u && tags.get<Data>() == 0x1Eu);
+    CRUCIBLE_FATAL_INVARIANT(tags == word.with<Tags>(std::uint16_t{0x001}).expect("ten bits hold 1"));
+    Full const full = Full{}.with_low_bits<Flag>(std::uint32_t{3});
+    CRUCIBLE_FATAL_INVARIANT(full.bits() == 0x8000000000000000ull && full.get<Flag>() == 1);
+}
+
 // from_bits refuses a word with a bit above the last field, and with refuses
 // a value with a bit past the width of its field.  A refusal changes nothing.
 void test_refusals() {
@@ -79,6 +92,9 @@ void test_against_the_hand_written_word() {
             auto const byte = static_cast<std::uint8_t>(stream.below(0x100u));
             CRUCIBLE_FATAL_INVARIANT(word.with_fitting<Tags>(byte).bits()
                                      == static_cast<std::uint16_t>((raw & ~0x3FFu) | byte));
+            auto const wide = static_cast<std::uint32_t>(stream.below(0x100000u));
+            CRUCIBLE_FATAL_INVARIANT(word.with_low_bits<Data>(wide).bits()
+                                     == static_cast<std::uint16_t>((raw & ~0x7C00u) | ((wide & 0x1Fu) << 10)));
             auto const tags = static_cast<std::uint16_t>(stream.below(0x800u));
             bool is_tagged = false;
             for (Kinds const tagged : word.with<Tags>(tags)) {
@@ -104,6 +120,7 @@ void test_against_the_hand_written_word() {
 int main() {
     test_operations();
     test_fitting_writes();
+    test_low_bit_writes();
     test_refusals();
     test_against_the_hand_written_word();
     return 0;

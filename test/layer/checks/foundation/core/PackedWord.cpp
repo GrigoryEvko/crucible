@@ -67,6 +67,15 @@ static_assert(!Fits<Kinds, Other, std::uint8_t> && !Fits<Kinds, Tags, int>);
 static_assert(Fits<Wide, Tags, std::uint32_t> && !Fits<Wide, Data, std::uint32_t> && Fits<Byte, Data, std::uint8_t>);
 static_assert(std::is_same_v<decltype(Kinds{}.with_fitting<Tags>(std::uint8_t{0})), Kinds>);
 
+// with_low_bits takes only a tag of the layout and an unsigned value of each
+// width, and it gives the word itself.
+template <class Word, class Tag, class Value>
+concept TakesLowBits = requires(Word const& word, Value value) { word.template with_low_bits<Tag>(value); };
+static_assert(TakesLowBits<Kinds, Data, std::uint8_t> && TakesLowBits<Kinds, Data, std::uint64_t>);
+static_assert(!TakesLowBits<Kinds, Data, std::int8_t> && !TakesLowBits<Kinds, Data, int>);
+static_assert(!TakesLowBits<Kinds, Data, bool> && !TakesLowBits<Kinds, Other, std::uint8_t>);
+static_assert(std::is_same_v<decltype(Kinds{}.with_low_bits<Data>(std::uint32_t{0})), Kinds>);
+
 // A layout with a free bit has a niche, so its Option is one word.  A layout
 // that fills its word has none, and its Option holds a flag.
 static_assert(sizeof(Option<Kinds>) == sizeof(Kinds) && sizeof(Option<Byte>) > sizeof(Byte));
@@ -86,7 +95,8 @@ static_assert(sizeof(Option<Wide>) > sizeof(Wide));
     Byte const byte = Byte{}.with<Data>(std::uint8_t{0xFF}).expect("a field of the whole word holds each value");
     Kinds const fitted = word.with_fitting<Tags>(std::uint8_t{0x0F});
     bool const is_fitted = fitted.bits() == 0x780Fu && fitted.get<Data>() == 0x1Eu
-                        && Byte{}.with_fitting<Data>(std::uint8_t{0xA5}).bits() == 0xA5u;
+                        && Byte{}.with_fitting<Data>(std::uint8_t{0xA5}).bits() == 0xA5u
+                        && word.with_low_bits<Data>(std::uint32_t{0x25}).bits() == 0x16BCu;
     // The niche of the word: the empty Option of each door, and the full
     // Option of the highest word that the fields hold.
     bool const is_niche_kept = Kinds::from_bits(0x7FFFu).is_some() && Kinds{}.with<Data>(std::uint8_t{0x1F}).is_some()

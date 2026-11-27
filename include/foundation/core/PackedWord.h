@@ -37,6 +37,12 @@
 //                           itself.  A mask and an or.  A signed value or a
 //                           wider type does not compile: a signed source goes
 //                           through one explicit conversion at the call
+//   with_low_bits<Tag>(value)  the same word with the field of Tag set to the
+//                           low bits of an unsigned value, as wrapping_narrow
+//                           keeps the low bits of an integer.  The name states
+//                           the truncation.  A caller uses it only where it
+//                           masked the value to the width of the field or to a
+//                           narrower width.  No test.  A mask and an or
 //   ==                      true when the two words are equal
 //
 // A PackedWord is trivially copyable, with the size, the alignment and the
@@ -223,6 +229,20 @@ public:
     [[nodiscard]] constexpr PackedWord with_fitting(Value value) const noexcept {
         std::uint64_t const placed =
             (std::uint64_t{bits_} & used_bits_ & ~mask_of_<Tag>) | (std::uint64_t{value} << shift_of_<Tag>);
+        return PackedWord{detail::packed_word_from_<Word>(placed)};
+    }
+
+    // The same word with the field of Tag set to the low bits of value.  The
+    // bits of value past the width of the field go, as wrapping_narrow keeps
+    // the low bits of an integer, and the name states that truncation.  The
+    // contract: a caller uses it only where it masked value to the width of
+    // the field or to a narrower width, such as a mask of a count that a bound
+    // keeps, so no bit of the value goes.  The write has no test.
+    template <class Tag, class Value>
+        requires NamesOneField<Tag, Fields...> && UnsignedInteger<Value>
+    [[nodiscard]] constexpr PackedWord with_low_bits(Value value) const noexcept {
+        std::uint64_t const field = std::uint64_t{value} & detail::low_bits_(width_of_<Tag>);
+        std::uint64_t const placed = (std::uint64_t{bits_} & used_bits_ & ~mask_of_<Tag>) | (field << shift_of_<Tag>);
         return PackedWord{detail::packed_word_from_<Word>(placed)};
     }
 

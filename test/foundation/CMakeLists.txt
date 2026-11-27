@@ -5440,6 +5440,13 @@ foundation_neg_compile_test(neg_core_packed_word_fitting_wider_value
 foundation_neg_compile_test(neg_core_packed_word_fitting_signed_value
   "no matching function for call to .*with_fitting<Tags>\\(int8_t\\)."
   "UnsignedInteger<Value>.*\\[with Value = signed char\\]")
+# with_low_bits takes only an unsigned value and a tag of the layout.
+foundation_neg_compile_test(neg_core_packed_word_low_bits_signed_value
+  "no matching function for call to .*with_low_bits<Data>\\(int16_t\\)."
+  "UnsignedInteger<Value>.*\\[with Value = short int\\]")
+foundation_neg_compile_test(neg_core_packed_word_low_bits_tag_of_no_field
+  "no matching function for call to .*with_low_bits<Other>\\(uint8_t\\)."
+  "NamesOneField<Tag, Fields \\.\\.\\.>.*\\[with Tag = Other")
 
 # A SlotMap gives each value a key of its slot and its generation, refuses a
 # stale, a forged or a removed key, retires a slot at the wrap of its
