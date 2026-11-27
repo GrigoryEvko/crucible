@@ -51,17 +51,17 @@
 //     A = e ln2_high + l1 is exact: two multiples of 2^-42 below 2^10.
 //     (h, l) = FastTwoSum(A, z), because |A| > |z|: for e = 0, the |l1| of
 //       each row is at least 1.98 times each |z| of the row.
-//     p = z^2 (P2 + z (P3 + P4 z + z^2 (P5 + P6 z))), the minimax polynomial
-//       of log1p(z) - z for the absolute error.
+//     p = z^2 (P2 + P3 z) + z^4 (P4 + P5 z + P6 z^2), the minimax polynomial
+//       of log1p(z) - z for the absolute error, in the Estrin form.
 //     l = RN(p + RN(l + RN(e ln2_low + l2))), the inner step as one fma.
 //       e ln2_low + l2 does not wait for z, and the sum of the low parts does
 //       not wait for p.
-//     Then |h + l - log(x)| <= eps_fast = 2^-69.43, absolute.
+//     Then |h + l - log(x)| <= eps_fast = 2^-69.20, absolute.
 //     The rounding test: with E = 2^-68.5, if RN(h + RN(l + E)) and
 //     RN(h + RN(l - E)) are the same value, that value is the correctly
 //     rounded result, because RN is monotone and log(x) is between the two
 //     sums.  Each sum takes an inner round of at most u |l + E|, so the test
-//     needs a margin of 2^-69.20.
+//     needs a margin of 2^-69.01.
 //   The path near 1, for 1 - 2^-9 <= x < 1 + 2^-9: r = x - 1 is exact.
 //     (q_hi, q_lo) = TwoProduct(r, r), R = B1 + r (B2 + r (B3 + r (B4 +
 //     r B5))), c = RN(RN(r q_hi) R), (h, l0) = FastTwoSum(r, -q_hi/2), and
@@ -88,13 +88,13 @@
 // Error budget of the fast path, from `fp_tables.py log` (exact fractions)
 //   R = 2^-9.00 bounds |z|.  The absolute errors of h + l:
 //     the polynomial, a bound for each |z| <= R    2^-71.04
-//     the rounds of the polynomial                 2^-70.41
+//     the rounds of the polynomial                 2^-70.00
 //     -log(r_i) - l1 - l2                          2^-97.01
 //     e (ln2 - ln2_high - ln2_low), |e| <= 1075    2^-91.95
 //     the round of e ln2_low + l2                  2^-86.98
 //     the round of l + (e ln2_low + l2)            2^-86.97
 //     the round of p + (...)                       2^-72.00
-//     the sum: eps_fast                            2^-69.43
+//     the sum: eps_fast                            2^-69.20
 //
 // Error budget of the path near 1, from `fp_tables.py log` (exact fractions)
 //   The rounding errors, relative to |r| <= 2^-9:
@@ -454,12 +454,12 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     // e ln2_high + l1 is exact: two multiples of 2^-42 below 2^10.  Its
     // magnitude is above |z|, as |l1| >= 2^-8.41 > |z| for e = 0.
     DoubleWord const head = fast_two_sum_(scale * kLogLn2High + entry.high, reduced);
+    // The Estrin form: the longest chain of p is three fma.
     double const square = reduced * reduced;
-    double const upper_pair = fma_of_finite(reduced, kLogP6, kLogP5);
-    double const lower_pair = fma_of_finite(reduced, kLogP4, kLogP3);
-    double polynomial = fma_of_finite(square, upper_pair, lower_pair);
-    polynomial = fma_of_finite(reduced, polynomial, kLogP2);
-    polynomial = polynomial * square;
+    double const fourth = square * square;
+    double const low_pair = fma_of_finite(reduced, kLogP3, kLogP2);
+    double const high_part = fma_of_finite(square, kLogP6, fma_of_finite(reduced, kLogP5, kLogP4));
+    double const polynomial = fma_of_finite(fourth, high_part, square * low_pair);
     // e ln2_low + l2 does not wait for z, and the sum of the low parts does not
     // wait for the polynomial, so its add is the one step after the polynomial.
     double const rest = head.low + fma_of_finite(scale, kLogLn2Low, entry.middle);

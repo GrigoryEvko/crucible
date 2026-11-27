@@ -1052,28 +1052,36 @@ def log_fast_budget(
 ) -> None:
     """Print the absolute error budget of the fast path, in the order of its operations.  Exact.
 
-    l = RN(p + RN(l + RN(e ln2_low + l2))): e ln2_low + l2 does not wait for z, and the sum of the low parts does
-    not wait for p, so the add of p is the one step after the polynomial.
+    p = RN(RN(z2 a) + z4 c), the Estrin form, with a = RN(P2 + P3 z), z2 = RN(z^2), z4 = RN(z2^2) and
+    c = RN(RN(P4 + P5 z) + P6 z2).  l = RN(p + RN(l + RN(e ln2_low + l2))): e ln2_low + l2 does not wait for z,
+    and the sum of the low parts does not wait for p, so the add of p is the one step after the polynomial.  Each
+    bound is of an absolute value, and each error is against the exact value of its step.
     """
     p2, p3, p4, p5, p6 = (abs(Fraction(value)) for value in coefficients)
     e_most = Fraction(1075)
     square = reach**2
-    b45 = p5 + p6 * reach
-    b23 = p3 + p4 * reach
-    b_ph1 = (b23 + b45 * square * (1 + u)) * (1 + u)
-    err_ph1 = u * b45 * square + b45 * u * square + u * b23 + u * b_ph1
-    b_ph2 = (p2 + b_ph1 * reach) * (1 + u)
-    err_ph2 = reach * err_ph1 + u * b_ph2
-    b_ph3 = b_ph2 * square * (1 + u) ** 2
-    err_ph3 = square * err_ph2 + b_ph2 * u * square + u * b_ph3
+    a_exact = p2 + p3 * reach
+    a_most = a_exact * (1 + u)
+    b_exact = p4 + p5 * reach
+    z2_most = square * (1 + u)
+    err_z2 = u * square
+    c_exact = b_exact * (1 + u) + p6 * z2_most
+    err_c = u * b_exact + p6 * err_z2 + u * c_exact
+    c_most = c_exact * (1 + u)
+    err_z4 = err_z2 * (z2_most + square) + u * z2_most**2
+    z4_most = z2_most**2 * (1 + u)
+    err_t = err_z2 * a_most + square * u * a_exact + u * z2_most * a_most
+    p_exact = z2_most * a_most * (1 + u) + z4_most * c_most
+    err_poly = err_t + err_z4 * c_most + square**2 * err_c + u * p_exact
+    p_most = p_exact * (1 + u)
     l2_most = max(abs(Fraction(row[3])) for row in rows)
     l_most = Fraction(1, 2**44)
     la_most = (e_most * abs(Fraction(ln2_low)) + l2_most) * (1 + u)
     lb_most = (l_most + la_most) * (1 + u)
-    lc_most = (b_ph3 + lb_most) * (1 + u)
+    lc_most = (p_most + lb_most) * (1 + u)
     terms = [
         ("the polynomial (rigorous)", poly_error),
-        ("the rounds of the polynomial", err_ph3),
+        ("the rounds of the polynomial", err_poly),
         ("the table: -log r - l1 - l2", table_error),
         ("e (ln2 - the two parts), |e| <= 1075", e_most * ln2_gap),
         ("round of e ln2_low + l2", u * la_most / (1 + u)),
