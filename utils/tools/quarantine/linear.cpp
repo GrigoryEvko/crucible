@@ -62,6 +62,27 @@
 //     throw.  The rule reads no exception path, because the tree does not
 //     throw (CLAUDE.md section XII).
 //
+// Uses after a consume
+//     A use of a tracked object that a path consumed is the kind
+//     use-after-consume: the object of a member function with no && that is no
+//     constructor, no assignment and no destructor, and an argument of a
+//     parameter by a reference or a pointer.  A parameter by value or by && takes
+//     its argument on each path, also when the call reports a failure, so a use on
+//     the branch of the failure is a line.  The walk reads the state before the
+//     arguments of the call, because the object of a member call comes before them,
+//     and a consume in an argument of the same call is the kind two-names of the
+//     rule view-escape.  A linear sum stays a usable empty value after its
+//     consume, and an escaped object hides each later consume, so neither gives a
+//     line.  A use of the whole object gives a line only when a path consumed the
+//     whole object, because a move of members leaves the other members usable.  The
+//     walk reads the consume of the whole for each function and not for each path,
+//     so a mix of paths gives a line.  A move of each part of a pack through a
+//     reference helper, such as at(), reads as a consume of the whole, so the next
+//     part is a use after a consume, as it is a second consume.  The walk of the
+//     findings tracks no capture, and the summary walk gives no line, so a use of
+//     a capture after its consume in the body of a closure gives no line.  The
+//     rule use-after-move refuses that shape in the source.
+//
 // Calls
 //     The front end gives a call as a CALL_EXPR, but a call whose result is a
 //     class that a call cannot pass in registers (a class with a destructor, or
@@ -112,7 +133,8 @@
 //     The rule gives no finding unconsumed, unconsumed-on-path,
 //     discarded-temporary or borrow-move-out in the body of a door, apart from
 //     the end of a value that is or holds a linear sum (the sum holders).  It
-//     still gives double-consume and assign-over-live there.  It gives the record door for
+//     still gives double-consume, use-after-consume and assign-over-live there.  It
+//     gives the record door for
 //     each linear-door row whose function it reads, and the module of the rule
 //     refuses a row with no record (the rule table is the roster of the doors).
 //
@@ -138,6 +160,8 @@
 //     unconsumed-on-path   the object leaves its scope at an exit, and only
 //                          some paths to that exit consume it
 //     double-consume       a consume of an object that a path consumed
+//     use-after-consume    a use of an object that a path consumed (the uses
+//                          after a consume)
 //     assign-over-live     an assignment to an object that holds a value that
 //                          a path did not consume: the old value drops
 //     self-move            a move assignment of an object from itself (the
@@ -1848,6 +1872,10 @@ struct Slot {
     bool has_maybe_exit = false;
     bool was_double_reported = false;
     bool was_assign_reported = false;
+    // The uses after a consume: a path consumed the whole object, and not only its
+    // members, and the uses that gave a line, by their location.
+    bool is_whole_consumed = false;
+    std::vector<location_t> used_after_consume;
 };
 
 // The target of a break or a continue: a loop or a switch.
@@ -3029,6 +3057,9 @@ private:
             return;
         }
         std::size_t whole = slot_of_.at(decl);
+        if (field == NULL_TREE) {
+            slots_[whole].is_whole_consumed = true;
+        }
         Status status = state.get(slot);
         bool was_used = is_used(status);
         if (field == NULL_TREE) {
@@ -3669,6 +3700,10 @@ private:
             callee = NULL_TREE;
         }
         refill_at_call(call, callee, state);
+        // The uses after a consume read the state before the arguments of the call:
+        // the object of a member call comes before them, and a consume in an
+        // argument of the same call is the kind two-names of view-escape.
+        FlowState const before = state;
         walk_expression(callee_of(call), state);
         int count = argument_count(call);
         for (int index = 0; index < count; ++index) {
@@ -3702,7 +3737,7 @@ private:
                                          is_rvalue_object ? BaseStep::whole_object : BaseStep::no_slot);
             if (is_method && index == 0) {
                 walk_object_argument(decl, field, argument, type, callee, is_constructor, is_assignment, location,
-                                     state);
+                                     before, state);
                 continue;
             }
             if (parameter_type == NULL_TREE) {
@@ -3748,6 +3783,8 @@ private:
             bool is_rvalue_reference = TYPE_REF_P(parameter_type) && TYPE_REF_IS_RVALUE(parameter_type);
             if (is_rvalue_reference || (!TYPE_REF_P(parameter_type) && CLASS_TYPE_P(parameter_type))) {
                 consume(decl, field, state, location);
+            } else {
+                note_use(decl, field, before, location);
             }
         }
         if (state.is_reachable) {
@@ -4110,7 +4147,7 @@ private:
     // assigns over it, and a member function with the qualifier && consumes
     // it.
     void walk_object_argument(tree decl, tree field, tree argument, tree type, tree callee, bool is_constructor,
-                              bool is_assignment, location_t location, FlowState& state) {
+                              bool is_assignment, location_t location, const FlowState& before, FlowState& state) {
         if (is_constructor) {
             return;
         }
@@ -4140,8 +4177,47 @@ private:
         } else if (FUNCTION_RVALUE_QUALIFIED(type) || (callee != NULL_TREE && DECL_DESTRUCTOR_P(callee))) {
             consume(decl, field, state, location);
         } else {
+            note_use(decl, field, before, location);
             note_sum_member(decl, field, type, callee, state);
         }
+    }
+
+    // A use of the object DECL, or of its field FIELD, at a place that BEFORE, the
+    // state before the arguments of the call, shows consumed on a path (the uses
+    // after a consume).  A linear sum stays a usable empty value after its consume,
+    // and an escaped object hides each later consume, so neither gives a line.  A
+    // use of the whole object after a move of its members only gives no line either,
+    // because its other members stay usable.  Each object gives one line for each
+    // location, also across the passes of a loop.
+    void note_use(tree decl, tree field, const FlowState& before, location_t location) {
+        if (!before.is_reachable || slot_of_.count(decl) == 0) {
+            return;
+        }
+        std::size_t const slot = slot_for(decl, field);
+        if (slot == kNoParent) {
+            return;
+        }
+        std::size_t const whole = slot_of_.at(decl);
+        Slot& object = slots_[whole];
+        tree type = TREE_TYPE(decl);
+        type = type != NULL_TREE && TYPE_REF_P(type) ? TREE_TYPE(type) : type;
+        if (object.is_escaped || is_linear_sum(type)) {
+            return;
+        }
+        Status status = before.get(slot);
+        if (field != NULL_TREE && is_used(before.get(whole))) {
+            status = before.get(whole);
+        }
+        bool const names_whole = field == NULL_TREE || slot == whole;
+        if (!is_used(status) || (names_whole && !object.is_whole_consumed)) {
+            return;
+        }
+        auto const seen = std::find(object.used_after_consume.begin(), object.used_after_consume.end(), location);
+        if (seen != object.used_after_consume.end()) {
+            return;
+        }
+        object.used_after_consume.push_back(location);
+        add_pending(Kind::linear_use_after_consume, location, entity_of(decl));
     }
 
     // An initialization (IS_INIT) or an assignment of TARGET from VALUE.

@@ -455,6 +455,8 @@
 //     unconsumed-on-path    a linear object that leaves its scope at an exit,
 //                           and only some paths to that exit consume it
 //     double-consume        a consume of a linear object that a path consumed
+//     use-after-consume     a use of a linear object that a path consumed, as
+//                           the object of a member or by a reference
 //     assign-over-live      an assignment to a linear object that holds a value
 //                           that a path did not consume
 //     self-move             a move assignment of an object from itself: the
@@ -1384,6 +1386,7 @@ enum class Kind : std::uint8_t {
     linear_unconsumed,
     linear_unconsumed_on_path,
     linear_double_consume,
+    linear_use_after_consume,
     linear_assign_over_live,
     linear_self_move,
     linear_discarded_temporary,
@@ -1786,6 +1789,8 @@ inline const char* kind_name(Kind kind) {
             return "unconsumed-on-path";
         case Kind::linear_double_consume:
             return "double-consume";
+        case Kind::linear_use_after_consume:
+            return "use-after-consume";
         case Kind::linear_assign_over_live:
             return "assign-over-live";
         case Kind::linear_self_move:
@@ -2013,6 +2018,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::linear_unconsumed:
         case Kind::linear_unconsumed_on_path:
         case Kind::linear_double_consume:
+        case Kind::linear_use_after_consume:
         case Kind::linear_assign_over_live:
         case Kind::linear_self_move:
         case Kind::linear_discarded_temporary:
@@ -2338,6 +2344,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"must-consume", "unconsumed"},
     {"must-consume", "unconsumed-on-path"},
     {"must-consume", "double-consume"},
+    {"must-consume", "use-after-consume"},
     {"must-consume", "assign-over-live"},
     {"must-consume", "self-move"},
     {"must-consume", "discarded-temporary"},

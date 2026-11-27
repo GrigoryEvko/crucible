@@ -1,0 +1,71 @@
+// Each use of a linear value that a path consumed is the kind use-after-consume:
+// a member call after a consume, a read on the branch of a failed try call, an
+// instance of a template, a member after its move, and a use after a consume on
+// one path.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int value = 1;
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&& other) noexcept : value{other.value} { other.value = 0; }
+    constexpr Token& operator=(Token&& other) noexcept {
+        value = other.value;
+        other.value = 0;
+        return *this;
+    }
+    Token(const Token&) = delete;
+    [[nodiscard]] int read() const noexcept { return value; }
+};
+
+struct Pair {
+    Token first{};
+    Token second{};
+};
+
+void sink(Token token) noexcept;
+bool try_keep(Token token) noexcept;
+int look(Token const& token) noexcept;
+
+template <class T>
+int read_after_in_a_template(T token) noexcept {
+    sink(std::move(token));
+    return token.read();
+}
+
+int read_after_a_consume() noexcept {
+    Token token{};
+    sink(std::move(token));
+    return token.read();
+}
+
+int read_after_a_failed_try() noexcept {
+    Token token{};
+    if (!try_keep(std::move(token))) {
+        return look(token);
+    }
+    return 0;
+}
+
+int read_in_an_instance() noexcept { return read_after_in_a_template(Token{}); }
+
+int read_a_moved_member() noexcept {
+    Pair pair{};
+    sink(std::move(pair.first));
+    int const read = pair.first.read();
+    sink(std::move(pair.second));
+    return read;
+}
+
+int read_after_a_consume_on_a_path(bool is_given) noexcept {
+    Token token{};
+    if (is_given) {
+        sink(std::move(token));
+    }
+    return look(token);
+}
+
+}  // namespace planted

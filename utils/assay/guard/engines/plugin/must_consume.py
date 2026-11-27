@@ -13,6 +13,13 @@ Rule
       unconsumed-on-path    the object leaves its scope at an exit, and only
                             some paths to that exit consume it
       double-consume        a consume of an object that a path consumed
+      use-after-consume     a use of an object that a path consumed, as the
+                            object of a member function with no && or by a
+                            reference or a pointer.  It reads the state before
+                            the arguments of the call, and a linear sum, an
+                            escaped object and the whole object after a move
+                            of its members only give no line (linear.cpp, the
+                            uses after a consume)
       assign-over-live      an assignment over a value that a path did not
                             consume, which drops that value
       self-move             a move assignment of an object from itself: the
@@ -152,6 +159,8 @@ ACTIONS = {
     "named door",
     "unconsumed-on-path": "the object leaves its scope with no consume on some paths.  Consume it on each path",
     "double-consume": "the object is consumed a second time on a path.  Consume it one time",
+    "use-after-consume": "the object is used after a path consumed it.  Use it before the consume, give it a value "
+    "again first, or read the value that the consumer gives back",
     "assign-over-live": "the object is an assignment over a value that no path consumed, so the value drops.  Consume "
     "the value first",
     SELF_MOVE_KIND: "the object is moved into itself: the target and the source of the move assignment are one object.  "

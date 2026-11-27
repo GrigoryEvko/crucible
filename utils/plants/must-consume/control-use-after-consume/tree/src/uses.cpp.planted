@@ -1,0 +1,72 @@
+// No use here reads a linear value that a path consumed: a read after an
+// assignment gives the value again, a read of an Option after its consume, a read
+// of the other member after a member move, a read of the whole object after a
+// member move, a read before the consume, and a member with && whose argument
+// reads the object before the member consumes it.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int value = 1;
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&& other) noexcept : value{other.value} { other.value = 0; }
+    constexpr Token& operator=(Token&& other) noexcept {
+        value = other.value;
+        other.value = 0;
+        return *this;
+    }
+    Token(const Token&) = delete;
+    [[nodiscard]] int read() const noexcept { return value; }
+    [[nodiscard]] int give(int extra) && noexcept { return value + extra; }
+};
+
+struct Pair {
+    Token first{};
+    Token second{};
+};
+
+void sink(Token token) noexcept;
+int count(Pair const& pair) noexcept;
+
+int read_after_a_refill() noexcept {
+    Token token{};
+    sink(std::move(token));
+    token = Token{};
+    int const read = token.read();
+    sink(std::move(token));
+    return read;
+}
+
+int read_a_sum_after_its_consume() noexcept {
+    Option<Token> held = Option<Token>::some(Token{});
+    sink(std::move(held).expect("the Option holds the token"));
+    return held.is_none() ? 1 : 0;
+}
+
+int read_the_other_member() noexcept {
+    Pair pair{};
+    sink(std::move(pair.first));
+    int const read = pair.second.read() + count(pair);
+    sink(std::move(pair.second));
+    return read;
+}
+
+int read_before_the_consume() noexcept {
+    Token token{};
+    int const read = token.read();
+    sink(std::move(token));
+    return read;
+}
+
+int read_in_the_argument_of_a_consuming_member() noexcept {
+    Token token{};
+    return std::move(token).give(token.read());
+}
+
+}  // namespace planted

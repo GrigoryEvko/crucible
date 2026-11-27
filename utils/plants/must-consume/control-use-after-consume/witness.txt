@@ -1,0 +1,10 @@
+# No use reads a linear value that a path consumed: a read after an assignment
+# gives the value again, a linear sum stays a usable empty value after its
+# consume, a move of one member leaves the other members and the whole object
+# usable, a read before the consume is no use after it, and the argument of a
+# member with && reads the object before the member consumes it.
+
+compile uses src/uses.cpp must-consume=on
+flag uses -freflection
+exit uses pass
+judge uses

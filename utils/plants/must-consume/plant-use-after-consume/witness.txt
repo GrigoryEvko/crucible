@@ -1,0 +1,17 @@
+# Each use of a linear value that a path consumed is the finding
+# use-after-consume (linear.cpp, the uses after a consume): a member call after a
+# consume (42), a read on the branch of a failed try call, whose parameter by
+# value takes the token on each path (48), an instance of a template (36), a
+# member after its move (58), and a use after a consume on one path (68), which
+# leaves the token unconsumed on the other path too (64).
+
+compile uses src/uses.cpp must-consume=on
+flag uses -freflection
+exit uses pass
+judge uses
+finding uses must-consume use-after-consume src/uses.cpp:36:22 | planted::read_after_in_a_template: token (planted::Token)
+finding uses must-consume use-after-consume src/uses.cpp:42:22 | planted::read_after_a_consume: token (planted::Token)
+finding uses must-consume use-after-consume src/uses.cpp:48:20 | planted::read_after_a_failed_try: token (planted::Token)
+finding uses must-consume use-after-consume src/uses.cpp:58:37 | planted::read_a_moved_member: pair (planted::Pair)
+finding uses must-consume unconsumed-on-path src/uses.cpp:64:11 | planted::read_after_a_consume_on_a_path: token (planted::Token)
+finding uses must-consume use-after-consume src/uses.cpp:68:16 | planted::read_after_a_consume_on_a_path: token (planted::Token)
