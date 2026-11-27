@@ -244,6 +244,86 @@ def measured_error(
     return largest
 
 
+# ── The rigorous bound ─────────────────────────────────────────────
+#
+# A bound of this section holds for each point of its interval, not for the points of a grid.  The arithmetic is
+# exact: each value is a Fraction, each double converts to its exact Fraction, and each constant that mpmath gives
+# rounds up to a dyadic Fraction.
+
+
+def fraction_of(value: float | Fraction) -> Fraction:
+    """Return the exact value of a double, or of a sum of doubles as a Fraction, as a Fraction."""
+    return Fraction(value)
+
+
+def taylor_shift(coefficients: Sequence[Fraction], center: Fraction) -> list[Fraction]:
+    """Return the coefficients in t of p(center + t), the constant term first.  Exact.  O(degree^2)."""
+    shifted = list(coefficients)
+    degree = len(shifted) - 1
+    for start in range(degree):
+        for index in range(degree - 1, start - 1, -1):
+            shifted[index] += center * shifted[index + 1]
+    return shifted
+
+
+def sup_bound(coefficients: Sequence[Fraction], low: Fraction, high: Fraction, pieces: int) -> Fraction:
+    """Return an upper bound of max |p(x)| on [low, high] for p with exact coefficients.
+
+    The interval divides into `pieces` equal pieces.  On a piece with center c and half-width h, p(c + t) is
+    sum d_k t^k with exact d_k, and |p(c + t)| <= sum |d_k| h^k for each |t| <= h.  The bound is the largest such
+    sum.  O(pieces * degree^2).
+    """
+    width = (high - low) / pieces
+    half = width / 2
+    largest = Fraction(0)
+    for piece in range(pieces):
+        center = low + width * piece + half
+        bound = Fraction(0)
+        power = Fraction(1)
+        for coefficient in taylor_shift(coefficients, center):
+            bound += abs(coefficient) * power
+            power *= half
+        largest = max(largest, bound)
+    return largest
+
+
+def rigorous_exp_error(
+    coefficients: Sequence[float | Fraction], bound: Fraction, terms: int = 24, pieces: int = 512
+) -> Fraction:
+    """Return a bound of |exp(r) - p(r)| / exp(r) for each |r| <= bound.
+
+    Each coefficient of p is a double or an exact sum of doubles.
+
+    exp(r) is the Taylor sum T(r) of its first `terms` terms plus a rest.  For bound <= 1/2 the rest is at most
+    2 bound^terms / terms!.  The bound of |T - p| comes from sup_bound, and exp(r) >= 1 - bound.  Exact.
+    O(pieces * terms^2).
+    """
+    taylor = [Fraction(1, mp_factorial(n)) for n in range(terms)]
+    difference = [taylor[n] - (fraction_of(coefficients[n]) if n < len(coefficients) else 0) for n in range(terms)]
+    rest = 2 * bound**terms / mp_factorial(terms)
+    return (sup_bound(difference, -bound, bound, pieces) + rest) / (1 - bound)
+
+
+def mp_factorial(count: int) -> int:
+    """Return count! as an exact integer."""
+    product = 1
+    for factor in range(2, count + 1):
+        product *= factor
+    return product
+
+
+def dyadic_above(value: Any, bits: int = 64) -> Fraction:
+    """Return a dyadic Fraction at or above a positive mpmath value, with `bits` significant bits."""
+    exponent = int(mp.floor(mp.log(value, 2)))
+    scale = mp.ldexp(mp.mpf(1), bits - 1 - exponent)
+    return Fraction(int(mp.ceil(value * scale))) / Fraction(2) ** (bits - 1 - exponent)
+
+
+def log2_of_fraction(value: Fraction) -> str:
+    """Return the base-2 logarithm of a positive Fraction as text."""
+    return log2_text(mp.mpf(value.numerator) / value.denominator)
+
+
 def print_fit(name: str, coefficients: Sequence[float], error: Any, first_index: int = 0) -> None:
     """Print the coefficients of a fit as C++ constants, with the measured error in a comment."""
     print(f"// {name}: weighted error 2^{log2_text(error)} after the round to double.")
@@ -300,8 +380,20 @@ def print_exp() -> None:
     def exp_weight(point: Any) -> Any:
         return point**2 / mp.exp(point)
 
-    fit_and_print("C", exp_tail, exp_weight, -bound, bound, 3, 2)
+    coefficients = fit_and_print("C", exp_tail, exp_weight, -bound, bound, 3, 2)
     fit_and_print("float C", exp_tail, exp_weight, -bound, bound, 1, 2)
+    # The rigorous bounds of the relative error of exp on |r| <= bound: the fast path takes 1 + r + r^2 (C2 + ...),
+    # and the slow path the Taylor polynomial of degree 11 with each coefficient to degree 6 in two doubles.
+    exact_bound = dyadic_above(bound)
+    fast = rigorous_exp_error([1.0, 1.0, *coefficients], exact_bound)
+    print(f"// rigorous bound of the fast polynomial: 2^{log2_of_fraction(fast)}")
+    slow_terms: list[Fraction] = []
+    for order in range(12):
+        exact = Fraction(1, mp_factorial(order))
+        high_part = float(exact)
+        slow_terms.append(Fraction(high_part) + Fraction(float(exact - Fraction(high_part))) if order <= 6 else Fraction(high_part))
+    slow = rigorous_exp_error(slow_terms, exact_bound, terms=28)
+    print(f"// rigorous bound of the slow polynomial: 2^{log2_of_fraction(slow)}")
     # The edges of the float form: exp(x) rounds to +inf above the largest float at or below the first edge, to +0
     # below the smallest float at or above the second edge, and is below 2^-126 below the smallest float at or
     # above the third edge.
