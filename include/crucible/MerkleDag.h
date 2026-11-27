@@ -803,20 +803,24 @@ using TensorFields =
                        ::fixy::BitField<side::TensorDeviceIndexField, 8>, ::fixy::BitField<side::TensorRankField, 8>,
                        ::fixy::BitField<side::TensorLayoutField, 8>, ::fixy::BitField<side::TensorValueBitsField, 8>>;
 
-// The fields of meta.  The device comes through device_of.  The placement word
-// of the overflow digest of vessel/torch/entry_slots.h takes these fields with
-// the rank field zero.  Each value is a byte of its field, so each write has
-// no test.
-[[nodiscard, gnu::always_inline]] inline TensorFields tensor_fields_of(const TensorMeta& meta) noexcept {
+// The fields of meta other than its rank, with the rank field zero.  The device
+// comes through device_of.  This is the placement word of the overflow digest
+// of vessel/torch/entry_slots.h, which folds the rank by itself.  Each value
+// is a byte of its field, so each write has no test.
+[[nodiscard, gnu::always_inline]] inline TensorFields placement_fields_of(const TensorMeta& meta) noexcept {
     constexpr auto kValueBits = static_cast<uint8_t>(meta_flags::IS_NEG | meta_flags::IS_CONJ);
     const TensorDevice device = device_of(meta);
     return TensorFields{}
         .with_fitting<side::TensorDtypeField>(::fixy::bit_cast<uint8_t>(meta.dtype))
         .with_fitting<side::TensorDeviceTypeField>(::fixy::bit_cast<uint8_t>(device.type()))
         .with_fitting<side::TensorDeviceIndexField>(::fixy::bit_cast<uint8_t>(device.index()))
-        .with_fitting<side::TensorRankField>(meta.ndim)
         .with_fitting<side::TensorLayoutField>(::fixy::bit_cast<uint8_t>(meta.layout))
         .with_fitting<side::TensorValueBitsField>(static_cast<uint8_t>(meta.flags & kValueBits));
+}
+
+// The fields of meta: its placement fields and its rank.
+[[nodiscard, gnu::always_inline]] inline TensorFields tensor_fields_of(const TensorMeta& meta) noexcept {
+    return placement_fields_of(meta).with_fitting<side::TensorRankField>(meta.ndim);
 }
 
 // The word of one tensor in the content hash of a region.  It folds each fact

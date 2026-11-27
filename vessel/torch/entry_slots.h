@@ -349,15 +349,14 @@ struct InputOverflow {
             digest = ::foundation::reflect::combine_ids(
                 digest, static_cast<uint64_t>(crucible::raw_tensor_dim(meta.strides[d])));
         }
-        // The placement word is the word of the fields of a tensor
-        // (tensor_fields_of) with the rank field zero, because the digest
-        // folds the rank above.  The device comes through device_of, as in
-        // the content hash.  The layout, the negative and conjugate bits and
-        // the storage offset fold as in the word of a tensor
-        // (pack_tensor_word), so an input past the limit keeps each fact
-        // that changes the elements that the op reads.
-        const uint64_t placement =
-            crucible::tensor_fields_of(meta).with_fitting<crucible::side::TensorRankField>(uint8_t{0}).bits();
+        // The placement word is the word of the fields of a tensor with the
+        // rank field zero (placement_fields_of), because the digest folds the
+        // rank above.  The device comes through device_of, as in the content
+        // hash.  The layout, the negative and conjugate bits and the storage
+        // offset fold as in the word of a tensor (pack_tensor_word), so an
+        // input past the limit keeps each fact that changes the elements that
+        // the op reads.
+        const uint64_t placement = crucible::placement_fields_of(meta).bits();
         const uint64_t offset_word = static_cast<uint64_t>(meta.storage_offset) * crucible::detail::kStorageOffsetMix;
         digest = ::foundation::reflect::combine_ids(digest, placement ^ offset_word);
         count = ::fixy::saturating_add(count, uint32_t{1});
