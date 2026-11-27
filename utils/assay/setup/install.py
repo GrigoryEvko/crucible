@@ -91,6 +91,9 @@ Tools
     mpmath       The package mpmath (the pin mpmath), which
                  utils/tools/fp_tables.py imports to compute the tables of
                  include/fixy/fp/.  --print-bin prints the site directory.
+    sleef        The source of SLEEF (the pin sleef): the vector math library
+                 that the reference rows of bench_fp_elementary measure.
+                 --print-bin prints the top directory of the source.
     aflplusplus  The AFL++ tools of the nightly fuzz campaigns (the pin
                  aflplusplus), built from their source for the patched GCC
                  (the built tool).  --print-bin prints the bin directory,
@@ -909,6 +912,7 @@ SOURCE_FILES = {
                   "src/binary64/exp/exp.c", "src/binary64/log/log.c", "src/binary64/erf/erf.c", "LICENSE"),
     "gmp": ("configure", "gmp-h.in", "COPYING.LESSERv3"),
     "mpfr": ("configure", "src/mpfr.h", "COPYING.LESSER"),
+    "sleef": ("CMakeLists.txt", "src/libm/sleefdp.c", "LICENSE.txt"),
 }
 
 
@@ -1129,6 +1133,9 @@ TOOLS: dict[str, Tool] = {
         version_stamp, version_stamp_matches, lambda directory: directory, False),
     "mpfr": Tool(
         "mpfr", "mpfr", "mpfr-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["mpfr"]),
+        unpack_source, version_stamp, version_stamp_matches, lambda directory: directory, False),
+    "sleef": Tool(
+        "sleef", "sleef", "sleef-", {"": "source"}, functools.partial(verify_source, SOURCE_FILES["sleef"]),
         unpack_source, version_stamp, version_stamp_matches, lambda directory: directory, False),
     "mpmath": Tool(
         "mpmath", "mpmath", "mpmath-", {"": "any"}, verify_mpmath, pip_unpack, functools.partial(pip_stamp, ()),
