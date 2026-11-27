@@ -4047,6 +4047,11 @@ foundation_neg_compile_test(neg_core_address_key_of_word
 # device and the gate of a run of bytes are disjunctions, so their fixtures
 # take a concept depth of 3, and each regex names the part that fails.
 foundation_test(test_core_data_address)
+# The == of an Option of a niche payload whose equal is the identity of its
+# bytes compares the bytes of the two slots.  Each door that empties a slot
+# leaves the bytes of the empty value, and the == agrees with the form of two
+# states.
+foundation_test(test_core_option_niche_equality)
 # The key of a foreign address.  No byte door makes one, no pointer and no
 # order comes back from one, only the members of its owner re-mint its
 # address or make the key of a word, and its mint takes a class as the owner

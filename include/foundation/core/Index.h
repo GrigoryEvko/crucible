@@ -109,9 +109,11 @@ using IndexWord = std::conditional_t<(Count <= 0xFFFFFFFFull), std::uint32_t, st
 
 }  // namespace detail
 
+// The mark equal_bytes: the == compares the word, the one part with bytes.
+// The byte_seal member has no ==, so the == cannot be defaulted.
 template <std::size_t Count>
     requires IndexCount<Count>
-class Index final {
+class[[= equal_bytes{}]] Index final {
     using Word = detail::IndexWord<Count>;
 
     Word value_ = 0;

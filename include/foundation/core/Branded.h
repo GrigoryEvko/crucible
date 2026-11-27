@@ -101,9 +101,11 @@ class BrandedRefDoor final : ::foundation::NoObject<BrandedRefDoor> {
 
 // An index below the count of the BrandedView of Brand.  The value
 // 0xFFFFFFFF is no index, because no branded count is above it, so an
-// Option<BrandedIndex<Brand>> has 4 bytes.
+// Option<BrandedIndex<Brand>> has 4 bytes.  The mark equal_bytes: the ==
+// compares the word, the one part with bytes.  The byte_seal member has no
+// ==, so the == cannot be defaulted.
 template <::foundation::brand::IsBrand Brand>
-class BrandedIndex final {
+class[[= equal_bytes{}]] BrandedIndex final {
     std::uint32_t value_ = 0;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 

@@ -1273,6 +1273,8 @@ inline constexpr StatedZero kZeros[] = {
      "the annotation of a class whose own == compares each part with equal: it holds nothing"},
     {^^::foundation::core::ieee_equality,
      "the annotation of a class whose own == compares a float by IEEE 754: it holds nothing"},
+    {^^::foundation::core::equal_bytes,
+     "the annotation of a class whose own == is the identity of each of its bytes: it holds nothing"},
     {^^::foundation::core::DecodeFault,
      "the error of a decode of an image: a reason and a byte offset, and never a value in a kernel signature"},
     {^^::foundation::core::Unit, "the value of a Result that holds no value: it holds nothing"},

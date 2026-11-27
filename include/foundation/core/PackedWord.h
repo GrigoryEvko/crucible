@@ -246,9 +246,11 @@ public:
         return PackedWord{detail::packed_word_from_<Word>(placed)};
     }
 
-    [[nodiscard]] friend constexpr bool operator==(PackedWord left, PackedWord right) noexcept {
-        return left.bits_ == right.bits_;
-    }
+    // The == compares the word.  It is a defaulted member, so the walk of
+    // EqualsByBytes reads it, and an Option of a packed word compares its one
+    // word.  The niche takes each word with a free bit set, and the slot of an
+    // empty Option holds the one word of niche_empty.
+    [[nodiscard]] constexpr bool operator==(PackedWord const& other) const noexcept = default;
 
     // The niche protocol: the word of each bit set holds a free bit, which no
     // door sets.  A layout that fills its word has no niche.

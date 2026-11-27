@@ -1208,6 +1208,15 @@ option_expect_niche(fixy::Option<fixy::View<std::uint32_t const>> option) noexce
 // tag word after the payload.
 [[gnu::used]] bool option_is_some(fixy::Option<std::uint64_t> const& option) noexcept { return option.is_some(); }
 
+// The == of two Options of a niche payload whose equal is the identity of its
+// bytes compares the words of the two slots.
+using ProbeNicheId = fixy::Id<struct ProbeNicheTag, std::uint64_t>;
+
+[[gnu::used]] bool option_niche_equal(fixy::Option<ProbeNicheId> const& left,
+                                      fixy::Option<ProbeNicheId> const& right) noexcept {
+    return left == right;
+}
+
 // A clear of an Option of a payload of 64 bytes writes only its tag.  Its sum
 // goes through memory, so its empty marker writes no zero word.
 [[gnu::used]] void option_clear_block(fixy::Option<Block64>& held) noexcept { held = {}; }
@@ -2795,6 +2804,10 @@ struct RawCallRef {
 
 [[gnu::used]] bool option_is_some_raw(std::optional<std::uint64_t> const& option) noexcept {
     return option.has_value();
+}
+
+[[gnu::used]] bool option_niche_equal_raw(std::uint64_t const& left, std::uint64_t const& right) noexcept {
+    return left == right;
 }
 
 [[gnu::used]] void option_clear_block_raw(std::optional<Block64>& held) noexcept { held = std::nullopt; }

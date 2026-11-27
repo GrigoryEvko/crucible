@@ -126,6 +126,14 @@ struct equal_parts final {};
 // Equatable type.
 struct ieee_equality final {};
 
+// The annotation of a class of the base whose own == is the identity of each
+// of its bytes, and whose == cannot be defaulted, such as a class with a
+// byte_seal member, which has no ==.  The walk of EqualsByBytes trusts the
+// mark only on a class of the base, and each marked class states its reason
+// beside the mark.  A test pins that its == agrees with the identity of its
+// bytes over fixed and Philox values.
+struct equal_bytes final {};
+
 namespace detail {
 
 // The type and the byte offset of each base subobject and of each
@@ -299,6 +307,66 @@ enum class CompareKind : std::uint8_t {
     return std::meta::extract<bool>(std::meta::substitute(own, {type}));
 }
 
+// True when the class declares a public member operator== that is
+// defaulted.  A hidden friend is no member, so the walk does not see a
+// defaulted friend, and a private == does not count.
+[[nodiscard]] consteval bool has_defaulted_member_equality_at(std::meta::info type) {
+    auto const members = std::meta::members_of(type, std::meta::access_context::unprivileged());
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member = members[index];
+        if (std::meta::is_function(member) && std::meta::is_operator_function(member)
+            && std::meta::operator_of(member) == std::meta::operators::op_equals_equals
+            && std::meta::is_defaulted(member)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when equal of the type is the identity of its bytes: an integer, a
+// bool, a character, an enumeration, a pointer to an object or a function, a
+// bounded C array of such elements, or a class that holds no byte outside
+// its parts, whose parts are each such a type, and whose equality is the
+// equality of all of its parts.  That equality is a member operator== that
+// is defaulted, the parts of a class with derive_protocol and no own ==, or
+// the own == of a class of the base with the mark equal_bytes.  An empty
+// class part takes no byte when it has no address of its own, and each other
+// part counts its size, so a class with padding, or with an empty part that
+// holds a byte, is no such type.  A float is no such type, a union is none,
+// and a bit-field refuses its class.  Linear in the number of parts that the
+// walk reaches.
+[[nodiscard]] consteval bool equals_by_bytes_at(std::meta::info spelled, int depth) {
+    if (depth > max_protocol_depth) return false;
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    if (std::meta::is_integral_type(type) || std::meta::is_enum_type(type)) return true;
+    if (std::meta::is_pointer_type(type)) return true;
+    if (std::meta::is_bounded_array_type(type)) {
+        return equals_by_bytes_at(std::meta::remove_all_extents(type), depth + 1);
+    }
+    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return false;
+    bool const is_derived =
+        derives_protocol_at(type) && !std::meta::extract<bool>(std::meta::substitute(^^HasOwnEquality, {type}));
+    bool const is_marked = carries_mark_at(type, ^^equal_bytes) && ::foundation::reflect::is_class_of_the_base_(type);
+    if (!is_derived && !is_marked && !has_defaulted_member_equality_at(type)) return false;
+    std::size_t covered = 0;
+    std::size_t const bases = base_count(type);
+    for (std::size_t index = 0; index < bases; ++index) {
+        std::meta::info const base = base_type_at(type, index);
+        if (std::meta::is_empty_type(base)) continue;
+        if (!equals_by_bytes_at(base, depth + 1)) return false;
+        covered += std::meta::size_of(base);
+    }
+    std::size_t const members = member_count(type);
+    for (std::size_t index = 0; index < members; ++index) {
+        if (member_is_bit_field_at(type, index)) return false;
+        std::meta::info const part = member_type_at(type, index);
+        if (std::meta::is_class_type(part) && std::meta::is_empty_type(part)) continue;
+        if (!equals_by_bytes_at(part, depth + 1)) return false;
+        covered += std::meta::size_of(part);
+    }
+    return covered == std::meta::size_of(type);
+}
+
 // True for plain char and wchar_t, whose sign changes with the target.
 template <class T>
 inline constexpr bool is_target_signed_character_v = std::is_same_v<T, char> || std::is_same_v<T, wchar_t>;
@@ -353,6 +421,13 @@ concept Equatable = detail::compares_at(^^T, detail::CompareKind::equality, 0);
 // the base takes it as an identity.
 template <class T>
 concept PartialEquatable = Equatable<T> || detail::states_ieee_equality_at(^^T);
+
+// An Equatable type whose equal is the identity of its bytes
+// (detail::equals_by_bytes_at), so a compare of the bytes of two values gives
+// equal.  The niche form of Option compares the bytes of its two slots for
+// such a payload.
+template <class T>
+concept EqualsByBytes = Equatable<T> && detail::equals_by_bytes_at(^^T, 0);
 
 // A type that order orders: an integer, a bool, a character, an
 // enumeration, a float or a double, a bounded C array of such elements, a

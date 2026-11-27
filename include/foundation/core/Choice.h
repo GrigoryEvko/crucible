@@ -1734,6 +1734,18 @@ class OptionSlot<T, OptionForm::niche> : NicheLifetime<NicheRead<T>::empty_has_z
     [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
         return holds_() == other.holds_();
     }
+    // True when the two slots hold the same bytes.  The basis: each door that
+    // ends or empties a slot writes the bytes of NicheRead<T>::empty_() (the
+    // default member, end_take_, and the copy and the assignment of an empty
+    // slot), and no door starts a slot over other bytes.  So an empty slot
+    // holds exactly those bytes, also when is_empty takes more than one
+    // pattern, and a full slot never holds a value that is_empty takes.  For
+    // a payload whose equal is the identity of its bytes (EqualsByBytes), two
+    // slots then hold equal Options exactly when their bytes are equal.  For
+    // a payload of one word, that is one compare.  O(sizeof(T)).
+    [[nodiscard]] bool same_bytes_(OptionSlot const& other) const noexcept {
+        return __builtin_memcmp(__builtin_addressof(value_), __builtin_addressof(other.value_), sizeof(T)) == 0;
+    }
     // A storage door: the payload is a member of the slot, which its Option owns.
     [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T& payload_() noexcept { return value_; }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return value_; }
@@ -2391,10 +2403,18 @@ public:
     // Two Options of one type are equal when both are empty, or when both
     // hold equal payloads.  A payload is read only when both hold one, and
     // equal of the Protocol family compares the payloads.  The cost is one
-    // test of each state and one compare of the payloads.
+    // test of each state and one compare of the payloads.  The niche form of
+    // a payload whose equal is the identity of its bytes compares the bytes
+    // of the two slots, outside a constant evaluation (same_bytes_ of the
+    // niche slot gives the basis), so an Option of a word is one compare.
     [[nodiscard]] friend constexpr bool operator==(Option const& left, Option const& right) noexcept
         requires Equatable<T>
     {
+        if constexpr (detail::option_form_of<T> == detail::OptionForm::niche && EqualsByBytes<T>) {
+            if !consteval {
+                return left.slot_.same_bytes_(right.slot_);
+            }
+        }
         return left.slot_.same_state_(right.slot_)
             && (!left.slot_.holds_() || ::foundation::core::equal(left.slot_.payload_(), right.slot_.payload_()));
     }

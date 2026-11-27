@@ -43,7 +43,9 @@ public:
 
     [[nodiscard]] constexpr Word raw() const noexcept { return value_; }
 
-    [[nodiscard]] friend constexpr bool operator==(Id left, Id right) noexcept = default;
+    // The == is a defaulted member, so the walk of EqualsByBytes reads it,
+    // and an Option of an Id compares its one word.
+    [[nodiscard]] constexpr bool operator==(Id const& other) const noexcept = default;
     [[nodiscard]] friend constexpr std::strong_ordering operator<=>(Id left, Id right) noexcept = default;
 };
 

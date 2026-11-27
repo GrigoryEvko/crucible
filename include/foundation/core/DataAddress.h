@@ -116,7 +116,9 @@ public:
 template <DeviceIdentity Device>
 class DataAddress;
 
-class RunAddress {
+// The mark equal_bytes: the == compares the address, the one part with bytes.
+// The byte_seal member has no ==, so the == cannot be defaulted.
+class[[= equal_bytes{}]] RunAddress {
     void* address_ = nullptr;
     // The seal makes the assignment user-provided, so std::bit_cast cannot
     // build a RunAddress from the bytes of an integer.
@@ -413,10 +415,9 @@ public:
         return mint_address_key(__builtin_bit_cast(void const*, std::to_underlying(word_)));
     }
 
-    [[nodiscard]] friend constexpr bool operator==(ForeignAddressKey const& left,
-                                                   ForeignAddressKey const& right) noexcept {
-        return left.word_ == right.word_;
-    }
+    // The == compares the word.  It is a defaulted member, so the walk of
+    // EqualsByBytes reads it, and an Option of a key compares its one word.
+    [[nodiscard]] constexpr bool operator==(ForeignAddressKey const& other) const noexcept = default;
 };
 
 // The key of the address, which Owner holds and re-mints.  O(1).

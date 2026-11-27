@@ -1035,6 +1035,12 @@ PROBES: tuple[Probe, ...] = (
         longer=1,
     ),
     Probe(
+        "option_niche_equal",
+        "the == of two Options of a niche payload whose equal is the identity of its bytes, such as an Id, is one "
+        "compare of the words of the two slots, as the raw form is one compare of two words.  Each empty slot holds "
+        "the bytes of the empty value of the niche, so no test of the two states is necessary",
+    ),
+    Probe(
         "option_ok_or",
         f"ok_or of an Option is one test of the tag and one branch, as the raw form is one test and one branch.  "
         f"{TAG_READ}",

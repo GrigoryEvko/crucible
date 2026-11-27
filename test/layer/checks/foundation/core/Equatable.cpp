@@ -349,6 +349,89 @@ static_assert(differs_after([](Wide& wide) { wide.pad.set(index<3>(), 1); }));
 static_assert(base_orders_first());
 static_assert(std::is_lt(order(Sealed{1, Mode::on}, Sealed{2, Mode::off})));
 
+// EqualsByBytes: the leaves whose equal is the identity of their bytes, and a
+// class whose equality is the equality of all of its parts, with no byte
+// outside them.
+static_assert(EqualsByBytes<std::uint8_t> && EqualsByBytes<std::int64_t> && EqualsByBytes<bool>);
+static_assert(EqualsByBytes<Mode> && EqualsByBytes<int const*> && EqualsByBytes<std::uint32_t[4]>);
+static_assert(EqualsByBytes<Low>);
+static_assert(!EqualsByBytes<Sealed>, "three bytes of padding follow the mode");
+static_assert(!EqualsByBytes<float> && !EqualsByBytes<double>);
+
+// A class with a defaulted member ==, a class whose == is a defaulted hidden
+// friend, and a class with an own == that is not defaulted.  The walk reads
+// only a member ==.
+struct BytesByMember {
+    std::uint32_t low = 0;
+    std::uint32_t high = 0;
+    constexpr bool operator==(BytesByMember const&) const noexcept = default;
+};
+struct BytesByFriend {
+    std::uint64_t word = 0;
+    friend constexpr bool operator==(BytesByFriend, BytesByFriend) noexcept = default;
+};
+struct BytesByOwn {
+    std::uint64_t word = 0;
+    constexpr bool operator==(BytesByOwn const& other) const noexcept { return word == other.word; }
+};
+static_assert(EqualsByBytes<BytesByMember> && !EqualsByBytes<BytesByFriend> && !EqualsByBytes<BytesByOwn>);
+
+// The mark equal_bytes on a class of the namespace of the base, as each
+// class of the base: the walk trusts it.
+struct[[= equal_bytes{}]] MarkedInTheBase {
+    std::uint64_t word = 0;
+    constexpr bool operator==(MarkedInTheBase const& other) const noexcept { return word == other.word; }
+};
+static_assert(EqualsByBytes<MarkedInTheBase>);
+
+// A byte outside the parts refuses the class: padding, an empty part that
+// holds a byte of its own, a float part and a bit-field.  An empty part with
+// no address of its own takes no byte.
+struct Padded {
+    std::uint8_t tag = 0;
+    std::uint32_t word = 0;
+    constexpr bool operator==(Padded const&) const noexcept = default;
+};
+struct EmptyPart {
+    friend constexpr bool operator==(EmptyPart, EmptyPart) noexcept { return true; }
+};
+struct WithEmptyByte {
+    EmptyPart empty{};
+    std::uint8_t tag = 0;
+    constexpr bool operator==(WithEmptyByte const&) const noexcept = default;
+};
+struct WithEmptyNoAddress {
+    [[no_unique_address]] EmptyPart empty{};
+    std::uint32_t word = 0;
+    constexpr bool operator==(WithEmptyNoAddress const&) const noexcept = default;
+};
+struct WithFloat {
+    float scale = 0.0f;
+    constexpr bool operator==(WithFloat const&) const noexcept = default;
+};
+struct WithBitField {
+    std::uint32_t low : 16 = 0;
+    std::uint32_t high : 16 = 0;
+    constexpr bool operator==(WithBitField const&) const noexcept = default;
+};
+static_assert(!EqualsByBytes<Padded> && !EqualsByBytes<WithEmptyByte> && !EqualsByBytes<WithBitField>);
+static_assert(EqualsByBytes<WithEmptyNoAddress>);
+static_assert(!detail::equals_by_bytes_at(^^WithFloat, 0));
+
 }  // namespace detail::equatable_checks
 
 }  // namespace foundation::core
+
+// The mark equal_bytes counts only on a class of the base, so a class of this
+// namespace with the mark and an own == is Equatable, and no EqualsByBytes
+// type.
+namespace equatable_outside_checks {
+
+struct[[= ::foundation::core::equal_bytes{}]] MarkedOutsideTheBase {
+    std::uint64_t word = 0;
+    constexpr bool operator==(MarkedOutsideTheBase const& other) const noexcept { return word == other.word; }
+};
+static_assert(::foundation::core::Equatable<MarkedOutsideTheBase>
+              && !::foundation::core::EqualsByBytes<MarkedOutsideTheBase>);
+
+}  // namespace equatable_outside_checks
