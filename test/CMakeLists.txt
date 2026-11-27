@@ -756,6 +756,9 @@ crucible_test(test_tensor_meta_synthetic_address)
 # Each route from bytes to a TensorMeta refuses a size or a stride past the
 # bound of a TensorDim, and a slot reads back the lane that it wrote.
 crucible_test(test_tensor_dim_bound)
+# The vector check of the lanes of decode_tensor_shape agrees with the scalar
+# predicate of the claims, at each level that the build compiles.
+crucible_test(test_tensor_shape_decode)
 # The trap checks of a build other than Debug (cmake/CodeFlags.cmake, 196b)
 # end a child with a trap for a division by zero, the minimum by -1, a shift
 # by the width and a float cast past the range.  A Debug build of the tests
@@ -2723,6 +2726,15 @@ crucible_neg_compile_test(neg_tensor_shape_raw_views
   "required for the satisfaction of .TensorShapeLanes<Sizes, Strides>. \\[with Sizes = foundation::core::View<")
 crucible_neg_compile_test(neg_tensor_shape_construct
   "error: .constexpr crucible::TensorShape::TensorShape\\(crucible::TensorSizes, crucible::TensorStrides\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+# decode_tensor_shape is the door of the fields of a writer outside the
+# process.  The constructor of a shape from such fields and the write of a
+# whole block take what the door checked, so each is private.
+crucible_neg_compile_test(neg_tensor_shape_from_unchecked_fields
+  "error: .crucible::TensorShape::TensorShape\\(const crucible::UncheckedTensorMeta&\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_tensor_dim_array_set_lanes
+  "error: .constexpr void crucible::TensorDimArray::set_lanes_\\(const foundation::core::FixedArray<long int, 8>&\\). is private within this context"
   "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
 
 # TensorMeta::set_flags is the one writer of the flags, and it writes zero
