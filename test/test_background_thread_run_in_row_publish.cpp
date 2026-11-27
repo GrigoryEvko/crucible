@@ -99,6 +99,11 @@ void Gate::on_region_ready(eff::Bg const&, BackgroundThread::PublishStage const&
     }
 }
 
+// The op at which the foreground of each restart of the rig left the
+// region.  The foreground records no divergent op, so the rig pushes none.
+static constexpr crucible::SchemaHash kDivergentSchema{0x00D00000ULL};
+static constexpr crucible::ShapeHash kDivergentShape{0x5000ULL};
+
 static void push(crucible::test::TraceRig& rig, uint64_t family, uint32_t op) {
     crucible::TraceRing::Entry e{};
     e.schema_hash = crucible::SchemaHash{family | op};
@@ -188,7 +193,7 @@ static void check_reset_drops_inflight_regions(publish_rig::Gate& gate, crucible
     // The foreground's divergence handler does exactly this: each op in the
     // ring was recorded before the divergence.
     const crucible::StreamPoint reset_point = crucible::StreamPoint::restart_at(rig.ring_total_produced());
-    bt.request_restart(rig.ring_total_produced());
+    bt.request_restart(rig.ring_total_produced(), kDivergentSchema, kDivergentShape);
     CRUCIBLE_TEST_ASSERT(kTest, bt.requested_reset() == reset_point);
 
     for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -263,7 +268,7 @@ static void check_reset_applies_at_its_point(publish_rig::Gate& gate, crucible::
     }
 
     const crucible::StreamPoint reset_point = crucible::StreamPoint::restart_at(rig.ring_total_produced());
-    bt.request_restart(rig.ring_total_produced());
+    bt.request_restart(rig.ring_total_produced(), kDivergentSchema, kDivergentShape);
     gate.reset_observed.store_release(true);
     CRUCIBLE_TEST_ASSERT(kTest, bt.applied_reset() != reset_point && "the detect stage waits inside the backlog");
 
@@ -316,7 +321,7 @@ static void check_mark_keeps_an_unapplied_restart(publish_rig::Gate& gate, cruci
     }
 
     const uint64_t restart_ops = rig.ring_total_produced();
-    bt.request_restart(restart_ops);
+    bt.request_restart(restart_ops, kDivergentSchema, kDivergentShape);
     CRUCIBLE_TEST_ASSERT(kTest, bt.applied_reset() != StreamPoint::restart_at(restart_ops)
                                     && "the detect stage waits inside the backlog");
     for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -325,6 +330,11 @@ static void check_mark_keeps_an_unapplied_restart(publish_rig::Gate& gate, cruci
     bt.request_mark(mark_ops);
     CRUCIBLE_TEST_ASSERT(kTest, bt.requested_reset() == StreamPoint::restart_at(mark_ops)
                                     && "a mark lost an unapplied restart");
+    // The restart at the point of the mark applies with the op of the
+    // restart that it replaced.
+    CRUCIBLE_TEST_ASSERT(kTest, bt.requested_divergent_op()
+                                        == crucible::IterationDetector::OpKey::of(kDivergentSchema, kDivergentShape)
+                                    && "a mark lost the op of an unapplied restart");
 
     gate.release.store_release(true);
     uint64_t target = rig.ring_total_produced();
@@ -371,7 +381,7 @@ static void check_reset_skips_the_stale_backlog(publish_rig::Gate& gate, crucibl
     while (!gate.in_callback.load_acquire()) {
         CRUCIBLE_SPIN_PAUSE;
     }
-    bt.request_restart(rig.ring_total_produced());
+    bt.request_restart(rig.ring_total_produced(), kDivergentSchema, kDivergentShape);
     gate.release.store_release(true);
 
     const uint64_t target = rig.ring_total_produced();

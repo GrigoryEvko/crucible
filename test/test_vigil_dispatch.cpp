@@ -171,6 +171,7 @@ int main() {
     test_dispatch_basic();
     test_dispatch_divergence();
     test_dispatch_recovery();
+    test_dispatch_recovery_after_a_divergence_at_another_op();
     test_alignment_continues_inside_the_matched_ops();
     test_alignment_ends_after_its_bound();
     test_alignment_bound_returns_to_replay();

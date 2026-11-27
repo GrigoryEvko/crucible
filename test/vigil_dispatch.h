@@ -59,6 +59,7 @@ void test_try_claim_refuses_a_wrong_thread(::fixy::TestRunnerCtx const& test);
 void test_dispatch_basic();
 void test_dispatch_divergence();
 void test_dispatch_recovery();
+void test_dispatch_recovery_after_a_divergence_at_another_op();
 
 // The alignment to the head of a published region
 // (test_vigil_dispatch_alignment.cpp).

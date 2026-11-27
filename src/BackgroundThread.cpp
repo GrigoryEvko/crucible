@@ -621,14 +621,16 @@ BackgroundThread::prepare_iteration_build_work(::foundation::effects::Alloc allo
 // points.  A mark keeps the held ops: they belong to the same stream, and
 // only the regions cut before the mark are stale.  Each applied reset reads
 // the numerics of the newest request (request_numerics), so each work cut
-// after it carries them.
+// after it carries them.  Each applied restart reads the op of the newest
+// restart request after it reads the point, so it reads the op of that point
+// or of a newer request (request_restart).
 void BackgroundThread::apply_due_reset_() noexcept {
     const StreamPoint requested = requested_reset_.get();
     if (requested == applied_reset_.peek_relaxed()) return;
     CRUCIBLE_FATAL_INVARIANT(requested.ops_before() >= stream_ops_);
     if (requested.ops_before() != stream_ops_) return;
     if (requested.restarts_detector()) {
-        detector_.restart_after_divergence();
+        detector_.restart_after_divergence(requested_divergent_op_.load_acquire());
         pending_ops_.clear();
     }
     stream_numerics_ = requested_numerics_.load_acquire();

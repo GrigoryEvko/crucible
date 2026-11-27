@@ -156,4 +156,64 @@ void test_dispatch_recovery() {
     ::fixy::check::pass(kTest, "  test_dispatch_recovery: PASSED\n");
 }
 
+namespace {
+
+// Dispatches one op that no iteration holds, and checks that it diverges.
+void diverge_at(Vigil& vigil, SchemaHash schema_hash) {
+    TraceRing::Entry bad{};
+    bad.schema_hash = schema_hash;
+    bad.shape_hash = SHAPE[0];
+    bad.num_inputs = 0;
+    bad.num_outputs = 1;
+    const ::fixy::FixedArray<TensorMeta, 1> bad_meta{make_meta(fake_ptr(99, 0))};
+    const DispatchResult result = crucible::test::dispatch_synthetic(vigil, bad, bad_meta, 1);
+    CRUCIBLE_TEST_ASSERT(kTest, result.status == ReplayStatus::DIVERGED);
+    CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled());
+}
+
+// Records six clean iterations from first_iter, waits for the region, and
+// aligns to it.  Returns the count of the ops of the region.
+[[nodiscard]] uint32_t record_and_align(Vigil& vigil, uint32_t first_iter) {
+    for (uint32_t iter = first_iter; iter < first_iter + 6; iter++)
+        feed_record(vigil, iter);
+    feed_trigger(vigil, first_iter + 6);
+    flush_and_wait_region_published(kTest, vigil);
+    align_and_activate(vigil, first_iter + 7);
+    return vigil.context().active_region().expect("the Vigil replays a region")->num_ops();
+}
+
+}  // namespace
+
+// Two one-time events at two ops.  The first refutes the true period, and
+// the Vigil compiles again with the fallback of two iterations.  The second
+// makes the fallback diverge at another op, which lifts the refutation of
+// the true period, so the Vigil compiles again with one iteration.
+void test_dispatch_recovery_after_a_divergence_at_another_op() {
+    Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
+
+    feed_record(vigil, 0);
+    feed_record(vigil, 1);
+    feed_trigger(vigil, 2);
+    flush_and_wait_region_published(kTest, vigil);
+    align_and_activate(vigil, 3);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.context().active_region().expect("the Vigil replays a region")->num_ops() == NUM_OPS);
+
+    diverge_at(vigil, SchemaHash{0xBAD});
+    CRUCIBLE_TEST_ASSERT(kTest, record_and_align(vigil, 10) == 2 * NUM_OPS);
+
+    // align_and_activate leaves the engine at the second iteration of the
+    // fallback, so the next op diverges from that region.
+    diverge_at(vigil, SchemaHash{0xBAD2});
+    CRUCIBLE_TEST_ASSERT(kTest, record_and_align(vigil, 20) == NUM_OPS);
+    for (uint32_t i = 0; i < NUM_OPS; i++) {
+        auto d = make_op(28, i);
+        const DispatchResult result = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
+        CRUCIBLE_TEST_ASSERT(kTest, result.action == DispatchResult::Action::COMPILED);
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.diverged_count() == 2);
+
+    ::fixy::check::pass(kTest, "  test_dispatch_recovery_after_a_divergence_at_another_op: PASSED\n");
+}
+
 }  // namespace test_vigil_dispatch

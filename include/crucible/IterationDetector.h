@@ -51,6 +51,16 @@ namespace crucible {
 // its second break, or on a break followed by a divergence of the region
 // that replayed it.
 //
+// A divergence of the region of a period with a unique phase refutes the
+// period at once, and the refutation keeps the key of the op at which the
+// foreground left the region.  A one-time event, such as a checkpoint save,
+// thus refutes the true period, and the stream gets the fallback of two
+// iterations.  A later divergence of a period of the same root at another op
+// lifts the refutation, because two divergences at two ops come from two
+// events.  The end of a run of equal groups, and an event that repeats,
+// diverge at the same op each time, so they lift nothing.  Each refutation is
+// lifted at most LIFTS_PER_REFUTATION times.
+//
 // A boundary is reported only at an accepted period, and each report proves
 // that the iteration just completed equals the iteration before it.
 //
@@ -106,15 +116,56 @@ struct IterationDetector {
     // A period is refuted after this many breaks.
     static constexpr uint32_t BREAKS_TO_REFUTE = 2;
 
+    // A divergence at another op lifts a refutation by a divergence at most
+    // this many times.  Two events that repeat at two ops, such as a log
+    // every 10 iterations and a save every 7, refute and lift the two periods
+    // of one root in turn.  Each turn costs a divergence and a region.  Two
+    // lifts for each of the two periods stop that after six divergences of
+    // the root, and the root then has no period until reset().
+    static constexpr uint32_t LIFTS_PER_REFUTATION = 2;
+
+    // The key of one op, the mix of its schema hash and its shape hash that
+    // check() reads.  A restart after a divergence takes the key of the op at
+    // which the foreground left the region.
+    class OpKey {
+    public:
+        constexpr OpKey() noexcept = default;
+
+        [[nodiscard]] static constexpr OpKey of(SchemaHash schema_hash, ShapeHash shape_hash) noexcept {
+            return OpKey{key_of_(schema_hash, shape_hash)};
+        }
+
+        constexpr bool operator==(const OpKey&) const noexcept = default;
+
+    private:
+        explicit constexpr OpKey(uint64_t word) noexcept : word_{word} {}
+
+        uint64_t word_ = 0;
+    };
+
     // One period that the stream failed to hold. The body fingerprint is a
     // sum over the body's keys, so it is the same for every rotation of the
-    // body. A restart can land at any offset of the iteration.
+    // body. A restart can land at any offset of the iteration.  A lift keeps
+    // the period in the ring with no break, so the ring keeps its count of
+    // lifts.
     struct RefutedPeriod {
-        uint32_t period = 0;
         uint64_t body_sum = 0;
+        // The sum of one copy of the root of the body, as body_sum sums the
+        // body.  The periods of one root have the same root and root sum.
+        uint64_t root_sum = 0;
+        // The op at which the region of the period diverged, when a
+        // divergence refuted the period.
+        OpKey divergent_op{};
+        uint32_t period = 0;
+        uint32_t root = 0;
         uint32_t breaks = 0;
+        // How many times a divergence at another op lifted the refutation.
+        uint32_t lifts = 0;
         // Broke in the history the detector holds, since the last restart.
         bool broke_since_restart = false;
+        // A divergence refuted the period, and divergent_op holds its op.
+        bool is_refuted_by_divergence = false;
+        ::fixy::FixedArray<uint8_t, 6> pad{};
     };
 
     // True while a period is accepted.
@@ -139,6 +190,11 @@ struct IterationDetector {
     // The body fingerprint of the accepted period.
     uint64_t period_body_sum_ = 0;
 
+    // The root of the body of the accepted period, and the sum of one copy
+    // of it (RefutedPeriod).
+    uint32_t period_root_ = 0;
+    uint64_t period_root_sum_ = 0;
+
     // How many accepted periods have reported a boundary since the last
     // restart, and whether the current one has.
     uint32_t periods_reported_ = 0;
@@ -155,8 +211,8 @@ struct IterationDetector {
     // the op before it, whose prefix fingerprints start the history.
     uint64_t base_ = 0;
 
-    // A ring of periods that broke at least once. It survives
-    // restart_after_divergence(), and only reset() clears it.
+    // A ring of periods that broke at least once, a lifted one included. It
+    // survives restart_after_divergence(), and only reset() clears it.
     ::fixy::FixedArray<RefutedPeriod, REFUTED_CAPACITY> refuted_{};
     uint32_t refuted_count_ = 0;
     uint32_t refuted_next_ = 0;
@@ -222,7 +278,7 @@ struct IterationDetector {
     }
 
     // Starts again from an empty history after the foreground diverged from
-    // a published region.
+    // a published region at the op of divergent_op.
     //
     // The accepted period is refuted first when the region that diverged can
     // only have been cut at that period. The foreground never says which
@@ -234,16 +290,30 @@ struct IterationDetector {
     // to the first region published. Refuting the wrong one would force a
     // period of two iterations onto a stream that has one.
     //
+    // Before it refutes the accepted period, the divergence lifts each
+    // refutation of a period of the same root by a divergence at another op,
+    // while the lifts of that period are below LIFTS_PER_REFUTATION.  A lift
+    // clears each break of the period, the break of a gap too, so the search
+    // can accept the period again.
+    //
     // A period that broke since the last restart and reported a boundary
     // before it broke published a region, and the divergence is its second
-    // strike. That is the layer square a replay diverged from.
-    void restart_after_divergence() {
+    // strike. That is the layer square a replay diverged from.  Its
+    // refutation also keeps divergent_op.
+    void restart_after_divergence(OpKey divergent_op) {
         const bool diverged_at_this_period = period_ != 0 && current_period_reported_ && periods_reported_ == 1;
-        if (diverged_at_this_period && phase_is_unique) break_(period_, period_body_sum_, BREAKS_TO_REFUTE);
+        if (diverged_at_this_period && phase_is_unique) {
+            lift_refutations_of_root_(divergent_op);
+            refute_accepted_by_divergence_(divergent_op);
+        }
         for (const RefutedSlot slot : refuted_.indices()) {
             if (slot.raw() >= refuted_count_) break;
             RefutedPeriod refuted = refuted_.at(slot);
-            if (refuted.broke_since_restart) refuted.breaks = BREAKS_TO_REFUTE;
+            if (refuted.broke_since_restart && refuted.breaks < BREAKS_TO_REFUTE) {
+                refuted.breaks = BREAKS_TO_REFUTE;
+                refuted.divergent_op = divergent_op;
+                refuted.is_refuted_by_divergence = true;
+            }
             refuted.broke_since_restart = false;
             refuted_.set(slot, refuted);
         }
@@ -471,6 +541,8 @@ private:
         last_completed_len = 0;
         period_ = 0;
         period_body_sum_ = 0;
+        period_root_ = 0;
+        period_root_sum_ = 0;
         periods_reported_ = 0;
         current_period_reported_ = false;
         pos_ = 0;
@@ -491,25 +563,73 @@ private:
         CRUCIBLE_POST(0, table_used_ == 0u);
     }
 
-    // Records breaks against a period. The ring evicts its oldest entry when
-    // it is full.
-    void break_(uint32_t period, uint64_t body_sum, uint32_t breaks) {
+    // The slot of the accepted period in the ring of refuted periods.  A
+    // period with no slot gets the next one, with no break, and the ring
+    // evicts its oldest entry when it is full.
+    [[nodiscard]] RefutedSlot slot_of_accepted_() {
+        for (const RefutedSlot slot : refuted_.indices()) {
+            if (slot.raw() >= refuted_count_) break;
+            const RefutedPeriod refuted = refuted_.at(slot);
+            if (refuted.period == period_ && refuted.body_sum == period_body_sum_) return slot;
+        }
+        const RefutedSlot slot =
+            RefutedSlot::check(refuted_next_).expect("the next refuted slot is below REFUTED_CAPACITY");
+        refuted_.set(slot, RefutedPeriod{.body_sum = period_body_sum_,
+                                         .root_sum = period_root_sum_,
+                                         .divergent_op = OpKey{},
+                                         .period = period_,
+                                         .root = period_root_,
+                                         .breaks = 0,
+                                         .lifts = 0,
+                                         .broke_since_restart = false,
+                                         .is_refuted_by_divergence = false,
+                                         .pad = {}});
+        refuted_next_ = (refuted_next_ + 1) % REFUTED_CAPACITY;
+        if (refuted_count_ < REFUTED_CAPACITY) ++refuted_count_;
+        return slot;
+    }
+
+    // Records one break against the accepted period.  A period that reported
+    // a boundary before it broke is marked, so a divergence before the next
+    // restart refutes it.
+    void break_accepted_() {
+        const RefutedSlot slot = slot_of_accepted_();
+        RefutedPeriod refuted = refuted_.at(slot);
+        refuted.breaks = ::fixy::min(BREAKS_TO_REFUTE, refuted.breaks + 1);
+        if (current_period_reported_) refuted.broke_since_restart = true;
+        refuted_.set(slot, refuted);
+    }
+
+    // Refutes the accepted period, whose region diverged at the op of
+    // divergent_op.
+    void refute_accepted_by_divergence_(OpKey divergent_op) {
+        const RefutedSlot slot = slot_of_accepted_();
+        RefutedPeriod refuted = refuted_.at(slot);
+        refuted.breaks = BREAKS_TO_REFUTE;
+        refuted.divergent_op = divergent_op;
+        refuted.is_refuted_by_divergence = true;
+        refuted_.set(slot, refuted);
+    }
+
+    // Lifts each refutation by a divergence at an op other than divergent_op
+    // of a period of the root of the accepted period, while its lifts are
+    // below the bound.  The accepted period is not refuted, so its own slot
+    // stays as it is.  A slot keeps its count of lifts, and only reset() or
+    // the eviction of the slot clears it.
+    void lift_refutations_of_root_(OpKey divergent_op) {
         for (const RefutedSlot slot : refuted_.indices()) {
             if (slot.raw() >= refuted_count_) break;
             RefutedPeriod refuted = refuted_.at(slot);
-            if (refuted.period == period && refuted.body_sum == body_sum) {
-                refuted.breaks = ::fixy::min(BREAKS_TO_REFUTE, refuted.breaks + breaks);
-                refuted_.set(slot, refuted);
-                return;
-            }
+            const bool is_of_this_root = refuted.root == period_root_ && refuted.root_sum == period_root_sum_;
+            const bool is_liftable = refuted.is_refuted_by_divergence && refuted.divergent_op != divergent_op
+                                  && refuted.lifts < LIFTS_PER_REFUTATION;
+            if (!is_of_this_root || !is_liftable) continue;
+            refuted.breaks = 0;
+            refuted.divergent_op = OpKey{};
+            refuted.is_refuted_by_divergence = false;
+            ++refuted.lifts;
+            refuted_.set(slot, refuted);
         }
-        refuted_.set(RefutedSlot::check(refuted_next_).expect("the next refuted slot is below REFUTED_CAPACITY"),
-                     RefutedPeriod{.period = period,
-                                   .body_sum = body_sum,
-                                   .breaks = ::fixy::min(BREAKS_TO_REFUTE, breaks),
-                                   .broke_since_restart = false});
-        refuted_next_ = (refuted_next_ + 1) % REFUTED_CAPACITY;
-        if (refuted_count_ < REFUTED_CAPACITY) ++refuted_count_;
     }
 
     // True when keys [left, left+length) equal keys [right, right+length).
@@ -542,7 +662,7 @@ private:
     // a match.  search_ runs it only for a found square that is not refuted,
     // and accept_ runs it once.  The body is out of line, so the path of
     // each op holds no scan.
-    [[nodiscard]] CRUCIBLE_COLD uint64_t root_length_(uint64_t start, Period period) const noexcept {
+    [[nodiscard]] CRUCIBLE_COLD uint32_t root_length_(uint64_t start, Period period) const noexcept {
         const uint32_t length = period.value();
         const uint64_t body_begin = start - length;
         // The divisors up to the square root of the length, then the larger
@@ -574,11 +694,9 @@ private:
     // A run of equal groups inside one iteration thus gives at most two
     // periods, and the stream then gets its true period.  The next multiple
     // is the fallback for a true period that one divergence refuted: the
-    // stream then gets a period of two iterations.
-    //
-    // The limit of the rule: a divergence of the fallback refutes it too, and
-    // the stream then has no period until reset().  An expiry of each
-    // refutation, or a second strike for each period, is the planned cure.
+    // stream then gets a period of two iterations.  A divergence of the
+    // fallback at another op lifts the refutation of the true period
+    // (restart_after_divergence), and the stream gets it back.
     [[nodiscard]] CRUCIBLE_INLINE bool search_(uint64_t start, uint64_t earlier_link) {
         uint64_t link = earlier_link;
         for (uint32_t tested = 0; link != 0 && tested < MAX_CANDIDATES; ++tested) {
@@ -624,7 +742,7 @@ private:
     [[nodiscard]] CRUCIBLE_COLD bool accept_(uint64_t start, Period period, uint64_t body_sum) {
         const uint64_t length = period.value();
         const uint64_t body_begin = start - length;
-        const uint64_t root = root_length_(start, period);
+        const uint32_t root = root_length_(start, period);
         uint32_t best_phase = 0;
         uint64_t best_count = ~uint64_t{0};
         for (uint32_t phase = 0; phase < length; ++phase) {
@@ -644,6 +762,10 @@ private:
 
         period_ = period.value();
         period_body_sum_ = body_sum;
+        period_root_ = root;
+        // Each run of root keys of the body is one copy of a rotation of the
+        // root, so each one has the same sum.
+        period_root_sum_ = window_sum_(start - root, start);
         current_period_reported_ = false;
         phase_is_unique = best_count * root == length;
         confirmed = true;
@@ -657,8 +779,7 @@ private:
         const uint64_t boundary = next_boundary_;
         const bool holds = is_square_(boundary, period_) && windows_equal_(boundary - period_, boundary, K);
         if (holds) return fire_();
-        break_(period_, period_body_sum_, 1);
-        if (current_period_reported_) mark_broke_since_restart_(period_, period_body_sum_);
+        break_accepted_();
         period_ = 0;
         confirmed = false;
         phase_is_unique = false;
@@ -667,17 +788,6 @@ private:
         // into it again.
         rebuild_table_(alloc, keys_.size() * 2, pos_ + 1 - K);
         return false;
-    }
-
-    void mark_broke_since_restart_(uint32_t period, uint64_t body_sum) {
-        for (const RefutedSlot slot : refuted_.indices()) {
-            if (slot.raw() >= refuted_count_) break;
-            RefutedPeriod refuted = refuted_.at(slot);
-            if (refuted.period == period && refuted.body_sum == body_sum) {
-                refuted.broke_since_restart = true;
-                refuted_.set(slot, refuted);
-            }
-        }
     }
 
     [[nodiscard]] bool fire_() {

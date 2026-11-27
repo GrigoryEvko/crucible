@@ -37,6 +37,11 @@ constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::
 
 SchemaHash H(uint64_t v) { return SchemaHash{v}; }
 
+// The ops at which a test of a divergence leaves the region of a period.  A
+// test with one event, or with one event that repeats, diverges at the first.
+constexpr IterationDetector::OpKey kDivergentOp = IterationDetector::OpKey::of(SchemaHash{0xD0}, ShapeHash{});
+constexpr IterationDetector::OpKey kOtherDivergentOp = IterationDetector::OpKey::of(SchemaHash{0xD1}, ShapeHash{});
+
 struct Op {
     uint64_t schema = 0;
     uint64_t shape = 0;
@@ -256,6 +261,26 @@ inline constexpr std::size_t kAdamOps = 2 * kAdamParams + 1;
     return body;
 }
 
+// The ops of one iteration with two runs of six equal groups of six ops, and
+// a different tail of three ops after each run.  Each run holds a square of
+// one group and of two groups.
+inline constexpr std::size_t kRunGroups = 6;
+inline constexpr std::size_t kTwoRunsOps = 2 * (kRunGroups * kForeachGroupOps + 3);
+
+[[nodiscard]] ::fixy::FixedList<Op, kTwoRunsOps> two_runs_body() {
+    ::fixy::FixedList<Op, kTwoRunsOps> body{};
+    constexpr ::fixy::FixedArray<uint64_t, 2> kTails{0x820, 0x830};
+    for (const uint64_t tail_schema : kTails) {
+        for (std::size_t group = 0; group < kRunGroups; ++group) {
+            for (uint64_t member = 0; member < kForeachGroupOps; ++member)
+                static_cast<void>(body.append(Op{0x810 + member, 0x18}).expect("the loop has 78 ops"));
+        }
+        for (uint64_t tail = 0; tail < 3; ++tail)
+            static_cast<void>(body.append(Op{tail_schema + tail, 0x18}).expect("the loop has 78 ops"));
+    }
+    return body;
+}
+
 [[nodiscard]] bool is_same_op(Op left, Op right) { return left.schema == right.schema && left.shape == right.shape; }
 
 // When the foreground of the model takes a region that the detector published.
@@ -295,9 +320,9 @@ struct ForegroundRun {
 // takes it at uptake.  Then it aligns: it records nothing until the last K
 // ops equal the first K ops of the region.  Then it replays: it records
 // nothing while each op equals the next op of the region.  An op that does
-// not is a divergence: the detector restarts, the op is not recorded, and the
-// foreground records again from the next op.  Complexity: O(ops * K), with
-// O(P) for each published region.
+// not is a divergence: the detector restarts with the key of that op, the op
+// is not recorded, and the foreground records again from the next op.
+// Complexity: O(ops * K), with O(P) for each published region.
 [[nodiscard]] ForegroundRun run_with_foreground(IterationDetector& detector, ::fixy::View<Op const> body,
                                                 Iterations iterations, Uptake uptake) {
     ForegroundRun run{};
@@ -349,7 +374,7 @@ struct ForegroundRun {
             continue;
         }
         ++run.divergences;
-        detector.restart_after_divergence();
+        detector.restart_after_divergence(IterationDetector::OpKey::of(SchemaHash{op.schema}, ShapeHash{op.shape}));
         recorded.clear();
         has_pending = false;
         run.mode = ForegroundMode::Records;
@@ -503,7 +528,7 @@ void test_refuted_period_survives_divergence_restart() {
     CRUCIBLE_TEST_ASSERT(kTest, accepted_layer);
     CRUCIBLE_TEST_ASSERT(kTest, d.phase_is_unique);
 
-    d.restart_after_divergence();
+    d.restart_after_divergence(kDivergentOp);
     CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 1);
     CRUCIBLE_TEST_ASSERT(kTest, d.signature_len.get() == 0);
 
@@ -534,7 +559,7 @@ void test_divergence_after_a_second_period_refutes_nothing() {
         CRUCIBLE_TEST_ASSERT(kTest, d.period_ == 46);
         CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 1);
 
-        d.restart_after_divergence();
+        d.restart_after_divergence(kDivergentOp);
         CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 1);
         const Boundaries boundaries = feed(d, body.view(), Iterations{20}, StreamOp{0}, BodyOffset{13});
         for (const auto& boundary : boundaries)
@@ -631,11 +656,12 @@ void test_random_bodies_settle_on_true_period() {
 }
 
 // Feeds iterations copies of body, then restarts the detector as a divergence
-// of the region of the accepted period does, and gives the boundaries.
+// of the region of the accepted period at divergent_op does, and gives the
+// boundaries.
 [[nodiscard]] Boundaries feed_then_diverge(IterationDetector& detector, ::fixy::View<Op const> body,
-                                           Iterations iterations) {
+                                           Iterations iterations, IterationDetector::OpKey divergent_op) {
     Boundaries boundaries = feed(detector, body, iterations);
-    detector.restart_after_divergence();
+    detector.restart_after_divergence(divergent_op);
     return boundaries;
 }
 
@@ -644,44 +670,103 @@ void test_divergence_refutes_a_power_body_and_one_longer_power_is_its_fallback()
     // Each window occurs once in each copy of the root, and each copy is the
     // same op, so the foreground follows the same ops from each copy.  A
     // divergence then refutes the period.  The search accepts the next
-    // multiple of the root once, and after its divergence no longer power.
+    // multiple of the root once.  Its divergence at the same op lifts
+    // nothing, and the search accepts no longer power.
     const ::fixy::FixedArray<Op, 1> body{Op{7, 0}};
     IterationDetector d;
     const Boundaries base = feed(d, body.view(), Iterations{30});
     assert_settles_on(base, Period{5}, TailCount{3});
     CRUCIBLE_TEST_ASSERT(kTest, d.phase_is_unique);
     const uint64_t base_sum = d.period_body_sum_;
-    d.restart_after_divergence();
+    d.restart_after_divergence(kDivergentOp);
     CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 1);
     CRUCIBLE_TEST_ASSERT(kTest, d.is_refuted(5, base_sum));
-    const Boundaries fallback = feed_then_diverge(d, body.view(), Iterations{60});
+    const Boundaries fallback = feed_then_diverge(d, body.view(), Iterations{60}, kDivergentOp);
     assert_settles_on(fallback, Period{6}, TailCount{3});
     const Boundaries after = feed(d, body.view(), Iterations{60});
     CRUCIBLE_TEST_ASSERT(kTest, after.size() == 0);
     ::fixy::check::pass(kTest, "  test_power_body_refuted:         PASSED\n");
 }
 
-void test_second_divergence_leaves_no_period_until_reset_because_one_fallback_is_the_limit() {
-    // The limit of the rule on powers.  A divergence refutes the true period
-    // of 8 ops, and the stream gets the fallback of 16 ops, two iterations.
-    // A divergence of the fallback refutes it too.  Each longer power is
-    // skipped, so the stream has no period until reset().
+// The body of 8 distinct ops of the tests of events after acceptance.
+[[nodiscard]] ::fixy::FixedList<Op, 8> distinct_body() {
     ::fixy::FixedList<Op, 8> body{};
     for (uint64_t i = 0; i < 8; ++i)
         static_cast<void>(body.append(Op{0x300 + i, 0x400 + i}).expect("the body has 8 ops"));
+    return body;
+}
+
+void test_a_second_divergence_at_the_same_op_leaves_no_period_until_reset() {
+    // An event that repeats at one op.  It refutes the true period of 8 ops,
+    // and the stream gets the fallback of 16 ops, two iterations.  It refutes
+    // the fallback too.  The two divergences are at one op, so they lift
+    // nothing.  Each longer power is skipped, so the stream has no period
+    // until reset().
+    const auto body = distinct_body();
     IterationDetector d;
-    const Boundaries before = feed_then_diverge(d, body.view(), Iterations{4});
+    const Boundaries before = feed_then_diverge(d, body.view(), Iterations{4}, kDivergentOp);
     CRUCIBLE_TEST_ASSERT(kTest, before.size() != 0);
     const Boundaries fallback = feed(d, body.view(), Iterations{40});
     assert_settles_on(fallback, Period{16}, TailCount{10});
     CRUCIBLE_TEST_ASSERT(kTest, d.phase_is_unique);
-    d.restart_after_divergence();
+    d.restart_after_divergence(kDivergentOp);
     const Boundaries after = feed(d, body.view(), Iterations{80});
     CRUCIBLE_TEST_ASSERT(kTest, after.size() == 0);
     d.reset();
     const Boundaries fresh = feed(d, body.view(), Iterations{20});
     assert_settles_on(fresh, Period{8}, TailCount{10});
-    ::fixy::check::pass(kTest, "  test_one_fallback_is_the_limit:  PASSED\n");
+    ::fixy::check::pass(kTest, "  test_same_op_leaves_no_period:   PASSED\n");
+}
+
+void test_a_divergence_of_the_fallback_at_another_op_gives_back_the_true_period() {
+    // Two one-time events at two ops.  The first refutes the true period of
+    // 8 ops, and the stream gets the fallback of 16 ops.  The second makes
+    // the fallback diverge at another op, so it lifts the refutation of the
+    // true period, and the stream gets its true period again.
+    const auto body = distinct_body();
+    IterationDetector d;
+    const Boundaries before = feed(d, body.view(), Iterations{4});
+    CRUCIBLE_TEST_ASSERT(kTest, before.size() != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, d.period_ == 8);
+    const uint64_t true_sum = d.period_body_sum_;
+    d.restart_after_divergence(kDivergentOp);
+    CRUCIBLE_TEST_ASSERT(kTest, d.is_refuted(8, true_sum));
+
+    const Boundaries fallback = feed(d, body.view(), Iterations{40});
+    assert_settles_on(fallback, Period{16}, TailCount{10});
+    const uint64_t fallback_sum = d.period_body_sum_;
+    d.restart_after_divergence(kOtherDivergentOp);
+    CRUCIBLE_TEST_ASSERT(kTest, !d.is_refuted(8, true_sum));
+    CRUCIBLE_TEST_ASSERT(kTest, d.is_refuted(16, fallback_sum));
+
+    const Boundaries again = feed(d, body.view(), Iterations{40});
+    assert_settles_on(again, Period{8}, TailCount{10});
+    ::fixy::check::pass(kTest, "  test_other_op_gives_back_period: PASSED\n");
+}
+
+void test_two_events_that_repeat_at_two_ops_stop_after_the_lifts() {
+    // One event at one op breaks the true period, and an event at another op
+    // breaks its fallback.  Each divergence lifts the refutation of the other
+    // period, until each period has used its lifts.  The root then has no
+    // period until reset().
+    const auto body = distinct_body();
+    IterationDetector d;
+    const Boundaries before = feed(d, body.view(), Iterations{4});
+    CRUCIBLE_TEST_ASSERT(kTest, before.size() != 0);
+    constexpr uint32_t kMaxDivergences = 2 * IterationDetector::LIFTS_PER_REFUTATION + 2;
+    uint32_t divergences = 0;
+    for (; divergences <= kMaxDivergences; ++divergences) {
+        // The even divergences break the true period, the odd ones the fallback.
+        d.restart_after_divergence(divergences % 2 == 0 ? kDivergentOp : kOtherDivergentOp);
+        const Boundaries next = feed(d, body.view(), Iterations{40});
+        if (next.size() == 0) break;
+        assert_settles_on(next, divergences % 2 == 0 ? Period{16} : Period{8}, TailCount{10});
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, divergences + 1 == kMaxDivergences);
+    d.reset();
+    const Boundaries fresh = feed(d, body.view(), Iterations{20});
+    assert_settles_on(fresh, Period{8}, TailCount{10});
+    ::fixy::check::pass(kTest, "  test_two_events_stop_after_lifts: PASSED ({} divergences)\n", divergences + 1);
 }
 
 void test_a_run_of_equal_groups_gives_at_most_two_periods() {
@@ -713,7 +798,7 @@ void test_power_of_a_short_root_has_a_unique_phase() {
     CRUCIBLE_TEST_ASSERT(kTest, accepted_pairs);
     CRUCIBLE_TEST_ASSERT(kTest, d.phase_is_unique);
     const uint64_t body_sum = d.period_body_sum_;
-    d.restart_after_divergence();
+    d.restart_after_divergence(kDivergentOp);
     CRUCIBLE_TEST_ASSERT(kTest, d.is_refuted(6, body_sum));
     const Boundaries boundaries = feed(d, body.view(), Iterations{20});
     for (const auto& boundary : boundaries)
@@ -747,6 +832,28 @@ void test_equal_groups_replay_through_the_foreground() {
         CRUCIBLE_TEST_ASSERT(kTest, adam_run.divergences == 1);
     }
     ::fixy::check::pass(kTest, "  test_equal_groups_replay:        PASSED\n");
+}
+
+void test_two_runs_with_two_tails_settle_within_the_lifts() {
+    // A region of one or two groups diverges at the first op of the tail
+    // after the run that the foreground replays.  Two runs with two tails
+    // thus diverge at two ops, and each divergence can lift the refutation
+    // of the other period of the group.  The lifts are bounded, so the loop
+    // settles on the region of its iteration.
+    const auto body = two_runs_body();
+    constexpr uint32_t kMaxDivergences = 2 * IterationDetector::LIFTS_PER_REFUTATION + 2;
+    constexpr ::fixy::FixedArray<Uptake, 2> kUptakes{Uptake::AtOnce, Uptake::NextIteration};
+    ::fixy::FixedArray<uint32_t, 2> divergences{};
+    for (const auto slot : kUptakes.indices()) {
+        IterationDetector d;
+        const ForegroundRun run = run_with_foreground(d, body.view(), Iterations{40}, kUptakes.at(slot));
+        CRUCIBLE_TEST_ASSERT(kTest, run.mode == ForegroundMode::Replays);
+        CRUCIBLE_TEST_ASSERT(kTest, run.region_length == kTwoRunsOps);
+        CRUCIBLE_TEST_ASSERT(kTest, run.divergences <= kMaxDivergences);
+        divergences.set(slot, run.divergences);
+    }
+    ::fixy::check::pass(kTest, "  test_two_runs_two_tails:         PASSED ({} and {} divergences)\n",
+                        divergences.at(::fixy::index<0>()), divergences.at(::fixy::index<1>()));
 }
 
 void test_reset_clears_everything() {
@@ -820,12 +927,15 @@ int main() {
     test_short_periods();
     test_random_bodies_settle_on_true_period();
     test_divergence_refutes_a_power_body_and_one_longer_power_is_its_fallback();
-    test_second_divergence_leaves_no_period_until_reset_because_one_fallback_is_the_limit();
+    test_a_second_divergence_at_the_same_op_leaves_no_period_until_reset();
+    test_a_divergence_of_the_fallback_at_another_op_gives_back_the_true_period();
+    test_two_events_that_repeat_at_two_ops_stop_after_the_lifts();
     test_a_run_of_equal_groups_gives_at_most_two_periods();
     test_power_of_a_short_root_has_a_unique_phase();
     test_equal_groups_replay_through_the_foreground();
+    test_two_runs_with_two_tails_settle_within_the_lifts();
     test_reset_clears_everything();
     test_typestate_witness_minting();
-    ::fixy::check::pass(kTest, "test_iteration_detector: 18 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_iteration_detector: 21 groups, all passed\n");
     return 0;
 }

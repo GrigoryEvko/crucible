@@ -1395,7 +1395,15 @@ public:
     // The three requests write only atomic cells, which two threads can
     // write, so they are const (the doors of a synchronized class of
     // foundation/Transfer.h).
-    void request_restart(uint64_t ops_before) const noexcept {
+    //
+    // A restart names the op at which the foreground left the region, by its
+    // schema hash and its shape hash.  The key of the op goes out with
+    // release order before the point, and the detect stage reads it after it
+    // reads the point with acquire order.  So it reads the key of this
+    // request or of a newer one.  A newer request replaces this one, as its
+    // point does, and the detect stage applies the newer point after it.
+    void request_restart(uint64_t ops_before, SchemaHash divergent_schema, ShapeHash divergent_shape) const noexcept {
+        requested_divergent_op_.store_release(IterationDetector::OpKey::of(divergent_schema, divergent_shape));
         (void)requested_reset_.try_advance(StreamPoint::restart_at(ops_before));
     }
 
@@ -1403,7 +1411,8 @@ public:
     // the request is then a restart at the point of the mark.  The restart
     // also clears the ops between the two points.  A restart that the detect
     // stage applies after this read only makes the second restart one that a
-    // mark would have done.
+    // mark would have done.  A mark writes no key, so such a restart reads
+    // the key of the restart that it replaces.
     void request_mark(uint64_t ops_before) const noexcept {
         const StreamPoint last = requested_reset_.get();
         const bool has_unapplied_restart = last.restarts_detector() && applied_reset_.get() != last;
@@ -1433,6 +1442,11 @@ public:
 
     [[nodiscard]] StreamPoint requested_reset() const noexcept { return requested_reset_.get(); }
 
+    // The op of the last restart request.
+    [[nodiscard]] IterationDetector::OpKey requested_divergent_op() const noexcept {
+        return requested_divergent_op_.load_acquire();
+    }
+
     // The point of the last reset that the detect stage applied.
     [[nodiscard]] StreamPoint applied_reset() const noexcept { return applied_reset_.get(); }
 
@@ -1445,6 +1459,9 @@ private:
     // producer writes it, and the detect stage reads it at each reset that it
     // applies.
     mutable ::fixy::Atomic<NumericsHash> requested_numerics_{compute_numerics_hash(NumericsPolicy{}, EagerNumerics{})};
+    // The op of the last restart request.  The producer writes it, and the
+    // detect stage reads it at each restart that it applies.
+    mutable ::fixy::Atomic<IterationDetector::OpKey> requested_divergent_op_{IterationDetector::OpKey{}};
     // The detect stage is the one writer of the two below (the writer of a
     // COUNTER of fixy/Mutation.h).
     struct AppliedResetWriter final {};
