@@ -722,6 +722,13 @@ private:
 
     CRUCIBLE_INLINE void register_external_(ExternalSlotId external, TensorData data) {
         auto pv = pool_.initialized_view_();
+        register_external_with_(external, data, pv);
+    }
+
+    // The same, with the proof of the initialized pool of the caller.  The
+    // bind of the reads of one op mints the proof one time, for all its reads.
+    CRUCIBLE_INLINE void register_external_with_(ExternalSlotId external, TensorData data,
+                                                 PoolAllocator::InitializedView const& pv) {
         pool_.register_external(external.slot(), data, pv);
     }
 
@@ -829,19 +836,21 @@ private:
     // the reads of the earlier ops.  The cursor stops at the first read of a
     // later op, and at the end of the list.  The window of one read at the
     // cursor is the test of the end, and its View is never the empty value of
-    // its Option, so the read has no second test.
+    // its Option, so the read has no second test.  The pool of a replay is
+    // initialized, and the proof of it serves each read of the op.
     [[gnu::noinline]] void bind_reads_up_to_(OpIndex matched, const ValidatedOp& live) {
         enum class ReadStep : uint8_t {
             Stop,
             Next,
         };
+        const auto pv = pool_.initialized_view_();
         const ::fixy::View<const ExternalRead> reads = external_reads_.view();
         while (reads.window<1>(next_external_read_)
                    .match(
-                       [this, matched, &live](::fixy::View<const ExternalRead, 1> at) noexcept {
+                       [this, matched, &live, &pv](::fixy::View<const ExternalRead, 1> at) noexcept {
                            const ExternalRead& read = at.at(::fixy::index<0>());
                            if (read.op.raw() > matched.raw()) return ReadStep::Stop;
-                           if (read.op.raw() == matched.raw()) bind_external_read_(live, read);
+                           if (read.op.raw() == matched.raw()) bind_external_read_(live, read, pv);
                            ++next_external_read_;
                            return ReadStep::Next;
                        },
@@ -857,13 +866,15 @@ private:
     // front end, and a collision of the hash can name an input past its
     // inputs, so the window of the input keeps each read in bounds.  It is the
     // one compare of the position against the input count of the live op.
-    void bind_external_read_(const ValidatedOp& live, const ExternalRead& read) {
+    void bind_external_read_(const ValidatedOp& live, const ExternalRead& read,
+                             PoolAllocator::InitializedView const& pv) {
         live.input_records()
             .window<1>(read.input.raw())
             .match(
-                [this, &read](::fixy::View<const TensorMeta, 1> input) noexcept {
+                [this, &read, &pv](::fixy::View<const TensorMeta, 1> input) noexcept {
                     storage_address(input.at(::fixy::index<0>()))
-                        .match([this, &read](TensorData data) noexcept { register_external_(read.slot, data); },
+                        .match([this, &read,
+                                &pv](TensorData data) noexcept { register_external_with_(read.slot, data, pv); },
                                []() noexcept {});
                 },
                 [] noexcept {});
