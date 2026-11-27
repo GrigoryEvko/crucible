@@ -95,7 +95,7 @@ struct ClockChain {
 // the multiplies on two pipes, the adds and the conversions on two pipes,
 // and the macro operations at six for each cycle.
 //   code              fma  mul  add  cvt  ops   floor
-//   fixy exp double     7    3    3    0   33   5.5, the dispatch
+//   fixy exp double    12    2    8    0   46   7.67, the dispatch
 //   fixy exp float      5    1    1    2   29   4.83, the dispatch
 //   fixy log double     8    2    5    1   44   7.33, the dispatch
 //   fixy log float      6    1    1    3   35   5.83, the dispatch
@@ -114,7 +114,7 @@ struct ClockChain {
 // rename ends, and 4 for a load from L1.  Each latency is a lower bound of
 // the guide, so the floor is a lower bound too.  The chain x + 0 * y of the
 // row adds a multiply and an add, 6 cycles:
-//   fixy exp double 33 + 6 = 39   fixy log double 37 + 6 = 43   fixy erf double 72 + 6 = 78
+//   fixy exp double 43 + 6 = 49   fixy log double 37 + 6 = 43   fixy erf double 72 + 6 = 78
 //   fixy exp float  29 + 6 = 35   fixy log float  27 + 6 = 33   fixy erf float  30 + 6 = 36
 //   cr_expf         28 + 6 = 34   cr_logf         23 + 6 = 29   cr_erff         30 + 6 = 36
 // The Horner chain of fixy erf double holds 11 dependent fma.  fixy erf float
@@ -132,7 +132,7 @@ struct Floor {
 [[nodiscard]] constexpr Floor floor_of(Function function, bool is_double) noexcept {
     switch (function) {
         case Function::Exp:
-            return is_double ? Floor{33.0 / 6.0, 39.0} : Floor{29.0 / 6.0, 34.0};
+            return is_double ? Floor{46.0 / 6.0, 49.0} : Floor{29.0 / 6.0, 34.0};
         case Function::Log:
             return is_double ? Floor{44.0 / 6.0, 43.0} : Floor{34.0 / 6.0, 29.0};
         case Function::Erf:
