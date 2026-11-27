@@ -369,11 +369,77 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of 
     return is_each_enumeration_named;
 }
 
+// True for a wrapped number of a tag of the scalar slots: a Python number
+// that PyTorch wraps into a CPU tensor of rank zero, of the element type
+// double, long or bool.  PyTorch gives a complex number the element type
+// complex double, which no tag of a scalar slot holds.
+[[nodiscard]] inline bool is_slot_wrapped_number(const at::Tensor& tensor) noexcept {
+    const c10::ScalarType type = tensor.scalar_type();
+    return type == c10::ScalarType::Double || type == c10::ScalarType::Long || type == c10::ScalarType::Bool;
+}
+
+// The meta of a wrapped number, after fill_zeroed_meta wrote it: no data
+// address and no storage generation.  Gives false for a wrapped number of no
+// tag of a scalar slot, whose meta it clears.  Out of line, so fill_meta of
+// each other tensor keeps one test of a bit.
+[[nodiscard]] CRUCIBLE_COLD inline bool describe_wrapped_number(crucible::TensorMeta& meta,
+                                                                const at::Tensor& tensor) noexcept {
+    if (!is_slot_wrapped_number(tensor)) return refuse_tensor_meta(meta);
+    meta.data_ptr = {};
+    meta.storage_generation = {};
+    return true;
+}
+
 // Writes the meta of the tensor into meta, each byte of it, and gives false
 // for a tensor that a meta cannot describe.
-[[nodiscard]] inline bool fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
+//
+// A wrapped number is a value and no memory (ScalarRole of crucible/Types.h).
+// Its meta keeps the rank zero and the element type, with no data address and
+// no storage generation, so the memory plan gives it no slot, and the
+// extraction records its value as a data scalar (push_wrapped_number).
+// CrucibleMode writes the same meta (_fill_number_meta of crucible_mode.py).
+// A wrapped number of another element type has no tag of a scalar slot, so
+// fill_meta refuses it: a replay of its op would have no value to bind.  Each
+// call site keeps the zero fill and the test of the bit in line.
+[[nodiscard]] CRUCIBLE_INLINE bool fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
     meta = {};  // zero-init (InitSafe -- NSDMI defaults)
-    return fill_zeroed_meta(meta, tensor);
+    const bool is_described = fill_zeroed_meta(meta, tensor);
+    if (tensor.unsafeGetTensorImpl()->is_wrapped_number()) [[unlikely]]
+        return describe_wrapped_number(meta, tensor) && is_described;
+    return is_described;
+}
+
+// Pushes the value of a wrapped number as a data scalar, at the position of
+// its argument in the schema, as CrucibleMode pushes the Python number.  An
+// operator whose scalars cannot overflow keeps only the inline slots, so a
+// value past them refuses the operation, and no value is lost.  An operator
+// that can overflow folds a value past the inline slots into its digest,
+// whose value the content hash reads (ScalarArgs<true> of entry_slots.h).
+// fill_meta refused each wrapped number of another element type, so the push
+// gives it no slot.  The tensor is on the host, so the read of its one
+// element is a load.
+template <bool MayOverflow>
+CRUCIBLE_COLD void push_wrapped_number(ScalarArgs<MayOverflow>& scalars, TensorDescription& description,
+                                       const at::Tensor& tensor) noexcept {
+    if (!is_slot_wrapped_number(tensor)) [[unlikely]] {
+        description = TensorDescription::refused;
+        return;
+    }
+    if constexpr (!MayOverflow) {
+        if (scalars.inline_scalars.stored == ScalarArgs<false>::kCapacity) [[unlikely]] {
+            description = TensorDescription::refused;
+            return;
+        }
+    }
+    const c10::ScalarType type = tensor.scalar_type();
+    if (type == c10::ScalarType::Double) {
+        scalars.push(::fixy::bit_cast<int64_t>(*tensor.const_data_ptr<double>()), crucible::ScalarType2::FLOAT,
+                     crucible::ScalarRole::DATA);
+    } else if (type == c10::ScalarType::Long) {
+        scalars.push(*tensor.const_data_ptr<int64_t>(), crucible::ScalarType2::INT, crucible::ScalarRole::DATA);
+    } else {
+        scalars.push(*tensor.const_data_ptr<bool>() ? 1 : 0, crucible::ScalarType2::BOOL, crucible::ScalarRole::DATA);
+    }
 }
 
 // The meta of the tensor as a value.  For a tensor that a meta cannot
@@ -1055,6 +1121,8 @@ void record_argument(Recording<Capacity, MayOverflow, Home>& recording, const T&
 
     if constexpr (kind == ArgumentKind::Tensor) {
         recording.add_input(value);
+        if (value.defined() && value.unsafeGetTensorImpl()->is_wrapped_number()) [[unlikely]]
+            push_wrapped_number(recording.scalars, recording.each_tensor_description, value);
     } else if constexpr (kind == ArgumentKind::TensorList) {
         // IListRef dereferences to const Tensor& for Tensor through its
         // ivalue_to_const_ref_overload_return specialization, and ArrayRef

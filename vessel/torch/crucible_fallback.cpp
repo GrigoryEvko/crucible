@@ -177,6 +177,8 @@ using crucible::vessel::compute_shape_hash;
 using crucible::vessel::fill_meta;
 using crucible::vessel::is_foreach_op_name;
 using crucible::vessel::phase_flag_bits;
+using crucible::vessel::push_wrapped_number;
+using crucible::vessel::TensorDescription;
 
 // =====================================================================
 // Room of the internal names
@@ -725,6 +727,11 @@ template <class Brand>
         if (iv.isTensor()) {
             const auto& t = iv.toTensor();
             if (t.defined()) r.add_input(t, metas);
+            if (t.defined() && t.unsafeGetTensorImpl()->is_wrapped_number()) [[unlikely]] {
+                TensorDescription description = TensorDescription::described;
+                push_wrapped_number(r.scalars, description, t);
+                if (description == TensorDescription::refused) r.is_each_tensor_described = false;
+            }
         } else if (iv.isTensorList()) {
             // Same proxy hazard as the OptionalTensorList branch below: the
             // c10::List iterator dereferences to a proxy whose conversion

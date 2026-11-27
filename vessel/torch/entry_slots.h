@@ -305,6 +305,13 @@ struct ScalarArgs<false> {
 // in the last slot or before it, so a data scalar at or past the last slot
 // can go into the digest.  Its value folds, and in such an entry it is
 // structural (write_scalar_slots).  O(1) for each push.
+//
+// The limit of the rule: the entry has no slot for a data value in the
+// digest, so the replay cannot bind it.  The value therefore folds, and a
+// changed value is a divergence, after which the operation records again.
+// A fold of the tag alone would replay a changed value as a match with no
+// value to bind.  A wrapped number is a data scalar too, so the same limit
+// holds for it (push_wrapped_number of record_kernel.h).
 template <>
 struct ScalarArgs<true> {
     static constexpr uint16_t kCapacity = kInlineScalars;

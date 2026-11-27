@@ -388,6 +388,13 @@ def _extract_inputs(steps: tuple, args: tuple, kwargs: dict) -> tuple[list, list
                 roles.append(ROLE_STRUCTURAL)
         elif kind == _KIND_TENSOR:
             inputs.append(value)
+            if not isinstance(value, torch.Tensor):
+                # A wrapped number is a value and no memory: its input has no
+                # data address, and its value is a data slot at the position of
+                # its argument (push_wrapped_number of record_kernel.h).  A
+                # complex number gives no slot, and its input refuses the op
+                # (_fill_number_meta).
+                _push_number(value, ROLE_DATA, values, tags, roles)
         elif kind == _KIND_TENSOR_LIST:
             inputs.extend(element for element in value if element is not None)
         elif kind == _KIND_OPTIONAL_TENSOR_LIST:
@@ -468,13 +475,19 @@ def _fill_number_meta(meta, number, is_input: bool) -> None:
     """Fill the record of a Python number.
 
     An input is the tensor of rank zero that PyTorch wraps the number into.
-    This mode sees no such tensor, so the record has no data address, and the
-    memory plan gives it no slot.  An output is the meta of rank zero of
-    scalar_result_meta of vessel/torch/entry_slots.h, with no storage.
+    A wrapped number is a value and no memory, so the record has no data
+    address, the memory plan gives it no slot, and its value is a data slot
+    of the op (_extract_inputs).  The native paths write the same meta
+    (fill_meta of record_kernel.h).  No tag of a slot holds a complex number,
+    so its input takes the element type _UNNAMED_ORDINAL, and the trust
+    ladder of the C ABI refuses the op, as fill_meta refuses it.  An output is
+    the meta of rank zero of scalar_result_meta of vessel/torch/entry_slots.h,
+    with no storage.
     """
     kind = complex if isinstance(number, complex) else type(number)
     meta.ndim = 0
-    meta.dtype = _WRAPPED_DTYPE.get(kind, _UNNAMED_ORDINAL)
+    is_refused = is_input and kind is complex
+    meta.dtype = _UNNAMED_ORDINAL if is_refused else _WRAPPED_DTYPE.get(kind, _UNNAMED_ORDINAL)
     meta.device_type = _DEVICE_MAP["cpu"]
     meta.device_idx = -1
     meta.layout = _LAYOUT_MAP[torch.strided]
