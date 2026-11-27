@@ -232,8 +232,9 @@ using Ops = ::fixy::HeapArray<OpData>;
         [source](std::size_t position) noexcept { return make_op(10, static_cast<uint32_t>(position), source); });
 }
 
-// The ops of a cycle as a View of the fixed extent NUM_OPS.  A body holds the
-// View by value, so it reads an op at an OpSlot with one load and no check.
+// The ops of a cycle as a View of the fixed extent NUM_OPS.  The state of a
+// row holds the View by value, so a body reads an op at an OpSlot with no
+// check.
 using Cycle = ::fixy::View<OpData const, NUM_OPS>;
 
 [[nodiscard]] Cycle cycle_of(Ops const& ops CRUCIBLE_LIFETIMEBOUND) noexcept {
@@ -299,6 +300,51 @@ void wait_region_published(Vigil& vigil) {
     const DagRef<RegionNode const> region = vigil.context().active_region().expect("the Vigil replays a region");
     return region->plan.expect("an active region has a plan")->num_external;
 }
+
+// The state of a COMPILED row in its home (bench::RowHome): a Vigil that
+// replays the region of the ops of the iteration 10, the count of the
+// unexpected results of its setup, the ops and their cycle.  The members are
+// built in this order, so the setup runs before the ops are made.
+struct CompiledVigil {
+    Vigil vigil;
+    uint32_t unexpected_results;
+    Ops ops;
+    Cycle cycle;
+
+    explicit CompiledVigil(InputSource source) noexcept
+        : vigil{mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {})},
+          unexpected_results{setup_compiled_vigil(vigil, source)},
+          ops{make_compiled_ops(source)},
+          cycle{cycle_of(ops)} {}
+};
+
+// A COMPILED row that dispatches the op at a position of the cycle in each
+// call of its body.
+struct CompiledAtSlot {
+    CompiledVigil compiled;
+    OpSlot slot;
+};
+
+// The position of a row that runs over the ops before the last op.
+using LeadSlot = ::fixy::Index<NUM_OPS - 1>;
+
+// A COMPILED row whose position runs over the ops before the last op.
+struct CompiledAtLead {
+    CompiledVigil compiled;
+    LeadSlot slot;
+};
+
+// A COMPILED row that reads the output of each op.  It holds the claim of
+// the producer, as the adapter holds it for a whole window, so the body
+// times the read of the pointer and not the claim.
+struct CompiledWithOutput {
+    CompiledVigil compiled;
+    VigilFgCtx fg;
+    OpSlot slot;
+
+    CompiledWithOutput() noexcept
+        : compiled{InputSource::PreviousOutput}, fg{compiled.vigil.mint_producer_context()}, slot{::fixy::index<0>()} {}
+};
 
 // The benches below measure a plan for one CPU device with no distribution,
 // which is what MemoryPlan and TensorSlot give by default.  The arena gives
@@ -719,94 +765,85 @@ int main() {
     // ── dispatch_op COMPILED ───────────────────────────────────────
     bench::print("\n--- dispatch_op COMPILED ---\n");
 
+    // Each COMPILED row holds its state in a home of the harness
+    // (bench::RowHome).  The distance from its state to the frame of its
+    // timed loop then depends only on the code of the row, and not on the
+    // frame of main.
     bench::add_report(reports, [&] {
-        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
-        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
-        Ops ops = make_compiled_ops();
-        const Cycle cycle = cycle_of(ops);
-
-        OpSlot slot = ::fixy::index<0>();
-        return bench::run("dispatch_op [COMPILED, cyclic]", [&, cycle] {
-            const OpData& d = cycle.at(slot);
-            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
-            bench::do_not_optimize(r);
-            slot = next_in_cycle(slot);
-        });
-    }());
-
-    bench::add_report(reports, [&] {
-        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
-        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
-        Ops ops = make_compiled_ops();
-        const Cycle cycle = cycle_of(ops);
-
-        // The claim is checked once here, as the adapter holds it for a whole
-        // window, so the loop measures the pointer read and not the claim.
-        const VigilFgCtx fg = vigil.mint_producer_context();
-        OpSlot slot = ::fixy::index<0>();
-        return bench::run("dispatch_op [COMPILED + output_ptr]", [&, cycle] {
-            const OpData& d = cycle.at(slot);
-            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
-            if (r.action == DispatchResult::Action::COMPILED)
-                bench::do_not_optimize(vigil.output_ptr(fg, crucible::OutputPosition{0}));
-            bench::do_not_optimize(r);
-            slot = next_in_cycle(slot);
-        });
-    }());
-
-    bench::add_report(reports, [&] {
-        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
-        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
-        Ops ops = make_compiled_ops();
-        const Cycle cycle = cycle_of(ops);
-
-        // The position of the body runs over the ops before the last op.  At
-        // the end of that run the body dispatches the last op too.
-        using LeadSlot = ::fixy::Index<NUM_OPS - 1>;
-        LeadSlot slot = ::fixy::index<0>();
-        return bench::run("dispatch_op [COMPILED, MATCH only]", [&, cycle] {
-            const OpData& d = cycle.at(slot);
-            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
-            bench::do_not_optimize(r);
-            ::fixy::Option<LeadSlot> next = LeadSlot::check(slot.raw() + 1);
-            if (next.is_none()) {
-                const OpData& last = cycle.at(::fixy::index<NUM_OPS - 1>());
-                auto rl = vigil.dispatch_op(certify_synthetic_op(last.entry, last.records));
-                bench::do_not_optimize(rl);
-            }
-            slot = std::move(next).value_or(LeadSlot{::fixy::index<0>()});
-        });
-    }());
-
-    bench::add_report(reports, [&] {
-        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
-        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
-        Ops ops = make_compiled_ops();
-        const Cycle cycle = cycle_of(ops);
-
-        return bench::run("dispatch_op [full 8-op iteration]", [&, cycle] {
-            for (const OpData& d : cycle) {
-                auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
+        auto home = bench::build_row_home(
+            []() noexcept { return CompiledAtSlot{CompiledVigil{InputSource::PreviousOutput}, ::fixy::index<0>()}; },
+            [](CompiledAtSlot& row) noexcept {
+                const OpData& d = row.compiled.cycle.at(row.slot);
+                auto r = row.compiled.vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
                 bench::do_not_optimize(r);
-            }
-        });
+                row.slot = next_in_cycle(row.slot);
+            });
+        CRUCIBLE_BENCH_CHECK(home->state.compiled.unexpected_results == 0);
+        return bench::run("dispatch_op [COMPILED, cyclic]", *home);
+    }());
+
+    bench::add_report(reports, [&] {
+        auto home = bench::build_row_home(
+            []() noexcept { return CompiledWithOutput{}; },
+            [](CompiledWithOutput& row) noexcept {
+                const OpData& d = row.compiled.cycle.at(row.slot);
+                auto r = row.compiled.vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
+                if (r.action == DispatchResult::Action::COMPILED)
+                    bench::do_not_optimize(row.compiled.vigil.output_ptr(row.fg, crucible::OutputPosition{0}));
+                bench::do_not_optimize(r);
+                row.slot = next_in_cycle(row.slot);
+            });
+        CRUCIBLE_BENCH_CHECK(home->state.compiled.unexpected_results == 0);
+        return bench::run("dispatch_op [COMPILED + output_ptr]", *home);
+    }());
+
+    // The position of the body runs over the ops before the last op.  At the
+    // end of that run the body dispatches the last op too.
+    bench::add_report(reports, [&] {
+        auto home = bench::build_row_home(
+            []() noexcept { return CompiledAtLead{CompiledVigil{InputSource::PreviousOutput}, ::fixy::index<0>()}; },
+            [](CompiledAtLead& row) noexcept {
+                const OpData& d = row.compiled.cycle.at(row.slot);
+                auto r = row.compiled.vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
+                bench::do_not_optimize(r);
+                ::fixy::Option<LeadSlot> next = LeadSlot::check(row.slot.raw() + 1);
+                if (next.is_none()) {
+                    const OpData& last = row.compiled.cycle.at(::fixy::index<NUM_OPS - 1>());
+                    auto rl = row.compiled.vigil.dispatch_op(certify_synthetic_op(last.entry, last.records));
+                    bench::do_not_optimize(rl);
+                }
+                row.slot = std::move(next).value_or(LeadSlot{::fixy::index<0>()});
+            });
+        CRUCIBLE_BENCH_CHECK(home->state.compiled.unexpected_results == 0);
+        return bench::run("dispatch_op [COMPILED, MATCH only]", *home);
+    }());
+
+    bench::add_report(reports, [&] {
+        auto home = bench::build_row_home([]() noexcept { return CompiledVigil{InputSource::PreviousOutput}; },
+                                          [](CompiledVigil& row) noexcept {
+                                              for (const OpData& d : row.cycle) {
+                                                  auto r =
+                                                      row.vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
+                                                  bench::do_not_optimize(r);
+                                              }
+                                          });
+        CRUCIBLE_BENCH_CHECK(home->state.unexpected_results == 0);
+        return bench::run("dispatch_op [full 8-op iteration]", *home);
     }());
 
     // Each body dispatches the op after the matched position of the last
     // result, so each body waits for that position.  The row times the path
     // of the position from the guard to the result.
     bench::add_report(reports, [&] {
-        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
-        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil) == 0);
-        Ops ops = make_compiled_ops();
-        const Cycle cycle = cycle_of(ops);
-
-        OpSlot next = ::fixy::index<0>();
-        return bench::run("dispatch_op [COMPILED, chained position]", [&, cycle] {
-            const OpData& d = cycle.at(next);
-            const DispatchResult r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
-            next = OpSlot::check((r.op_index.raw() + 1) % NUM_OPS).expect("the remainder is below NUM_OPS");
-        });
+        auto home = bench::build_row_home(
+            []() noexcept { return CompiledAtSlot{CompiledVigil{InputSource::PreviousOutput}, ::fixy::index<0>()}; },
+            [](CompiledAtSlot& row) noexcept {
+                const OpData& d = row.compiled.cycle.at(row.slot);
+                const DispatchResult r = row.compiled.vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
+                row.slot = OpSlot::check((r.op_index.raw() + 1) % NUM_OPS).expect("the remainder is below NUM_OPS");
+            });
+        CRUCIBLE_BENCH_CHECK(home->state.compiled.unexpected_results == 0);
+        return bench::run("dispatch_op [COMPILED, chained position]", *home);
     }());
 
     // The replay of a model binds the parameters of each op to the storage of
@@ -814,34 +851,31 @@ int main() {
     // reads one parameter, so the replay binds one external slot for it.  The
     // region has one external slot for each parameter.
     bench::add_report(reports, [&] {
-        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
-        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil, InputSource::Parameter) == 0);
-        CRUCIBLE_BENCH_CHECK(count_external_slots(vigil) == NUM_OPS - 1);
-        Ops ops = make_compiled_ops(InputSource::Parameter);
-        const Cycle cycle = cycle_of(ops);
-
-        OpSlot slot = ::fixy::index<0>();
-        return bench::run("dispatch_op [COMPILED, external reads]", [&, cycle] {
-            const OpData& d = cycle.at(slot);
-            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
-            bench::do_not_optimize(r);
-            slot = next_in_cycle(slot);
-        });
+        auto home = bench::build_row_home(
+            []() noexcept { return CompiledAtSlot{CompiledVigil{InputSource::Parameter}, ::fixy::index<0>()}; },
+            [](CompiledAtSlot& row) noexcept {
+                const OpData& d = row.compiled.cycle.at(row.slot);
+                auto r = row.compiled.vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
+                bench::do_not_optimize(r);
+                row.slot = next_in_cycle(row.slot);
+            });
+        CRUCIBLE_BENCH_CHECK(home->state.compiled.unexpected_results == 0);
+        CRUCIBLE_BENCH_CHECK(count_external_slots(home->state.compiled.vigil) == NUM_OPS - 1);
+        return bench::run("dispatch_op [COMPILED, external reads]", *home);
     }());
 
     bench::add_report(reports, [&] {
-        Vigil vigil = mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
-        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil, InputSource::Parameter) == 0);
-        CRUCIBLE_BENCH_CHECK(count_external_slots(vigil) == NUM_OPS - 1);
-        Ops ops = make_compiled_ops(InputSource::Parameter);
-        const Cycle cycle = cycle_of(ops);
-
-        return bench::run("dispatch_op [8-op iteration, external reads]", [&, cycle] {
-            for (const OpData& d : cycle) {
-                auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
-                bench::do_not_optimize(r);
-            }
-        });
+        auto home = bench::build_row_home([]() noexcept { return CompiledVigil{InputSource::Parameter}; },
+                                          [](CompiledVigil& row) noexcept {
+                                              for (const OpData& d : row.cycle) {
+                                                  auto r =
+                                                      row.vigil.dispatch_op(certify_synthetic_op(d.entry, d.records));
+                                                  bench::do_not_optimize(r);
+                                              }
+                                          });
+        CRUCIBLE_BENCH_CHECK(home->state.unexpected_results == 0);
+        CRUCIBLE_BENCH_CHECK(count_external_slots(home->state.vigil) == NUM_OPS - 1);
+        return bench::run("dispatch_op [8-op iteration, external reads]", *home);
     }());
 
     // ── Cold path ──────────────────────────────────────────────────
