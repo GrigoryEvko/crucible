@@ -376,7 +376,7 @@ test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Ci
 test/ | region | 1 | PROBE: two parameters get one unique view to read its old name | the kind two-names of the rule view-escape makes each call that gives one linear object or one unique view to two parameters a compile error, so a test of such a call stands in a PROBE region
 test/ | replace-pending:<limits> | 7 | - | -
 test/ | replace-pending:std::bit_cast | 24 | - | -
-test/ | std-entity | 294 | - | -
+test/ | std-entity | 285 | - | -
 test/ | std-object | 101 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -

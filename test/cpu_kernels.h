@@ -17,9 +17,11 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/fp/Erf.h>
+#include <fixy/fp/Exp.h>
+#include <fixy/fp/Log.h>
 #include <foundation/core/Product.h>
 #include <foundation/effects/Effect.h>
-#include <cmath>
 #include <cstddef>
 
 namespace crucible::cpu {
@@ -231,7 +233,7 @@ void gelu(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy
     constexpr float k = 0.7071067811865476f;  // 1/sqrt(2)
     for (std::size_t i = 0; i < n; i++) {
         float const value = detail::element_at(A, Offset{i});
-        detail::write_at(C, Offset{i}, value * 0.5f * (1.0f + std::erf(value * k)));
+        detail::write_at(C, Offset{i}, value * 0.5f * (1.0f + ::fixy::fp::erf(value * k)));
     }
 }
 
@@ -242,7 +244,7 @@ void sigmoid(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::f
     std::size_t const n = detail::count_of(count);
     CRUCIBLE_TEST_ASSERT(test, A.size() >= n && C.size() >= n);
     for (std::size_t i = 0; i < n; i++)
-        detail::write_at(C, Offset{i}, 1.0f / (1.0f + std::exp(-detail::element_at(A, Offset{i}))));
+        detail::write_at(C, Offset{i}, 1.0f / (1.0f + ::fixy::fp::exp(-detail::element_at(A, Offset{i}))));
 }
 
 // C[n] = A[n] * sigmoid(A[n]).
@@ -253,7 +255,7 @@ void silu(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> A, ::fixy
     CRUCIBLE_TEST_ASSERT(test, A.size() >= n && C.size() >= n);
     for (std::size_t i = 0; i < n; i++) {
         float const value = detail::element_at(A, Offset{i});
-        float s = 1.0f / (1.0f + std::exp(-value));
+        float s = 1.0f / (1.0f + ::fixy::fp::exp(-value));
         detail::write_at(C, Offset{i}, value * s);
     }
 }
@@ -285,7 +287,7 @@ void softmax(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X, ::f
         float sum = 0.0f;
         for (std::size_t d = 0; d < D; d++) {
             auto element = detail::writer_at(Y, Offset{row + d});
-            *element = std::exp(detail::element_at(X, Offset{row + d}) - mx);
+            *element = ::fixy::fp::exp(detail::element_at(X, Offset{row + d}) - mx);
             sum += *element;
         }
         float inv = 1.0f / sum;
@@ -319,7 +321,7 @@ void layer_norm(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
             var += diff * diff;
         }
         var /= static_cast<float>(D);
-        float inv = 1.0f / std::sqrt(var + eps);
+        float inv = 1.0f / ::fixy::fp::sqrt(var + eps);
         for (std::size_t d = 0; d < D; d++)
             detail::write_at(Y, Offset{row + d},
                              (detail::element_at(X, Offset{row + d}) - mean) * inv
@@ -356,7 +358,7 @@ void batch_norm(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> X,
                 var += d * d;
             }
         var /= static_cast<float>(count);
-        float inv = 1.0f / std::sqrt(var + eps);
+        float inv = 1.0f / ::fixy::fp::sqrt(var + eps);
         for (std::size_t n = 0; n < N; n++)
             for (std::size_t hw = 0; hw < HW; hw++) {
                 Offset const idx{(n * C + c) * HW + hw};
@@ -468,7 +470,7 @@ void sdpa(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> Q,
     std::size_t const D = detail::count_of(width);
     CRUCIBLE_TEST_ASSERT(test, Q.size() >= B * S * D && K.value().size() >= B * S * D && V.value().size() >= B * S * D
                                    && Y.size() >= B * S * D && S > 0);
-    float scale = 1.0f / std::sqrt(static_cast<float>(D));
+    float scale = 1.0f / ::fixy::fp::sqrt(static_cast<float>(D));
 
     ::fixy::HeapArray<float> weights =
         ::fixy::mint_heap_array_zeroed<float>(::foundation::effects::testing::test().alloc, ::fixy::strict_mul(S, S));
@@ -497,7 +499,7 @@ void sdpa(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> Q,
                 float sum = 0.0f;
                 for (std::size_t j = 0; j < S; j++) {
                     auto element = detail::writer_at(attn, Offset{row + j});
-                    *element = std::exp(*element - mx);
+                    *element = ::fixy::fp::exp(*element - mx);
                     sum += *element;
                 }
                 float inv = 1.0f / sum;
@@ -537,9 +539,9 @@ float cross_entropy(::fixy::TestRunnerCtx const& test, ::fixy::View<float const>
     for (std::size_t b = 0; b < B; b++) {
         int const target = detail::element_at(targets.value(), Offset{b});
         CRUCIBLE_TEST_ASSERT(test, target >= 0 && static_cast<std::size_t>(target) < C);
-        loss -=
-            std::log(detail::max_keep_first(detail::read_at(probs, Offset{b * C + static_cast<std::size_t>(target)}),
-                                            ::fixy::side_as<side::Candidate>(1e-7f)));
+        loss -= ::fixy::fp::log(
+            detail::max_keep_first(detail::read_at(probs, Offset{b * C + static_cast<std::size_t>(target)}),
+                                   ::fixy::side_as<side::Candidate>(1e-7f)));
     }
     return loss / static_cast<float>(B);
 }
