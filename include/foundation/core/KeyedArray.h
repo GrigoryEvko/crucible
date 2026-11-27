@@ -36,6 +36,10 @@
 // Reads, with no key
 //   size(), view(), for (x : holder)
 //                       as the array gives them: each element is const
+//   get(position)       of a KeyedHeapArray: an Option of a Ref of the const
+//                       element, with the code of get of the HeapArray: the
+//                       holder is a friend of HeapArray, so the read takes no
+//                       View on its way
 //   at_masked(key)      of a KeyedMaskedArray: the const element at
 //                       key & (count - 1), as the MaskedArray gives it
 //
@@ -94,13 +98,10 @@ concept KeyedElementArms =
     && ReachesNoLoanKey<OnNone, Brand> && ReachesNoLoanKey<T, Brand> && ::foundation::linear::HoldsNoLinearValue<OnSome>
     && ::foundation::linear::HoldsNoLinearValue<OnNone> && ArmsStoreNoBorrowOutside<OnSome, OnNone>;
 
-// The parts of a keyed holder: an element of a heap array that a holder can
-// drop, an alignment of the storage, and a key brand.
-template <class T, class Brand, std::size_t Align>
-concept KeyedHolderParts =
-    OwnedElement<T> && detail::HeapArrayAlignment<T, Align> && IsKeyBrand<Brand> && DroppablePayload<T>;
-
-template <class T, ::foundation::brand::IsBrand Brand, std::size_t Align = alignof(T)>
+// The parts of a holder are KeyedHolderParts, and the declaration of
+// KeyedHeapArray in foundation/core/Array.h gives its default alignment,
+// because HeapArray names the holder as a friend.
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Align>
     requires KeyedHolderParts<T, Brand, Align>
 class [[nodiscard]][[= ::foundation::transfer::by_arguments<0>{}]][[= loan_key_mark{}]] KeyedHeapArray final {
     HeapArray<T, Align> storage_{};
@@ -135,6 +136,22 @@ public:
     void view() && = delete("a view of a temporary KeyedHeapArray points into storage that the full expression frees");
     void
     view() const&& = delete("a view of a temporary KeyedHeapArray points into storage that the full expression frees");
+
+    // The element at position, for a read, as an Option of a Ref with the
+    // fresh brand of the call, or no value at or past the count: the body of
+    // get of the held HeapArray, one compare.  The read takes no View, so its
+    // code is the code of get of a HeapArray.  The pack refuses each explicit
+    // argument, and the result type holds the brand in undeducible_brand_t.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    get(std::size_t position) const& noexcept {
+        return storage_.template element_of_<Fresh>(position);
+    }
+    void get(std::size_t) && = delete("an element of a temporary KeyedHeapArray dangles at the end of the full "
+                                      "expression");
+    void get(std::size_t) const&& = delete("an element of a temporary KeyedHeapArray dangles at the end of the full "
+                                           "expression");
 
     // The loop `for (T const& element : holder)`.
     [[nodiscard]] constexpr ViewCursor<T const> begin() const& noexcept { return storage_.begin(); }

@@ -117,6 +117,29 @@ void test_element_door() {
     CRUCIBLE_FATAL_INVARIANT(*words.view().get(2).expect("the holder holds four words") == 17);
 }
 
+// get of a KeyedHeapArray reads the element at a position below the count, as
+// get of the held HeapArray does, and gives no value at or past the count.
+// After a replace it reads the elements of the fresh array.
+void test_get() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    auto [words, key] = core::mint_keyed_owner(core::keyed_heap_array_owner<std::uint64_t>,
+                                               core::mint_heap_array(alloc, 3, std::uint64_t{5}));
+    int const steps = words.with_element(
+        key, 1,
+        [](std::uint64_t& word) noexcept {
+            word = 8;
+            return 1;
+        },
+        [] noexcept { return 0; });
+    CRUCIBLE_FATAL_INVARIANT(steps == 1);
+    CRUCIBLE_FATAL_INVARIANT(*words.get(0).expect("the holder holds three words") == 5);
+    CRUCIBLE_FATAL_INVARIANT(*words.get(1).expect("the holder holds three words") == 8);
+    CRUCIBLE_FATAL_INVARIANT(words.get(3).is_none() && words.get(4).is_none());
+    words.replace(key, core::mint_heap_array(alloc, 1, std::uint64_t{2}));
+    CRUCIBLE_FATAL_INVARIANT(*words.get(0).expect("the fresh array holds one word") == 2);
+    CRUCIBLE_FATAL_INVARIANT(words.get(1).is_none());
+}
+
 // The element door of a KeyedMaskedArray writes the element at the masked key
 // in place, and fill writes each element.
 void test_masked_door_and_fill() {
@@ -164,6 +187,7 @@ void test_replace_and_take() {
 int main() {
     test_held_key();
     test_element_door();
+    test_get();
     test_masked_door_and_fill();
     test_replace_and_take();
     return 0;

@@ -6332,6 +6332,11 @@ foundation_neg_compile_test(neg_core_keyed_heap_array_reaches_key
 foundation_neg_compile_test(neg_core_keyed_heap_array_moved
   "use of deleted function .foundation::core::KeyedHeapArray<T, Brand, Align>::KeyedHeapArray\\(foundation::core::KeyedHeapArray<T, Brand, Align>&&\\)"
   "a KeyedHeapArray does not move, so a body of a keyed door finds no second holder of its storage")
+# get of a holder gives a Ref into its storage, so get of an rvalue holder
+# does not compile.
+foundation_neg_compile_test(neg_core_keyed_heap_array_get_of_temporary
+  "use of deleted function .void foundation::core::KeyedHeapArray<T, Brand, Align>::get\\(std::size_t\\) &&"
+  "an element of a temporary KeyedHeapArray dangles at the end of the full expression")
 foundation_neg_compile_test(neg_core_keyed_masked_array_assigned
   "use of deleted function .foundation::core::KeyedMaskedArray<T, Brand, Align>& foundation::core::KeyedMaskedArray<T, Brand, Align>::operator=\\(foundation::core::KeyedMaskedArray<T, Brand, Align>&&\\)"
   "a KeyedMaskedArray does not move, so a body of a keyed door finds no second holder of its storage")

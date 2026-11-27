@@ -269,6 +269,20 @@ template <class T, std::size_t Align>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
 class HeapArray;
 
+// The parts of a keyed holder of foundation/core/KeyedArray.h: an element of
+// a heap array that a holder can drop, an alignment of the storage, and a key
+// brand.
+template <class T, class Brand, std::size_t Align>
+concept KeyedHolderParts =
+    OwnedElement<T> && detail::HeapArrayAlignment<T, Align> && IsKeyBrand<Brand> && DroppablePayload<T>;
+
+// The keyed holder of a HeapArray (foundation/core/KeyedArray.h).  HeapArray
+// names it as a friend, so this declaration stands before HeapArray and gives
+// the default argument.
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Align = alignof(T)>
+    requires KeyedHolderParts<T, Brand, Align>
+class KeyedHeapArray;
+
 // The door of a FixedArray and a HeapArray to the body of each get of a run
 // and to the root stage of enumerate() (RegionRefDoor of
 // foundation/core/Region.h).  Its members are private, and the two arrays are
@@ -1768,6 +1782,19 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
         requires HeapUpdatableElement<Element>
     friend class detail::HeapUpdateFrame;
 
+    template <class Element, ::foundation::brand::IsBrand Brand, std::size_t ElementAlign>
+        requires KeyedHolderParts<Element, Brand, ElementAlign>
+    friend class KeyedHeapArray;
+
+    // The body of get with the brand that the caller gives: the fresh brand of
+    // the call of get, or of the call of get of a keyed holder of this array.
+    template <::foundation::brand::IsBrand Brand>
+    [[nodiscard]] CRUCIBLE_INLINE constexpr Option<Ref<T const, Brand>>
+    element_of_(std::size_t position) const noexcept {
+        return ArrayRefDoor::element_at_<Brand>(static_cast<T const*>(this->state_.first), this->state_.count,
+                                                position);
+    }
+
     // The slot at position for the frame of update, before and after its
     // body.  A position at or past the count of this time ends the process.
     [[nodiscard]] constexpr T& slot_of_update_(std::size_t position) noexcept {
@@ -1942,8 +1969,7 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
     get(std::size_t position) const& noexcept {
-        return ArrayRefDoor::element_at_<Fresh>(static_cast<T const*>(this->state_.first), this->state_.count,
-                                                position);
+        return element_of_<Fresh>(position);
     }
     void get(std::size_t) && = delete("an element of a temporary HeapArray dangles at the end of the full expression");
     void

@@ -261,7 +261,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // each read from a temporary pool, here and in the members that follow.
     [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
     inline ::fixy::Option<::fixy::RunAddress> slot_ptr(SlotId sid, InitializedView const&) const& noexcept {
-        return *addresses_.view().get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
+        return *addresses_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
     }
 
     ::fixy::Option<::fixy::RunAddress> slot_ptr(SlotId, InitializedView const&) const&& =
@@ -295,9 +295,8 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // value for the slot.
     CRUCIBLE_INLINE void register_external(SlotId sid, TensorData data, InitializedView const&) noexcept {
         write_slot_(sid, ::fixy::some(data.address()), data.device(), ::fixy::View<uint8_t>{});
-        CRUCIBLE_POST(0,
-                      *addresses_.view().get(sid.raw()).expect("a slot id of the plan is below the count of its slots")
-                          == ::fixy::some(data.address()));
+        CRUCIBLE_POST(0, *addresses_.get(sid.raw()).expect("a slot id of the plan is below the count of its slots")
+                             == ::fixy::some(data.address()));
     }
 
     // The bytes of a slot as a read-only View of T, for a reader of an input:
@@ -565,7 +564,7 @@ private:
     // slot sid.  An id at or past the count of slots ends the process.
     // Complexity: O(1).
     [[nodiscard]] bool holds_bytes_(SlotId sid) const noexcept {
-        return views_.view().get(sid.raw()).expect("the three columns hold one entry for each slot")->size() != 0;
+        return views_.get(sid.raw()).expect("the three columns hold one entry for each slot")->size() != 0;
     }
 
     // True when the address is the first byte of the bytes, or the bytes are
@@ -583,9 +582,9 @@ private:
     // it.  Complexity: O(1).
     [[nodiscard]] bool is_pool_window_(SlotId sid, TensorSlot const& slot) const noexcept {
         const ::fixy::View<uint8_t> held =
-            *views_.view().get(sid.raw()).expect("the three columns hold one entry for each slot");
+            *views_.get(sid.raw()).expect("the three columns hold one entry for each slot");
         return held.size() == slot.nbytes
-            && *addresses_.view().get(sid.raw()).expect("the three columns hold one entry for each slot")
+            && *addresses_.get(sid.raw()).expect("the three columns hold one entry for each slot")
                    == ::fixy::mint_run_address(pool_.view(), slot.offset_bytes);
     }
 
