@@ -352,7 +352,7 @@ that the axis does not apply to the row.
 | `mint_foreign_text(foundation::core::View<const std::byte, 18446744073709551615>)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_grow_text` | `include/foundation/core/Grow.h` | Y | Y | Y | · | token | · | HS14: 5 |
-| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 35 |
+| `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 36 |
 | `mint_heap_array_copy` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_heap_array_with` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_heap_array_written` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 4 |
@@ -362,7 +362,7 @@ that the axis does not apply to the row.
 | `mint_hole(T0_2)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 14 |
 | `mint_hole(foundation::core::Box<T0_0>&&)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 14 |
 | `mint_identity` | `include/foundation/core/Identity.h` | Y | - | Y | · | token | · | HS14: 4 |
-| `mint_keyed_owner` | `include/foundation/core/KeyedMint.h` | Y | Y | Y | Y | token | · | HS14: 120 |
+| `mint_keyed_owner` | `include/foundation/core/KeyedMint.h` | Y | Y | Y | Y | token | · | HS14: 121 |
 | `mint_masked_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 9 |
 | `mint_member_slot_map` | `include/foundation/core/SlotMap.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_run_address(const foundation::core::ViewMut<T0_0, T0_1, T0_2>&, std::size_t)` | `include/foundation/core/DataAddress.h` | Y | Y | Y | Y | token | · | HS14: 3 |
