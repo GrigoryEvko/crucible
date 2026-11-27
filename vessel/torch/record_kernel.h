@@ -1431,23 +1431,23 @@ template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, c
                                                      return built;
                                                  }};
 
-    // The trust ladder, discharged at compile time. Every bound it checks has
-    // a compile-time ceiling on this path, and RecordKernel asserts that
-    // entry_is_well_formed accepts the entry built at that ceiling. fill_meta
-    // refuses each rank above the ceiling of metas_are_well_formed, and it
-    // asserts that the ladder accepts each rank that it keeps. The
-    // enumerators of each meta came through the decoders, and the check at
-    // the start of this function refused each other meta. The runtime walk
-    // could therefore reject nothing here. The boxed fallback and the C ABI
-    // build entries from data with no compile-time bound, and they keep the
-    // runtime walk through validate_ffi_op.
+    // The trust ladder, discharged at compile time by the ceiling door of the
+    // ladder. Each count of records of the Recording is at most Capacity, and
+    // the scalars fill at most the inline slots, so the constraint of the door
+    // (LadderCeiling) proves that entry_is_well_formed accepts each entry of
+    // this family. fill_meta refuses each rank above the ceiling of
+    // metas_are_well_formed, and it asserts that the ladder accepts each rank
+    // that it keeps. The enumerators of each meta came through the decoders,
+    // and the check at the start of this function refused each other meta.
+    // The boxed fallback and the C ABI build entries from data with no
+    // compile-time bound, and they keep the runtime walk through
+    // validate_ffi_op.
     //
     // The schema hash is the one input that is an argument rather than a
-    // constant. Its only caller passes RecordKernel::kSchemaHash, which the
-    // same assert pins to a value other than zero. The check below stays in
-    // each build, so a caller that breaks that rule ends the process.
-    CRUCIBLE_FATAL_INVARIANT(schema_hash.raw() != 0);
-    auto validated = crucible::mint_ffi_entry(entry).retag<crucible::vessel::ValidatedEntryTag>();
+    // constant, because one copy of this function serves each kernel of its
+    // family. The door ends the process for a schema hash of zero, in each
+    // build.
+    auto validated = crucible::validate_entry_within_ceiling<Capacity>(crucible::mint_ffi_entry(entry));
 
     RecordingBinding binding = ::fixy::mint_fn_for<::fixy::role::PureLinear>(std::move(validated));
 

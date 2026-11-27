@@ -14,8 +14,8 @@ int main() {
                                                      built.schema_hash = crucible::SchemaHash{0x1234};
                                                      return built;
                                                  }};
-    const auto op =
-        crucible::mint_validated_op(crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(),
-                                    crucible::SealedRecords<1>{::fixy::FixedList<crucible::TensorMeta, 1>{}});
+    const auto op = crucible::mint_validated_op(
+        crucible::validate_entry(crucible::mint_ffi_entry(entry)).expect("the trust ladder admits the entry"),
+        crucible::SealedRecords<1>{::fixy::FixedList<crucible::TensorMeta, 1>{}});
     return op.is_some() ? 0 : 1;
 }

@@ -142,7 +142,9 @@
 //                                                        and P and Q are
 //                                                        defined on T
 //   Tagged<T, V>              ⩽  T                     for a tag V in
-//                                                        droppable_tags
+//                                                        droppable_tags, or
+//                                                        a keyed tag V with
+//                                                        drops_to = void
 //   NumericalTier<Tight, T>    ⩽  NumericalTier<Loose, T>
 //   PeerMsg<R, L, T>           ⩽  PeerMsg<R, L, U>      when T ⩽ U
 //   DelegatedSession<P, Res, Pol, PS>
@@ -220,8 +222,10 @@ namespace fixy::session {
 
 // The tags whose value drops to the bare payload.  Each one records
 // that the value was checked, computed here, or read from a store the
-// process trusts.  The relation is closed: a tag drops only when an
-// edge to void names it here.
+// process trusts.  The relation is closed: an unkeyed tag drops only when
+// an edge to void names it here.  A keyed tag lives in the layer of its
+// door, so it states its own drop with its member drops_to
+// (KeyedTagDropsToValue of fixy/Tagged.h), and the order reads that member.
 namespace droppable_tags {
 inline constexpr ::foundation::fail_closed::edge<::fixy::tags::source::Sanitized, void> sanitized{};
 inline constexpr ::foundation::fail_closed::edge<::fixy::tags::source::FromInternal, void> from_internal{};
@@ -229,10 +233,9 @@ inline constexpr ::foundation::fail_closed::edge<::fixy::tags::source::FromConfi
 inline constexpr ::foundation::fail_closed::edge<::fixy::tags::source::FromDb, void> from_db{};
 inline constexpr ::foundation::fail_closed::edge<::fixy::tags::source::Durable, void> durable{};
 inline constexpr ::foundation::fail_closed::edge<::fixy::tags::source::Computed, void> computed{};
-inline constexpr ::foundation::fail_closed::edge<::fixy::tags::vessel_trust::Validated, void> validated{};
 // Every read counts the members against this seal, so a member that
 // another file adds stops the build rather than widening the relation.
-inline constexpr ::foundation::fail_closed::seal sealed{.members = 7};
+inline constexpr ::foundation::fail_closed::seal sealed{.members = 6};
 }  // namespace droppable_tags
 
 namespace detail::subtype {
@@ -301,10 +304,13 @@ namespace detail::payload_order {
         && std::meta::extract<bool>(std::meta::substitute(^^::fixy::PredicateImplies, {premise, conclusion}));
 }
 
-// A Tagged drops to its value type when droppable_tags admits its tag.
+// A Tagged drops to its value type when droppable_tags admits its tag, or
+// when its tag is a keyed tag whose drops_to is void.
 [[nodiscard]] consteval bool tagged_drops(std::meta::info type) {
-    return is_unqualified_of(type, ^^::fixy::Tagged)
-        && ::foundation::fail_closed::admits(^^::fixy::session::droppable_tags, argument_at(type, 1), ^^void);
+    if (!is_unqualified_of(type, ^^::fixy::Tagged)) return false;
+    const std::meta::info tag = argument_at(type, 1);
+    return ::foundation::fail_closed::admits(^^::fixy::session::droppable_tags, tag, ^^void)
+        || std::meta::extract<bool>(std::meta::substitute(^^::fixy::KeyedTagDropsToValue, {tag}));
 }
 
 // The value type of a Tagged, or the type itself.

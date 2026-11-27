@@ -4331,10 +4331,26 @@ crucible_neg_compile_test(neg_validated_op_built_outside_mint
   "crucible::ValidatedOp::ValidatedOp\\(foundation::core::Ref<const foundation::core::Sealed<crucible::TraceRing::Entry> >, foundation::core::View<const crucible::TensorMeta(, 18446744073709551615)?>\\)")
 crucible_neg_compile_test(neg_validated_op_unchecked_entry
   "no matching function for call to .mint_validated_op\\(crucible::TraceRing::FromPytorchEntry\\)."
-  "no known conversion for argument 1 from .Tagged<.....,fixy::tags::vessel_trust::FromPytorch>. to .Tagged<.....,fixy::tags::vessel_trust::Validated>")
+  "no known conversion for argument 1 from .Tagged<.....,fixy::tags::vessel_trust::FromPytorch>. to .Tagged<.....,crucible::vessel_trust::Validated>")
 crucible_neg_compile_test(neg_validated_op_entry_not_sealed
   "no matching function for call to .mint_ffi_entry\\(crucible::TraceRing::Entry&\\)."
   "crucible::mint_ffi_entry\\(const TraceRing::SealedEntry&\\)")
+# Validated is a keyed tag, and only the two doors of the trust ladder give
+# it.  The fixtures retag into it with no key, write its key outside the
+# door, call the private retag of the door, and give the ceiling door a
+# ceiling past the ladder.
+crucible_neg_compile_test(neg_validated_entry_raw_retag
+  "no matching function for call to .fixy::Tagged<foundation::core::Ref<const foundation::core::Sealed<crucible::TraceRing::Entry> >, fixy::tags::vessel_trust::FromPytorch>::retag<crucible::vessel_trust::Validated>\\(\\)."
+  "satisfaction of .RetagAllowed<Tag, NewTag>. \\[with Tag = fixy::tags::vessel_trust::FromPytorch; NewTag = crucible::vessel_trust::Validated\\]")
+crucible_neg_compile_test(neg_validated_entry_key_outside_door
+  ".constexpr crucible::detail::EntryLadderKey::EntryLadderKey\\(\\). is private within this context"
+  "TraceRing.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_validated_entry_door_member
+  "crucible::detail::EntryLadderDoor::retag_\\(crucible::TraceRing::FromPytorchEntry\\). is private within this context"
+  "ValidatedOp.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_validated_entry_ceiling_past_ladder
+  "no matching function for call to .validate_entry_within_ceiling<65>\\(crucible::TraceRing::FromPytorchEntry\\)."
+  "satisfaction of .LadderCeiling<Capacity>. \\[with Capacity = 65\\]")
 # The records of an op have no writer while the op lives.  The three
 # fixtures give the mint a View, a named ViewMut and a temporary Sealed list,
 # and each deleted twin gives its reason.

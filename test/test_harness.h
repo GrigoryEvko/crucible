@@ -35,19 +35,16 @@ inline void flush_and_wait_region_published(::fixy::TestRunnerCtx const& test, V
 // Certifies an Entry a test built field by field, so it can reach
 // record_op and dispatch_op, which take the second trust tag.
 //
-// This lives in the harness rather than beside TraceRing because it runs
-// no check: it states that the fields are whatever the test wrote, which
-// is true of a literal in a test and is not true of anything an adapter
-// fills from a foreign runtime. An adapter reaching a recording entry
-// point runs the checks in vessel_api_typed.h and crosses the retag
-// edge, and it has nothing shorter to reach for, because this is not on
-// its include path.
+// The entry passes the run-time door of the trust ladder, as an entry from
+// outside the process does (validate_entry of crucible/ValidatedOp.h).  An
+// entry that the ladder refuses is a broken fixture, and the process ends.
+// So no test gives the Vigil an entry that no check admitted.
 //
 // A test that wants the adapter's checks exercised should call the
 // adapter. This is for the tests that drive the Vigil directly.
 [[nodiscard]] inline TraceRing::ValidatedEntry certify_synthetic_entry(TraceRing::SealedEntry const& entry
                                                                        CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>();
+    return validate_entry(mint_ffi_entry(entry)).expect("the entry of a test passes the trust ladder");
 }
 TraceRing::ValidatedEntry certify_synthetic_entry(TraceRing::SealedEntry const&&) =
     delete("the tag names the sealed entry, and a temporary sealed entry ends before the tag");

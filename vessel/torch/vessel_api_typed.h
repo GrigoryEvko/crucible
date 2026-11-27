@@ -581,16 +581,13 @@ decode_c10_device_type(int8_t ordinal) noexcept {
         [](C10Layout layout) noexcept { return layout_of_c10(layout); });
 }
 
-// The tag a recording entry point accepts.  TraceRing owns the tagged entry
-// type, so the vessel reads the tag from it and names no substrate
-// namespace of its own.  The two retags in the vessel use this alias.
-using ValidatedEntryTag = crucible::TraceRing::ValidatedEntry::tag_type;
-
 // The runtime door from the first tag to an op that a recording entry point
 // takes.  An empty return says no certification exists for this operation,
 // and the caller executes eagerly and leaves the ring alone.  There is no
 // failure value that carries the second tag, which is what makes running
-// the checks the only way an adapter reaches a recording entry point.
+// the checks the only way an adapter reaches a recording entry point.  The
+// door of the trust ladder (crucible::validate_entry) checks the entry and
+// gives the second tag, and this door checks the records.
 //
 // The records are the inputs and then the outputs of the entry, in the run
 // of a frame, whose one writer the door takes by move and gives to the mint.
@@ -603,10 +600,10 @@ template <class Brand, std::size_t Extent>
 validate_ffi_op(crucible::TraceRing::FromPytorchEntry raw,
                 ::fixy::ViewMut<crucible::TensorMeta, Brand, Extent>&& metas) noexcept {
     ::fixy::ViewMut<crucible::TensorMeta, Brand, Extent> held{std::move(metas)};
-    if (!crucible::entry_is_well_formed(**raw.value())
-        || !metas_are_well_formed(::fixy::View<const crucible::TensorMeta>{held.view()}))
-        return ::fixy::none;
-    return crucible::mint_validated_op(std::move(raw).retag<ValidatedEntryTag>(), std::move(held));
+    if (!metas_are_well_formed(::fixy::View<const crucible::TensorMeta>{held.view()})) return ::fixy::none;
+    ::fixy::Option<crucible::TraceRing::ValidatedEntry> entry = crucible::validate_entry(std::move(raw));
+    if (!entry.is_some()) return ::fixy::none;
+    return crucible::mint_validated_op(std::move(entry).expect("the test above found the entry"), std::move(held));
 }
 
 }  // namespace crucible::vessel

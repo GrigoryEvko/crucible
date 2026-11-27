@@ -20,7 +20,8 @@ int main() {
         ::foundation::core::WindowCount{1},
         [&entry](auto slots) noexcept -> int {
             const auto op = crucible::mint_validated_op(
-                crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(), slots);
+                crucible::validate_entry(crucible::mint_ffi_entry(entry)).expect("the trust ladder admits the entry"),
+                slots);
             return op.is_some() ? 0 : 1;
         },
         [] noexcept -> int { return 2; });

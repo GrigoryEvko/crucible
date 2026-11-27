@@ -54,14 +54,14 @@ that the axis does not apply to the row.
 | `mint_checked_meta_run` | `include/crucible/MetaLog.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_context_key` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | token | · | HS14: 17 |
 | `mint_dag_node` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 13 |
-| `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | HS14: 11 |
+| `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | HS14: 15 |
 | `mint_meta_run` | `include/crucible/MetaLog.h` | Y | Y | Y | Y | token | · | HS14: 12 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_synthetic_data_ptr` | `include/crucible/TensorMeta.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_validated_op(crucible::TraceRing::ValidatedEntry)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | · | token | · | HS14: 10 |
-| `mint_validated_op(crucible::TraceRing::ValidatedEntry, crucible::SealedRecords<T0_0>&)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | Y | token | · | HS14: 10 |
-| `mint_validated_op(crucible::TraceRing::ValidatedEntry, foundation::core::ViewMut<crucible::TensorMeta, T0_0, T0_1>&&)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | Y | token | · | HS14: 10 |
+| `mint_validated_op(crucible::TraceRing::ValidatedEntry)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | · | token | · | HS14: 14 |
+| `mint_validated_op(crucible::TraceRing::ValidatedEntry, crucible::SealedRecords<T0_0>&)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | Y | token | · | HS14: 14 |
+| `mint_validated_op(crucible::TraceRing::ValidatedEntry, foundation::core::ViewMut<crucible::TensorMeta, T0_0, T0_1>&&)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | Y | token | · | HS14: 14 |
 | `mint_vigil` | `include/crucible/Vigil.h` | Y | - | Y | Y | ctx | Y | HS14: 16 |
 | `mint_vigil_with_deadline_watchdog` | `include/crucible/Vigil.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 
@@ -203,8 +203,8 @@ that the axis does not apply to the row.
 | `mint_sequence_source` | `include/fixy/Stale.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_shared_read` | `include/fixy/SharedRegion.h` | Y | Y | Y | Y | ctx | Y | HS14: 8 |
 | `mint_split` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 5 |
-| `mint_tagged(T0_1)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |
-| `mint_tagged(foundation::core::ForeignText)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |
+| `mint_tagged(T0_1)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 28 |
+| `mint_tagged(foundation::core::ForeignText)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 28 |
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_wide_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |

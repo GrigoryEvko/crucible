@@ -770,10 +770,11 @@ public:
                                                    kUnrecordedNestSchema.raw(), depth.raw())};
                                                return built;
                                            }};
-        // This code builds each field of the entry, so the entry is valid by
-        // construction, as the comment of TraceRing::ValidatedEntry states.
-        const ValidatedOp op = mint_validated_op(mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>())
-                                   .expect("an entry with no tensor takes no record");
+        // This code builds each field of the entry, and the trust ladder
+        // admits it: a schema hash other than zero, and no tensor or scalar.
+        const ValidatedOp op =
+            mint_validated_op(validate_entry(mint_ffi_entry(entry)).expect("the trust ladder admits the closing entry"))
+                .expect("an entry with no tensor takes no record");
         (void)dispatch_op(op, ScopeHash{}, CallsiteHash{}, depth);
     }
 

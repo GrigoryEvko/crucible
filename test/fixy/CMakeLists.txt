@@ -1793,6 +1793,53 @@ fixy_neg_compile_test(neg_tagged_start_as_array_earned_tag
   "no matching function for call to .start_as_array<Sanitized>"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = fixy::Tagged<int, fixy::tags::source::Sanitized>\\]")
 
+# A keyed tag lives beside the door of its check, and only the keyed retag
+# with a key that only the door writes reaches it.  Each fixture is one path
+# that builds a Tagged: the factory, the empty-slot door, the member and the
+# free retag of one argument, a key outside its door, a key with a name, a
+# source that is not earned_from, a key with a public constructor, bit_cast,
+# a start over bytes, the private constructor, an inherited constructor and
+# the door of a foreign text.
+fixy_neg_compile_test(neg_tagged_keyed_mint
+  "no matching function for call to .mint_tagged<Checked>\\(int\\)."
+  "satisfaction of .MintableTag<Tag>. \\[with Tag = Checked\\]")
+fixy_neg_compile_test(neg_tagged_keyed_default
+  "no matching function for call to .fixy::Tagged<int, Checked>::Tagged\\(<brace-enclosed initializer list>\\)."
+  "satisfaction of .MintableTag<Tag>. \\[with Tag = Checked\\]")
+fixy_neg_compile_test(neg_tagged_keyed_plain_retag
+  "no matching function for call to .fixy::Tagged<int, fixy::tags::source::External>::retag<Checked>\\(\\)."
+  "satisfaction of .RetagAllowed<Tag, NewTag>. \\[with Tag = fixy::tags::source::External; NewTag = Checked\\]")
+fixy_neg_compile_test(neg_tagged_keyed_free_retag_no_key
+  "no matching function for call to .retag<Checked>\\("
+  "satisfaction of .RetagAllowed<From, To>. \\[with From = fixy::tags::source::External; To = Checked\\]")
+fixy_neg_compile_test(neg_tagged_keyed_key_outside_door
+  ".constexpr Key::Key\\(\\). is private within this context"
+  "neg_tagged_keyed_key_outside_door.cpp:[0-9]+:[0-9]+: note: declared private here")
+fixy_neg_compile_test(neg_tagged_keyed_named_key
+  "use of deleted function .Key::Key\\(Key&&\\)."
+  "initializing argument 2 of .constexpr fixy::Tagged<T, Tag> fixy::retag\\(Tagged<T, typename To::earned_from>&&, typename To::retag_key\\)")
+fixy_neg_compile_test(neg_tagged_keyed_wrong_source
+  "no matching function for call to .retag<Checked>\\("
+  "mismatched types .fixy::tags::source::External. and .fixy::tags::source::FromUser.")
+fixy_neg_compile_test(neg_tagged_keyed_public_key
+  "static assertion failed: a tag is a class, and a tag that names a retag_key is a KeyedTag"
+  "required by the constraints of .template<class Tag> concept fixy::ValidTaggedTag.")
+fixy_neg_compile_test(neg_tagged_keyed_bit_cast
+  "no matching function for call to .bit_cast<fixy::Tagged<int, Checked> >\\(int\\)."
+  "is_trivially_copyable_v<_To>")
+fixy_neg_compile_test(neg_tagged_keyed_start_as_array
+  "no matching function for call to .start_as_array<Forged>"
+  "satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = fixy::Tagged<int, Checked>\\]")
+fixy_neg_compile_test(neg_tagged_keyed_forge_by_constructor
+  "is private within this context"
+  "fixy::Tagged<T, Tag>::Tagged\\(T\\) \\[with T = int; Tag = Checked\\]")
+fixy_neg_compile_test(neg_tagged_keyed_derived_constructor
+  "is private within this context"
+  "fixy::Tagged<T, Tag>::Tagged\\(T\\) \\[with T = int; Tag = Checked\\]")
+fixy_neg_compile_test(neg_tagged_keyed_foreign_text
+  "no matching function for call to .mint_tagged<Checked>\\(foundation::core::ForeignText\\)."
+  "satisfaction of .BoundaryTag<Tag>. \\[with Tag = Checked\\]")
+
 # declassify<Policy>() is the one way out of a Secret: std::bit_cast
 # cannot read the value out, because a Secret is not trivially copyable.
 fixy_neg_compile_test(neg_secret_bit_cast_out

@@ -287,11 +287,12 @@ struct V {
 };
 }  // namespace version
 
-// Internal code may construct a Validated value directly, so the tag
-// is only as strong as the review of its construction sites.
+// The tag of a value that the adapter of a foreign runtime gives through the
+// FFI.  The tag that a check of such a value earns is a keyed tag
+// (KeyedTag of fixy/Tagged.h), and it lives beside the door of the check,
+// whose earned_from names this tag.
 namespace vessel_trust {
 struct FromPytorch {};  // raw uint64_t / pointer / scalar from the FFI
-struct Validated {};  // Vessel-side validation produced a well-formed value
 }  // namespace vessel_trust
 
 // Searching for a declassification by its policy tag only enumerates

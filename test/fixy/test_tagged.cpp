@@ -43,6 +43,40 @@ using ::fixy::Tagged;
 
 struct VerificationTag {};
 
+// A keyed tag of the test: the check of the door of the test earns it from
+// FromPytorch.  Only the door writes the key.  The key names its door as a
+// class, so the key names no Tagged before the key is complete.
+class TestLadderKey;
+struct TestLadderChecked {
+    using retag_key = TestLadderKey;
+    using earned_from = vessel_trust::FromPytorch;
+};
+class TestLadderKey {
+    constexpr TestLadderKey() noexcept = default;
+    friend struct TestLadderDoor;
+
+public:
+    TestLadderKey(const TestLadderKey&) = delete("a key cannot copy");
+    TestLadderKey(TestLadderKey&&) = delete("a key cannot move");
+    TestLadderKey& operator=(const TestLadderKey&) = delete("a key cannot copy");
+    TestLadderKey& operator=(TestLadderKey&&) = delete("a key cannot move");
+    ~TestLadderKey() = default;
+};
+
+// The door of the test: a value of at most 64 passes the check.
+struct TestLadderDoor {
+    [[nodiscard]] static constexpr ::fixy::Option<Tagged<int, TestLadderChecked>>
+    check(Tagged<int, vessel_trust::FromPytorch>&& raw) noexcept {
+        if (raw.value() > 64) return ::fixy::none;
+        return ::fixy::Option<Tagged<int, TestLadderChecked>>::some(
+            ::fixy::retag<TestLadderChecked>(std::move(raw), TestLadderKey{}));
+    }
+};
+
+static_assert(::fixy::KeyedTag<TestLadderChecked> && !::fixy::MintableTag<TestLadderChecked>);
+static_assert(!RetagAllowed<vessel_trust::FromPytorch, TestLadderChecked>);
+static_assert(!::fixy::KeyedTagDropsToValue<TestLadderChecked>);
+
 struct Config {
     int port;
 };
@@ -170,9 +204,9 @@ static_assert(!RetagAllowed<source::X86Pinned, source::PortablePinned>);
 static_assert(!RetagAllowed<source::X86Pinned, source::ArmPinned>);
 static_assert(!RetagAllowed<source::ArmPinned, source::X86Pinned>);
 
-// The vessel boundary edge that TraceRing consumes.
-static_assert(RetagAllowed<vessel_trust::FromPytorch, vessel_trust::Validated>);
-static_assert(!RetagAllowed<vessel_trust::Validated, vessel_trust::FromPytorch>);
+// The vessel boundary tag has no edge: the tag that the trust ladder earns
+// from it is a keyed tag beside the door of the ladder.
+static_assert(!ffc::has_edge_from(^^tags::admitted_retags, ^^vessel_trust::FromPytorch));
 
 // ── The catalog, read out of the namespace ──────────────────────────
 //
@@ -200,9 +234,8 @@ static_assert(ffc::is_intra_namespace<^^tags::admitted_retags>());
 // through the namespace itself.
 static_assert(edges_in_family(^^::fixy::tags::trust) == 5);
 static_assert(edges_in_family(^^::fixy::tags::source) == 16);
-static_assert(edges_in_family(^^::fixy::tags::vessel_trust) == 1);
+static_assert(edges_in_family(^^::fixy::tags::vessel_trust) == 0);
 static_assert(edges_in_family(^^::fixy::tags::trust) + edges_in_family(^^::fixy::tags::source)
-                  + edges_in_family(^^::fixy::tags::vessel_trust)
               == ::fixy::admitted_retag_count);
 
 // The source of the first edge in the catalog that enters Tag from a
@@ -321,7 +354,7 @@ int check_slot_array() {
 
 // The doors the cells above do not walk: the mint overload that names
 // the value type, the free-function retag beside the member one, and the
-// vessel_trust edge.
+// keyed retag of a door.
 int check_remaining_doors() {
     int seed = 7;
 
@@ -343,9 +376,13 @@ int check_remaining_doors() {
     Tagged<long, trust::Unverified> unverified = mint_tagged<trust::Unverified>(static_cast<long>(seed * seed));
     if (verified.value() != unverified.value()) return 53;
 
-    Tagged<int, vessel_trust::FromPytorch> raw = mint_tagged<vessel_trust::FromPytorch>(seed);
-    auto validated = std::move(raw).retag<vessel_trust::Validated>();
-    if (validated.value() != 7) return 54;
+    // The keyed retag of a door: a value in the bound passes, and a value
+    // past it gets no tag.
+    ::fixy::Option<Tagged<int, TestLadderChecked>> checked =
+        TestLadderDoor::check(mint_tagged<vessel_trust::FromPytorch>(seed));
+    if (!checked.is_some()) return 54;
+    if (std::move(checked).expect("the value is in the bound of the check").value() != 7) return 56;
+    if (TestLadderDoor::check(mint_tagged<vessel_trust::FromPytorch>(seed * 10)).is_some()) return 57;
 
     // The free-function door, beside the member one check_arch_weakening
     // walks.

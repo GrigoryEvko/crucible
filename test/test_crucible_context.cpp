@@ -558,7 +558,10 @@ static void test_external_reads_follow_the_region() {
     });
     const crucible::SealedRecords<1> first_records{crucible::test::record_list_of(first_metas, 1)};
     const crucible::SealedRecords<1> second_records{crucible::test::record_list_of(second_metas, 1)};
+    // Each live op has the schema hash of the regions, which the trust
+    // ladder admits.
     crucible::TraceRing::Entry entry{};
+    entry.schema_hash = SchemaHash{51};
     entry.num_inputs = 1;
     auto const sealed_entry = crucible::test::seal_entry(entry);
     const crucible::ValidatedOp first_op = crucible::test::certify_synthetic_op(sealed_entry, first_records);
@@ -567,6 +570,7 @@ static void test_external_reads_follow_the_region() {
     // A live op with the record of one output and no input.  Its inputs are
     // the empty prefix of its records.
     crucible::TraceRing::Entry output_entry{};
+    output_entry.schema_hash = SchemaHash{51};
     output_entry.num_outputs = 1;
     auto const sealed_output_entry = crucible::test::seal_entry(output_entry);
     const crucible::ValidatedOp output_op = crucible::test::certify_synthetic_op(sealed_output_entry, first_records);

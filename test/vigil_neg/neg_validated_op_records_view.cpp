@@ -18,8 +18,8 @@ int main() {
                                                      return built;
                                                  }};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> records{};
-    const auto op =
-        crucible::mint_validated_op(crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>(),
-                                    ::fixy::View<const crucible::TensorMeta>{records.view()});
+    const auto op = crucible::mint_validated_op(
+        crucible::validate_entry(crucible::mint_ffi_entry(entry)).expect("the trust ladder admits the entry"),
+        ::fixy::View<const crucible::TensorMeta>{records.view()});
     return op.is_some() ? 0 : 1;
 }

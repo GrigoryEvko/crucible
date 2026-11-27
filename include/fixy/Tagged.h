@@ -10,10 +10,12 @@
 //
 // The one door is mint_tagged<Tag>(value), and it opens only for a tag
 // that names where a value came from.  A tag that names a check that ran
-// (Sanitized, Verified, Validated and the others that a discharge edge of
-// the catalog below enters) is EARNED, and only retag along that edge
-// reaches it.  The catalog decides which tags are earned, by reflection,
-// so no second list states it.  A ForeignText, the text of a foreign ABI,
+// (Sanitized, Verified and the others that a discharge edge of the catalog
+// below enters) is EARNED, and only retag along that edge reaches it.  The
+// catalog decides which tags are earned, by reflection, so no second list
+// states it.  A keyed tag (KeyedTag) is earned too, and it lives beside the
+// door of its check: only the keyed retag reaches it, with a key that only
+// that door can write.  A ForeignText, the text of a foreign ABI,
 // takes only a tag that an edge takes into Sanitized (BoundaryTag), so no
 // foreign text carries the tag of an internal source.
 //
@@ -59,6 +61,7 @@
 #include <foundation/core/TypeParts.h>
 #include <foundation/diag/FailClosed.h>
 #include <foundation/reflect/Instance.h>
+#include <foundation/reflect/ReflectionList.h>
 
 #include <concepts>
 #include <cstddef>
@@ -158,29 +161,82 @@ inline constexpr ::foundation::fail_closed::edge<source::PortablePinned, source:
 inline constexpr ::foundation::fail_closed::edge<source::PortablePinned, source::ArmPinned>
     portable_pinned_to_arm_pinned{};
 
-// Discharge: the adapter's well-formedness checks ran on the input.
-// This is the edge that carries TraceRing's FromPytorchEntry into
-// its ValidatedEntry.  No helper builds the second tag straight from
-// an Entry, because such a helper reads as a certification and runs no
-// check.  Running the checks is what crossing this edge means.
-inline constexpr ::foundation::fail_closed::edge<vessel_trust::FromPytorch, vessel_trust::Validated>
-    from_pytorch_to_validated{};
-
 // Every read counts the members against this seal, so a member that
 // another file adds stops the build rather than widening the relation.
-inline constexpr ::foundation::fail_closed::seal sealed{.members = 22};
+inline constexpr ::foundation::fail_closed::seal sealed{.members = 21};
 }  // namespace fixy::tags::admitted_retags
 
 namespace fixy {
+
+namespace detail::keyed_tag {
+
+// True when the class reflected by type declares a constructor that code
+// outside the class can call: a public constructor that is not deleted.  The
+// walk reads the members that an unprivileged context sees, which are the
+// public ones.  The traits of the caller below see the implicit
+// constructors, and this walk sees each constructor that the class
+// declares.  Complexity: linear in the public members of the class.
+[[nodiscard]] consteval bool has_public_constructor(std::meta::info type) {
+    const ::foundation::reflect::ReflectionList members =
+        ::foundation::reflect::reflection_list(std::meta::members_of(type, std::meta::access_context::unprivileged()));
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        const std::meta::info member = members[index];
+        if (std::meta::is_constructor(member) && !std::meta::is_deleted(member)) return true;
+    }
+    return false;
+}
+
+}  // namespace detail::keyed_tag
+
+// The key of a keyed tag: a class that only its friends can build.  It has
+// no public constructor, it cannot copy or move, and it is no aggregate.  So
+// a friend writes a key only as a prvalue at the call of the keyed retag,
+// and no code keeps a key or lends one.
+template <typename Key>
+concept RetagKeyType = std::is_class_v<Key> && !std::is_aggregate_v<Key> && !std::is_default_constructible_v<Key>
+                    && !std::is_copy_constructible_v<Key> && !std::is_move_constructible_v<Key>
+                    && !detail::keyed_tag::has_public_constructor(^^Key);
+
+// True when a tag names a key, with the member type retag_key.
+template <typename Tag>
+concept DeclaresRetagKey = requires { typename Tag::retag_key; };
+
+// A keyed tag: an earned tag that lives beside the door of its check, in the
+// layer of that door.  It names two member types:
+//   retag_key    the key, whose friends are the doors of the check
+//   earned_from  the one tag that the keyed retag takes, a tag with no key
+// No edge of the catalog enters a keyed tag.  The key is its admission, so
+// only a door of the check moves a value under it.
+template <typename Tag>
+concept DeclaresEarnedFrom = requires { typename Tag::earned_from; };
+
+template <typename Tag>
+concept KeyedTag =
+    std::is_class_v<Tag> && DeclaresRetagKey<Tag> && RetagKeyType<typename Tag::retag_key> && DeclaresEarnedFrom<Tag>
+    && std::is_class_v<typename Tag::earned_from> && !DeclaresRetagKey<typename Tag::earned_from>;
+
+// A keyed tag whose payload drops to its value type in the order of the
+// payloads of a session (fixy/session/Subtype.h).  The tag states the drop
+// with the member type drops_to, and void is the one value: a Tagged of the
+// tag drops to its value, as an edge to void of droppable_tags gives an
+// unkeyed tag.  A keyed tag with no drops_to does not drop.
+template <typename Tag>
+concept DeclaresDrop = requires { typename Tag::drops_to; };
+
+template <typename Tag>
+concept KeyedTagDropsToValue = KeyedTag<Tag> && DeclaresDrop<Tag> && std::is_void_v<typename Tag::drops_to>;
 
 // Identity is a no-op transition, admitted unconditionally so generic
 // code that re-asserts the tag it already holds does not trip the gate.
 // Every other pair is answered by the catalog and nothing else: there
 // is no primary template to specialize, so a foreign translation unit
-// cannot admit an edge by reopening a trait.
+// cannot admit an edge by reopening a trait.  No pair enters a keyed tag,
+// also if an edge of the catalog named one: the keyed retag below is its
+// one door.
 template <typename From, typename To>
 concept RetagAllowed =
-    std::is_same_v<From, To> || ::foundation::fail_closed::Admitted<^^tags::admitted_retags, From, To>;
+    std::is_same_v<From, To>
+    || (!DeclaresRetagKey<To> && ::foundation::fail_closed::Admitted<^^tags::admitted_retags, From, To>);
 
 // The trait spelling of the same answer, for a reader that asks the
 // question as a value.  It is a view of RetagAllowed and carries no
@@ -191,8 +247,10 @@ struct retag_policy {
     static constexpr bool allowed = RetagAllowed<From, To>;
 };
 
+// A tag is a class.  A tag that names a key is a keyed tag in full, so a
+// key with a public constructor makes no tag at all, and no mintable one.
 template <typename Tag>
-concept ValidTaggedTag = std::is_class_v<Tag>;
+concept ValidTaggedTag = std::is_class_v<Tag> && (!DeclaresRetagKey<Tag> || KeyedTag<Tag>);
 
 namespace detail::earned_tag {
 
@@ -234,9 +292,10 @@ namespace detail::earned_tag {
 // where the value came from, or it is reached from no other tag.  An
 // earned tag is not mintable.  It is reached only by retag along its
 // discharge edge, so every value under it passed through a retag call
-// that names the edge.
+// that names the edge.  A keyed tag is not mintable either.  Only the keyed
+// retag reaches it, with the key of its check.
 template <typename Tag>
-concept MintableTag = ValidTaggedTag<Tag> && (!detail::earned_tag::is_earned(^^Tag));
+concept MintableTag = ValidTaggedTag<Tag> && (!detail::earned_tag::is_earned(^^Tag)) && !DeclaresRetagKey<Tag>;
 
 // A tag of a value from outside the process: a mintable tag that an edge of
 // the catalog takes into Sanitized.  The input sanitizer discharges such a
@@ -272,6 +331,18 @@ template <typename Tag, typename T>
 template <typename To, typename T, typename From>
     requires RetagAllowed<From, To>
 [[nodiscard]] constexpr Tagged<T, To> retag(Tagged<T, From>&& tagged) noexcept(std::is_nothrow_move_constructible_v<T>);
+
+// Moves the value under a keyed tag, from the tag that it is earned from.
+// The key cannot copy or move, so the caller writes it as a prvalue at the
+// call: ::fixy::retag<To>(std::move(tagged), Key{}).  Only a friend of the
+// key can write Key{}, so only a door of the check reaches the tag, and the
+// key has no name that a door could lend.  There is no member form, because
+// a member cannot pass on a key that cannot move.  O(1).
+template <typename To, typename T>
+    requires KeyedTag<To>
+[[nodiscard]] constexpr Tagged<T, To>
+retag(Tagged<T, typename To::earned_from>&& tagged,
+      typename To::retag_key key) noexcept(std::is_nothrow_move_constructible_v<T>);
 
 // A Tagged under an earned tag must not be built from bytes, or
 // std::bit_cast<Tagged<int, Sanitized>>(raw) forges the claim that the
@@ -317,6 +388,16 @@ private:
     template <typename To, typename U, typename From>
         requires RetagAllowed<From, To>
     friend constexpr Tagged<U, To> retag(Tagged<U, From>&& tagged) noexcept(std::is_nothrow_move_constructible_v<U>);
+
+    template <typename To, typename U>
+        requires KeyedTag<To>
+    friend constexpr Tagged<U, To> retag(Tagged<U, typename To::earned_from>&& tagged,
+                                         typename To::retag_key key) noexcept(std::is_nothrow_move_constructible_v<U>);
+
+    // A tag that names a key with a public constructor makes no Tagged.
+    static_assert(ValidTaggedTag<Tag>,
+                  "a tag is a class, and a tag that names a retag_key is a KeyedTag: a key with no public "
+                  "constructor, no copy and no move, and an earned_from tag with no key");
 
 public:
     // The second door: an empty slot before any of an array's slots is
@@ -407,6 +488,14 @@ retag(Tagged<T, From>&& tagged) noexcept(std::is_nothrow_move_constructible_v<T>
     return Tagged<T, To>{std::move(tagged).into()};
 }
 
+template <typename To, typename T>
+    requires KeyedTag<To>
+[[nodiscard]] constexpr Tagged<T, To>
+retag(Tagged<T, typename To::earned_from>&& tagged,
+      [[maybe_unused]] typename To::retag_key key) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    return Tagged<T, To>{std::move(tagged).into()};
+}
+
 // True when T, with its references and qualifiers removed, is a Tagged.
 // One reflection query answers it, so there is no primary-plus-
 // specialization ladder to keep in step with the class.  The concept is
@@ -431,6 +520,6 @@ struct NeverTo {};
 // includer walks the namespace.  The check file of this header derives the
 // count from the namespace and pins this literal to it, so a new edge is a
 // reviewed two-place edit.
-inline constexpr std::size_t admitted_retag_count = 22;
+inline constexpr std::size_t admitted_retag_count = 21;
 
 }  // namespace fixy

@@ -501,6 +501,8 @@ test/fixy/neg/ | enum-cast | 1 | - | a cast of a number into an enumeration with
 test/fixy/neg/ | lifetime-start | 2 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | ABI: the fixture stands for a buffer that a foreign caller gives | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | opted-out | 2 | PROBE: a static function of the library escapes to the template | the two fixtures of the walk of a scope brand behind a CallRef keep a function of a library in a static to give its address to a template, so the refusal of the CallRef is their one reason
+test/fixy/neg/ | opted-out | 1 | PROBE: the fixture builds a keyed claim through std::bit_cast, and the compiler refuses it | -
+test/fixy/neg/ | opted-out | 1 | PROBE: the fixture builds a keyed claim with std::bit_cast, and the compiler refuses it | -
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges a CheckpointHandle that builds a handle around a plain one | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -536,6 +538,7 @@ test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a reader of the base 
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a spawn template of the base with no reading | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture plants a specialization of a base template, and a check refuses it | The split of the session registry: a test states a payload rule of the role data for a class of its own file in a PROBE region, and the new fixtures plant a family, a forward declaration and a lying specialization of Named in PROBE regions
 test/fixy/neg/ | opted-out | 2 | PROBE: the fixture registers a pole table outside the file of its template | -
+test/fixy/neg/ | opted-out | 1 | PROBE: the fixture starts a keyed claim over raw bytes, and the compiler refuses it | -
 test/fixy/neg/ | opted-out | 2 | PROBE: the fixture takes the address of a member mint with a target type | only a pointer to member takes the address of a member mint, and the result of the admittance is a std::pair
 test/fixy/neg/ | opted-out | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | raw-function-pointer | 2 | - | -
@@ -544,6 +547,8 @@ test/fixy/neg/ | raw-pointer-object | 14 | - | -
 test/fixy/neg/ | region | 1 | ABI: the fixture gives the foreign door the address of a foreign entry | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | region | 1 | ABI: the fixture stands for a buffer that a foreign caller gives | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | region | 2 | PROBE: a static function of the library escapes to the template | the two fixtures of the walk of a scope brand behind a CallRef keep a function of a library in a static to give its address to a template, so the refusal of the CallRef is their one reason
+test/fixy/neg/ | region | 1 | PROBE: the fixture builds a keyed claim through std::bit_cast, and the compiler refuses it | -
+test/fixy/neg/ | region | 1 | PROBE: the fixture builds a keyed claim with std::bit_cast, and the compiler refuses it | -
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges a CheckpointHandle that builds a handle around a plain one | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -580,6 +585,7 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture plants a spawn template of the 
 test/fixy/neg/ | region | 1 | PROBE: the fixture plants a specialization of a base template, and a check refuses it | The split of the session registry: a test states a payload rule of the role data for a class of its own file in a PROBE region, and the new fixtures plant a family, a forward declaration and a lying specialization of Named in PROBE regions
 test/fixy/neg/ | region | 1 | PROBE: the fixture registers a pole table outside the file of its template | -
 test/fixy/neg/ | region | 10 | PROBE: the fixture specializes a trait of the base, and the compiler refuses it | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/neg/ | region | 1 | PROBE: the fixture starts a keyed claim over raw bytes, and the compiler refuses it | -
 test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member mint with a target type | only a pointer to member takes the address of a member mint, and the result of the admittance is a std::pair
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -

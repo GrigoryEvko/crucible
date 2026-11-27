@@ -71,9 +71,55 @@ static_assert(!retag_policy<detail::retag_sentinel::NeverFrom, detail::retag_sen
 // parameter of a pin family, or a tag that no edge enters.
 static_assert(!MintableTag<tags::source::Sanitized> && !MintableTag<tags::source::IntegrityVerified>
                   && !MintableTag<tags::source::Loaded> && !MintableTag<tags::trust::Verified>
-                  && !MintableTag<tags::trust::Tested> && !MintableTag<tags::trust::Assumed>
-                  && !MintableTag<tags::vessel_trust::Validated>,
+                  && !MintableTag<tags::trust::Tested> && !MintableTag<tags::trust::Assumed>,
               "a tag that names a check must come from retag along its discharge edge, never from mint_tagged");
+
+// A keyed tag of this file, with a key that only its door can write, and
+// a tag whose key has a public constructor.
+class CheckKey;
+struct CheckKeyed {
+    using retag_key = CheckKey;
+    using earned_from = tags::source::External;
+    using drops_to = void;
+};
+class CheckKey {
+    constexpr CheckKey() noexcept = default;
+    friend struct CheckKeyDoor;
+
+public:
+    CheckKey(const CheckKey&) = delete("a key cannot copy");
+    CheckKey(CheckKey&&) = delete("a key cannot move");
+    CheckKey& operator=(const CheckKey&) = delete("a key cannot copy");
+    CheckKey& operator=(CheckKey&&) = delete("a key cannot move");
+    ~CheckKey() = default;
+};
+struct CheckKeyDoor {
+    [[nodiscard]] static constexpr Tagged<int, CheckKeyed> retag(Tagged<int, tags::source::External>&& raw) noexcept {
+        return ::fixy::retag<CheckKeyed>(std::move(raw), CheckKey{});
+    }
+};
+struct PublicCheckKey {
+    constexpr PublicCheckKey() noexcept = default;
+    PublicCheckKey(const PublicCheckKey&) = delete("a key cannot copy");
+    PublicCheckKey(PublicCheckKey&&) = delete("a key cannot move");
+};
+struct PublicKeyed {
+    using retag_key = PublicCheckKey;
+    using earned_from = tags::source::External;
+};
+static_assert(RetagKeyType<CheckKey> && !RetagKeyType<PublicCheckKey> && !RetagKeyType<int>,
+              "a key has no public constructor, no copy and no move");
+static_assert(KeyedTag<CheckKeyed> && ValidTaggedTag<CheckKeyed> && KeyedTagDropsToValue<CheckKeyed>,
+              "a tag with a key, an earned_from tag and drops_to void is a keyed tag that drops to its value");
+static_assert(!KeyedTag<PublicKeyed> && !ValidTaggedTag<PublicKeyed> && !MintableTag<PublicKeyed>,
+              "a tag whose key has a public constructor is no tag");
+static_assert(!MintableTag<CheckKeyed> && !RetagAllowed<tags::source::External, CheckKeyed>
+                  && RetagAllowed<CheckKeyed, CheckKeyed> && !BoundaryTag<CheckKeyed>,
+              "only the keyed retag enters a keyed tag, and identity stays admitted");
+static_assert(CheckKeyDoor::retag(mint_tagged<tags::source::External>(5)).value() == 5,
+              "the door of the key moves the value under the keyed tag");
+static_assert(!std::is_trivially_copyable_v<Tagged<int, CheckKeyed>>,
+              "a Tagged of a keyed tag is not trivially copyable, so no byte route builds one");
 static_assert(MintableTag<tags::source::External> && MintableTag<tags::source::FromUser>
                   && MintableTag<tags::trust::Unverified> && MintableTag<tags::vessel_trust::FromPytorch>
                   && MintableTag<tags::source::CipherPath> && MintableTag<tags::access::RO>

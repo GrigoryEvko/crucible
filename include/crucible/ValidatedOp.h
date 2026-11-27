@@ -69,6 +69,83 @@ inline constexpr uint32_t kMaxOpRecords = uint32_t{kMaxOpInputs} + uint32_t{kMax
     return false;
 }
 
+// The largest entry of a recording kernel whose records fit capacity slots
+// of each kind: capacity inputs, capacity outputs, each inline scalar slot,
+// and a schema hash other than zero.  The ceiling door below proves at
+// compile time that the ladder admits it.
+[[nodiscard]] consteval TraceRing::Entry entry_at_ceiling(uint32_t capacity) {
+    TraceRing::Entry entry{};
+    entry.schema_hash = SchemaHash{1};
+    entry.num_inputs = ::fixy::narrow<uint16_t>(capacity).expect("a ceiling of records fits the count of an entry");
+    entry.num_outputs = entry.num_inputs;
+    entry.num_scalar_args = ::fixy::narrow<uint8_t>(kScalarSlots).expect("the inline slots fit the count of scalars");
+    return entry;
+}
+
+// A capacity of records whose largest entry the trust ladder admits.
+template <uint32_t Capacity>
+concept LadderCeiling = entry_is_well_formed(entry_at_ceiling(Capacity));
+
+// The two doors of the trust ladder, the one code that gives an entry the
+// tag Validated.
+//
+//   validate_entry(raw)
+//                       the run-time door for an entry from outside the
+//                       process: it gives the tag when entry_is_well_formed
+//                       admits the entry, and no value otherwise
+//   validate_entry_within_ceiling<Capacity>(raw)
+//                       the door of a recording kernel, which builds each
+//                       field of its entry itself: each count of records is
+//                       at most Capacity, and at most the inline scalar
+//                       slots hold scalars.  The constraint proves at
+//                       compile time that the ladder admits each such entry.
+//                       The schema hash is the one field of the entry with no
+//                       bound in a type, so the door ends the process when it
+//                       is zero
+//
+// Each door takes the tag of the FFI by value and gives a Ref of the same
+// sealed entry.  O(1).
+[[nodiscard]] constexpr ::fixy::Option<TraceRing::ValidatedEntry>
+validate_entry(TraceRing::FromPytorchEntry raw) noexcept;
+template <uint32_t Capacity>
+    requires LadderCeiling<Capacity>
+[[nodiscard]] constexpr TraceRing::ValidatedEntry
+validate_entry_within_ceiling(TraceRing::FromPytorchEntry raw) noexcept;
+
+namespace detail {
+
+// The door of the trust ladder: the one class that writes the key of the
+// tag Validated (EntryLadderKey of crucible/TraceRing.h).  Its one member is
+// private, and the two doors above are its friends.
+class EntryLadderDoor {
+    [[nodiscard]] static constexpr TraceRing::ValidatedEntry retag_(TraceRing::FromPytorchEntry raw) noexcept {
+        return ::fixy::retag<vessel_trust::Validated>(std::move(raw), EntryLadderKey{});
+    }
+
+    friend constexpr ::fixy::Option<TraceRing::ValidatedEntry>
+    crucible::validate_entry(TraceRing::FromPytorchEntry raw) noexcept;
+    template <uint32_t Capacity>
+        requires LadderCeiling<Capacity>
+    friend constexpr TraceRing::ValidatedEntry
+    crucible::validate_entry_within_ceiling(TraceRing::FromPytorchEntry raw) noexcept;
+};
+
+}  // namespace detail
+
+[[nodiscard]] constexpr ::fixy::Option<TraceRing::ValidatedEntry>
+validate_entry(TraceRing::FromPytorchEntry raw) noexcept {
+    if (!entry_is_well_formed(**raw.value())) return ::fixy::none;
+    return ::fixy::Option<TraceRing::ValidatedEntry>::some(detail::EntryLadderDoor::retag_(std::move(raw)));
+}
+
+template <uint32_t Capacity>
+    requires LadderCeiling<Capacity>
+[[nodiscard]] constexpr TraceRing::ValidatedEntry
+validate_entry_within_ceiling(TraceRing::FromPytorchEntry raw) noexcept {
+    CRUCIBLE_FATAL_INVARIANT((**raw.value()).schema_hash.raw() != 0);
+    return detail::EntryLadderDoor::retag_(std::move(raw));
+}
+
 // The slots of an OpRecordStack.
 using OpRecordSlots = ::foundation::core::WindowStack<TensorMeta, kMaxOpRecords>;
 

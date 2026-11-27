@@ -302,7 +302,41 @@ template <class Metas, class Scopes, class Callsites, class Depths>
 inline constexpr bool is_drain_prefix_v<Metas, Scopes, Callsites, Depths> =
     is_drain_prefix_v<Metas, Scopes, Callsites> && DrainRunOf<Depths, OpDepth>;
 
+// The door of the trust ladder (crucible/ValidatedOp.h), the one class that
+// writes the key of the tag Validated.
+class EntryLadderDoor;
+
+// The key of the tag of an entry that passed the trust ladder.  It has no
+// public constructor, no copy and no move, so only its door writes it, as a
+// prvalue at the call of the keyed retag (fixy/Tagged.h).
+class EntryLadderKey {
+    constexpr EntryLadderKey() noexcept = default;
+    friend class EntryLadderDoor;
+
+public:
+    EntryLadderKey(const EntryLadderKey&) = delete("only the door of the trust ladder writes the key, at the retag");
+    EntryLadderKey(EntryLadderKey&&) = delete("only the door of the trust ladder writes the key, at the retag");
+    EntryLadderKey& operator=(const EntryLadderKey&) = delete("a key holds no value to assign");
+    EntryLadderKey& operator=(EntryLadderKey&&) = delete("a key holds no value to assign");
+    ~EntryLadderKey() = default;
+};
+
 }  // namespace detail
+
+namespace vessel_trust {
+
+// The tag of an entry that passed the trust ladder (entry_is_well_formed of
+// crucible/ValidatedOp.h): a keyed tag, earned from the tag of the FFI.  Only
+// the door of the ladder moves an entry under it.  A validated payload drops
+// to its value in the order of the payloads of a session
+// (fixy/session/Subtype.h), as the payload of a check does.
+struct Validated {
+    using retag_key = detail::EntryLadderKey;
+    using earned_from = ::fixy::tags::vessel_trust::FromPytorch;
+    using drops_to = void;
+};
+
+}  // namespace vessel_trust
 
 // 2 MB alignment so the allocation lands on a PMD-aligned region and the
 // huge-page advice is not rejected.
@@ -410,13 +444,15 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     using SealedEntry = ::fixy::Sealed<Entry>;
 
     // An Entry built from the input of a foreign runtime carries the first
-    // tag, and no recording entry point takes it.  The checks of the trust
-    // ladder, or code that builds each field itself, give the second tag.
-    // Each tag holds a Ref of a sealed entry, not a copy: no code writes the
-    // entry that the ladder checks, so a validated op reads the fields that
-    // the checks read, and the 64-byte entry stays where the caller built it.
+    // tag, and no recording entry point takes it.  Only the door of the trust
+    // ladder gives the second tag (validate_entry and
+    // validate_entry_within_ceiling of crucible/ValidatedOp.h), because the
+    // second tag is keyed.  Each tag holds a Ref of a sealed entry, not a
+    // copy: no code writes the entry that the ladder checks, so a validated
+    // op reads the fields that the checks read, and the 64-byte entry stays
+    // where the caller built it.
     using FromPytorchEntry = ::fixy::Tagged<::fixy::Ref<SealedEntry const>, ::fixy::tags::vessel_trust::FromPytorch>;
-    using ValidatedEntry = ::fixy::Tagged<::fixy::Ref<SealedEntry const>, ::fixy::tags::vessel_trust::Validated>;
+    using ValidatedEntry = ::fixy::Tagged<::fixy::Ref<SealedEntry const>, vessel_trust::Validated>;
 
     static constexpr uint32_t CAPACITY = 1u << 16;
     static constexpr uint32_t MASK = CAPACITY - 1;
@@ -867,10 +903,11 @@ private:
 };
 
 // The first rung of the recording trust ladder. An adapter that builds an
-// Entry out of values a foreign runtime supplied mints this tag, and the only
-// transition the catalog admits from it is FromPytorch into Validated. A
-// recording entry point takes the second tag, so the adapter reaches one by
-// running its checks and retagging, and by no other route.
+// Entry out of values a foreign runtime supplied mints this tag.  The only
+// way from it into Validated is the door of the ladder
+// (crucible/ValidatedOp.h), which holds the key of the keyed tag. A
+// recording entry point takes the second tag, so the adapter reaches one
+// through the checks of that door, and by no other route.
 //
 // There is deliberately no counterpart that mints the second tag directly.
 // One existed, and an adapter calling it was a way of skipping the checks

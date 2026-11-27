@@ -12,10 +12,14 @@
 
 int main() {
     crucible::Vigil vigil = crucible::mint_vigil(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, {});
-    const crucible::TraceRing::SealedEntry entry{::fixy::build_sealed,
-                                                 []() noexcept { return crucible::TraceRing::Entry{}; }};
+    const crucible::TraceRing::SealedEntry entry{::fixy::build_sealed, []() noexcept {
+                                                     crucible::TraceRing::Entry built{};
+                                                     built.schema_hash = crucible::SchemaHash{0x1234};
+                                                     return built;
+                                                 }};
     const crucible::ValidatedOp op =
-        crucible::mint_validated_op(crucible::mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>())
+        crucible::mint_validated_op(
+            crucible::validate_entry(crucible::mint_ffi_entry(entry)).expect("the trust ladder admits the entry"))
             .expect("an entry with no tensors takes no records");
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     (void)vigil.dispatch_op_pure(ctx, op);

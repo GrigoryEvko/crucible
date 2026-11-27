@@ -21,6 +21,29 @@ struct TensorTile {
     float value[4] = {};
 };
 
+// Two keyed tags of the test.  The first states that its payload drops to
+// its value, and the second states no drop.  No code builds the key, so no
+// value carries either tag, and the order reads only the types.
+class PayloadKey {
+    PayloadKey() = default;
+
+public:
+    PayloadKey(const PayloadKey&) = delete("a key cannot copy");
+    PayloadKey(PayloadKey&&) = delete("a key cannot move");
+    PayloadKey& operator=(const PayloadKey&) = delete("a key cannot copy");
+    PayloadKey& operator=(PayloadKey&&) = delete("a key cannot move");
+    ~PayloadKey() = default;
+};
+struct PayloadChecked {
+    using retag_key = PayloadKey;
+    using earned_from = tags::vessel_trust::FromPytorch;
+    using drops_to = void;
+};
+struct PayloadKept {
+    using retag_key = PayloadKey;
+    using earned_from = tags::vessel_trust::FromPytorch;
+};
+
 static_assert(s::is_payload_subsort_v<Refined<::fixy::positive, int>, int>);
 static_assert(s::is_payload_subsort_v<Refined<::fixy::non_zero, int>, int>);
 static_assert(s::is_payload_subsort_v<Refined<::fixy::bounded_above<1024>, int>, int>);
@@ -36,7 +59,12 @@ static_assert(s::is_payload_subsort_v<Tagged<DispatchRequest, tags::source::From
 static_assert(s::is_payload_subsort_v<Tagged<DispatchRequest, tags::source::FromDb>, DispatchRequest>);
 static_assert(s::is_payload_subsort_v<Tagged<MemoryPlanByte, tags::source::Durable>, MemoryPlanByte>);
 static_assert(s::is_payload_subsort_v<Tagged<MemoryPlanByte, tags::source::Computed>, MemoryPlanByte>);
-static_assert(s::is_payload_subsort_v<Tagged<DispatchRequest, tags::vessel_trust::Validated>, DispatchRequest>);
+static_assert(s::is_payload_subsort_v<Tagged<DispatchRequest, PayloadChecked>, DispatchRequest>,
+              "a keyed tag with drops_to void drops to its value");
+static_assert(!s::is_payload_subsort_v<Tagged<DispatchRequest, PayloadKept>, DispatchRequest>,
+              "a keyed tag with no drops_to does not drop");
+static_assert(!s::is_payload_subsort_v<DispatchRequest, Tagged<DispatchRequest, PayloadChecked>>,
+              "a value does not acquire a keyed tag");
 static_assert(!s::is_payload_subsort_v<Tagged<DispatchRequest, tags::source::External>, DispatchRequest>);
 static_assert(!s::is_payload_subsort_v<Tagged<DispatchRequest, tags::source::FromUser>, DispatchRequest>);
 static_assert(!s::is_payload_subsort_v<Tagged<DispatchRequest, tags::vessel_trust::FromPytorch>, DispatchRequest>);

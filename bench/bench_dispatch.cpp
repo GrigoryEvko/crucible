@@ -35,19 +35,23 @@ namespace {
 // Vigil take that context from the test door.
 constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<Vigil>();
 
+// The most records of each kind of an op of this file: one input and one
+// output.
+constexpr uint32_t kRecordCeiling = 1;
+
 // Certifies an Entry this file built field by field, so it can reach
-// record_op and dispatch_op, which take the second trust tag. It runs no
-// check, because a literal written here is whatever this file wrote. An
-// adapter filling an Entry from a foreign runtime runs the checks in
-// vessel_api_typed.h and crosses the retag edge; this is file-local so
-// there is nothing shorter for an adapter to reach for.
+// record_op and dispatch_op, which take the second trust tag.  The cases
+// model the record of a native kernel, so the entry takes the door of that
+// path: the ceiling door of the trust ladder, which proves at compile time
+// that the ladder admits each entry with at most kRecordCeiling records of
+// each kind, and tests the schema hash.
 //
 // The three helpers of an op are inline in each timed body.  A body with a
 // call to a helper times the call too, and the choice of the inliner changes
 // from one build of this file to the next.
 [[nodiscard]] CRUCIBLE_INLINE TraceRing::ValidatedEntry certify_synthetic_entry(TraceRing::SealedEntry const& entry
                                                                                 CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>();
+    return validate_entry_within_ceiling<kRecordCeiling>(mint_ffi_entry(entry));
 }
 TraceRing::ValidatedEntry certify_synthetic_entry(TraceRing::SealedEntry const&&) =
     delete("the tag names the sealed entry, and a temporary sealed entry ends before the tag");
