@@ -100,7 +100,7 @@ struct ClockChain {
 //   fixy log double     8    2    5    1   44   7.33, the dispatch
 //   fixy log float      6    2    2    3   37   6.17, the dispatch
 //   fixy erf double    11    2    4    2   50   8.33, the dispatch
-//   fixy erf float      8    4    1    4   43   7.17, the dispatch
+//   fixy erf float      8    4    1    4   41   6.83, the dispatch
 //   cr_expf             6    2    1    3   30   5.0, the dispatch
 //   cr_logf             5    1    1    3   34   5.67, the dispatch
 //   cr_erff             8    4    1    5   32   6.0, the fma pipes

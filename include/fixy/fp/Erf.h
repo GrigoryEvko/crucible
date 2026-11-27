@@ -549,7 +549,11 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     // integer registers, so the chain of the result has no move there and
     // back.  The tests read the bits.
     float const magnitude = ::foundation::core::fp::abs(value);
-    if (magnitude >= detail::kErfFloatOneFrom) return ::foundation::core::fp::copy_sign(1.0f, value);
+    // The test is true for a NaN, so after it the compiler knows that the
+    // magnitude is in [0, kErfFloatOneFrom).  Then the conversion of the index
+    // in erf_interval_float_ needs no check of its range under the sanitizer
+    // of the conversions.  A NaN does not get here.
+    if (!(magnitude < detail::kErfFloatOneFrom)) return ::foundation::core::fp::copy_sign(1.0f, value);
     // A result below 2^-123 takes the slow path: the rounding test reads 24
     // bits of precision, and a subnormal float has fewer.
     if (magnitude_bits < 0x02000000u) [[unlikely]]
