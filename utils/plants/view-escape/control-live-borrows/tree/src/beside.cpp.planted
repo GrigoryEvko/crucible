@@ -193,4 +193,44 @@ unsigned long ref_beside_a_lent_member() noexcept {
     });
 }
 
+// A callee lends a member of the owner to its body, and reads a View of the
+// member after the lend, with no closure.  A callee lends a member of a
+// different type, whose elements no View of the member names, while the
+// closure reads the View.
+struct MixedHolder {
+    Items items{};
+    fc::HeapArray<double> reals{};
+};
+
+template <class Body>
+unsigned long lend_a_member_and_read_the_view(Holder& holder, View view, Body&& body) noexcept {
+    body(holder.items, []() noexcept {});
+    return view.size();
+}
+
+template <class Body>
+unsigned long lend_a_member_of_another_type(MixedHolder& holder, View view, Body&& body) noexcept {
+    unsigned long size = 0;
+    body(holder.reals, [&view, &size]() noexcept { size = view.size(); });
+    return size;
+}
+
+unsigned long view_read_after_a_lent_member() noexcept {
+    Holder holder{};
+    View const view = holder.items.view();
+    return lend_a_member_and_read_the_view(holder, view, [](Items& lent, auto&& read) noexcept {
+        read();
+        static_cast<void>(lent.size());
+    });
+}
+
+unsigned long view_beside_a_lent_member_of_another_type() noexcept {
+    MixedHolder holder{};
+    View const view = holder.items.view();
+    return lend_a_member_of_another_type(holder, view, [](auto& lent, auto&& read) noexcept {
+        read();
+        static_cast<void>(lent.size());
+    });
+}
+
 }  // namespace planted

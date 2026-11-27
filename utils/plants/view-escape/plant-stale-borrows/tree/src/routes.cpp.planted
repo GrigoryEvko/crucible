@@ -406,4 +406,23 @@ unsigned long member_through_a_ref_beside_an_owner_that_moves_on() noexcept {
     return capture_a_member_through_a_ref(items, counted);
 }
 
+// A callee lends a member of the owner to its body, and the body runs a closure
+// that reads a View of the member in the lend.  A lend of an array lends its
+// elements.
+template <class Body>
+unsigned long lend_a_member_beside_a_view(Holder& holder, View view, Body&& body) noexcept {
+    unsigned long size = 0;
+    body(holder.items, [&view, &size]() noexcept { size = view.size(); });
+    return size;
+}
+
+unsigned long view_beside_a_lent_member() noexcept {
+    Holder holder{};
+    View const view = holder.items.view();
+    return lend_a_member_beside_a_view(holder, view, [](Items& lent, auto&& read) noexcept {
+        read();
+        static_cast<void>(lent.size());
+    });
+}
+
 }  // namespace planted

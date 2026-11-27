@@ -25,6 +25,7 @@
 #include <fixy/os/Fs.h>
 #include <fixy/os/NumaPlacement.h>
 #include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Errno.h>
 #include <foundation/permissions/Permission.h>
@@ -126,9 +127,11 @@ void a_reader_or_a_writer_refuses_the_discard() {
     });
     CRUCIBLE_TEST_ASSERT(kTest, is_read_kept == ::fixy::some(true));
 
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a body calls a door of the lock beside a writer, and the lock refuses it")
     ::fixy::Option<bool> const is_write_kept = object.with_write(kCtx, [&object](auto& /*region*/) noexcept {
         return is_readers_live(object.template advise_release_aware<DontNeed>(kCtx));
     });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     CRUCIBLE_TEST_ASSERT(kTest, is_write_kept == ::fixy::some(true));
 
     // Both bodies ended, so the pool holds the exclusive again.
@@ -348,8 +351,10 @@ void an_end_gives_the_mapping_and_the_exclusive() {
 
     ::fixy::Option<bool> const is_refused_by_a_reader =
         object.with_read(kCtx, [&object](auto const& /*region*/) noexcept { return is_end_refused(object); });
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a body calls a door of the lock beside a writer, and the lock refuses it")
     ::fixy::Option<bool> const is_refused_by_a_writer =
         object.with_write(kCtx, [&object](auto& /*region*/) noexcept { return is_end_refused(object); });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     CRUCIBLE_TEST_ASSERT(kTest, is_refused_by_a_reader == ::fixy::some(true));
     CRUCIBLE_TEST_ASSERT(kTest, is_refused_by_a_writer == ::fixy::some(true));
     CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x3C}) == ::fixy::some(kPageBytes));

@@ -89,7 +89,9 @@
 //     which reads the same bytes.  A frame door changes the object too, when it
 //     lends the object in place to the call operator of a closure: under a unique
 //     borrow, or by a reference to a member or an element of it, and the lent types
-//     meet the types that the loan names.  A reference to the object itself is a
+//     meet the types that the loan names.  A lent owner lends the objects behind its
+//     pointers too, so a View of an array meets a lend of the array.  A reference to
+//     the object itself is a
 //     second name of it, as a capture of the object itself is.  Each use of the loan
 //     counts, also a read of its size.  A function with no body in the unit that
 //     gets the object and the closure can lend the one to the other, so it changes
@@ -192,9 +194,12 @@
 //     closed).  The record of a body holds no
 //     order, so a read of the borrow before the end is a finding too (fail
 //     closed, the plant plant-live-limits), and so is a capture by a closure that
-//     runs before the move.  A closure that ends an owner whose storage holds the
-//     object of a different argument, as a Box holds a keyed array, gives a
-//     finding when the callee lends that object to the closure (the holders).  A
+//     runs before the move.  A lend records the lent types and no place, so a lend
+//     of a member meets a borrow of a different member of the same type (fail
+//     closed, the plant plant-live-limits).  A closure that ends an owner whose
+//     storage holds the object of a different argument, as a Box holds a keyed
+//     array, gives a finding when the callee lends that object to the closure (the
+//     holders).  A
 //     member function of that object counts as a lender, also when it only reads
 //     the object, because the record does not show which member lends (fail
 //     closed).
@@ -1630,9 +1635,19 @@ private:
     void note_ended(int place, tree type) { note_ended(place, ended_parts(type)); }
 
     // The body lends the object at PLACE to the call operator of a closure, by a
-    // parameter of the type LENT (the borrows through a capture).
+    // parameter of the type LENT (the borrows through a capture).  The lent types
+    // are the types that LENT names and the types behind the pointers of each owner
+    // that LENT is or owns.
     void note_lent(int place, tree lent) {
-        const TypeSet& types = types_named_by(lent);
+        TypeSet types = types_named_by(lent);
+        // A unique borrow of an owner reaches the objects that the owner holds
+        // behind its pointers, as the elements of an array.
+        tree const held = element_class(is_indirect_type(lent) ? TREE_TYPE(lent) : lent);
+        if (held != NULL_TREE && CLASS_TYPE_P(held)) {
+            for (const OwnerClass& owner : owner_classes(held)) {
+                add_types(types, *owner.behind);
+            }
+        }
         visit_effects(place, [&](Effect& effect) {
             for (Ends* ends : {&effect.all, &effect.inner}) {
                 ends->is_lent = true;

@@ -63,7 +63,9 @@
 # capture (320).  The closure holds the borrow of a member of the parameter: a copy
 # of the member in an init capture (376), a local copy of the member (382), a member
 # of a local copy (388), a name of a structured binding (394), a member by a
-# reference (400), and a member through operator-> of a Ref (406).
+# reference (400), and a member through operator-> of a Ref (406).  A callee lends a
+# member of the owner to its body, and the body runs a closure that reads a View of
+# the member in the lend, because a lend of an array lends its elements (422).
 # In the unit receiver the receiver of a borrow match
 # stands behind the operator-> of a Box, and the arm ends the Box (23).
 #
@@ -333,6 +335,7 @@ finding routes view-escape stale-borrow src/routes.cpp:388:38 | borrow of items 
 finding routes view-escape stale-borrow src/routes.cpp:394:29 | borrow of items in an argument of the call after a call of planted::capture_a_binding with items, which moves an owner of the borrow
 finding routes view-escape stale-borrow src/routes.cpp:400:41 | borrow of items in counted after a call of planted::capture_a_member_by_reference with items, which moves an owner of the borrow
 finding routes view-escape stale-borrow src/routes.cpp:406:42 | borrow of items in an argument of the call after a call of planted::capture_a_member_through_a_ref with items, which moves an owner of the borrow
+finding routes view-escape stale-borrow src/routes.cpp:422:39 | borrow of holder.items in an argument of the call after a call of planted::lend_a_member_beside_a_view with holder, which lends the object to a closure under a unique borrow
 error routes src/routes.cpp:174 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_prefix with items, which moves an owner of the borrow
 error routes src/routes.cpp:180 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_window with items, which moves an owner of the borrow
 error routes src/routes.cpp:186 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_chain with items, which moves an owner of the borrow
@@ -358,6 +361,7 @@ error routes src/routes.cpp:388 | this use reads a borrow of items in an argumen
 error routes src/routes.cpp:394 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_binding with items, which moves an owner of the borrow
 error routes src/routes.cpp:400 | this use reads a borrow of items in counted after a call of planted::capture_a_member_by_reference with items, which moves an owner of the borrow
 error routes src/routes.cpp:406 | this use reads a borrow of items in an argument of the call after a call of planted::capture_a_member_through_a_ref with items, which moves an owner of the borrow
+error routes src/routes.cpp:422 | this use reads a borrow of holder.items in an argument of the call after a call of planted::lend_a_member_beside_a_view with holder, which lends the object to a closure under a unique borrow
 
 compile through src/through.cpp
 flag through -freflection

@@ -16,7 +16,9 @@
 # borrow, a borrow of a type that cannot name an element of the View, and a borrow
 # derived from a different parameter.  A derived borrow that no closure captures, a
 # View that a helper reads outside a closure, and a Ref read after a lend of a
-# member of its owner read live storage too.  In the unit through a closure argument holds a borrow through
+# member of its owner read live storage too.  A View read after a lend of its
+# array, and a View read in the lend of a member of a different type, read no lent
+# element.  In the unit through a closure argument holds a borrow through
 # its captures, beside an argument that gives an object, but no callee changes the
 # object of the borrow: a capture of the owner itself (31), a View of a different
 # owner (38), and a callee that only reads the owner (45).  In the unit in_place a

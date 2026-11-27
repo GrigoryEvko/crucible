@@ -145,4 +145,27 @@ unsigned long count_beside_an_owner_that_moves_on() noexcept {
     return move_on_and_capture_a_count(items, view);
 }
 
+// A lend records the lent types and no place, so the lend of one member meets a
+// View of a different member of the same type.
+struct TwoItems {
+    Items items{};
+    Items others{};
+};
+
+template <class Body>
+unsigned long lend_the_other_member(TwoItems& two, View view, Body&& body) noexcept {
+    unsigned long size = 0;
+    body(two.others, [&view, &size]() noexcept { size = view.size(); });
+    return size;
+}
+
+unsigned long view_beside_a_lend_of_a_different_member() noexcept {
+    TwoItems two{};
+    View const view = two.items.view();
+    return lend_the_other_member(two, view, [](Items& lent, auto&& read) noexcept {
+        read();
+        static_cast<void>(lent.size());
+    });
+}
+
 }  // namespace planted
