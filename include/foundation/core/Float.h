@@ -44,16 +44,33 @@
 // fma
 //   fma gives a * b + c with one round to nearest even, on each target.  A
 //   target with a fused multiply-add, such as x86-64-v3, x86-64-v4 and
-//   aarch64, runs the instruction.  Each other target, such as x86-64 and
-//   x86-64-v2, runs the exact form of detail::fma_by_integers_: it adds the
-//   integer product of the two significands and the significand of c in 128
-//   bits, keeps each lost bit in a sticky bit, and rounds one time.  The form
-//   calls no function of libm, and it gives the bits of the instruction for
-//   each input, under the round to nearest with no flush.  Under another mode
-//   of the register the instruction follows the mode, and the exact form does
-//   not, so the two forms can give different bits there.  A NaN input or a
-//   product of an infinity gives a NaN or an infinity, and the payload of a
-//   NaN can differ between the two forms.
+//   aarch64, runs the instruction.  The exact form of
+//   detail::fma_by_integers_ adds the integer product of the two
+//   significands and the significand of c in 128 bits, keeps each lost bit in
+//   a sticky bit, and rounds one time.  It is the oracle of the two forms
+//   below, and the form of each constant evaluation.
+//
+//   Each other target, such as x86-64 and x86-64-v2, runs a form in doubles
+//   under the floor crucible_fp_strict (CRUCIBLE_FP_STRICT_FLOOR, with no
+//   fast math).  A float goes through detail::fma_by_double_: the exact
+//   product in double, a round to odd of the sum, and a round to float.  A
+//   double goes through detail::fma_by_pairs_: the exact product of Dekker,
+//   a two-sum and a round to odd, inside the limits where each step is
+//   exact.  For a double, a NaN, an infinity, a subnormal input and each
+//   input past a limit go to the exact form.  The float form takes each
+//   input on its one path: a NaN or an infinity there gives the NaN or the
+//   infinity of IEEE 754, with a payload that can differ from the exact
+//   form, and an infinite operand raises the invalid flag in the two-sum,
+//   where the instruction raises none.  A unit with no floor runs the exact
+//   form for each input, because a contraction or a fast-math flag breaks
+//   the exact steps of the two forms.
+//
+//   Each form calls no function of libm, and it gives the bits of the
+//   instruction for each input, under the round to nearest with no flush.
+//   Under another mode of the register the instruction follows the mode, and
+//   the forms do not, so they can give different bits there.  A NaN input or
+//   a product of an infinity gives a NaN or an infinity, and the payload of a
+//   NaN can differ between the instruction and the other forms.
 //
 //   The body reads the target, so fma is in the inline namespace
 //   CRUCIBLE_SIMD_TARGET (the target namespace in foundation/Platform.h).  A
@@ -300,6 +317,164 @@ template <Float T>
     return fma_value_<T>(kept, exponent, is_negative);
 }
 
+// The forms of the fma for a target with no fused multiply-add, under the
+// floor crucible_fp_strict.  Each step is a double operation that rounds to
+// nearest, and contraction is off, so each sum and each product rounds one
+// time.  The forms assume the round to nearest with no flush to zero and no
+// denormals as zero, as the exact form does.
+//
+// Round to odd (Boldo and Melquiond, "Emulation of FMA and correctly rounded
+// sums: proved algorithms using rounding to odd", IEEE Transactions on
+// Computers 57(4), 2008): round to odd keeps the nearest value with an odd
+// last bit, unless the value is exact.  If a format has at least p + 2 bits,
+// a round to odd in that format and then a round to nearest in p bits gives
+// the round to nearest of the exact value in p bits.
+
+// A pair of doubles whose exact sum is a value: high is its round to nearest,
+// and low is the error.
+struct FmaPair {
+    double high = 0.0;
+    double low = 0.0;
+};
+
+// first + second with each bit (the two-sum of Knuth): 6 operations, exact
+// for finite values whose sum does not overflow.
+[[nodiscard]] constexpr FmaPair fma_two_sum_(double first, double second) noexcept {
+    double const sum = first + second;
+    double const second_part = sum - first;
+    double const first_part = sum - second_part;
+    return FmaPair{sum, (first - first_part) + (second - second_part)};
+}
+
+// first + second rounded to odd.  An inexact sum with an even last bit moves
+// one unit toward the error, to its neighbor with an odd last bit.  A sum
+// that is a NaN or an infinity does not move: the two-sum of an infinity
+// gives a NaN error, and a move would turn the infinity into a NaN or into
+// the largest finite value.  The move is integer arithmetic with no branch:
+// the top bit of x | -x is set when x is not zero, the exponent field plus 1
+// reaches bit 11 only for a NaN or an infinity, and the move is +1 when the
+// error has the sign of the sum and -1 when it does not.
+[[nodiscard]] constexpr double fma_round_sum_to_odd_(double first, double second) noexcept {
+    FmaPair const sum = fma_two_sum_(first, second);
+    std::uint64_t const sum_bits = __builtin_bit_cast(std::uint64_t, sum.high);
+    std::uint64_t const error_bits = __builtin_bit_cast(std::uint64_t, sum.low);
+    std::uint64_t const error_magnitude = error_bits << 1;
+    std::uint64_t const is_inexact = (error_magnitude | (std::uint64_t{0} - error_magnitude)) >> 63;
+    std::uint64_t const is_special = (((sum_bits >> 52) & 0x7FFu) + 1) >> 11;
+    std::uint64_t const needs_move = is_inexact & ~is_special & ~sum_bits & 1u;
+    std::uint64_t const is_opposite = (sum_bits ^ error_bits) >> 63;
+    std::uint64_t const move = needs_move - 2 * (needs_move & is_opposite);
+    return __builtin_bit_cast(double, sum_bits + move);
+}
+
+// The fma of float in double.  The product of two floats has at most
+// 2 * 24 = 48 bits, so it is exact in the 53 bits of double, and the exponent
+// of each product of two finite floats is in the normal range of double.  The
+// sum then rounds to odd in double, and 53 >= 24 + 2, so the round of that
+// double to float is the round to nearest of a * b + c.  A zero, a NaN and
+// an infinity take the same path: the double operations give the zeros,
+// infinities and NaNs of IEEE 754, the round to odd does not move them, and
+// the payload of a NaN can differ from the one of the exact form.  An
+// infinite operand makes the two-sum compute inf - inf, so the form raises
+// the invalid flag where the instruction raises none.  The form has no
+// branch: about 38 instructions in a Release build at x86-64.
+[[nodiscard]] constexpr float fma_by_double_(float left, float right, float addend) noexcept {
+    double const product = static_cast<double>(left) * static_cast<double>(right);
+    return static_cast<float>(fma_round_sum_to_odd_(product, static_cast<double>(addend)));
+}
+
+// The split of Veltkamp: high holds the upper 26 bits of the value and low
+// the rest, each exact, for a value below 2^996.  Above that the product of
+// the constant 2^27 + 1 can overflow.
+[[nodiscard]] constexpr FmaPair fma_split_(double value) noexcept {
+    double const scaled = 0x1.0000002p+27 * value;
+    double const high = scaled - (scaled - value);
+    return FmaPair{high, value - high};
+}
+
+// a * b with each bit (the product of Dekker): 17 operations.  The four
+// partial products of the halves are exact while the exponent of the product
+// is -970 or above, where the last bit of a * b is 2^-1074 or above.
+[[nodiscard]] constexpr FmaPair fma_two_product_(double left, double right) noexcept {
+    double const high = left * right;
+    FmaPair const first = fma_split_(left);
+    FmaPair const second = fma_split_(right);
+    double const low = ((first.high * second.high - high) + first.high * second.low + first.low * second.high)
+                     + first.low * second.low;
+    return FmaPair{high, low};
+}
+
+// The emulated fma of Boldo and Melquiond, with no test of its range:
+// uh + ul = a * b, th + tl = c + uh, v = the round to odd of tl + ul, and the
+// result is th + v rounded to nearest.  The glibc fma of a target with no
+// fused multiply-add takes the same order.  The tests read this core on each
+// side of each limit of fma_by_pairs_.  When c + uh cancels, the lemma of
+// Sterbenz makes th exact, so tl is 0 and v is ul, and the result has one
+// round also in the subnormal range.
+[[nodiscard]] constexpr double fma_pairs_core_(double left, double right, double addend) noexcept {
+    FmaPair const product = fma_two_product_(left, right);
+    FmaPair const sum = fma_two_sum_(addend, product.high);
+    return sum.high + fma_round_sum_to_odd_(sum.low, product.low);
+}
+
+// The limits of the exponents (the unbiased exponents of the inputs) where
+// each step of fma_pairs_core_ is exact and nothing overflows:
+//   each factor 995 or below      the split of Veltkamp
+//   the two factors 1021 or below the product rounds below 2^1023
+//   the two factors -970 or above the partial products are exact
+//   the addend 1022 or below      c + uh is below 2^1024 - 2^970, so the
+//                                 sum does not round to an infinity
+inline constexpr int kFmaPairsFactorMost = 995;
+inline constexpr int kFmaPairsProductMost = 1021;
+inline constexpr int kFmaPairsProductLeast = -970;
+inline constexpr int kFmaPairsAddendMost = 1022;
+
+// The inputs of fma_by_pairs_ outside its range: a NaN or an infinity goes to
+// the exact form, a zero takes the expressions of the exact form, so the
+// zeros keep the signs of IEEE 754, and each other input (a subnormal input,
+// or an exponent past a limit) goes to the exact form.
+[[nodiscard, gnu::cold, gnu::noinline]] constexpr double fma_pairs_edge_(double left, double right,
+                                                                         double addend) noexcept {
+    std::uint64_t const left_bits = __builtin_bit_cast(std::uint64_t, left);
+    std::uint64_t const right_bits = __builtin_bit_cast(std::uint64_t, right);
+    std::uint64_t const addend_bits = __builtin_bit_cast(std::uint64_t, addend);
+    constexpr std::uint64_t exponent_mask = 0x7FF0000000000000u;
+    bool const has_special = (left_bits & exponent_mask) == exponent_mask
+                          || (right_bits & exponent_mask) == exponent_mask
+                          || (addend_bits & exponent_mask) == exponent_mask;
+    if (has_special) return fma_by_integers_(left, right, addend);
+    if ((left_bits << 1) == 0 || (right_bits << 1) == 0) return left * right + addend;
+    if ((addend_bits << 1) == 0) return left * right;
+    return fma_by_integers_(left, right, addend);
+}
+
+// The fma of double in pairs of doubles.  One test reads the biased exponent
+// of each input: a factor in [1, 1023 + 995], an addend in [1, 1023 + 1022]
+// and a product exponent in [-970, 1021].  The field 0 of a zero or of a
+// subnormal value and the field 2047 of a NaN or an infinity are outside, so
+// the limits read only normal inputs.  A subnormal input has an exponent
+// below the one of its field.  Each input outside goes to fma_pairs_edge_.
+// About 110 instructions inside the range in a Release build at x86-64, of
+// which 33 are double operations, with the compares that -fharden-compares
+// of the tree checks two times.
+[[nodiscard]] constexpr double fma_by_pairs_(double left, double right, double addend) noexcept {
+    auto const left_biased = static_cast<std::uint32_t>(__builtin_bit_cast(std::uint64_t, left) >> 52) & 0x7FFu;
+    auto const right_biased = static_cast<std::uint32_t>(__builtin_bit_cast(std::uint64_t, right) >> 52) & 0x7FFu;
+    auto const addend_biased = static_cast<std::uint32_t>(__builtin_bit_cast(std::uint64_t, addend) >> 52) & 0x7FFu;
+    constexpr std::uint32_t factor_span = 1023 + kFmaPairsFactorMost;
+    constexpr std::uint32_t addend_span = 1023 + kFmaPairsAddendMost;
+    constexpr std::uint32_t product_span = kFmaPairsProductMost - kFmaPairsProductLeast;
+    // The biased exponent of the product less the lowest one: in
+    // [0, product_span] inside the limits, and above it as an unsigned value
+    // outside.
+    std::uint32_t const product_offset = left_biased + right_biased - (2 * 1023 + kFmaPairsProductLeast);
+    bool const is_inside = (left_biased - 1u < factor_span) & (right_biased - 1u < factor_span)
+                         & (addend_biased - 1u < addend_span) & (product_offset <= product_span);
+    if (!is_inside) [[unlikely]]
+        return fma_pairs_edge_(left, right, addend);
+    return fma_pairs_core_(left, right, addend);
+}
+
 }  // namespace CRUCIBLE_SIMD_TARGET
 
 }  // namespace foundation::core::detail
@@ -319,6 +494,12 @@ template <Float T>
             return __builtin_fmaf(left, right, addend);
         } else {
             return __builtin_fma(left, right, addend);
+        }
+#elif defined(CRUCIBLE_FP_STRICT_FLOOR) && !defined(__FAST_MATH__)
+        if constexpr (std::same_as<T, float>) {
+            return detail::fma_by_double_(left, right, addend);
+        } else {
+            return detail::fma_by_pairs_(left, right, addend);
         }
 #else
         return detail::fma_by_integers_(left, right, addend);

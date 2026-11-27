@@ -160,8 +160,8 @@ struct ScaledProductOfDifference final {
 };
 
 // scale * factor + addend with one round, by fp::fma: the instruction where
-// the target has it, and the exact form in integers on each other target
-// (the FMA of foundation/core/Float.h).
+// the target has it, and the forms in doubles on each other target (the FMA
+// of foundation/core/Float.h).
 struct FusedMultiplyAdd final {
     template <Float T>
     [[nodiscard]] constexpr T operator()(T scale, T factor, T addend) const noexcept {

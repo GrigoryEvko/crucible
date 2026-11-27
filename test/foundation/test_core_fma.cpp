@@ -5,14 +5,17 @@
 // addend in a fixed-point integer, rounded one time.  The test compares the
 // bits of fp::fma of this unit with the oracle, with fp::fma of the unit of
 // x86-64-v3, which runs the instruction, and with fp::fma of the unit of
-// x86-64, which runs the exact form in integers.  So each build compares the
-// exact form and the instruction with the oracle, also a build at x86-64-v3
-// such as the build of the preset default.  The cases are the hard cases of a fused
-// multiply-add: exact ties and near ties of the round, the error of a product
-// as the result of a cancellation, products that underflow into the
-// subnormal range or to zero, sums near the largest value, the zeros of the
-// two signs, the infinities and the NaNs, and random values from a fixed
-// Philox seed.
+// x86-64, which runs the form in doubles.  This unit also calls the form in
+// doubles directly, so each build and each target runs it.  So each build
+// compares the form in doubles and the instruction with the oracle, also a
+// build at x86-64-v3 such as the build of the preset default.  The cases are
+// the hard cases of a fused multiply-add: exact ties and near ties of the
+// round, the error of a product as the result of a cancellation, products
+// that underflow into the subnormal range or to zero, sums near the largest
+// value, the zeros of the two signs, the infinities and the NaNs, the limits
+// of fma_by_pairs_, and random values from a fixed Philox seed.  A digest of
+// the results of the oracle over each case is a pin of the sample, and the
+// digest of each form must equal it.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -62,12 +65,42 @@ template <class T>
     return bits_of_value(left) == bits_of_value(right);
 }
 
-// The counts of the cases, for the pass line.
+// The offset basis of the digests of FNV-1a.
+constexpr std::uint64_t kDigestBasis = 0xCBF29CE484222325u;
+
+// The counts of the cases, for the pass line, and the digests of the
+// results: of the oracle, of the forms in doubles of this unit, of the wide
+// unit and of the baseline unit.
 struct Counts {
     std::size_t cases = 0;
     std::size_t fused = 0;
     std::size_t exact = 0;
+    std::uint64_t oracle_digest = kDigestBasis;
+    std::uint64_t doubles_digest = kDigestBasis;
+    std::uint64_t fused_digest = kDigestBasis;
+    std::uint64_t exact_digest = kDigestBasis;
 };
+
+// Folds one result into a digest, one word of FNV-1a for each result.  Each
+// NaN folds the same word, because the payload of a NaN is not part of the
+// FMA.
+template <class T>
+void fold_result(std::uint64_t& digest, T value) noexcept {
+    std::uint64_t const word = ::fixy::fp::is_nan(value) ? 0x7FF8u : static_cast<std::uint64_t>(bits_of_value(value));
+    digest = (digest ^ word) * 0x100000001B3u;
+}
+
+// The form in doubles of a target with no fused multiply-add: fma_by_double_
+// for a float and fma_by_pairs_ for a double.  This unit calls each form
+// directly, so each build and each target runs it.
+template <class T>
+[[nodiscard]] T fma_in_doubles(T left, T right, T addend) noexcept {
+    if constexpr (sizeof(T) == sizeof(float)) {
+        return ::foundation::core::detail::fma_by_double_(left, right, addend);
+    } else {
+        return ::foundation::core::detail::fma_by_pairs_(left, right, addend);
+    }
+}
 
 // True when the host runs the code of the wide unit: x86-64-v3 on x86_64,
 // and each aarch64 host.
@@ -93,20 +126,31 @@ void check_case(T left, T right, T addend, Counts& counts) noexcept {
     }
     CRUCIBLE_TEST_ASSERT(kTest, agree(computed, expected));
     ++counts.cases;
+    fold_result(counts.oracle_digest, expected);
+    T const in_doubles = fma_in_doubles(left, right, addend);
+    if (!agree(in_doubles, expected)) {
+        ::fixy::report(::fixy::Sink::Err, "fma({}, {}, {}): the form in doubles gives {}, the oracle gives {}\n",
+                       bits_of_value(left), bits_of_value(right), bits_of_value(addend), bits_of_value(in_doubles),
+                       bits_of_value(expected));
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, agree(in_doubles, expected));
+    fold_result(counts.doubles_digest, in_doubles);
     if (::crucible::test::is_wide_unit_fused() && can_run_wide_unit()) {
         T const fused = ::crucible::test::fma_of_wide_unit(left, right, addend);
         CRUCIBLE_TEST_ASSERT(kTest, agree(fused, expected));
         ++counts.fused;
+        fold_result(counts.fused_digest, fused);
     }
-    if (::crucible::test::is_baseline_unit_exact()) {
+    if (::crucible::test::is_baseline_unit_unfused()) {
         T const exact = ::crucible::test::fma_of_baseline_unit(left, right, addend);
         if (!agree(exact, expected)) {
-            ::fixy::report(::fixy::Sink::Err, "fma({}, {}, {}): the exact form gives {}, the oracle gives {}\n",
+            ::fixy::report(::fixy::Sink::Err, "fma({}, {}, {}): the baseline unit gives {}, the oracle gives {}\n",
                            bits_of_value(left), bits_of_value(right), bits_of_value(addend), bits_of_value(exact),
                            bits_of_value(expected));
         }
         CRUCIBLE_TEST_ASSERT(kTest, agree(exact, expected));
         ++counts.exact;
+        fold_result(counts.exact_digest, exact);
     }
 }
 
@@ -289,18 +333,103 @@ void test_random_cases(std::uint64_t seed, Counts& counts) noexcept {
     }
 }
 
+// The three inputs of one case of a limit.
+struct PairCase {
+    double left = 0.0;
+    double right = 0.0;
+    double addend = 0.0;
+};
+
+// One limit of fma_by_pairs_: a case inside the limit, where the core with
+// no guard runs, and a case past it, where the exact form runs.  A limit
+// with a witness has a case past it where the core with no guard gives
+// wrong bits, so the guard is necessary.
+struct PairLimit {
+    PairCase inside{};
+    PairCase past{};
+    bool has_witness = false;
+};
+
+// The limits of the form in pairs of doubles, one case on each side of each.
+// The witnesses come from a sweep of the core with no guard against the
+// instruction:
+//   - A factor at 2^996: the split of Veltkamp overflows, and the core gives
+//     a NaN.
+//   - A product at 2^1022: the product rounds to an infinity.
+//   - A product at 2^-971: a partial product loses its last bit, and the
+//     result is wrong in its last bit.
+//   - An addend at 2^1023: c + uh rounds to an infinity, and the error is a
+//     NaN.
+// The subnormal addend has no witness.  The limit keeps the test of the
+// exponents on the fields of normal inputs only.
+void test_pair_limits(Counts& counts) noexcept {
+    constexpr double largest_at_995 = 0x1.fffffffffffffp+995;
+    constexpr double largest_at_26 = 0x1.fffffffffffffp+26;
+    double const low_left = 0x1.b8db29e860545p-485;
+    double const low_inside = -0x1.9cc24d85e3bf1p-485;
+    ::fixy::FixedArray<PairLimit, 5> const limits{
+        PairLimit{PairCase{largest_at_995, 0x1.0000000000001p-100, 0x1.8p+800},
+                  PairCase{0x1.fffffffffffffp+996, 0x1.0000000000001p-100, 0x1.8p+800}, true},
+        PairLimit{PairCase{largest_at_995, largest_at_26, -0x1.8p+900},
+                  PairCase{largest_at_995, 0x1.fffffffffffffp+27, -0x1.8p+900}, true},
+        PairLimit{PairCase{low_left, low_inside, -(low_left * low_inside)},
+                  PairCase{low_left, -0x1.9cc24d85e3bf1p-486, 0x1.6367a9841d664p-970}, true},
+        PairLimit{PairCase{largest_at_995, largest_at_26, 0x1.fffffffffffffp+1022},
+                  PairCase{largest_at_995, largest_at_26, 0x1.fffffffffffffp+1023}, true},
+        PairLimit{PairCase{1.5, 0x1p-500, 0x1p-1022}, PairCase{1.5, 0x1p-500, 0x1p-1060}, false},
+    };
+    for (PairLimit const& limit : limits) {
+        PairCase const inside = limit.inside;
+        PairCase const past = limit.past;
+        check_case(inside.left, inside.right, inside.addend, counts);
+        check_case(past.left, past.right, past.addend, counts);
+        double const inside_core =
+            ::foundation::core::detail::fma_pairs_core_(inside.left, inside.right, inside.addend);
+        CRUCIBLE_TEST_ASSERT(kTest, agree(inside_core, exact_fma(inside.left, inside.right, inside.addend)));
+        if (limit.has_witness) {
+            double const past_core = ::foundation::core::detail::fma_pairs_core_(past.left, past.right, past.addend);
+            CRUCIBLE_TEST_ASSERT(kTest, !agree(past_core, exact_fma(past.left, past.right, past.addend)));
+        }
+    }
+}
+
+// The pins of the digests of the oracle over each case of the test.  A
+// change of a case changes them.
+constexpr std::uint64_t kFloatDigest = 0x668ECC77FC927B0Eu;
+constexpr std::uint64_t kDoubleDigest = 0x9084F4A1A833E655u;
+
+// The digest of each form that ran on each case equals the digest of the
+// oracle, and the digest of the oracle equals its pin.
+void check_digests(Counts const& counts, std::uint64_t pinned) noexcept {
+    ::fixy::report(::fixy::Sink::Out, "  oracle digest 0x{}\n", ::fixy::Hex<16>{counts.oracle_digest});
+    CRUCIBLE_TEST_ASSERT(kTest, counts.oracle_digest == pinned);
+    CRUCIBLE_TEST_ASSERT(kTest, counts.doubles_digest == counts.oracle_digest);
+    if (counts.fused == counts.cases) CRUCIBLE_TEST_ASSERT(kTest, counts.fused_digest == counts.oracle_digest);
+    if (counts.exact == counts.cases) CRUCIBLE_TEST_ASSERT(kTest, counts.exact_digest == counts.oracle_digest);
+}
+
 }  // namespace
 
 int main() {
+#if defined(__x86_64__)
+    // The baseline unit compiles for x86-64 under the floor, so its fp::fma
+    // is the form in doubles.  A build that loses the floor on that unit
+    // runs the exact form there and fails here.
+    CRUCIBLE_TEST_ASSERT(kTest, ::crucible::test::is_baseline_unit_unfused());
+#endif
     Counts float_counts{};
     Counts double_counts{};
     test_fixed_cases<float>(float_counts);
     test_fixed_cases<double>(double_counts);
+    test_pair_limits(double_counts);
     test_random_cases<float>(0xF3A0000000000001u, float_counts);
     test_random_cases<double>(0xF3A0000000000002u, double_counts);
+    check_digests(float_counts, kFloatDigest);
+    check_digests(double_counts, kDoubleDigest);
     ::fixy::check::pass(kTest,
-                        "test_core_fma: {} float cases and {} double cases agree with the exact oracle, {} and {} "
-                        "with the instruction of the wide unit, {} and {} with the exact form of the baseline unit\n",
+                        "test_core_fma: {} float cases and {} double cases agree with the exact oracle and with the "
+                        "form in doubles, {} and {} with the instruction of the wide unit, {} and {} with the form in "
+                        "doubles of the baseline unit\n",
                         float_counts.cases, double_counts.cases, float_counts.fused, double_counts.fused,
                         float_counts.exact, double_counts.exact);
     return 0;

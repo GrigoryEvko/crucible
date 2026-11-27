@@ -1,6 +1,6 @@
 // Microbench of fp::fma of foundation/core/Float.h at three levels on one
-// thread: the exact form in integers at x86-64 and x86-64-v2, an out-of-line
-// call for each fma, and the instruction of the host.
+// thread: the form in pairs of doubles at x86-64 and x86-64-v2, an
+// out-of-line call for each fma, and the instruction of the host.
 //
 // The units fma_bench_v1.cpp and fma_bench_v2.cpp compile for x86-64 and
 // x86-64-v2, and this unit for the host (fma_bench_units.h).  Each row reads
