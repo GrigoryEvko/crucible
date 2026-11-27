@@ -1280,8 +1280,8 @@ held_tls_vigil(c10::CrucibleState const& state) noexcept {
     return static_cast<uint8_t>((phase & 0x3) << crucible::op_flag::PHASE_SHIFT);
 }
 
-// The two functions below read the modes and the dispatch keys of PyTorch for
-// one operation, so they are in an ABI region.
+// The two functions and the type below read the modes and the dispatch keys
+// of PyTorch for one operation, so they are in an ABI region.
 //
 // For the boxed fallback, which reads the gradient mode for no flag of its own
 // and so has no value to share.
@@ -1289,6 +1289,14 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the flags read the modes and the dispatch ke
 [[nodiscard]] inline uint8_t phase_flag_bits(bool is_foreach) noexcept {
     return phase_flag_bits(is_foreach, c10::GradMode::is_enabled());
 }
+
+// The dispatch keys of PyTorch at the call of a recorded operator, which the
+// flags of its entry read (entry_op_flags).  The record functions take this
+// type, so their signatures name no type of PyTorch.  It holds one word, and
+// it goes in one register.
+struct EntryDispatchKeys {
+    c10::DispatchKeySet keys{};
+};
 
 // The five bits of per-operation context. Mutability is a template parameter
 // here and a parsed schema on the boxed path; the generator derives it from
@@ -1298,7 +1306,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the flags read the modes and the dispatch ke
 // parameter here, a cached name search on the boxed path, one operator name
 // behind both.
 template <bool IsMutable, bool IsForeach>
-[[nodiscard]] uint8_t entry_op_flags(c10::DispatchKeySet dispatch_keys) noexcept {
+[[nodiscard]] uint8_t entry_op_flags(EntryDispatchKeys dispatch_keys) noexcept {
     uint8_t flags = 0;
     // One read, shared with the phase derivation below rather than repeated
     // inside it.
@@ -1307,7 +1315,7 @@ template <bool IsMutable, bool IsForeach>
     if (grad_enabled) flags |= crucible::op_flag::GRAD_ENABLED;
     if constexpr (IsMutable) flags |= crucible::op_flag::IS_MUTABLE;
     flags |= phase_flag_bits(IsForeach, grad_enabled);
-    if (dispatch_keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
+    if (dispatch_keys.keys.has(c10::DispatchKey::Python)) flags |= crucible::op_flag::TORCH_FUNCTION;
     return flags;
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -1340,28 +1348,16 @@ void write_recorded_scalars(crucible::TraceRing::Entry& entry,
     write_scalar_slots(entry, recording.scalars, recording.overflow);
 }
 
-// Builds the entry and hands it to the Vigil. The schema hash arrives as an
-// argument rather than as a template parameter so that one instantiation
-// serves every operator of the same capacity, mutability and kernel family,
-// which is around a hundred rather than 3110.  The dispatch keys of PyTorch
-// give the flags of the entry, so the signature is in an ABI region.  The
-// context is the context of the producer claim, which call_recording took.
-//
-// Never inlined: an inline copy in each of the 3110 kernels would take the
-// place of the one copy of each family.
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the dispatch keys of PyTorch give the flags of the entry")
+// Builds the entry of a Recording that fill_meta described in full, and hands
+// it to the Vigil (append_trace_entry).  The entry is a local of 64-byte
+// alignment, so this frame realigns the stack and saves the registers of
+// the dispatch.  The test of the refused description stays out of this
+// frame.  Never inlined, for the reason of append_trace_entry.
 template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, class Home>
-[[gnu::noinline]] void append_trace_entry(Recording<Capacity, MayOverflow, Home>& recording,
-                                          crucible::SchemaHash schema_hash, c10::DispatchKeySet dispatch_keys,
-                                          crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
-                                          crucible::ScopeHash scope_hash, crucible::OpDepth depth) {
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    // A tensor that fill_meta refuses has no meta, so the operation stays out
-    // of the ring, as an operation that the trust ladder refuses.  This is the
-    // rank part and the enumerator part of the ladder on this path.
-    if (recording.each_tensor_description == TensorDescription::refused) [[unlikely]]
-        return;
-
+[[gnu::noinline]] void append_built_entry_(Recording<Capacity, MayOverflow, Home>& recording,
+                                           crucible::SchemaHash schema_hash, EntryDispatchKeys dispatch_keys,
+                                           crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
+                                           crucible::ScopeHash scope_hash, crucible::OpDepth depth) {
     // The entry is built in the storage of its seal, so the seal copies no
     // byte, and no code writes the entry after the mint.
     const uint8_t op_flags = entry_op_flags<IsMutable, IsForeach>(dispatch_keys);
@@ -1428,6 +1424,33 @@ template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, c
                     observe_eager_numerics(vigil, fg);
             },
             [] noexcept {});
+}
+
+// Builds the entry and hands it to the Vigil. The schema hash arrives as an
+// argument rather than as a template parameter so that one instantiation
+// serves every operator of the same capacity, mutability and kernel family,
+// which is around a hundred rather than 3110.  The dispatch keys of PyTorch
+// give the flags of the entry (EntryDispatchKeys).  The context is the
+// context of the producer claim, which call_recording took.
+//
+// The function holds only the test of the refused description, and the
+// build goes to append_built_entry_ as a tail call with the same arguments.
+// So the refused operation returns with no frame, and the frame of 64-byte
+// alignment of the entry is the frame of the build alone.
+//
+// Never inlined: an inline copy in each of the 3110 kernels would take the
+// place of the one copy of each family.
+template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, class Home>
+[[gnu::noinline]] void append_trace_entry(Recording<Capacity, MayOverflow, Home>& recording,
+                                          crucible::SchemaHash schema_hash, EntryDispatchKeys dispatch_keys,
+                                          crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
+                                          crucible::ScopeHash scope_hash, crucible::OpDepth depth) {
+    // A tensor that fill_meta refuses has no meta, so the operation stays out
+    // of the ring, as an operation that the trust ladder refuses.  This is the
+    // rank part and the enumerator part of the ladder on this path.
+    if (recording.each_tensor_description == TensorDescription::refused) [[unlikely]]
+        return;
+    append_built_entry_<IsMutable, IsForeach>(recording, schema_hash, dispatch_keys, vigil, fg, scope_hash, depth);
 }
 
 // =====================================================================
@@ -1662,8 +1685,8 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
 
         if constexpr (std::is_void_v<Ret>) {
             Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
-            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, dispatch_keys, vigil, fg, scope_hash,
-                                                       depth);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, EntryDispatchKeys{dispatch_keys}, vigil,
+                                                       fg, scope_hash, depth);
         } else if constexpr (std::is_reference_v<Ret>) {
             // An in-place or out= operator returns a reference to an argument
             // the caller owns, which outlives this frame. The result is held
@@ -1673,14 +1696,14 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
             // DispatchKeySet by value.
             auto* result = &Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
             record_result(recording, *result);
-            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, dispatch_keys, vigil, fg, scope_hash,
-                                                       depth);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, EntryDispatchKeys{dispatch_keys}, vigil,
+                                                       fg, scope_hash, depth);
             return *result;
         } else {
             Ret result = Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...);
             record_result(recording, result);
-            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, dispatch_keys, vigil, fg, scope_hash,
-                                                       depth);
+            append_trace_entry<kIsMutable, kIsForeach>(recording, kSchemaHash, EntryDispatchKeys{dispatch_keys}, vigil,
+                                                       fg, scope_hash, depth);
             return result;
         }
     }
