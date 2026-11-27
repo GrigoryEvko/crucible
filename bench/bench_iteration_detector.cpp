@@ -83,6 +83,54 @@ void warmup_detector(IterationDetector& d) {
     ::fixy::fatal("the warmup of the detector gave no boundary in {} turns", WARMUP_MAX_TURNS);
 }
 
+// The state of each row lives in a home of the row (bench::RowHome), so the
+// distance from the state to the frame of the timed loop depends only on the
+// code of the row.  The homes are built in the order of the rows, so the
+// state of the generator moves in the same order as before.
+
+// A detector in its steady state: warmup_detector ran on it.
+struct WarmDetector {
+    IterationDetector detector{};
+
+    WarmDetector() noexcept { warmup_detector(detector); }
+};
+
+// A warm detector and a copy of the pool of random hashes, with the position
+// of the next hash.
+struct SteadyRow {
+    WarmDetector warm{};
+    ::fixy::FixedArray<SchemaHash, NUM_HASHES> hashes = random_hashes;
+    uint32_t hash_idx = 0;
+};
+
+// The length of the iteration of the row of the boundaries, and its random
+// ops before the K ops of SIG.
+constexpr uint32_t ITER_LEN = 100;
+constexpr uint32_t kRandomOps = ITER_LEN - IterationDetector::K;
+
+// A warm detector and an iteration of 95 random ops and the K ops of SIG,
+// with the position of the next op.  The warmup runs before the random ops
+// are drawn.
+struct BoundaryRow {
+    WarmDetector warm{};
+    ::fixy::FixedArray<SchemaHash, ITER_LEN> pattern{};
+    ::fixy::Index<ITER_LEN> pat_idx = ::fixy::index<0>();
+
+    BoundaryRow() noexcept {
+        for (::fixy::Index<ITER_LEN> const i : pattern.indices()) {
+            pattern.set(i, i.raw() < kRandomOps
+                               ? SchemaHash{splitmix64()}
+                               : SIG.at(::fixy::Index<IterationDetector::K>::check(i.raw() - kRandomOps)
+                                            .expect("the last K positions take the ops of SIG")));
+        }
+    }
+};
+
+// A detector that no op reached.
+struct FreshRow {
+    IterationDetector detector{};
+};
+
 }  // namespace
 
 int main() {
@@ -99,108 +147,84 @@ int main() {
     ::fixy::FixedArray<bench::Report, 6> reports{
         // 1. Steady state — no boundary, ~99.5% of real calls. Hot path
         // is one cmp + one inc, everything in the same cache line.
-        [&] {
-            IterationDetector d;
-            warmup_detector(d);
-            uint32_t hash_idx = 0;
-            // The mask keeps the position below NUM_HASHES, so the compiler
-            // folds the check of the index.
-            return bench::run("check() steady state (no match)", [&] {
-                bool b =
-                    d.check(kAlloc, random_hashes.at(::fixy::Index<NUM_HASHES>::check(hash_idx & (NUM_HASHES - 1))
-                                                         .expect("a mask of the low bits stays below NUM_HASHES")));
+        // The mask keeps the position below NUM_HASHES, so the compiler
+        // folds the check of the index.
+        bench::run_in_home(
+            "check() steady state (no match)", []() noexcept { return SteadyRow{}; },
+            [](SteadyRow& row) noexcept {
+                bool b = row.warm.detector.check(
+                    kAlloc, row.hashes.at(::fixy::Index<NUM_HASHES>::check(row.hash_idx & (NUM_HASHES - 1))
+                                              .expect("a mask of the low bits stays below NUM_HASHES")));
                 bench::do_not_optimize(b);
-                hash_idx++;
-            });
-        }(),
+                row.hash_idx++;
+            }),
 
         // 2. Periodic boundaries — 95 random + 5 signature per 100-op
-        // cycle. Amortized cost including boundary handling.
-        [&] {
-            IterationDetector d;
-            warmup_detector(d);
-            constexpr uint32_t ITER_LEN = 100;
-            constexpr uint32_t kRandomOps = ITER_LEN - IterationDetector::K;
-            // The 95 random ops in order, then the K ops of SIG.
-            ::fixy::FixedArray<SchemaHash, ITER_LEN> pattern{};
-            for (::fixy::Index<ITER_LEN> const i : pattern.indices()) {
-                pattern.set(i, i.raw() < kRandomOps
-                                   ? SchemaHash{splitmix64()}
-                                   : SIG.at(::fixy::Index<IterationDetector::K>::check(i.raw() - kRandomOps)
-                                                .expect("the last K positions take the ops of SIG")));
-            }
-            // The next position is below ITER_LEN on each arm, so the
-            // compiler folds the check of the index.
-            ::fixy::Index<ITER_LEN> pat_idx = ::fixy::index<0>();
-            return bench::run("check() boundaries / 100 ops", [&] {
-                bool b = d.check(kAlloc, pattern.at(pat_idx));
+        // cycle. Amortized cost including boundary handling.  The next
+        // position is below ITER_LEN on each arm, so the compiler folds the
+        // check of the index.
+        bench::run_in_home(
+            "check() boundaries / 100 ops", []() noexcept { return BoundaryRow{}; },
+            [](BoundaryRow& row) noexcept {
+                bool b = row.warm.detector.check(kAlloc, row.pattern.at(row.pat_idx));
                 bench::do_not_optimize(b);
-                std::size_t const next = pat_idx.raw() + 1;
-                pat_idx = ::fixy::Index<ITER_LEN>::check(next >= ITER_LEN ? 0 : next)
-                              .expect("the next position wraps to 0 at ITER_LEN");
-            });
-        }(),
+                std::size_t const next = row.pat_idx.raw() + 1;
+                row.pat_idx = ::fixy::Index<ITER_LEN>::check(next >= ITER_LEN ? 0 : next)
+                                  .expect("the next position wraps to 0 at ITER_LEN");
+            }),
 
         // 3. Signature build from a fresh detector — exercises the
         // cold-start path (signature_len < K, K compares + K stores).
-        [&] {
-            IterationDetector d;
-            return bench::run("check() signature build (K=5)", [&] {
-                d.reset();
+        bench::run_in_home(
+            "check() signature build (K=5)", []() noexcept { return FreshRow{}; },
+            [](FreshRow& row) noexcept {
+                row.detector.reset();
                 for (SchemaHash const hash : SIG) {
-                    bool b = d.check(kAlloc, hash);
+                    bool b = row.detector.check(kAlloc, hash);
                     bench::do_not_optimize(b);
                 }
-            });
-        }(),
+            }),
 
         // 4. Repeated windows: the K ops of an earlier window, then 10
         // random ops.  The window that ends at the last of the K ops has
         // earlier copies, so the search tests candidates on that op.
-        [&] {
-            IterationDetector d;
-            warmup_detector(d);
-            return bench::run("check() match advance (K=5 + 10 rand)", [&] {
+        bench::run_in_home(
+            "check() match advance (K=5 + 10 rand)", []() noexcept { return WarmDetector{}; },
+            [](WarmDetector& row) noexcept {
                 for (SchemaHash const hash : SIG) {
-                    bool b = d.check(kAlloc, hash);
+                    bool b = row.detector.check(kAlloc, hash);
                     bench::do_not_optimize(b);
                 }
                 for (uint32_t i = 0; i < 10; i++) {
-                    (void)d.check(kAlloc, SchemaHash{splitmix64()});
+                    (void)row.detector.check(kAlloc, SchemaHash{splitmix64()});
                 }
-            });
-        }(),
+            }),
 
         // 5. reset() — rare (only when current_trace is recycled), but
         // worth a known upper bound. do_not_optimize on signature_len
         // implies a "memory" clobber, so no additional fence needed.
-        [&] {
-            IterationDetector d;
-            warmup_detector(d);
-            return bench::run("reset()", [&] {
-                d.reset();
-                bench::do_not_optimize(d.signature_len.get());
-            });
-        }(),
+        bench::run_in_home(
+            "reset()", []() noexcept { return WarmDetector{}; },
+            [](WarmDetector& row) noexcept {
+                row.detector.reset();
+                bench::do_not_optimize(row.detector.signature_len.get());
+            }),
 
         // 6. Sustained 1000-op batch — simulates one bg-drain cycle
         // through a full kernel epoch. p50 divided by 1000 = effective
         // per-op cost at scale.
-        [&] {
-            IterationDetector d;
-            warmup_detector(d);
-            constexpr uint32_t BATCH = 1000;
-            uint32_t hash_idx = 0;
-            return bench::run("check() × 1000 (sustained)", [&] {
+        bench::run_in_home(
+            "check() × 1000 (sustained)", []() noexcept { return SteadyRow{}; },
+            [](SteadyRow& row) noexcept {
+                constexpr uint32_t BATCH = 1000;
                 for (uint32_t i = 0; i < BATCH; i++) {
-                    bool b =
-                        d.check(kAlloc, random_hashes.at(::fixy::Index<NUM_HASHES>::check(hash_idx & (NUM_HASHES - 1))
-                                                             .expect("a mask of the low bits stays below NUM_HASHES")));
+                    bool b = row.warm.detector.check(
+                        kAlloc, row.hashes.at(::fixy::Index<NUM_HASHES>::check(row.hash_idx & (NUM_HASHES - 1))
+                                                  .expect("a mask of the low bits stays below NUM_HASHES")));
                     bench::do_not_optimize(b);
-                    hash_idx++;
+                    row.hash_idx++;
                 }
-            });
-        }(),
+            }),
     };
 
     bench::emit_reports(reports.view(), json);
