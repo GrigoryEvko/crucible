@@ -40,6 +40,41 @@ static_assert(bits_of(::fixy::fp::log(double_of(0x0000000000000001ULL))) == 0xC0
 static_assert(bits_of(::fixy::fp::log(double_of(0x7FEFFFFFFFFFFFFFULL))) == 0x40862E42FEFA39EFULL,
               "log of the largest finite value must be the pinned value.");
 
+// The slow path on its own: the hardest input of the list log.wc, an input
+// near 1 with k2 = 1, and the smallest subnormal input.
+static_assert(bits_of(log_accurate_(double_of(0x6DBFD15DAA6CE332ULL))) == 0x407FC12387D0632AULL,
+              "the slow path of the hardest input of log.wc must be the correctly rounded value.");
+static_assert(bits_of(log_accurate_(double_of(0x3FF0000800000001ULL))) == 0x3EDFFFF80006AAA8ULL,
+              "the slow path above 1 + 2^-17 must be the correctly rounded value.");
+static_assert(bits_of(log_accurate_(double_of(0x0000000000000001ULL))) == 0xC0874385446D71C3ULL,
+              "the slow path of the smallest subnormal must be the correctly rounded value.");
+
+// The tables of log(double): the two intervals next to 1 have r = 1 and
+// -log(r) = 0, as does the entry k2 = 0.  So the path near 1 and the slow path
+// near 1 add no table value.
+[[nodiscard]] consteval bool is_identity(LogEntry const& entry) noexcept {
+    return bits_of(entry.inverse) == bits_of(1.0) && bits_of(entry.high) == 0 && bits_of(entry.middle) == 0
+        && bits_of(entry.low) == 0;
+}
+static_assert(is_identity(kLogFirst[kLogFirstOne]) && is_identity(kLogFirst[kLogFirstOne + 1]),
+              "the intervals 511 and 512 must have r = 1 and -log(r) = 0.");
+static_assert(is_identity(kLogSecond[kLogSecondCenter]), "the entry k2 = 0 must have r2 = 1 and -log(r2) = 0.");
+static_assert(sizeof(LogEntry) == 32 && alignof(LogEntry) == 32, "a row must fill half a line of the cache.");
+
+// Each inverse r_i has 10 or fewer significant bits, and each l1 is a
+// multiple of 2^-42.  So z = fma(r_i, y, -1) is exact, and e ln2_high + l1 is
+// exact.  O(363).
+[[nodiscard]] consteval bool has_short_inverses_and_l1() noexcept {
+    for (LogEntry const& entry : kLogFirst) {
+        std::uint64_t const inverse_fraction = bits_of(entry.inverse) & kLogFractionMask;
+        if ((inverse_fraction & ((std::uint64_t{1} << 43) - 1)) != 0) return false;
+        double const scaled = entry.high * 0x1p42;
+        if (bits_of(scaled) != bits_of(static_cast<double>(static_cast<std::int64_t>(scaled)))) return false;
+    }
+    return true;
+}
+static_assert(has_short_inverses_and_l1(), "each r_i must have 10 or fewer bits and each l1 a multiple of 2^-42.");
+
 // The float form: the identity, the smallest subnormal, the largest finite
 // value, and one input of the list of midpoint inputs.
 static_assert(bits_of(::fixy::fp::log(1.0f)) == 0x00000000u, "logf(1) must be exactly +0.");

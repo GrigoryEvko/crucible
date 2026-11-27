@@ -7852,6 +7852,12 @@ fixy_test(test_fp_double_word)
 # exp and through the slow path again.
 fixy_test(test_fp_exp_double)
 
+# test_fp_log_double checks the correct round of log(double): the hard inputs
+# of fp_log_hard_cases.h through log and through the slow path on its own,
+# and a sample of 2^16 inputs against the pinned digest of CORE-MATH, through
+# log and through the slow path again.
+fixy_test(test_fp_log_double)
+
 # test_fp_erf_float_exhaustive runs erf of float of fixy/fp on each of the
 # 2^32 floats, in 4 parts, against the pinned digests of CORE-MATH and the
 # round of erf(double).  The float form has no run-time rounding test, so this

@@ -3,49 +3,158 @@
 // log of a double and of a float, with the same bits on each target and each
 // level of the instruction set.
 //
-//   fixy::fp::log(double)   error of at most 0.53 units in the last place
+//   fixy::fp::log(double)   the correctly rounded result for each input
 //   fixy::fp::log(float)    the correctly rounded result for each input
 //
 // Each function is total.  ±0 gives -inf, +inf gives +inf, 1 gives +0, and a
 // negative value (-inf and each negative subnormal value too) gives the
-// canonical quiet NaN quiet_nan_of<T>, as does a NaN.  A subnormal input goes
-// through a normalization with integer operations, so a mode that reads a
-// subnormal input as zero does not change the result.  No function reads or
-// writes errno or a flag of the floating-point unit on purpose.
+// canonical quiet NaN quiet_nan_of<T>, as does a NaN.  No function reads or
+// writes errno or a flag of the floating-point unit on purpose, and no caller
+// can read a flag of them.
 //
-// Mode of the register
+// Mode of the register: a precondition
 //   Each function assumes the default mode of the floating-point unit: the
 //   round to nearest with ties to even, no flush of a subnormal result to
-//   zero, and no read of a subnormal input as zero.  Another mode changes the
-//   bits.  PyTorch can set the flush of subnormal values in the vessel
-//   process.  A kernel scope proves the mode through its FpScope token.
+//   zero, and no read of a subnormal input as zero.  The proof of the correct
+//   round below holds only in that mode, and another mode changes the bits.
+//   A kernel scope proves the mode through its FpScope token
+//   (foundation/os/FpControl.h).  A caller with no token states the mode in a
+//   comment at its call.  PyTorch can set the flush of subnormal values in the
+//   vessel process.  Then the slow path of log(float) reads a subnormal input
+//   as zero in its conversion to double, and gives -inf.  A device backend
+//   that reads subnormal values as zero cannot take these bodies for a
+//   subnormal input.
 //
 // Operations
-//   As in fixy/fp/Exp.h: IEEE 754 add, subtract and multiply, explicit fma of
-//   detail::fma_of_finite, integer operations on the bits and table reads, in
-//   the order of
-//   the source, under the floor crucible_fp_strict (-ffp-contract=off).  The
-//   functions are in the inline namespace CRUCIBLE_SIMD_TARGET.
+//   As in fixy/fp/Exp.h: an add, a subtract or a multiply of IEEE 754, a
+//   fused multiply-add of detail::fma_of_finite, an integer operation on the
+//   bits, a read of a table, or a conversion between float and double, in the
+//   order of the source, under the floor crucible_fp_strict
+//   (-ffp-contract=off).  Each fma rounds one time on each target.  The
+//   functions are in the inline namespace CRUCIBLE_SIMD_TARGET, so a program
+//   can link the bodies of two levels and compare their results.
 //
-// Algorithm of log(double): the table method of ARM optimized-routines.
-//   x = 2^k z with z in [0x1.6p-1, 0x1.6p0).  The 7 bits of z below its
-//   exponent pick an interval i of 128.  invc_i is the double nearest 1/c for
-//   the center c of the interval, and logc_i = -log(invc_i) exactly, in a high
-//   part (a multiple of 2^-43) and a low part.
-//   r = fma(z, invc_i, -1) rounds one time, and |r| < 2^-8.
-//   w = k * ln2_hi + logc_hi is exact: two multiples of 2^-43 below 2^10.
-//   log(x) = (w + r) + (the rest of w + r) + k ln2_lo + logc_lo
-//            + r^2 (A0 + r A1 + r^2 A2 + r^3 A3 + r^4 A4).
-//   The polynomial is the minimax polynomial of log1p(r) - r for the absolute
-//   error on the interval of r, with an error of 2^-64.1.
-//   Near 1, for x in [1 - 2^-4, 1 + 0x1.09p-4], r = x - 1 is exact, and
-//   log(x) = r - r^2/2 + r^3 (B1 + r B2 + ... + r^9 B10).  The term r^2/2 is
-//   in two parts through one fma, and the polynomial is the minimax
-//   polynomial for the relative error, with an error of 2^-61.9.
-//   The fma sites: eight in the table path and eleven near 1.
-//   The error estimate of the method is 0.5 + 2.06/128 for the round of r and
-//   2^-8 for the polynomial, about 0.52 units, as ARM states for its table
-//   path.  The sampled sweep gives 0.518 near 1.12, so the bound is 0.53.
+// Algorithm of log(double): the reduction of CORE-MATH, a rounding test of
+// Ziv, and a slow path in three doubles.  u = 2^-53, and RN is the round to
+// nearest.
+//   x = 2^e y with y in [sqrt2/2, sqrt2).  m is the significand with its
+//     leading bit: y = m 2^-52, but y = m 2^-53 and e takes one more when m
+//     is 0x16a09e667f3bcd or more.  A subnormal x takes a shift of its bits
+//     that puts its leading bit at bit 52, so |e| <= 1074.
+//   i = floor(512 y) is from 362 to 724.  r_i has 10 or fewer significant
+//     bits, and r_i = 1 for i = 511 and 512.  So z = fma(r_i, y, -1) is
+//     exact, with |z| <= 2^-8.88.  -log(r_i) = l1 + l2 + l3 in three doubles,
+//     l1 a multiple of 2^-42.  ln2 has the same form: ln2_high (42 bits) +
+//     ln2_low, or ln2_high + ln2_middle (40 bits) + ln2_third.
+//   The fast path, for each x out of the path near 1:
+//     A = e ln2_high + l1 is exact: two multiples of 2^-42 below 2^10.
+//     (h, l) = FastTwoSum(A, z), because |A| > |z|.
+//     p = z^2 (P2 + z (P3 + P4 z + z^2 (P5 + P6 z))), the minimax polynomial
+//       of log1p(z) - z for the absolute error.
+//     l = RN(e ln2_low + RN(p + RN(l + l2))), the last step as one fma.
+//     Then |h + l - log(x)| <= eps_fast = 2^-68.77, absolute.
+//     The rounding test: with E = 2^-68.5, if RN(h + RN(l + E)) and
+//     RN(h + RN(l - E)) are the same value, that value is the correctly
+//     rounded result, because RN is monotone and log(x) is between the two
+//     sums.  Each sum takes an inner round of at most u |l + E|, so the test
+//     needs a margin of 2^-68.60.
+//   The path near 1, for 1 - 2^-9 <= x < 1 + 2^-9: r = x - 1 is exact.
+//     (q_hi, q_lo) = TwoProduct(r, r), R = B1 + r (B2 + r (B3 + r (B4 +
+//     r B5))), c = RN(RN(r q_hi) R), (h, l0) = FastTwoSum(r, -q_hi/2), and
+//     l = RN(l0 + RN(-q_lo/2 + c)).  Then |h + l - log(x)| <= eps_near
+//     |log(x)|, with eps_near = 2^-69.41.  The rounding test takes E = 2^-69 r,
+//     and it needs 2^-69.25 |r|.
+//   The slow path computes log(x) in three doubles with a relative error
+//     eps_acc = 2^-137.16, and rounds that sum to nearest in each bit.
+//     k2 = round(z 2^16) through the add of 0x1.8p52, |k2| <= 139, and r2 is
+//     the double nearest 1 / (1 + k2 2^-16).  z2 = (r2 - 1) + r2 z = z_hi +
+//     w + t exactly, from a TwoProduct and three TwoSums: the last one gives
+//     the pair (z_hi, w), and t is the error of the second.  |z2| <= 2^-17.00.
+//     log(x) = e ln2 - log(r_i) - log(r2) + log1p(z2), with ln2 and each -log
+//     in three doubles.  log1p(z2) = z2 - z2^2/2 + f(z2), f(z) = z^3 Q(z),
+//     with the Taylor polynomial of degree 9: 1/3 and 1/5 in two doubles,
+//     -1/4 and the terms of degree 6 to 9 in one double.  f(z_hi + w) comes
+//     from a Horner sum in pairs of doubles, and z2^2/2 from exact products.
+//     The term RN(z_hi^2) t puts back f(z2) - f(z_hi + w), which is
+//     t xi^2 / (1 + xi) for a xi between the two.  13 parts go through a
+//     TwoSum into h and a TwoSum of its error into m, and 7 small parts go
+//     into l, so only the adds of l round.  The round to nearest is
+//     symmetric, so the round of h + m + l takes their absolute values.
+//
+// Error budget of the fast path, from `fp_tables.py log` (exact fractions)
+//   R = 2^-8.88 bounds |z|.  The absolute errors of h + l:
+//     the polynomial, a bound for each |z| <= R    2^-70.21
+//     the rounds of the polynomial                 2^-70.17
+//     -log(r_i) - l1 - l2                          2^-97.01
+//     e (ln2 - ln2_high - ln2_low), |e| <= 1075    2^-91.95
+//     the round of l + l2                          2^-95.42
+//     the round of p + (l + l2)                    2^-71.76
+//     the round of e ln2_low + l                   2^-71.76
+//     the sum: eps_fast                            2^-68.77
+//
+// Error budget of the path near 1, from `fp_tables.py log` (exact fractions)
+//   The rounding errors, relative to |r| <= 2^-9:
+//     the rounds of R, times r^2                   2^-72.58
+//     the rounds of r q_hi and of c                2^-71.00
+//     the round of -q_lo/2 + c                     2^-72.58
+//     the round of l0 + (...)                      2^-72.58
+//   The polynomial, relative to |log(x)|           2^-70.99
+//   The sum, relative to |log(x)|: eps_near        2^-69.41
+//
+// Error budget of the slow path, from `fp_tables.py log` (exact fractions)
+//   The double-word operations of fixy/fp/DoubleWord.h take the bounds of
+//   Joldes, Muller and Popescu (ACM Transactions on Mathematical Software
+//   44(2), 2017): 2u^2 for a product with a double (algorithm 9),
+//   3u^2 / (1 - 4u) for an add of two pairs (algorithm 6), and 5u^2 for a
+//   product of two pairs (algorithm 12).  The errors relative to |z2|:
+//     f(z_hi + w), the rounds of the pairs         2^-137.26
+//     f(z_hi + w), H on z_hi only                  2^-157.79
+//     the round of w^2/2                           2^-177.00
+//     the polynomial, a bound for each |z2| <= R2  2^-141.25
+//   |t| <= 2^-114.87, and |t| <= 2^-105.00 |z| when r_i = 1 and k2 != 0.  The
+//   errors in t, the rounds of z_hi t and of RN(z_hi^2) t, the parts that
+//   z2^2/2 drops and the rest of f(z2) - f(z_hi + w), are at most 2^-50.99 |t|.
+//   The tables: -log(r_i) to 2^-151.01, -log(r2) to 2^-170.02, and ln2 to
+//   2^-140.33.  Each partial sum h is at most 2^1.06 |log(x)|, so |l| <=
+//   2^-97.52 |log(x)|, and the 20 rounds of l cost 2^-146.20 |log(x)|.
+//   The relative error in each case:
+//     r_i = 1, e = 0, k2 = 0: z2 = z, t = 0        2^-137.16
+//     r_i = 1, e = 0, k2 != 0: |z| > 2^-17         2^-137.16
+//     r_i != 1, e = 0: |log(x)| > 1/513            2^-141.79
+//     e != 0: |log(x)| >= |e| ln2 / 2              2^-138.79
+//     the largest: eps_acc                         2^-137.16
+//   A relative error e gives a distance of at most 2e between the mantissas,
+//   so the slow path is at most 2^-136.16 from log(x) in the mantissa.
+//
+// Coverage of the correct round
+//   The round of the slow path is correct for x if no boundary of the round
+//   is between log(x) and the sum of the three doubles.  So each range of x
+//   needs a bound of the distance of log(x) to the nearest midpoint, larger
+//   than the error of the path.  A list of hard cases bounds the distance of
+//   each input off the list.  log(x) is a double only for x = 1, so no other
+//   input is an exact case.
+//     Normal inputs: Lefevre and Muller, "Worst cases for correct rounding of
+//       the elementary functions in double precision", ARITH 15 (2001),
+//       property 2: a mantissa distance of at most 2^-117 gives the correct
+//       round in each of the four modes, for each normal double x.  A margin
+//       of 19.16 bits.
+//     Normal inputs, second source: the list log.wc of CORE-MATH.  Its block
+//       from the list of Lefevre has 6348 inputs, and the hardest is
+//       0x1.fd15daa6ce332p+732, 2^-62.03 units in the last place, a relative
+//       2^-115.02: the hardest of the whole list, a margin of 22.14 bits.  Its
+//       block of the BaCSeL search at -m 48 has 128590 inputs, with the
+//       sentence "we should have all worst cases with 47 identical bits or
+//       more in this file", and its hardest input is 2^-56.89 units.  Each
+//       normal binade holds 30 or more inputs of the list, about 64 expected,
+//       and up to 2038 near 1.
+//     Subnormal inputs: Lefevre and Muller ignore the subnormal format.  The
+//       source is the published BaCSeL search at -m 48 of log.wc, with its
+//       own sentence above.  The positive control: its block holds the
+//       subnormal inputs in normalized form, 20, 14, 9, 6 and 2 in the
+//       binades -1022 to -1026, against about 32, 16, 8, 4 and 2 expected,
+//       and 1 in each of the binades -1028, -1030 and -1073.  The open
+//       confirmation is an own pinned BaCSeL run on the subnormal binades at
+//       -m 48.
 //
 // Algorithm of log(float)
 //   The fast path computes in double.  x = 2^k z with z in [0x1.67p-1,
@@ -62,14 +171,17 @@
 //   correct round of each input (the target bench_fp_sweep).
 //
 // Tables
-//   `python3 utils/tools/fp_tables.py log` prints the table and the constants
-//   of log(double), and `python3 utils/tools/fp_tables.py logf` those of
-//   log(float), with the pinned mpmath.
+//   `python3 utils/tools/fp_tables.py log` prints the error budgets above and
+//   each constant and table of log(double) with the pinned mpmath.  The
+//   block of fixy/fp/LogTables.h is the end of its output, line for line.
+//   `python3 utils/tools/fp_tables.py logf` prints those of log(float).
 
 #include <foundation/Platform.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Number.h>
+#include <fixy/fp/DoubleWord.h>
 #include <fixy/fp/FmaOfFinite.h>
+#include <fixy/fp/LogTables.h>
 #include <fixy/fp/RoundToFloat.h>
 
 #include <cstdint>
@@ -81,174 +193,28 @@
 
 namespace fixy::fp::detail {
 
-inline constexpr int kLogTableBits = 7;
-// The bits of 0x1.6p-1: the start of the range of z.
-inline constexpr std::uint64_t kLogOffset = 0x3FE6000000000000ULL;
-// The bits of 1 - 2^-4 and 1 + 0x1.09p-4: the edges of the path near 1.
-inline constexpr std::uint64_t kLogNearLow = 0x3FEE000000000000ULL;
-inline constexpr std::uint64_t kLogNearHigh = 0x3FF1090000000000ULL;
-// ln2 in a part that is a multiple of 2^-42, and the rest.
-inline constexpr double kLogLn2Hi = 0x1.62e42fefa3800p-1;
-inline constexpr double kLogLn2Lo = 0x1.ef35793c76730p-45;
-
-// The minimax polynomial of log1p(r) - r = r^2 (A0 + A1 r + ... + A4 r^4).
-inline constexpr double kLogA0 = -0x1.0000000000001p-1;
-inline constexpr double kLogA1 = 0x1.555555550b2ecp-2;
-inline constexpr double kLogA2 = -0x1.fffffffebc5f1p-3;
-inline constexpr double kLogA3 = 0x1.999b49c6b6945p-3;
-inline constexpr double kLogA4 = -0x1.55576176149b9p-3;
-
-// The minimax polynomial of (log1p(r) - r + r^2/2) / r^3 near 1.
-inline constexpr double kLogB1 = 0x1.5555555555577p-2;
-inline constexpr double kLogB2 = -0x1.ffffffffffdb3p-3;
-inline constexpr double kLogB3 = 0x1.999999995deb1p-3;
-inline constexpr double kLogB4 = -0x1.555555567c833p-3;
-inline constexpr double kLogB5 = 0x1.24924a342f564p-3;
-inline constexpr double kLogB6 = -0x1.fffffa24b2b71p-4;
-inline constexpr double kLogB7 = 0x1.c7184291f908ep-4;
-inline constexpr double kLogB8 = -0x1.999ece3bb4caep-4;
-inline constexpr double kLogB9 = 0x1.7818362d0c51ap-4;
-inline constexpr double kLogB10 = -0x1.551964dbb81cep-4;
-
-// One interval of z: the double nearest 1/c, and -log of it in two parts.
-struct LogEntry {
-    double invc = 0.0;
-    double logc_high = 0.0;
-    double logc_low = 0.0;
-};
-
-// clang-format off
-inline constexpr LogEntry kLogTable[128] = {
-    {0x1.734f0c541fe8dp+0, -0x1.7cc7f7db46800p-2, -0x1.073c78ffb8648p-45},
-    {0x1.713786d9c7c09p+0, -0x1.76feecb947000p-2, -0x1.75b19c9852c57p-46},
-    {0x1.6f26016f26017p+0, -0x1.713e33a46a000p-2, -0x1.7bc12617e9472p-46},
-    {0x1.6d1a62681c861p+0, -0x1.6b85b4cffa000p-2, -0x1.fe6e50d372503p-45},
-    {0x1.6b1490aa31a3dp+0, -0x1.65d558d4ce000p-2, -0x1.558fd2dc5bdc0p-51},
-    {0x1.691473a88d0c0p+0, -0x1.602d08af09000p-2, -0x1.ec69176df3f65p-46},
-    {0x1.6719f3601671ap+0, -0x1.5a8cadbbee000p-2, 0x1.7be9b0af7ecf8p-48},
-    {0x1.6524f853b4aa3p+0, -0x1.54f431b7be000p-2, -0x1.a7ef4c0910952p-46},
-    {0x1.63356b88ac0dep+0, -0x1.4f637ebba9800p-2, -0x1.f4b9a676da36ep-51},
-    {0x1.614b36831ae94p+0, -0x1.49da7f3bcc800p-2, 0x1.f01d964a168cdp-45},
-    {0x1.5f66434292dfcp+0, -0x1.44591e053a000p-2, 0x1.6de5892923d88p-47},
-    {0x1.5d867c3ece2a5p+0, -0x1.3edf463c16800p-2, -0x1.ee37ad01a7821p-49},
-    {0x1.5babcc647fa91p+0, -0x1.396ce359bc000p-2, 0x1.5a15c5663663dp-47},
-    {0x1.59d61f123ccaap+0, -0x1.3401e12aec800p-2, -0x1.d01f95523adc6p-45},
-    {0x1.5805601580560p+0, -0x1.2e9e2bce12000p-2, -0x1.42e0c128d1dc2p-45},
-    {0x1.56397ba7c52e2p+0, -0x1.2941afb186800p-2, -0x1.be05a919e3aebp-45},
-    {0x1.54725e6bb82fep+0, -0x1.23ec5991eb800p-2, -0x1.248176eba35bcp-45},
-    {0x1.52aff56a8054bp+0, -0x1.1e9e167889800p-2, -0x1.f5164b0dd2688p-46},
-    {0x1.50f22e111c4c5p+0, -0x1.1956d3b9bc000p-2, -0x1.7c8873ad1aa14p-45},
-    {0x1.4f38f62dd4c9bp+0, -0x1.14167ef367800p-2, 0x1.ee107db2550acp-48},
-    {0x1.4d843bedc2c4cp+0, -0x1.0edd060b78000p-2, -0x1.044b52d8435f5p-47},
-    {0x1.4bd3edda68fe1p+0, -0x1.09aa572e6c800p-2, 0x1.2b8187a32f2f6p-46},
-    {0x1.4a27fad76014ap+0, -0x1.047e60cde8000p-2, -0x1.dba110d397f3cp-45},
-    {0x1.4880522014880p+0, -0x1.feb2233ea0000p-3, -0x1.f2c18de00938bp-45},
-    {0x1.46dce34596066p+0, -0x1.f474b134df000p-3, -0x1.13f9838821289p-46},
-    {0x1.453d9e2c776cap+0, -0x1.ea4449f04b000p-3, 0x1.42df33919ab94p-45},
-    {0x1.43a2730abee4dp+0, -0x1.e020cc6236000p-3, 0x1.52df0adb91424p-45},
-    {0x1.420b5265e5951p+0, -0x1.d60a17f903000p-3, -0x1.44eaf207be58ep-45},
-    {0x1.40782d10e6566p+0, -0x1.cc000c9db4000p-3, 0x1.d6e985d57aff9p-46},
-    {0x1.3ee8f42a5af07p+0, -0x1.c2028ab180000p-3, 0x1.92a3ee55c7ac6p-45},
-    {0x1.3d5d991aa75c6p+0, -0x1.b811730b82000p-3, -0x1.e9e283b9cd768p-46},
-    {0x1.3bd60d9232955p+0, -0x1.ae2ca6f673000p-3, 0x1.0a1a4a356155fp-45},
-    {0x1.3a524387ac822p+0, -0x1.a454082e6b000p-3, 0x1.3f4f06fc11d1ep-45},
-    {0x1.38d22d366088ep+0, -0x1.9a8778debb000p-3, 0x1.7176b820278e0p-45},
-    {0x1.3755bd1c945eep+0, -0x1.90c6db9fcc000p-3, 0x1.929357718d7cap-46},
-    {0x1.35dce5f9f2af8p+0, -0x1.871213750f000p-3, 0x1.9b1a97a0ca116p-45},
-    {0x1.34679ace01346p+0, -0x1.7d6903caf6000p-3, 0x1.4cd0b17c301d7p-45},
-    {0x1.32f5ced6a1dfap+0, -0x1.73cb9074fd000p-3, -0x1.4ca3797ffd2ccp-47},
-    {0x1.3187758e9ebb6p+0, -0x1.6a399dabbd000p-3, -0x1.c1aec6657a967p-46},
-    {0x1.301c82ac40260p+0, -0x1.60b3100b09000p-3, -0x1.1d1526cee0fd8p-45},
-    {0x1.2eb4ea1fed14bp+0, -0x1.5737cc9019000p-3, 0x1.91a01651de028p-46},
-    {0x1.2d50a012d50a0p+0, -0x1.4dc7b897bc000p-3, -0x1.c71b60ae1ff0fp-47},
-    {0x1.2bef98e5a3711p+0, -0x1.4462b9dc9b000p-3, -0x1.edf3d63b93e7ap-46},
-    {0x1.2a91c92f3c105p+0, -0x1.3b08b6757f000p-3, -0x1.53abc35b37c15p-46},
-    {0x1.293725bb804a5p+0, -0x1.31b994d3a5000p-3, 0x1.e91238b5efe06p-49},
-    {0x1.27dfa38a1ce4dp+0, -0x1.28753bc11b000p-3, 0x1.1797394d9fa33p-45},
-    {0x1.268b37cd60127p+0, -0x1.1f3b925f26000p-3, 0x1.5ddee9b083633p-46},
-    {0x1.2539d7e9177b2p+0, -0x1.160c8024b2000p-3, -0x1.ebfb2a9009e3dp-45},
-    {0x1.23eb79717605bp+0, -0x1.0ce7ecdccc000p-3, -0x1.4588dabff5447p-46},
-    {0x1.22a0122a0122ap+0, -0x1.03cdc0a51f000p-3, 0x1.f95cc3a580e90p-46},
-    {0x1.21579804855e6p+0, -0x1.f57bc7d900000p-4, -0x1.76a2c9ea8b04ep-46},
-    {0x1.2012012012012p+0, -0x1.e3707ee304000p-4, -0x1.0f664e6766abdp-45},
-    {0x1.1ecf43c7fb84cp+0, -0x1.d17978821a000p-4, 0x1.93cd894208225p-45},
-    {0x1.1d8f5672e4abdp+0, -0x1.bf968769fc000p-4, -0x1.42f7c8d824283p-45},
-    {0x1.1c522fc1ce059p+0, -0x1.adc77ee5ae000p-4, -0x1.51cebec79cdf7p-45},
-    {0x1.1b17c67f2bae3p+0, -0x1.9c0c32d4d2000p-4, -0x1.5329d85f1e661p-46},
-    {0x1.19e0119e0119ep+0, -0x1.8a6477a91e000p-4, 0x1.eba7a83214905p-47},
-    {0x1.18ab083902bdbp+0, -0x1.78d02263d8000p-4, -0x1.6bb9794b69fb7p-47},
-    {0x1.1778a191bd684p+0, -0x1.674f089366000p-4, 0x1.61f1acd8b33f9p-46},
-    {0x1.1648d50fc3201p+0, -0x1.55e10050e0000p-4, -0x1.c13340c53c72ep-47},
-    {0x1.151b9a3fdd5c9p+0, -0x1.4485e03dbe000p-4, 0x1.3ec45cb655244p-50},
-    {0x1.13f0e8d344724p+0, -0x1.333d7f8184000p-4, 0x1.6c6b6a81b8848p-49},
-    {0x1.12c8b89edc0acp+0, -0x1.2207b5c786000p-4, 0x1.6bd2607de7082p-45},
-    {0x1.11a3019a74826p+0, -0x1.10e45b3cae000p-4, -0x1.052cdaf6b9737p-45},
-    {0x1.107fbbe011080p+0, -0x1.ffa6911ab8000p-5, -0x1.3088c98381a8fp-45},
-    {0x1.0f5edfab325a2p+0, -0x1.dda8adc680000p-5, 0x1.1a74c64d9e42fp-45},
-    {0x1.0e40655826011p+0, -0x1.bbcebfc690000p-5, 0x1.7b8e68c317c2ap-46},
-    {0x1.0d24456359e3ap+0, -0x1.9a187b573c000p-5, -0x1.e810362764de5p-45},
-    {0x1.0c0a7868b4171p+0, -0x1.788595a358000p-5, 0x1.06fed083b3a4cp-46},
-    {0x1.0af2f722eecb5p+0, -0x1.5715c4c03c000p-5, -0x1.dc2a880ee2760p-46},
-    {0x1.09ddba6af8360p+0, -0x1.35c8bfaa14000p-5, 0x1.f2e0a8418532bp-46},
-    {0x1.08cabb37565e2p+0, -0x1.149e3e4004000p-5, -0x1.a8ccacb7d2e06p-45},
-    {0x1.07b9f29b8eae2p+0, -0x1.e72bf28140000p-6, 0x1.8cb3149774d47p-45},
-    {0x1.06ab59c7912fbp+0, -0x1.a55f548c60000p-6, 0x1.dec609f2d03c9p-45},
-    {0x1.059eea0727586p+0, -0x1.63d6178690000p-6, -0x1.77b7389596542p-47},
-    {0x1.04949cc1664c5p+0, -0x1.228fb1fea0000p-6, -0x1.70513284991fep-45},
-    {0x1.038c6b78247fcp+0, -0x1.c317384c70000p-7, -0x1.7c35806208c05p-45},
-    {0x1.02864fc7729e9p+0, -0x1.41929f9680000p-7, -0x1.9862755d01368p-46},
-    {0x1.0182436517a37p+0, -0x1.8121214580000p-8, -0x1.ac06382973f27p-46},
-    {0x1.0080402010080p+0, -0x1.0040155d40000p-9, -0x1.881de70671eefp-45},
-    {0x1.fe01fe01fe020p-1, 0x1.ff00aa2b00000p-9, 0x1.0ba04a086b56ap-45},
-    {0x1.fa11caa01fa12p-1, 0x1.7dc475f810000p-7, 0x1.4d2ba4a25e0b1p-48},
-    {0x1.f6310aca0dbb5p-1, 0x1.3cea443468000p-6, 0x1.2c1e79a52b7eap-45},
-    {0x1.f25f644230ab5p-1, 0x1.b9fc027af8000p-6, 0x1.1999bd465b759p-46},
-    {0x1.ee9c7f8458e02p-1, 0x1.1b0d98923c000p-5, 0x1.97ea2ca2eec8ap-45},
-    {0x1.eae807aba01ebp-1, 0x1.58a5bafc90000p-5, -0x1.b2d039570ad39p-45},
-    {0x1.e741aa59750e4p-1, 0x1.95c830ec90000p-5, -0x1.c0dc297c5feb8p-45},
-    {0x1.e3a9179dc1a73p-1, 0x1.d276b8adb0000p-5, 0x1.6ac83c78a64b0p-46},
-    {0x1.e01e01e01e01ep-1, 0x1.075983598e000p-4, 0x1.1c5006d2999e2p-46},
-    {0x1.dca01dca01dcap-1, 0x1.253f62f0a2000p-4, -0x1.7d1ee092cb1fep-45},
-    {0x1.d92f2231e7f8ap-1, 0x1.42edcbea64000p-4, 0x1.bb6aeea7c9acdp-46},
-    {0x1.d5cac807572b2p-1, 0x1.60658a9376000p-4, -0x1.e787c422c7611p-45},
-    {0x1.d272ca3fc5b1ap-1, 0x1.7da766d7b2000p-4, -0x1.a5f9776fe6ecap-45},
-    {0x1.cf26e5c44bfc6p-1, 0x1.9ab4246204000p-4, -0x1.8a46826787061p-45},
-    {0x1.cbe6d9601cbe7p-1, 0x1.b78c82bb0e000p-4, 0x1.b3f60878cf032p-45},
-    {0x1.c8b265afb8a42p-1, 0x1.d4313d66cc000p-4, -0x1.9452379135713p-45},
-    {0x1.c5894d10d4986p-1, 0x1.f0a30c0116000p-4, 0x1.5218be64b8b77p-47},
-    {0x1.c26b5392ea01cp-1, 0x1.0671512ca6000p-3, -0x1.a44979cdc0a3dp-45},
-    {0x1.bf583ee868d8bp-1, 0x1.1478584674000p-3, 0x1.560651027c750p-46},
-    {0x1.bc4fd65883e7bp-1, 0x1.2266f190a6000p-3, -0x1.4cddab840e7f6p-45},
-    {0x1.b951e2b18ff23p-1, 0x1.303d718e48000p-3, -0x1.5b6b5ce3ecb05p-50},
-    {0x1.b65e2e3beee05p-1, 0x1.3dfc2b0ecc000p-3, 0x1.8a9ba62b8c13fp-45},
-    {0x1.b37484ad806cep-1, 0x1.4ba36f39a5000p-3, 0x1.79208981bcc36p-45},
-    {0x1.b094b31d922a4p-1, 0x1.59338d9982000p-3, 0x1.0ac68b7555d4ap-48},
-    {0x1.adbe87f94905ep-1, 0x1.66acd4272b000p-3, -0x1.578c900e4e1ebp-46},
-    {0x1.aaf1d2f87ebfdp-1, 0x1.740f8f5403000p-3, 0x1.e8cb6cdfceabep-45},
-    {0x1.a82e65130e159p-1, 0x1.815c0a1435000p-3, 0x1.fa48a0dbfc630p-45},
-    {0x1.a574107688a4ap-1, 0x1.8e928de887000p-3, -0x1.5f76d3b0a34adp-46},
-    {0x1.a2c2a87c51ca0p-1, 0x1.9bb362e7e0000p-3, -0x1.1eca8a1ce0ffcp-45},
-    {0x1.a01a01a01a01ap-1, 0x1.a8becfc883000p-3, -0x1.ce6a30de4630ep-48},
-    {0x1.9d79f176b682dp-1, 0x1.b5b519e8fb000p-3, 0x1.6962a27fdc19ep-45},
-    {0x1.9ae24ea5510dap-1, 0x1.c2968558c2000p-3, -0x1.cf7d3dee38a40p-45},
-    {0x1.9852f0d8ec0ffp-1, 0x1.cf6354e09c000p-3, 0x1.775339a07d55bp-45},
-    {0x1.95cbb0be377aep-1, 0x1.dc1bca0abf000p-3, -0x1.c2639675ccce9p-46},
-    {0x1.934c67f9b2ce6p-1, 0x1.e8c0252aa6000p-3, -0x1.6803b80e8e6ffp-45},
-    {0x1.90d4f120190d5p-1, 0x1.f550a564b8000p-3, -0x1.32513a09202fep-45},
-    {0x1.8e6527af1373fp-1, 0x1.00e6c45ad5000p-2, 0x1.cd88d52e01203p-50},
-    {0x1.8bfce8062ff3ap-1, 0x1.071b85fcd5800p-2, 0x1.0d211707f97bep-46},
-    {0x1.899c0f601899cp-1, 0x1.0d46b579ab800p-2, -0x1.696f04df8f0d1p-47},
-    {0x1.87427bcc092b9p-1, 0x1.136870293a800p-2, 0x1.6061b314c76e9p-47},
-    {0x1.84f00c2780614p-1, 0x1.1980d2dd42000p-2, 0x1.b75fa7a361c9ap-45},
-    {0x1.82a4a0182a4a0p-1, 0x1.1f8ff9e48a000p-2, 0x1.7966c040cbe77p-45},
-    {0x1.8060180601806p-1, 0x1.2596010df7800p-2, -0x1.c60cf76c57076p-46},
-    {0x1.7e225515a4f1dp-1, 0x1.2b9303ab8a000p-2, -0x1.6d8c2d6bfb0a5p-45},
-    {0x1.7beb3922e017cp-1, 0x1.31871c9544000p-2, 0x1.84c2b94cecfd9p-46},
-    {0x1.79baa6bb6398bp-1, 0x1.3772662bfd800p-2, 0x1.708153ac4fdd0p-48},
-    {0x1.77908119ac60dp-1, 0x1.3d54fa5c1f800p-2, -0x1.dfd5932e350e5p-47},
-    {0x1.756cac201756dp-1, 0x1.432ef2a04e800p-2, 0x1.2cf9b3a3a94dcp-50},
-};
-// clang-format on
+// The bits of 1 - 2^-9 and 1 + 2^-9: the path near 1 takes each x from the
+// first to below the second.
+inline constexpr std::uint64_t kLogNearLow = 0x3FEFF00000000000ULL;
+inline constexpr std::uint64_t kLogNearHigh = 0x3FF0080000000000ULL;
+// The 52 bits of the fraction of a double.
+inline constexpr std::uint64_t kLogFractionMask = (std::uint64_t{1} << 52) - 1;
+// The smallest significand m (with its leading bit) for which m 2^-52 is
+// above sqrt2.  Such an m gives y = m 2^-53.
+inline constexpr std::uint64_t kLogSqrt2Significand = 0x16a09e667f3bcdULL;
+// The first interval i of kLogFirst, and the row of the interval of 1, which
+// has r = 1 and -log(r) = 0.
+inline constexpr std::uint64_t kLogFirstIndex = 362;
+inline constexpr std::uint64_t kLogFirstOne = 511 - kLogFirstIndex;
+// The row of k2 = 0 in kLogSecond.
+inline constexpr std::int32_t kLogSecondCenter = 139;
+// The add of this value rounds a double of magnitude below 2^51 to an
+// integer, and the low 32 bits of its result hold that integer.
+inline constexpr double kLogShift = 0x1.8p52;
+// The margin of the rounding test of the fast path, 2^-68.5 rounded to
+// nearest, and the factor of |r| in the margin of the path near 1.
+inline constexpr double kLogMargin = 0x1.6a09e667f3bcdp-69;
+inline constexpr double kLogNearMargin = 0x1p-69;
 
 inline constexpr int kLogFloatTableBits = 7;
 // The bits of the float 0x1.67p-1: the start of the range of z.  In the bits,
@@ -345,25 +311,182 @@ inline constexpr double kLogFloatLogc[1 << kLogFloatTableBits] = {
 // polynomial and three rounds, so the margin is about eleven.
 inline constexpr std::uint64_t kLogFloatTolerance = std::uint64_t{1} << 10;
 
+// The reduction of a positive finite x = 2^e y, with y in [sqrt2/2, sqrt2).
+struct LogReduction {
+    // z = r_i y - 1, exact.
+    double reduced = 0.0;
+    // The row of the interval i of y in kLogFirst.
+    std::uint64_t position = 0;
+    // e as a double.
+    double scale = 0.0;
+};
+
+// The three doubles of the sum of the slow path.
+struct LogSum {
+    double high = 0.0;
+    double middle = 0.0;
+    double low = 0.0;
+};
+
 inline namespace CRUCIBLE_SIMD_TARGET {
 
-// log of x in [1 - 2^-4, 1 + 0x1.09p-4], where r = x - 1 is exact.
-[[nodiscard]] constexpr double log_near_one_(double value) noexcept {
+// The bits of a positive subnormal x with its leading bit at bit 52.  The
+// biased exponent 1 - shift is zero or negative, and it wraps modulo 2^64, so
+// a reader takes it through an arithmetic shift.
+[[nodiscard, gnu::always_inline]] constexpr std::uint64_t log_normal_bits_(std::uint64_t bits) noexcept {
+    auto const shift = static_cast<std::uint64_t>(__builtin_clzll(bits) - 11);
+    return (bits << shift) - (shift << 52);
+}
+
+// The reduction of the bits of a positive finite x, after log_normal_bits_
+// for a subnormal x.  i = floor(512 y) is from 362 to 724, and r_i has 10 or
+// fewer significant bits, so the fma is exact.
+[[nodiscard, gnu::always_inline]] constexpr LogReduction log_reduce_(std::uint64_t bits) noexcept {
+    using ::fixy::fp::detail::fma_of_finite;
+    std::uint64_t const significand = (bits & kLogFractionMask) | (std::uint64_t{1} << 52);
+    // 1 when m >= kLogSqrt2Significand, as the add then carries into bit 53.
+    // An add has no compare, so the hardening of compares adds no check here.
+    std::uint64_t const is_high = (significand + ((std::uint64_t{1} << 53) - kLogSqrt2Significand)) >> 53;
+    std::int64_t const exponent = (static_cast<std::int64_t>(bits) >> 52) - 1023 + static_cast<std::int64_t>(is_high);
+    std::uint64_t const position = (significand >> (43 + is_high)) - kLogFirstIndex;
+    double const fraction = __builtin_bit_cast(double, (bits & kLogFractionMask) | ((1023 - is_high) << 52));
+    double const reduced = fma_of_finite(kLogFirst[position].inverse, fraction, -1.0);
+    return LogReduction{reduced, position, static_cast<double>(exponent)};
+}
+
+// Add a part to the sum of the slow path: a TwoSum into high, and a TwoSum of
+// its error into middle.  Only the add of the second error to low rounds.
+[[nodiscard, gnu::always_inline]] constexpr LogSum log_sum_add_(LogSum sum, double part) noexcept {
+    DoubleWord const top = two_sum_(sum.high, part);
+    DoubleWord const next = two_sum_(sum.middle, top.low);
+    return LogSum{top.high, next.high, sum.low + next.low};
+}
+
+// log(x) in three doubles for each positive finite x, with the relative error
+// eps_acc of the comment of the header.  The three doubles do not overlap:
+// high is the round of high + middle, and middle the round of middle + low.
+[[nodiscard, gnu::always_inline]] constexpr LogSum log_accurate_sum_(double value) noexcept {
+    using ::fixy::fp::detail::fma_of_finite;
+    std::uint64_t bits = __builtin_bit_cast(std::uint64_t, value);
+    if ((bits >> 52) == 0) bits = log_normal_bits_(bits);
+    LogReduction const reduction = log_reduce_(bits);
+    LogEntry const& first = kLogFirst[reduction.position];
+    double const scale = reduction.scale;
+    // k2 = round(z 2^16) from the low bits of the add of the shift, |k2| <= 139.
+    std::uint64_t const shifted_bits = __builtin_bit_cast(std::uint64_t, reduction.reduced * 0x1p16 + kLogShift);
+    auto const steps = static_cast<std::int32_t>(static_cast<std::uint32_t>(shifted_bits));
+    LogEntry const& second = kLogSecond[static_cast<std::uint64_t>(steps + kLogSecondCenter)];
+    // z2 = (r2 - 1) + r2 z = point.high + point.low + point_third exactly: r2 - 1
+    // is exact, and each step below is an exact product or sum.
+    DoubleWord const product = two_product_(second.inverse, reduction.reduced);
+    DoubleWord const head = two_sum_(second.inverse - 1.0, product.high);
+    DoubleWord const rest = two_sum_(head.low, product.low);
+    DoubleWord const point = two_sum_(head.high, rest.high);
+    double const point_third = rest.low;
+    // Q = 1/3 - z/4 + z^2/5 + z^3 H(z): H of degree 3 in doubles on the high
+    // part of z2, then a Horner sum in pairs of doubles.
+    double horner = fma_of_finite(point.high, kLogSlowC9, kLogSlowC8);
+    horner = fma_of_finite(point.high, horner, kLogSlowC7);
+    horner = fma_of_finite(point.high, horner, kLogSlowC6);
+    DoubleWord sum = dw_plus_dw_(DoubleWord{kLogSlowC5High, kLogSlowC5Low}, dw_times_fp_(point, horner));
+    sum = dw_plus_dw_(DoubleWord{kLogSlowC4, 0.0}, dw_times_dw_(point, sum));
+    sum = dw_plus_dw_(DoubleWord{kLogSlowC3High, kLogSlowC3Low}, dw_times_dw_(point, sum));
+    DoubleWord const curve = dw_times_dw_(dw_times_dw_(dw_times_dw_(point, point), point), sum);
+    // z2^2/2 from the exact products of the high part, and e ln2_third as an
+    // exact pair.
+    DoubleWord const square = two_product_(point.high, point.high);
+    DoubleWord const cross = two_product_(point.high, point.low);
+    DoubleWord const exponent_third = two_product_(scale, kLogLn2Third);
+    // log(x) = e ln2 - log(r_i) - log(r2) + z2 - z2^2/2 + z2^3 Q.  The first
+    // part is exact: two multiples of 2^-42 below 2^10.
+    LogSum total{scale * kLogLn2High + first.high, 0.0, 0.0};
+    total = log_sum_add_(total, second.high);
+    total = log_sum_add_(total, point.high);
+    total = log_sum_add_(total, scale * kLogLn2Middle);
+    total = log_sum_add_(total, first.middle);
+    total = log_sum_add_(total, square.high * -0.5);
+    total = log_sum_add_(total, curve.high);
+    total = log_sum_add_(total, second.middle);
+    total = log_sum_add_(total, point.low);
+    total = log_sum_add_(total, exponent_third.high);
+    total = log_sum_add_(total, first.low);
+    total = log_sum_add_(total, square.low * -0.5);
+    total = log_sum_add_(total, -cross.high);
+    total = log_sum_add_(total, curve.low);
+    // The small parts: the third parts of -log(r2) and of z2, the parts z_hi t,
+    // the low part of z_hi w and w^2/2 of z2^2/2, the part z_hi^2 t of z2^3 Q
+    // that the cube of z_hi + w drops, and the low part of e ln2_third.
+    double low = total.low + second.low;
+    low = low + point_third;
+    low = low - point.high * point_third;
+    low = low - cross.low;
+    low = low - (point.low * point.low) * 0.5;
+    low = low + square.high * point_third;
+    low = low + exponent_third.low;
+    // |m| is far below |h|, so the FastTwoSum is exact.
+    DoubleWord const top = fast_two_sum_(total.high, total.middle);
+    DoubleWord const tail = two_sum_(top.low, low);
+    return LogSum{top.high, tail.high, tail.low};
+}
+
+// The slow path: log(x) correctly rounded for each positive finite x.  It
+// rounds the three doubles of log_accurate_sum_.  The coverage table of the
+// comment of the header shows that no boundary of the round is as close to
+// log(x) as their error.
+[[gnu::cold, gnu::noinline, nodiscard]] constexpr double log_accurate_(double value) noexcept {
+    LogSum const sum = log_accurate_sum_(value);
+    // The round to nearest is symmetric, so the round of the three doubles
+    // takes their absolute values.
+    double const sign = sum.high < 0.0 ? -1.0 : 1.0;
+    return sign * round_triple_(sign * sum.high, sign * sum.middle, sign * sum.low);
+}
+
+// h + l of the fast path, for a positive finite x out of the path near 1,
+// with the error eps_fast of the comment of the header.
+[[nodiscard, gnu::always_inline]] constexpr DoubleWord log_pair_(LogReduction reduction) noexcept {
+    using ::fixy::fp::detail::fma_of_finite;
+    LogEntry const& entry = kLogFirst[reduction.position];
+    double const reduced = reduction.reduced;
+    double const scale = reduction.scale;
+    // e ln2_high + l1 is exact: two multiples of 2^-42 below 2^10.  Its
+    // magnitude is above |z|, as |l1| >= 2^-8.41 > |z| for e = 0.
+    DoubleWord const head = fast_two_sum_(scale * kLogLn2High + entry.high, reduced);
+    double const square = reduced * reduced;
+    double const upper_pair = fma_of_finite(reduced, kLogP6, kLogP5);
+    double const lower_pair = fma_of_finite(reduced, kLogP4, kLogP3);
+    double polynomial = fma_of_finite(square, upper_pair, lower_pair);
+    polynomial = fma_of_finite(reduced, polynomial, kLogP2);
+    polynomial = polynomial * square;
+    double const low = polynomial + (head.low + entry.middle);
+    return DoubleWord{head.high, fma_of_finite(scale, kLogLn2Low, low)};
+}
+
+// h + l of the path near 1, for 1 - 2^-9 <= x < 1 + 2^-9, with the error
+// eps_near of the comment of the header.  r = x - 1 is exact, and r - r^2/2
+// is an exact pair.
+[[nodiscard, gnu::always_inline]] constexpr DoubleWord log_near_pair_(double value) noexcept {
     using ::fixy::fp::detail::fma_of_finite;
     double const reduced = value - 1.0;
-    double const square = reduced * reduced;
-    double const cube = reduced * square;
-    double const first = fma_of_finite(square, kLogB3, fma_of_finite(reduced, kLogB2, kLogB1));
-    double const second = fma_of_finite(square, kLogB6, fma_of_finite(reduced, kLogB5, kLogB4));
-    double const third =
-        fma_of_finite(cube, kLogB10, fma_of_finite(square, kLogB9, fma_of_finite(reduced, kLogB8, kLogB7)));
-    double const tail = fma_of_finite(cube, fma_of_finite(cube, third, second), first);
-    // -r^2/2 in two parts: the round of r^2 and its exact error, each times -1/2.
-    double const half_square_high = square * -0.5;
-    double const half_square_low = fma_of_finite(reduced, reduced, -square) * -0.5;
-    double const high = reduced + half_square_high;
-    double const low = ((reduced - high) + half_square_high) + half_square_low;
-    return fma_of_finite(cube, tail, low) + high;
+    DoubleWord const square = two_product_(reduced, reduced);
+    double tail = fma_of_finite(reduced, kLogB5, kLogB4);
+    tail = fma_of_finite(reduced, tail, kLogB3);
+    tail = fma_of_finite(reduced, tail, kLogB2);
+    tail = fma_of_finite(reduced, tail, kLogB1);
+    double const curve = (reduced * square.high) * tail;
+    // |r| >= r^2/2, so the FastTwoSum is exact.
+    DoubleWord const head = fast_two_sum_(reduced, square.high * -0.5);
+    return DoubleWord{head.high, head.low + (square.low * -0.5 + curve)};
+}
+
+// The path near 1: the pair, and the rounding test with the margin 2^-69 r.
+[[nodiscard, gnu::always_inline]] constexpr double log_near_(double value) noexcept {
+    DoubleWord const pair = log_near_pair_(value);
+    double const margin = (value - 1.0) * kLogNearMargin;
+    double const upper = pair.high + (pair.low + margin);
+    double const lower = pair.high + (pair.low - margin);
+    if (__builtin_islessgreater(upper, lower)) [[unlikely]]
+        return log_accurate_(value);
+    return upper;
 }
 
 // The midpoint inputs of the float form: each input whose log(double) is a
@@ -396,41 +519,22 @@ namespace fixy::fp {
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 [[nodiscard]] constexpr double log(double value) noexcept {
-    using ::fixy::fp::detail::fma_of_finite;
     std::uint64_t bits = __builtin_bit_cast(std::uint64_t, value);
-    if (bits - detail::kLogNearLow < detail::kLogNearHigh - detail::kLogNearLow) {
-        return detail::log_near_one_(value);
-    }
+    if (bits - detail::kLogNearLow < detail::kLogNearHigh - detail::kLogNearLow) return detail::log_near_(value);
     std::uint64_t const top = bits >> 48;
     if (top - 0x0010u >= 0x7ff0u - 0x0010u) [[unlikely]] {
         // x below 2^-1022, negative, an infinity or a NaN.
         if ((bits << 1) == 0) return -::foundation::core::infinity_of<double>;
         if (bits == 0x7ff0000000000000ULL) return value;
         if ((top & 0x8000u) != 0 || (top & 0x7ff0u) == 0x7ff0u) return ::foundation::core::quiet_nan_of<double>;
-        // A positive subnormal x: the shift puts its leading bit at bit 52,
-        // and the subtract gives the biased exponent 1 - shift, which is zero
-        // or negative and wraps modulo 2^64.  The steps below read that
-        // exponent through an arithmetic shift.
-        auto const shift = static_cast<std::uint64_t>(__builtin_clzll(bits) - 11);
-        bits = (bits << shift) - (shift << 52);
+        bits = detail::log_normal_bits_(bits);
     }
-    std::uint64_t const offset_bits = bits - detail::kLogOffset;
-    std::uint64_t const index = (offset_bits >> (52 - detail::kLogTableBits)) & 127u;
-    std::int64_t const exponent = static_cast<std::int64_t>(offset_bits) >> 52;
-    double const reduced_input = __builtin_bit_cast(double, bits - (offset_bits & (std::uint64_t{0xfff} << 52)));
-    detail::LogEntry const& entry = detail::kLogTable[index];
-    double const reduced = fma_of_finite(reduced_input, entry.invc, -1.0);
-    double const scale = static_cast<double>(exponent);
-    double const whole = fma_of_finite(scale, detail::kLogLn2Hi, entry.logc_high);
-    double const high = whole + reduced;
-    double const low = ((whole - high) + reduced) + fma_of_finite(scale, detail::kLogLn2Lo, entry.logc_low);
-    double const square = reduced * reduced;
-    double const upper = fma_of_finite(reduced, detail::kLogA4, detail::kLogA3);
-    double const lower = fma_of_finite(reduced, detail::kLogA2, detail::kLogA1);
-    double const tail = fma_of_finite(square, upper, lower);
-    double result = fma_of_finite(square, detail::kLogA0, low);
-    result = fma_of_finite(reduced * square, tail, result);
-    return result + high;
+    detail::DoubleWord const pair = detail::log_pair_(detail::log_reduce_(bits));
+    double const upper = pair.high + (pair.low + detail::kLogMargin);
+    double const lower = pair.high + (pair.low - detail::kLogMargin);
+    if (__builtin_islessgreater(upper, lower)) [[unlikely]]
+        return detail::log_accurate_(value);
+    return upper;
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET

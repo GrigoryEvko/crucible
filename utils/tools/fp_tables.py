@@ -264,6 +264,11 @@ def measured_error(
 # rounds up to a dyadic Fraction.
 
 
+def mpf_of(value: Fraction) -> Any:
+    """Return a Fraction as an mpmath value, rounded at the working precision."""
+    return mp.mpf(value.numerator) / value.denominator
+
+
 def fraction_of(value: float | Fraction) -> Fraction:
     """Return the exact value of a double, or of a sum of doubles as a Fraction, as a Fraction."""
     return Fraction(value)
@@ -706,40 +711,236 @@ def float_toward(edge: Any, below: bool) -> float:
     return float_of_bits(candidate)
 
 
-# ── log, double ────────────────────────────────────────────────────
-
-LOG_TABLE_BITS = 7
-LOG_OFFSET = 0x3FE6000000000000
-
-
 def double_of_bits(bits: int) -> float:
     """Return the double of a bit pattern."""
     return float(struct.unpack("<d", struct.pack("<Q", bits & 0xFFFFFFFFFFFFFFFF))[0])
 
 
+# ── log, double ────────────────────────────────────────────────────
+#
+# The fast path takes x = 2^e y with y in [sqrt2/2, sqrt2), the interval i of [i 2^-9, (i + 1) 2^-9) of y, and
+# a 10-bit inverse r_i of it, so z = r_i y - 1 is exact.  The path near 1 takes r = x - 1.  The slow path takes
+# the reduction of the fast path and a second one: k2 = round(z 2^16) and r2 nearest 1 / (1 + k2 2^-16).
+
+LOG_FIRST = range(362, 725)
+LOG_SECOND_STEP = 16
+# The path near 1: 1 - 2^-9 <= x < 1 + 2^-9.
+LOG_NEAR = Fraction(1, 2**9)
+
+
+def is_exact_reduction(inverse: Fraction, low: Fraction, high: Fraction) -> bool:
+    """Return whether z = fma(r, y, -1) is exact for each double y in [low, high).
+
+    y = M 2^-52 for y >= 1 and M 2^-53 below 1.  r y - 1 = N 2^-s for an integer N in steps of the numerator R
+    of r, so N has the trailing zeros of R at least.  The fma is exact when |N| < 2^(53 + those zeros).
+    """
+    unit = Fraction(1, 2**52) if low >= 1 else Fraction(1, 2**53)
+    numerator = inverse.numerator
+    zeros = (numerator & -numerator).bit_length() - 1
+    largest = max(abs(inverse * low - 1), abs(inverse * high - 1)) * inverse.denominator / unit
+    return largest < 2 ** (53 + zeros)
+
+
+def significant_bits(value: Fraction) -> int:
+    """Return the number of significant bits of a dyadic fraction: its odd numerator part has that many."""
+    numerator = abs(value.numerator)
+    if numerator == 0:
+        return 0
+    return (numerator >> ((numerator & -numerator).bit_length() - 1)).bit_length()
+
+
+def ten_bit_inverse(low: Fraction, high: Fraction) -> Fraction:
+    """Return the inverse of at most 10 significant bits with the smallest max |r y - 1| on [low, high].
+
+    The candidates are the two neighbors of 2 / (low + high) at 10 and at 9 significant bits, and the inverse
+    must give an exact z (is_exact_reduction).
+    """
+    best = Fraction(0)
+    worst_best = Fraction(10)
+    ideal = 2 / (low + high)
+    exponent = 0 if ideal < 1 else 1
+    for bits in (10, 9):
+        scale = 2 ** (bits - exponent)
+        for numerator in (math.floor(ideal * scale), math.ceil(ideal * scale)):
+            candidate = Fraction(numerator, scale)
+            worst = max(abs(candidate * low - 1), abs(candidate * high - 1))
+            if worst < worst_best and is_exact_reduction(candidate, low, high):
+                best, worst_best = candidate, worst
+    if best == 0:
+        raise SystemExit(f"fp_tables: no inverse of 10 bits gives an exact reduction on [{low}, {high})")
+    return best
+
+
+def log_first_table() -> list[tuple[int, Fraction, float, float, float]]:
+    """Return (i, r_i, l1, l2, l3) for each interval: -log(r_i) = l1 + l2 + l3 with l1 a multiple of 2^-42.
+
+    r_i = 1 for the two intervals next to 1, so -log(r_i) = 0 there.  O(363) logs.
+    """
+    rows = []
+    for index in LOG_FIRST:
+        low, high = Fraction(index, 512), Fraction(index + 1, 512)
+        inverse = Fraction(1) if index in (511, 512) else ten_bit_inverse(low, high)
+        value = -mp.log(mp.mpf(inverse.numerator) / inverse.denominator)
+        part1 = round_to_multiple(value, -42)
+        part2 = round_double(value - part1)
+        part3 = round_double(value - part1 - mp.mpf(part2))
+        rows.append((index, inverse, round_double(part1), part2, part3))
+    return rows
+
+
+def log_reduction_width(rows: list[tuple[int, Fraction, float, float, float]]) -> tuple[Fraction, bool]:
+    """Return the largest |r_i y - 1| over each interval, and whether each z = fma(r_i, y, -1) is exact.
+
+    y = M 2^-52 for y >= 1 and M 2^-53 below 1, with an integer M.  r_i y - 1 is an integer N over 2^(52 + q),
+    with r_i = R 2^-q.  The fma is exact when each such |N| is below 2^53.  O(363).
+    """
+    widest = Fraction(0)
+    is_exact = True
+    for index, inverse, _, _, _ in rows:
+        low, high = Fraction(index, 512), Fraction(index + 1, 512)
+        widest = max(widest, abs(inverse * low - 1), abs(inverse * high - 1))
+        is_exact = is_exact and is_exact_reduction(inverse, low, high)
+    return widest, is_exact
+
+
+def rigorous_log1p_error(
+    coefficients: Sequence[float | Fraction], bound: Fraction, relative: bool, terms: int = 40, pieces: int = 256
+) -> Fraction:
+    """Return a bound of |log1p(z) - p(z)|, or of it over |log1p(z)|, for each |z| <= bound <= 1/4.
+
+    The coefficients of p come first at degree 0.  log1p is its Taylor sum to `terms` terms plus a rest of at
+    most bound^(terms + 1) / ((terms + 1) (1 - bound)).  For the relative bound, (T - p) / z is a polynomial, as
+    p(0) = 0, and |log1p(z) / z| >= 1 - bound / 2.  Exact.  O(pieces * terms^2).
+    """
+    taylor = [Fraction(0)] + [Fraction((-1) ** (n + 1), n) for n in range(1, terms + 1)]
+    difference = [taylor[n] - (fraction_of(coefficients[n]) if n < len(coefficients) else 0) for n in range(terms + 1)]
+    rest = bound ** (terms + 1) / ((terms + 1) * (1 - bound))
+    if not relative:
+        return sup_bound(difference, -bound, bound, pieces) + rest
+    if difference[0] != 0:
+        raise SystemExit("fp_tables: a relative bound of log1p needs p(0) = 0")
+    return (sup_bound(difference[1:], -bound, bound, pieces) + rest / bound) / (1 - bound / 2)
+
+
+def log_second_table(width: Fraction) -> tuple[list[tuple[int, float, float, float, float]], Fraction, Fraction]:
+    """Return the rows (k2, r2, m1, m2, m3) of the second table, the largest |z2| and the largest table rest.
+
+    k2 = round(z 2^16) for |z| <= width, r2 is the double nearest 1 / (1 + k2 2^-16), and -log(r2) is
+    m1 + m2 + m3 in three doubles.  The largest |z2| = |r2 (1 + z) - 1| comes from the two ends of the interval
+    of z of each k2.  O(2 width 2^16) logs.
+    """
+    step = Fraction(1, 2**LOG_SECOND_STEP)
+    count = math.ceil(width / step)
+    rows = []
+    second_width = Fraction(0)
+    second_error = Fraction(0)
+    for k2 in range(-count, count + 1):
+        inverse = round_double(1 / (1 + mp.mpf(k2) / 2**LOG_SECOND_STEP))
+        low = max(-width, (k2 - Fraction(1, 2)) * step)
+        high = min(width, (k2 + Fraction(1, 2)) * step)
+        exact_inverse = Fraction(inverse)
+        second_width = max(second_width, abs(exact_inverse * (1 + low) - 1), abs(exact_inverse * (1 + high) - 1))
+        value = -mp.log(mp.mpf(inverse))
+        part1 = round_double(value)
+        part2 = round_double(value - mp.mpf(part1))
+        part3 = round_double(value - mp.mpf(part1) - mp.mpf(part2))
+        rest = abs(value - mp.mpf(part1) - mp.mpf(part2) - mp.mpf(part3))
+        if rest != 0:
+            second_error = max(second_error, dyadic_above(rest))
+        rows.append((k2, inverse, part1, part2, part3))
+    return rows, second_width, second_error
+
+
+def print_log_block(
+    ln2_parts: Sequence[float],
+    fast: Sequence[float],
+    near: Sequence[float],
+    slow_parts: Sequence[float],
+    rows: list[tuple[int, Fraction, float, float, float]],
+    second_rows: list[tuple[int, float, float, float, float]],
+) -> None:
+    """Print the block of constants and tables of Log.h, from `// clang-format off` to `// clang-format on`.
+
+    The block in Log.h is this output, line for line, so a diff of the two shows each change.
+    """
+    ln2_high, ln2_low, ln2_middle, ln2_third = ln2_parts
+    first, last = second_rows[0][0], second_rows[-1][0]
+    lines = [
+        "// clang-format off",
+        "// ln2 = kLogLn2High + kLogLn2Low for the fast path, and kLogLn2High + kLogLn2Middle + kLogLn2Third for",
+        "// the slow path.  kLogLn2High has 42 bits and kLogLn2Middle 40 bits, so their products with e are exact.",
+        f"inline constexpr double kLogLn2High = {hex_double(ln2_high)};",
+        f"inline constexpr double kLogLn2Low = {hex_double(ln2_low)};",
+        f"inline constexpr double kLogLn2Middle = {hex_double(ln2_middle)};",
+        f"inline constexpr double kLogLn2Third = {hex_double(ln2_third)};",
+        "// The fast polynomial: log1p(z) - z = z^2 (P2 + P3 z + P4 z^2 + P5 z^3 + P6 z^4).",
+        *(f"inline constexpr double kLogP{index} = {hex_double(value)};" for index, value in enumerate(fast, 2)),
+        "// The polynomial near 1: log1p(r) - r + r^2/2 = r^3 (B1 + B2 r + B3 r^2 + B4 r^3 + B5 r^4).",
+        *(f"inline constexpr double kLogB{index} = {hex_double(value)};" for index, value in enumerate(near, 1)),
+        "// The Taylor coefficients (-1)^(n+1) / n of the slow path, in two doubles to n = 5.",
+        *(f"inline constexpr double kLogSlow{name} = {hex_double(value)};" for name, value in slow_parts),
+        "// For each interval [i 2^-9, (i + 1) 2^-9) of y, i from 362 to 724: the inverse r_i of 10 or fewer",
+        "// significant bits (1 for i = 511 and 512), then -log(r_i) in three doubles, the first a multiple of 2^-42.",
+        f"inline constexpr LogEntry kLogFirst[{len(rows)}] = {{",
+        *(
+            f"    {{{hex_double(float(inverse))}, {hex_double(part1)}, {hex_double(part2)}, {hex_double(part3)}}},"
+            for _, inverse, part1, part2, part3 in rows
+        ),
+        "};",
+        f"// For each k2 from {first} to {last}: r2, the double nearest 1 / (1 + k2 2^-16), then -log(r2) in three",
+        "// doubles.",
+        f"inline constexpr LogEntry kLogSecond[{len(second_rows)}] = {{",
+        *(
+            f"    {{{hex_double(inverse)}, {hex_double(part1)}, {hex_double(part2)}, {hex_double(part3)}}},"
+            for _, inverse, part1, part2, part3 in second_rows
+        ),
+        "};",
+        "// clang-format on",
+    ]
+    print("\n".join(lines))
+
+
 def print_log() -> None:
-    """Print the table, the constants and the polynomials of the double log of Log.h."""
-    entries = 1 << LOG_TABLE_BITS
-    step = 1 << (52 - LOG_TABLE_BITS)
+    """Print the constants, the polynomials and the three error budgets of the double log of Log.h."""
+    u = Fraction(1, 2**53)
+    rows = log_first_table()
+    width, is_exact = log_reduction_width(rows)
+    smallest_first = min(abs(Fraction(row[2]) + Fraction(row[3])) for row in rows if row[1] != 1)
+    table_error = max(
+        dyadic_above(abs(-mp.log(mp.mpf(row[1].numerator) / row[1].denominator) - mp.mpf(row[2]) - mp.mpf(row[3])))
+        for row in rows
+        if row[1] != 1
+    )
+    table_rest3 = max(
+        dyadic_above(
+            abs(
+                -mp.log(mp.mpf(row[1].numerator) / row[1].denominator)
+                - mp.mpf(row[2])
+                - mp.mpf(row[3])
+                - mp.mpf(row[4])
+            )
+        )
+        for row in rows
+        if row[1] != 1
+    )
+    print(
+        f"// first reduction: |z| <= 2^{log2_of_fraction(width)}, z exact: {is_exact},"
+        f" smallest |l1 + l2| off 1: 2^{log2_of_fraction(smallest_first)},"
+        f" |-log r - l1 - l2| <= 2^{log2_of_fraction(table_error)}, with l3: 2^{log2_of_fraction(table_rest3)}"
+    )
     ln2 = mp.log(2)
-    ln2_hi = round_to_multiple(ln2, -42)
-    ln2_lo = round_double(ln2 - ln2_hi)
-    print(f"// ln2, a multiple of 2^-42: {hex_double(round_double(ln2_hi))}")
-    print(f"// ln2, the rest: {hex_double(ln2_lo)}")
-    print("// Table: invc, logc_hi (a multiple of 2^-43), logc_lo.")
-    largest_reduced = mp.mpf(0)
-    for index in range(entries):
-        low = mp.mpf(double_of_bits(LOG_OFFSET + index * step))
-        high = mp.mpf(double_of_bits(LOG_OFFSET + (index + 1) * step))
-        center = (low + high) / 2
-        inverse = round_double(1 / center)
-        logc = -mp.log(mp.mpf(inverse))
-        logc_hi = round_to_multiple(logc, -43)
-        logc_lo = round_double(logc - logc_hi)
-        largest_reduced = max(largest_reduced, abs(low * inverse - 1), abs(high * inverse - 1))
-        print(f"    {{{hex_double(inverse)}, {hex_double(round_double(logc_hi))}, {hex_double(logc_lo)}}},")
-    print(f"// largest |r| of the table: 2^{log2_text(largest_reduced)}")
-    bound = largest_reduced * (1 + mp.mpf(2) ** -20)
+    ln2_a = round_to_multiple(ln2, -42)
+    ln2_low = round_double(ln2 - ln2_a)
+    ln2_gap = dyadic_above(abs(ln2 - ln2_a - mp.mpf(ln2_low)))
+    ln2_b = round_to_multiple(ln2 - ln2_a, -84)
+    ln2_c = round_double(ln2 - ln2_a - ln2_b)
+    ln2_rest3 = dyadic_above(abs(ln2 - ln2_a - ln2_b - mp.mpf(ln2_c)))
+    print(f"// ln2 = {hex_double(round_double(ln2_a))} + {hex_double(ln2_low)}, the rest 2^{log2_of_fraction(ln2_gap)}")
+    print(
+        f"// ln2 in three parts for the slow path: {hex_double(round_double(ln2_a))} + {hex_double(round_double(ln2_b))}"
+        f" + {hex_double(ln2_c)}, the rest 2^{log2_of_fraction(ln2_rest3)}"
+    )
+    reach = width * (1 + Fraction(1, 2**20))
 
     def log_tail(point: Any) -> Any:
         if point == 0:
@@ -749,9 +950,9 @@ def print_log() -> None:
     def log_weight(point: Any) -> Any:
         return point**2
 
-    fit_and_print("A", log_tail, log_weight, -bound, bound, 4)
-    near_low = mp.mpf(-1) / 16
-    near_high = mp.mpf(double_of_bits(0x3FF1090000000000)) - 1
+    fast = fit_and_print("fast P", log_tail, log_weight, -mpf_of(reach), mpf_of(reach), 4, 2)
+    fast_error = rigorous_log1p_error([0.0, 1.0, *fast], reach, relative=False)
+    print(f"// rigorous absolute bound of the fast polynomial: 2^{log2_of_fraction(fast_error)}")
 
     def near_tail(point: Any) -> Any:
         if point == 0:
@@ -763,7 +964,247 @@ def print_log() -> None:
             return mp.mpf(0)
         return abs(point**3 / mp.log1p(point))
 
-    fit_and_print("B", near_tail, near_weight, near_low, near_high, 9, 1)
+    near_reach = LOG_NEAR
+    near = fit_and_print("near B", near_tail, near_weight, -mpf_of(near_reach), mpf_of(near_reach), 4, 1)
+    near_error = rigorous_log1p_error([0.0, 1.0, -0.5, *near], near_reach, relative=True)
+    print(f"// rigorous relative bound of the near polynomial: 2^{log2_of_fraction(near_error)}")
+    second_rows, second_width, second_error = log_second_table(width)
+    print(
+        f"// second reduction: {len(second_rows)} entries, |z2| <= 2^{log2_of_fraction(second_width)},"
+        f" table rest <= 2^{log2_of_fraction(second_error)}"
+    )
+    slow_reach = second_width * (1 + Fraction(1, 2**20))
+    slow_terms: list[Fraction] = [Fraction(0), Fraction(1), Fraction(-1, 2)]
+    slow_parts: list[tuple[str, float]] = []
+    for order in range(3, 10):
+        exact = Fraction((-1) ** (order + 1), order)
+        high_part = float(exact)
+        low_part = float(exact - Fraction(high_part)) if order in (3, 5) else 0.0
+        slow_terms.append(Fraction(high_part) + Fraction(low_part))
+        if order in (3, 5):
+            slow_parts += [(f"C{order}High", high_part), (f"C{order}Low", low_part)]
+        else:
+            slow_parts.append((f"C{order}", high_part))
+    slow_error = rigorous_log1p_error(slow_terms, slow_reach, relative=True)
+    print(f"// rigorous relative bound of the slow polynomial (degree 9): 2^{log2_of_fraction(slow_error)}")
+    exponent_bits = [significant_bits(Fraction(value)) for value in (round_double(ln2_a), round_double(ln2_b))]
+    if exponent_bits[0] > 42 or exponent_bits[1] > 42:
+        raise SystemExit(f"fp_tables: a product e ln2 part is not exact: {exponent_bits} bits")
+    print(f"// ln2 parts: {exponent_bits[0]} and {exponent_bits[1]} significant bits, |e| <= 1074 has 11")
+    log_fast_budget(fast, reach, fast_error, rows, u, ln2_low, ln2_gap, table_error)
+    log_near_budget(near, near_reach, near_error, u)
+    log_slow_budget(
+        slow_terms,
+        slow_error,
+        second_rows,
+        (second_width, slow_reach, width),
+        (table_rest3, second_error, ln2_rest3),
+        u,
+    )
+    print_log_block(
+        (round_double(ln2_a), ln2_low, round_double(ln2_b), ln2_c), fast, near, slow_parts, rows, second_rows
+    )
+
+
+def log_fast_budget(
+    coefficients: Sequence[float],
+    reach: Fraction,
+    poly_error: Fraction,
+    rows: list[tuple[int, Fraction, float, float, float]],
+    u: Fraction,
+    ln2_low: float,
+    ln2_gap: Fraction,
+    table_error: Fraction,
+) -> None:
+    """Print the absolute error budget of the fast path, in the order of its operations.  Exact."""
+    p2, p3, p4, p5, p6 = (abs(Fraction(value)) for value in coefficients)
+    e_most = Fraction(1075)
+    square = reach**2
+    b45 = p5 + p6 * reach
+    b23 = p3 + p4 * reach
+    b_ph1 = (b23 + b45 * square * (1 + u)) * (1 + u)
+    err_ph1 = u * b45 * square + b45 * u * square + u * b23 + u * b_ph1
+    b_ph2 = (p2 + b_ph1 * reach) * (1 + u)
+    err_ph2 = reach * err_ph1 + u * b_ph2
+    b_ph3 = b_ph2 * square * (1 + u) ** 2
+    err_ph3 = square * err_ph2 + b_ph2 * u * square + u * b_ph3
+    l2_most = max(abs(Fraction(row[3])) for row in rows)
+    l_most = Fraction(1, 2**44)
+    la_most = (l_most + l2_most) * (1 + u)
+    lb_most = (b_ph3 + la_most) * (1 + u)
+    lc_most = (e_most * abs(Fraction(ln2_low)) + lb_most) * (1 + u)
+    terms = [
+        ("the polynomial (rigorous)", poly_error),
+        ("the rounds of the polynomial", err_ph3),
+        ("the table: -log r - l1 - l2", table_error),
+        ("e (ln2 - the two parts), |e| <= 1075", e_most * ln2_gap),
+        ("round of l + l2", u * (l_most + l2_most)),
+        ("round of ph + (l + l2)", u * lb_most),
+        ("round of e ln2_low + l", u * lc_most),
+    ]
+    total = print_terms("log fast path: the absolute errors of h + l", terms)
+    needed = total + u * (lc_most + total)
+    print(
+        f"// log eps_fast = 2^{log2_of_fraction(total)} absolute, the test needs a margin of 2^{log2_of_fraction(needed)}"
+    )
+
+
+def log_near_budget(coefficients: Sequence[float], reach: Fraction, poly_error: Fraction, u: Fraction) -> None:
+    """Print the relative error budget of the path near 1, in the order of its operations.  Exact.
+
+    r = x - 1 is exact, r^2 is an exact pair (q_hi, q_lo), R is a Horner sum of B1..B5 in r, c = RN(RN(r q_hi) R),
+    (h, l0) = Fast2Sum(r, -q_hi / 2), and l = RN(l0 + RN(-q_lo / 2 + c)).  Each term is relative to |r|, and
+    |log1p(r)| >= |r| (1 - reach / 2).
+    """
+    magnitudes = [abs(Fraction(value)) for value in coefficients]
+    horner = magnitudes[-1]
+    horner_error = Fraction(0)
+    for value in reversed(magnitudes[:-1]):
+        horner = (value + reach * horner) * (1 + u)
+        horner_error = reach * horner_error + u * horner
+    cube = reach**2 * (1 + u) ** 2
+    c_most = cube * horner * (1 + u)
+    terms_over_r = [
+        ("the rounds of R, times r^2", reach**2 * horner_error),
+        ("the rounds of r q_hi and of c", reach**2 * horner * (2 * u + u * u) + u * c_most),
+        ("round of -q_lo/2 + c", u * (u * reach / 2 + c_most)),
+        ("round of l0 + (...)", u * (u + u * reach + c_most) * (1 + u)),
+    ]
+    rounds = print_terms("log near path: the rounding errors, over |r|", terms_over_r)
+    total = poly_error + rounds / (1 - reach / 2)
+    l_most = (u + u * reach + c_most) * (1 + u) ** 2
+    print(
+        f"// log eps_near = 2^{log2_of_fraction(total)} relative (polynomial 2^{log2_of_fraction(poly_error)}),"
+        f" the test eps |r| needs eps >= 2^{log2_of_fraction(total * (1 + reach) + u * (l_most + total))}"
+    )
+
+
+def log_slow_budget(
+    slow_terms: Sequence[Fraction],
+    poly_error: Fraction,
+    second_rows: list[tuple[int, float, float, float, float]],
+    widths: tuple[Fraction, Fraction, Fraction],
+    rests: tuple[Fraction, Fraction, Fraction],
+    u: Fraction,
+) -> None:
+    """Print the relative error budget of the slow path, in the order of its operations.  Exact.
+
+    widths holds the largest |z2|, the bound R of |z_hi + w| (it is a little larger) and the largest |z1|.
+    rests holds the rests of the first table and of the second table, and of ln2 in three parts.  The path, with
+    x = 2^e y, |e| <= 1074, and z1 = r1 y - 1 exact:
+      - k2 = round(z1 2^16), and z2 = (r2 - 1) + r2 z1 = z_hi + w + t exactly: r2 - 1 is exact, r2 z1 is an exact
+        pair (p_hi, p_lo), (s_hi, s_lo) = TwoSum(r2 - 1, p_hi), (m, t) = TwoSum(s_lo, p_lo), and (z_hi, w) =
+        TwoSum(s_hi, m).  So z_hi = RN(z_hi + w), |w| <= u |z_hi|, and |t| <= u |m| <= u^2 (1 + u)^2 (|z2| +
+        (1 + 2u) |r2 z1|).
+      - log1p(z2) = z2 - z2^2/2 + f(z2), with f(z) = z^3 Q(z).  z2^2/2 takes z_hi^2 and z_hi w as exact pairs,
+        z_hi t and w^2 with one round each, and drops w t and t^2/2.  f(z_hi + w) is a Horner sum in pairs: Q
+        has c3 and c5 in pairs, c4 = -1/4, and c6..c9 in doubles on z_hi.  f(z2) - f(z_hi + w) = t xi^2 / (1 + xi)
+        for a xi between the two, because f'(z) = z^2 / (1 + z), and the path adds RN(RN(z_hi^2) t) for it.
+      - The sum: h starts at e ln2_high + l1, which is exact: two multiples of 2^-42 below 2^10.  13 terms go
+        through (h, s) = TwoSum(h, v), (m, s') = TwoSum(m, s), l = RN(l + s'), and 7 small terms go to l with
+        one round each.  FastTwoSum(h, m) and the TwoSum of its low part with l are exact.  So the sum is exact
+        except the 20 rounds of l.  Each partial sum h is at most B |log x| (B is below), so |m| <= 13 u B
+        |log x| (1 + u)^14, and each round of l is at most u times the bound of |l|.
+      - e ln2 = e ln2_high + e ln2_middle + e ln2_third: the first two products are exact (42 and 40 bits times
+        11), and the third is an exact pair: its high part is a term of h, its low part a term of l.
+    The errors count over |log x| in four regimes:
+      - near 1 (r1 = 1, e = 0) with k2 = 0: z2 = z1, t = w = 0, and |log x| >= |z2| (1 - 2^-10).
+      - near 1 with k2 != 0: |z1| > 2^-17, |log x| >= |z1| (1 - 2^-10), |z2| <= the largest |z2|, and |t| <=
+        t_near |z1|, with the largest |r2| of the entries |k2| <= 128.
+      - off 1 with e = 0: |log x| >= log(1 + 2^-9) > 1/513.
+      - e != 0: |log x| >= |e| ln2 - ln2 / 2 >= |e| ln2 / 2, and 2 / ln2 < 2.886.
+    """
+    second_width, reach, first_width = widths
+    first_rest, second_error, ln2_rest = rests
+    add_dd = 3 * u * u / (1 - 4 * u)
+    times_dd = 5 * u * u
+    times_fp = 2 * u * u
+    c = [abs(value) for value in slow_terms]
+    horner = c[9]
+    horner_error = Fraction(0)
+    for value in (c[8], c[7], c[6]):
+        horner = (value + reach * horner) * (1 + u)
+        horner_error = reach * horner_error + u * horner
+    a_most = c[5] + reach * horner
+    a_error = add_dd * a_most * (1 + u) + times_fp * reach * horner + reach * horner_error
+    for value in (c[4], c[3]):
+        product = reach * a_most * (1 + u)
+        a_most_next = value + product
+        a_error = add_dd * a_most_next * (1 + u) + times_dd * product + reach * a_error
+        a_most = a_most_next * (1 + u)
+    cube_error = 2 * times_dd * reach**3 * (1 + 4 * u)
+    w_error = times_dd * reach**3 * a_most + reach**3 * a_error + cube_error * a_most
+    # H reads z_hi only, so it drops w, |w| <= u (1 + u) |z2|, times |H'| <= c7 + 2 c8 R + 3 c9 R^2, which the
+    # two cubes scale by |z2|^6.
+    slope = c[7] + 2 * c[8] * reach + 3 * c[9] * reach**2
+    over_z = [
+        ("f(z_hi + w): the double-word rounds", w_error / reach),
+        ("f(z_hi + w): H on z_hi, which drops w", u * (1 + u) * slope * reach**6),
+        ("the round of w^2, the part in z2", u**3 * (1 + u) ** 2 * reach / 2),
+        ("the polynomial, over |log1p| <= |z2| / (1 - R)", poly_error / (1 - reach)),
+    ]
+    relative_z = print_terms("log slow path: the errors over |z2|", over_z)
+    # The bounds of t, and the absolute errors in t: each is at most t G.
+    near_count = round(LOG_NEAR * 2**LOG_SECOND_STEP)
+    r2_most = max(abs(Fraction(row[1])) for row in second_rows)
+    r2_near = max(abs(Fraction(row[1])) for row in second_rows if abs(row[0]) <= near_count)
+    t_most = u * u * (1 + u) ** 2 * (second_width + (1 + 2 * u) * r2_most * first_width)
+    t_near = u * u * (1 + u) ** 2 * (second_width * 2**17 + (1 + 2 * u) * r2_near)
+    z_hi_most = (1 + u) * (second_width + t_most)
+    delta = u * z_hi_most + t_most
+    in_t = [
+        ("the round of z_hi t", u * z_hi_most),
+        ("w t, which z2^2/2 drops", u * z_hi_most),
+        ("t^2/2, which z2^2/2 drops", t_most / 2),
+        ("the round of w^2, the part in t", u**3 * (1 + u) ** 2 * (2 * second_width + t_most) / 2),
+        ("f(z2) - f(z_hi + w) - z_hi^2 t", ((2 * z_hi_most + delta) * delta + z_hi_most**2 * reach) / (1 - reach)),
+        ("z_hi^2 - RN(z_hi^2), times t", u * z_hi_most**2),
+        ("the round of RN(z_hi^2) t", u * (1 + u) * z_hi_most**2),
+    ]
+    t_coefficient = print_terms("log slow path: the errors in t, over |t|", in_t)
+    print(f"// |t| <= 2^{log2_of_fraction(t_most)}, and |t| <= 2^{log2_of_fraction(t_near)} |z1| near 1 with k2 != 0")
+    # The partial sums: h0 = e ln2_high + l1 is log x less the rest of the terms, at most |log1p(z1)| + |e (ln2 -
+    # ln2_high)| + |l2 + l3|, and |l2 + l3| <= 2^-43 plus the rest, as l1 is the round to a multiple of 2^-42.
+    # Near 1, the first partial sum m1 = -log r2 is at most |log x| + |log1p(z2)|, and each later one is log x
+    # less terms of 2^-34 or less.
+    first_tail = first_width / (1 - first_width) + 1075 * Fraction(1, 2**43) + Fraction(1, 2**42)
+    near_tail = second_width / (1 - second_width) / (Fraction(1, 2**17) * (1 - Fraction(1, 2**10)))
+    most_partial = max(1 + first_tail * Fraction(2886, 1000), 1 + first_tail * 513, 1 + near_tail) + Fraction(1, 2**30)
+    if most_partial >= 3:
+        raise SystemExit(f"fp_tables: a partial sum of the slow log can be 2^{log2_of_fraction(most_partial)} |log x|")
+    two_level, direct = 13, 7
+    middle_most = two_level * u * most_partial * (1 + u) ** (two_level + 1)
+    t_relative = max(t_near / (1 - Fraction(1, 2**10)), 513 * t_most)
+    direct_most = (
+        u * u * (1 + u) ** 3 * most_partial
+        + t_relative * (1 + (1 + u) * z_hi_most + (1 + u) ** 2 * z_hi_most**2)
+        + 4 * u * u * (1 + u) * z_hi_most
+        + u * Fraction(1, 2**85) * Fraction(2886, 1000)
+    )
+    low_most = (two_level * u * middle_most + direct_most) * (1 + u) ** (two_level + direct)
+    sum_rounds = (two_level + direct) * u * low_most
+    print(
+        f"// the sum: each partial sum h is at most 2^{log2_of_fraction(most_partial)} |log x|, |l| <="
+        f" 2^{log2_of_fraction(low_most)} |log x|, and its 20 rounds cost 2^{log2_of_fraction(sum_rounds)} |log x|"
+    )
+    reduced = 1 - Fraction(1, 2**10)
+    at_one = relative_z / reduced + sum_rounds
+    near_one = (relative_z * second_width * 2**17 + t_near * t_coefficient + second_error * 2**17) / reduced
+    near_one += sum_rounds
+    absolute = relative_z * reach + t_most * t_coefficient + first_rest + second_error
+    off_one = 513 * absolute + sum_rounds
+    exponent = Fraction(2886, 1000) * (absolute + ln2_rest) + sum_rounds
+    regimes = [
+        ("near 1, k2 = 0", at_one),
+        ("near 1, k2 != 0", near_one),
+        ("off 1, e = 0: the absolute errors over 1/513", off_one),
+        ("e != 0: the absolute errors and e (ln2 - its three parts), over |e| ln2 / 2", exponent),
+    ]
+    print("// log slow path: the relative error in each regime")
+    for title, value in regimes:
+        print(f"//   {title}: 2^{log2_of_fraction(value)}")
+    worst = max(value for _, value in regimes)
+    print(f"// log eps_acc = 2^{log2_of_fraction(worst)} relative")
 
 
 # ── log, float ─────────────────────────────────────────────────────

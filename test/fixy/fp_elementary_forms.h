@@ -21,7 +21,8 @@
 // with an even step.  exp(double) has two more parts: the hard inputs of
 // fp_exp_hard_cases.h through exp, and the same inputs in the domain of the
 // slow path through the slow path on its own.  So each level runs the fast
-// path, the edge path and the slow path on the hard inputs.  The digest is
+// path, the edge path and the slow path on the hard inputs.  log(double) has
+// the same two parts with the hard inputs of fp_log_hard_cases.h.  The digest is
 // FNV-1a of 64 bits over the bits of each result, in the order of the
 // sample.
 
@@ -31,6 +32,7 @@
 #include <fixy/fp/Log.h>
 
 #include "fp_exp_hard_cases.h"
+#include "fp_log_hard_cases.h"
 
 #include <cstdint>
 
@@ -153,6 +155,28 @@ template <FpUnit Unit>
 }
 
 template <FpUnit Unit>
+[[gnu::noinline, nodiscard]] double probe_log_slow(double value) noexcept {
+    return ::fixy::fp::detail::log_accurate_(value);
+}
+
+// The digest of log(double) on its sample, then on the hard inputs through
+// log, then on the hard inputs through the slow path.  The slow path takes
+// each positive finite input, and each hard input is one.  O(2 * kSampleCount).
+template <FpUnit Unit>
+[[nodiscard]] std::uint64_t digest_of_log_double() noexcept {
+    std::uint64_t digest = digest_of_double<Unit>(probe_log_double<Unit>, kLogDomain);
+    for (::test_fp_log::HardCase const& item : ::test_fp_log::kLogHardCases) {
+        digest = fold_word(
+            digest, ::fixy::bit_cast<std::uint64_t>(probe_log_double<Unit>(::fixy::bit_cast<double>(item.input))));
+    }
+    for (::test_fp_log::HardCase const& item : ::test_fp_log::kLogHardCases) {
+        digest = fold_word(digest,
+                           ::fixy::bit_cast<std::uint64_t>(probe_log_slow<Unit>(::fixy::bit_cast<double>(item.input))));
+    }
+    return digest;
+}
+
+template <FpUnit Unit>
 [[gnu::noinline, nodiscard]] float probe_log_float(float value) noexcept {
     return ::fixy::fp::log(value);
 }
@@ -172,7 +196,7 @@ template <FpUnit Unit>
     FpDigests digests{};
     digests.exp_double = digest_of_exp_double<Unit>();
     digests.exp_float = digest_of_float<Unit>(probe_exp_float<Unit>, kExpFloatDomain);
-    digests.log_double = digest_of_double<Unit>(probe_log_double<Unit>, kLogDomain);
+    digests.log_double = digest_of_log_double<Unit>();
     digests.log_float = digest_of_float<Unit>(probe_log_float<Unit>, kLogDomain);
     digests.erf_double = digest_of_double<Unit>(probe_erf_double<Unit>, kErfDomain);
     digests.erf_float = digest_of_float<Unit>(probe_erf_float<Unit>, kErfFloatDomain);
