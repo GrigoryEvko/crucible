@@ -114,7 +114,7 @@ struct ClockChain {
 // rename ends, and 4 for a load from L1.  Each latency is a lower bound of
 // the guide, so the floor is a lower bound too.  The chain x + 0 * y of the
 // row adds a multiply and an add, 6 cycles:
-//   fixy exp double 43 + 6 = 49   fixy log double 41 + 6 = 47   fixy erf double 72 + 6 = 78
+//   fixy exp double 43 + 6 = 49   fixy log double 38 + 6 = 44   fixy erf double 72 + 6 = 78
 //   fixy exp float  29 + 6 = 35   fixy log float  27 + 6 = 33   fixy erf float  30 + 6 = 36
 //   cr_expf         28 + 6 = 34   cr_logf         23 + 6 = 29   cr_erff         30 + 6 = 36
 // The Horner chain of fixy erf double holds 11 dependent fma.  fixy erf float
@@ -134,7 +134,7 @@ struct Floor {
         case Function::Exp:
             return is_double ? Floor{46.0 / 6.0, 49.0} : Floor{29.0 / 6.0, 34.0};
         case Function::Log:
-            return is_double ? Floor{48.0 / 6.0, 47.0} : Floor{34.0 / 6.0, 29.0};
+            return is_double ? Floor{48.0 / 6.0, 44.0} : Floor{34.0 / 6.0, 29.0};
         case Function::Erf:
             return is_double ? Floor{13.0 / 2.0, 78.0} : Floor{6.0, 36.0};
         default:

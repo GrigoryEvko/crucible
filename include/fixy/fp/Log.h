@@ -53,13 +53,14 @@
 //       each row is at least 1.98 times each |z| of the row.
 //     p = z^2 (P2 + z (P3 + P4 z + z^2 (P5 + P6 z))), the minimax polynomial
 //       of log1p(z) - z for the absolute error.
-//     l = RN(e ln2_low + RN(p + RN(l + l2))), the last step as one fma.
-//     Then |h + l - log(x)| <= eps_fast = 2^-69.20, absolute.
+//     l = RN(p + RN(e ln2_low + RN(l + l2))), the middle step as one fma.
+//       The sum of the low parts does not wait for p.
+//     Then |h + l - log(x)| <= eps_fast = 2^-69.43, absolute.
 //     The rounding test: with E = 2^-68.5, if RN(h + RN(l + E)) and
 //     RN(h + RN(l - E)) are the same value, that value is the correctly
 //     rounded result, because RN is monotone and log(x) is between the two
 //     sums.  Each sum takes an inner round of at most u |l + E|, so the test
-//     needs a margin of 2^-69.01.
+//     needs a margin of 2^-69.20.
 //   The path near 1, for 1 - 2^-9 <= x < 1 + 2^-9: r = x - 1 is exact.
 //     (q_hi, q_lo) = TwoProduct(r, r), R = B1 + r (B2 + r (B3 + r (B4 +
 //     r B5))), c = RN(RN(r q_hi) R), (h, l0) = FastTwoSum(r, -q_hi/2), and
@@ -90,9 +91,9 @@
 //     -log(r_i) - l1 - l2                          2^-97.01
 //     e (ln2 - ln2_high - ln2_low), |e| <= 1075    2^-91.95
 //     the round of l + l2                          2^-95.42
-//     the round of p + (l + l2)                    2^-72.00
-//     the round of e ln2_low + l                   2^-72.00
-//     the sum: eps_fast                            2^-69.20
+//     the round of e ln2_low + (l + l2)            2^-86.97
+//     the round of p + (...)                       2^-72.00
+//     the sum: eps_fast                            2^-69.43
 //
 // Error budget of the path near 1, from `fp_tables.py log` (exact fractions)
 //   The rounding errors, relative to |r| <= 2^-9:
@@ -458,8 +459,10 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     double polynomial = fma_of_finite(square, upper_pair, lower_pair);
     polynomial = fma_of_finite(reduced, polynomial, kLogP2);
     polynomial = polynomial * square;
-    double const low = polynomial + (head.low + entry.middle);
-    return DoubleWord{head.high, fma_of_finite(scale, kLogLn2Low, low)};
+    // The sum of the low parts does not wait for the polynomial, so its add is
+    // the one step after the polynomial.
+    double const rest = fma_of_finite(scale, kLogLn2Low, head.low + entry.middle);
+    return DoubleWord{head.high, polynomial + rest};
 }
 
 // h + l of the path near 1, for 1 - 2^-9 <= x < 1 + 2^-9, with the error

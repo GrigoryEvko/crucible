@@ -1050,7 +1050,11 @@ def log_fast_budget(
     ln2_gap: Fraction,
     table_error: Fraction,
 ) -> None:
-    """Print the absolute error budget of the fast path, in the order of its operations.  Exact."""
+    """Print the absolute error budget of the fast path, in the order of its operations.  Exact.
+
+    l = RN(p + RN(e ln2_low + RN(l + l2))): the sum of l, l2 and e ln2_low does not wait for p, so the add of p
+    is the one step after the polynomial.
+    """
     p2, p3, p4, p5, p6 = (abs(Fraction(value)) for value in coefficients)
     e_most = Fraction(1075)
     square = reach**2
@@ -1065,16 +1069,16 @@ def log_fast_budget(
     l2_most = max(abs(Fraction(row[3])) for row in rows)
     l_most = Fraction(1, 2**44)
     la_most = (l_most + l2_most) * (1 + u)
-    lb_most = (b_ph3 + la_most) * (1 + u)
-    lc_most = (e_most * abs(Fraction(ln2_low)) + lb_most) * (1 + u)
+    lb_most = (e_most * abs(Fraction(ln2_low)) + la_most) * (1 + u)
+    lc_most = (b_ph3 + lb_most) * (1 + u)
     terms = [
         ("the polynomial (rigorous)", poly_error),
         ("the rounds of the polynomial", err_ph3),
         ("the table: -log r - l1 - l2", table_error),
         ("e (ln2 - the two parts), |e| <= 1075", e_most * ln2_gap),
         ("round of l + l2", u * (l_most + l2_most)),
-        ("round of ph + (l + l2)", u * lb_most),
-        ("round of e ln2_low + l", u * lc_most),
+        ("round of e ln2_low + (l + l2)", u * lb_most),
+        ("round of ph + (...)", u * lc_most),
     ]
     total = print_terms("log fast path: the absolute errors of h + l", terms)
     needed = total + u * (lc_most + total)
