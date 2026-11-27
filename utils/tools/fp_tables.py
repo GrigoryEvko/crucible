@@ -20,7 +20,8 @@ mpmath`, so it reads no mpmath of the Python of the user.
     python3 utils/tools/fp_tables.py exp     the tables of Exp.h
     python3 utils/tools/fp_tables.py log     the tables of Log.h, double
     python3 utils/tools/fp_tables.py logf    the tables of Log.h, float
-    python3 utils/tools/fp_tables.py erf     the tables of Erf.h
+    python3 utils/tools/fp_tables.py erf     the tables of Erf.h, double
+    python3 utils/tools/fp_tables.py erff    the polynomial and the table of Erf.h, float
 
 The output of one subcommand is the same on each run and on each host,
 because mpmath computes with integers only.  A run takes some minutes.
@@ -503,16 +504,40 @@ def print_erf() -> None:
 ERF_FLOAT_FIRST = 8
 ERF_FLOAT_INTERVALS = 55
 ERF_FLOAT_DEGREE = 7
+# The degree of Q in z = x^2 of erf(x) = x Q(z) below 1/2, for the float form.
+ERF_FLOAT_SMALL_DEGREE = 7
 
 
 def print_erff() -> None:
-    """Print the table of the intervals of the float form of Erf.h.
+    """Print the polynomial below 1/2 and the table of the intervals of the float form of Erf.h.
 
-    Interval i covers [i/16, (i + 1)/16) for i from ERF_FLOAT_FIRST, and the
-    last one holds the first x whose erf rounds to 1 in float.  For each, the
-    minimax polynomial of degree ERF_FLOAT_DEGREE in the offset from the
-    center, for the relative error of erf.  O(intervals * remez).
+    Below 1/2, erf(x) = x Q(z) with z = x^2 and Q of degree
+    ERF_FLOAT_SMALL_DEGREE.  Q0 is the double nearest 2/sqrt(pi), so a small x
+    has the error of that one round, and Q1 to Q7 are the minimax polynomial
+    of (erf(x)/x - 2/sqrt(pi)) / z for the relative error of erf.  Interval i
+    covers [i/16, (i + 1)/16) for i from ERF_FLOAT_FIRST, and the last one
+    holds the first x whose erf rounds to 1 in float.  For each, the minimax
+    polynomial of degree ERF_FLOAT_DEGREE in the offset from the center, for
+    the relative error of erf.  O(intervals * remez).
     """
+    two_over_root_pi = 2 / mp.sqrt(mp.pi)
+
+    def ratio(point: Any) -> Any:
+        if point == 0:
+            return two_over_root_pi
+        root = mp.sqrt(point)
+        return mp.erf(root) / root
+
+    def small_target(point: Any) -> Any:
+        if point == 0:
+            return -two_over_root_pi / 3
+        return (ratio(point) - two_over_root_pi) / point
+
+    def small_weight(point: Any) -> Any:
+        return point / ratio(point)
+
+    print(f"// float Q0 = {hex_double(round_double(two_over_root_pi))}")
+    fit_and_print("float Q", small_target, small_weight, mp.mpf(0), mp.mpf(1) / 4, ERF_FLOAT_SMALL_DEGREE - 1, 1)
     width = mp.mpf(1) / 16
     half = width / 2
     largest = mp.mpf(0)
