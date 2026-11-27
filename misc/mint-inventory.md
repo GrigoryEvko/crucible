@@ -338,9 +338,9 @@ that the axis does not apply to the row.
 | `mint_address_key` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 3 |
 | `mint_arena_parcel` | `include/foundation/core/ArenaFrame.h` | Y | - | Y | Y | token | · | HS14: 3 |
 | `mint_bit_set_from_bits` | `include/foundation/core/BitSet.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_box` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 37 |
-| `mint_box(T0_1, T0_2&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 37 |
-| `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 37 |
+| `mint_box` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 38 |
+| `mint_box(T0_1, T0_2&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 38 |
+| `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 38 |
 | `mint_box_built` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 33 |

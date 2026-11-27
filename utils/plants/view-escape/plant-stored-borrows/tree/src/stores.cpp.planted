@@ -65,7 +65,7 @@ class SenseKeeper {
 public:
     void attach(fc::Box<Probe>&& box) noexcept {
         fc::Box<Probe> local{std::move(box)};
-        view_ = fc::Option<fc::Ref<Probe const>>::some(fc::erase_brand(std::as_const(local).view()));
+        view_ = fc::Option<fc::Ref<Probe const>>::some(fc::erase_brand(fc::to(*std::as_const(local))));
         held_ = fc::Option<fc::Box<Probe>>::some(std::move(local));
     }
 

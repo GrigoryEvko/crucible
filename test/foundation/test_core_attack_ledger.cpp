@@ -34,18 +34,19 @@ using ::foundation::core::ViewCursor;
 
 // ── Entry: a borrow outlives its owner ───────────────────────────────
 //
-// A View, a cursor of a View and a borrow of a Box carry no lifetime.  A
-// copy of a View that the caller keeps after its mapping unmaps, or a Ref
-// from Box::view() that the caller keeps after a move assignment to the
-// Box, reads freed memory.  The deleted rvalue overloads refuse only a
-// borrow of a temporary owner.  The fix needs a lifetime that the type
-// carries, which C++ does not have.
+// A View and a cursor of a View carry no lifetime.  A copy of a View that
+// the caller keeps after its mapping unmaps reads freed memory.  The deleted
+// rvalue overloads refuse only a borrow of a temporary owner.  The fix needs
+// a lifetime that the type carries, which C++ does not have.  A Box gives no
+// Ref of its object, so a Ref that outlives a move assignment to the Box
+// comes from no door of the Box: the frames with_mut and with_view lend the
+// object only for the time of a call.
 static_assert(std::is_trivially_copy_constructible_v<View<int>>);
 static_assert(std::is_copy_constructible_v<ViewCursor<int>>);
 static_assert(std::is_move_assignable_v<Box<int>>);
-template <class T, class Brand>
-T target_of(::foundation::core::Ref<T, Brand>);
-static_assert(std::is_same_v<decltype(target_of(std::declval<Box<int>&>().view())), int>);
+template <class B>
+concept GivesRef = requires(B& box) { box.view(); };
+static_assert(!GivesRef<Box<int>> && !GivesRef<Box<int> const>);
 
 // ── Entry: a match arm writes the sum that it reads ──────────────────
 //

@@ -1,11 +1,11 @@
 // A borrow of a temporary Box dangles at the end of the full expression,
 // because the destructor of the Box frees the object.  The rvalue overload
-// of view() is deleted.
+// of operator* is deleted.
 
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 
 int main() {
-    auto const dangling = ::foundation::core::mint_box<int>(::foundation::effects::testing::test().alloc, 1).view();
-    return *dangling;
+    int const& dangling = *::foundation::core::mint_box<int>(::foundation::effects::testing::test().alloc, 1);
+    return dangling;
 }

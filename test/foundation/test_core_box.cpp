@@ -52,6 +52,23 @@ struct Pair {
     int second = 0;
 };
 
+// True when a Box of the reference kind gives a Ref of its object.
+template <class BoxReference>
+concept gives_view = requires(BoxReference&& box) { static_cast<BoxReference&&>(box).view(); };
+
+// The control of gives_view: a class with a member view().
+struct ViewControl {
+    [[nodiscard]] int view() const noexcept { return 0; }
+};
+static_assert(gives_view<ViewControl&> && gives_view<ViewControl const&>);
+
+// The address of the object of a Box, read in the read frame of the Box.
+template <class T>
+[[nodiscard]] ::foundation::core::Address address_in(Box<T> const& box) noexcept {
+    return ::foundation::core::with_view(
+        box, [](T const& object) noexcept { return ::foundation::core::address_of(::foundation::core::to(object)); });
+}
+
 void test_mint_and_access() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     Box<int> number = mint_box<int>(alloc, 41);
@@ -64,18 +81,18 @@ void test_mint_and_access() {
     pair->second = 5;
     Box<Pair> const& fixed_pair = pair;
     CRUCIBLE_FATAL_INVARIANT(fixed_pair->second == 5 && (*fixed_pair).first == 3);
-    CRUCIBLE_FATAL_INVARIANT(fixed_pair.view()->second == 5);
+    CRUCIBLE_FATAL_INVARIANT(
+        ::foundation::core::with_view(fixed_pair, [](Pair const& object) noexcept { return object.second; }) == 5);
 
     Box<int> zero = mint_box<int>(alloc);
     CRUCIBLE_FATAL_INVARIANT(*zero == 0);
 
-    // A Ref from view() reaches the object of the Box, and a write through
-    // it shows through the Box.  Each call of view() gives a brand of its own.
-    auto const pair_ref = pair.view();
-    static_assert(!std::is_same_v<decltype(pair.view()), decltype(pair.view())>);
-    pair_ref->first = 8;
-    CRUCIBLE_FATAL_INVARIANT(pair->first == 8);
-    CRUCIBLE_FATAL_INVARIANT(::foundation::core::same_object(pair_ref, fixed_pair.view()));
+    // The frame door lends the object to a body that writes it, and the write
+    // shows through the Box that the door gives back.  A Box gives no Ref of
+    // its object.
+    static_assert(!gives_view<Box<Pair>&> && !gives_view<Box<Pair> const&> && !gives_view<Box<Pair>>);
+    pair = ::foundation::core::with_mut(std::move(pair), [](Pair& object) noexcept { object.first = 8; });
+    CRUCIBLE_FATAL_INVARIANT(pair->first == 8 && fixed_pair->first == 8);
 }
 
 void test_destruction_counts() {
@@ -191,7 +208,11 @@ void test_borrow_of_moved_from_aborts(::fixy::TestRunnerCtx const& test) {
     Box<int> source = mint_box<int>(::foundation::effects::testing::test().alloc, 2);
     Box<int> target{std::move(source)};
     ::fixy::check::expect_dies(
-        test, [&source] noexcept { static_cast<void>(source.view()); },
+        test,
+        [&source] noexcept {
+            static_cast<void>(
+                ::foundation::core::with_mut(std::move(source), [](int& object) noexcept { return object; }));
+        },
         ::foundation::core::TextView{
             "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
     ::fixy::check::expect_dies(
@@ -200,7 +221,11 @@ void test_borrow_of_moved_from_aborts(::fixy::TestRunnerCtx const& test) {
             "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
     Box<int> const& fixed_source = source;
     ::fixy::check::expect_dies(
-        test, [&fixed_source] noexcept { static_cast<void>(fixed_source.view()); },
+        test,
+        [&fixed_source] noexcept {
+            static_cast<void>(
+                ::foundation::core::with_view(fixed_source, [](int const& object) noexcept { return object; }));
+        },
         ::foundation::core::TextView{
             "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
     ::fixy::check::expect_dies(
@@ -314,7 +339,7 @@ void test_box_at_alignment() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     for (std::uint64_t trial = 0; trial < 8; ++trial) {
         Box<AlignedValue<Alignment>> held = mint_box<AlignedValue<Alignment>>(alloc, AlignedValue<Alignment>{trial});
-        CRUCIBLE_FATAL_INVARIANT(::foundation::core::address_of(held.view()).template is_aligned<Alignment>());
+        CRUCIBLE_FATAL_INVARIANT(address_in(held).template is_aligned<Alignment>());
         CRUCIBLE_FATAL_INVARIANT(held->value == trial);
     }
 }
@@ -502,7 +527,7 @@ void test_word_round_trip(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
     {
         Box<CountedObject> sent = mint_box<CountedObject>(alloc, 21);
-        ::foundation::core::Address const address = ::foundation::core::address_of(sent.view());
+        ::foundation::core::Address const address = address_in(sent);
         ::foundation::core::BoxWord<CountedObject, WordCourier> const word = WordCourier::send(std::move(sent));
         CRUCIBLE_FATAL_INVARIANT(!word.is_empty());
         CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
@@ -510,7 +535,7 @@ void test_word_round_trip(::fixy::TestRunnerCtx const& test) {
             test, [&sent] { static_cast<void>(*sent); }, "a borrow of a Box that holds no object");
 
         Box<CountedObject> received = WordCourier::receive(word);
-        CRUCIBLE_FATAL_INVARIANT(::foundation::core::address_of(received.view()) == address);
+        CRUCIBLE_FATAL_INVARIANT(address_in(received) == address);
         CRUCIBLE_FATAL_INVARIANT(received->label() == 21);
         CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
     }
@@ -543,7 +568,7 @@ void test_word_borrow(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
     {
         Box<CountedObject> sent = mint_box<CountedObject>(alloc, 5);
-        ::foundation::core::Address const address = ::foundation::core::address_of(sent.view());
+        ::foundation::core::Address const address = address_in(sent);
         ::foundation::core::BoxWord<CountedObject, WordCourier> const word = WordCourier::send(std::move(sent));
         CRUCIBLE_FATAL_INVARIANT(WordCourier::address_of(word) == address);
         CRUCIBLE_FATAL_INVARIANT(WordCourier::label_of(word) == 5);
@@ -552,7 +577,7 @@ void test_word_borrow(::fixy::TestRunnerCtx const& test) {
         CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
 
         Box<CountedObject> received = WordCourier::receive(word);
-        CRUCIBLE_FATAL_INVARIANT(::foundation::core::address_of(received.view()) == address);
+        CRUCIBLE_FATAL_INVARIANT(address_in(received) == address);
         CRUCIBLE_FATAL_INVARIANT(received->label() == 8);
         CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
     }

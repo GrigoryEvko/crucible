@@ -4125,8 +4125,13 @@ foundation_neg_compile_test(neg_core_box_word_of_linear_payload
   "no matching function for call to .foundation::core::Box<foundation::core::Hole<8, 8> >::release_to_word\\(foundation::core::box_word_key<Channel>\\)."
   "required for the satisfaction of .DroppableBoxPayload<T>. \\[with T = foundation::core::Hole<8, 8>\\]")
 foundation_neg_compile_test(neg_core_box_borrow_of_temporary
-  "use of deleted function .void foundation::core::Box<T>::view\\(\\) && \\[with T = int\\]."
+  "use of deleted function .T& foundation::core::Box<T>::operator\\*\\(\\) && \\[with T = int\\]."
   "a borrow of a temporary Box dangles at the end of the full expression")
+# A Box gives no Ref of its object, so no kept Ref outlives a move or the end
+# of the Box.
+foundation_neg_compile_test(neg_core_box_gives_no_view
+  "use of deleted function .void foundation::core::Box<T>::view\\(Arguments&& ...\\) const"
+  "a Box gives no Ref of its object, because a later move or end of the Box ends the object that the Ref names")
 foundation_neg_compile_test(neg_core_box_consume_lvalue
   "passing .foundation::core::Box<int>. as .this. argument discards qualifiers"
   "in call to .T foundation::core::Box<T>::consume\\(\\) && \\[with Payload = int; T = int\\].")
@@ -4228,12 +4233,6 @@ foundation_neg_compile_test(neg_core_box_mint_forged_body
 foundation_neg_compile_test(neg_core_address_of_forged_body
   "no matching function for call to .foundation::core::Address::Address\\(<brace-enclosed initializer list>\\)."
   "candidate expects 2 arguments, 1 provided")
-foundation_neg_compile_test(neg_core_box_view_brand_by_address
-  "no matches converting function .view. to type .class foundation::core::Ref<int, HeldBrand> \\(class foundation::core::Box<int>::\\*\\)\\(\\) & noexcept."
-  "foundation::core::Ref<T, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> foundation::core::Box<T>::view\\(\\) &")
-foundation_neg_compile_test(neg_core_box_const_view_brand_by_address
-  "no matches converting function .view. to type .class foundation::core::Ref<const int, HeldBrand> \\(class foundation::core::Box<int>::\\*\\)\\(\\) const & noexcept."
-  "foundation::core::Ref<const T, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> foundation::core::Box<T>::view\\(\\) const &")
 
 # ── The Atomic family ─────────────────────────────────────────────────
 #

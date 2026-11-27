@@ -51,10 +51,11 @@
 // allocates the storage itself.  So no pointer that a caller holds becomes
 // a Box, and the destructor frees only storage that a Box allocated.
 //
-// operator* and operator-> give a borrow of the object, and view() gives
-// the borrow as a Ref with the fresh brand of the call.  The overloads for
+// operator* and operator-> give a borrow of the object.  The overloads for
 // an rvalue are deleted, because a borrow of a temporary Box dangles at the
-// end of the full expression.  consume() moves the object out of a Box that
+// end of the full expression.  A Box gives no Ref of its object: a Ref
+// outlives the call that gives it, and a later move or end of the Box ends
+// the object that the Ref names.  consume() moves the object out of a Box that
 // the caller gives up, and frees the storage.  The frame door
 // with_mut(std::move(box), body) lends the object to a body while the Box is
 // in the frame of the door, so no move or end of the Box can come while the
@@ -65,8 +66,9 @@
 // C++ keeps a moved-from object alive, and no type can refuse its use.  So
 // each access tests for the object in each build, and a Box with no object
 // ends the process through fatal().  The test is one compare with a branch
-// to a cold call.  A loop that reads the object many times takes one Ref
-// with view() before the loop, and the Ref has no test.
+// to a cold call.  A loop that reads the object many times runs in the body
+// of with_view or of with_mut, which test the Box one time and lend the
+// object as a reference with no test.
 //
 // A Box moves to another thread through a ring of cells as a BoxWord (the
 // word of a Box below).  release_to_word gives the object to a word of an
@@ -511,8 +513,9 @@ struct StaticStorageBrand final {};
 template <class T>
 concept BoxPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>;
 
-// The owner of one object on the heap (the definition below).  RefDoor names
-// it as a friend for view(), so this declaration stands before the door.
+// The owner of one object on the heap (the definition below).  BoxWord names
+// it as a friend and BoxState names its type, so this declaration stands
+// before them.
 template <BoxPayload T>
 class Box;
 
@@ -588,9 +591,10 @@ template <RefTarget T, ::foundation::brand::IsBrand Brand>
 // The door of the constructor of a Ref from an object.  Its one member is
 // private, and each friend names the proof of the object and of the brand:
 //   - to() gives the brand of a branded object or the fresh brand of its call.
-//   - as_ref, erase_brand and view() of a Box give the payload of an Option,
-//     the object of a Ref and the object of a Box, with the fresh brand of
-//     their call or with the erased brand.
+//   - as_ref and erase_brand give the payload of an Option and the object of a
+//     Ref, with the fresh brand of their call or with the erased brand.
+//   - borrow of a BoxWord gives the object of the word to a member of its
+//     authority, with the fresh brand of its call.
 //   - ref_of_word_ takes the key of the word of a cell, and only a cell builds
 //     the key, from a word that to_word gave for a Ref of the brand.
 //   - ref_of_static takes the object as its template argument, which proves
@@ -612,8 +616,6 @@ class RefDoor final : ::foundation::NoObject<RefDoor> {
         -> Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>;
     template <RefTarget T, ErasableBrand Brand>
     friend constexpr auto ::foundation::core::erase_brand(Ref<T, Brand> ref) noexcept;
-    template <BoxPayload T>
-    friend class ::foundation::core::Box;
     template <BoxPayload T, class Authority>
         requires std::is_class_v<Authority>
     friend class ::foundation::core::BoxWord;
@@ -1444,23 +1446,15 @@ public:
     [[nodiscard]] T* operator->() & noexcept { return held_(); }
     [[nodiscard]] T const* operator->() const& noexcept { return held_(); }
 
-    // The borrow of the whole object as a Ref with the fresh brand of the
-    // call.  The Ref has no test, so a loop reads the object through it at
-    // the cost of a raw pointer.  The pack refuses each explicit argument, so
-    // no caller names the brand.  The result type names the brand through
-    // undeducible_brand_t, so the address of view with a target type that
-    // names a different brand deduces no brand, and it matches no overload.
-    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-        requires(sizeof...(Refused) == 0)
-    [[nodiscard]] Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>> view() & noexcept {
-        return detail::RefDoor::lend<Fresh>(*held_());
-    }
-    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-        requires(sizeof...(Refused) == 0)
-    [[nodiscard]] Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>> view() const& noexcept {
-        T const& object = *held_();
-        return detail::RefDoor::lend<Fresh>(object);
-    }
+    // A Box gives no Ref of its object.  A Ref outlives the call that gives
+    // it, so a move assignment or the end of the Box would end the object
+    // that a kept Ref names.  The frame door with_mut and the read frame
+    // with_view lend the object for the time of a call, and their result
+    // holds no borrow.
+    template <class... Arguments>
+    void view(Arguments&&... arguments) const =
+        delete("a Box gives no Ref of its object, because a later move or end of the Box ends the object that the Ref "
+               "names: lend the object with with_mut(std::move(box), body) or with_view(box, body)");
 
     // Moves the object out, destroys the moved-from object, and frees the
     // storage.  The Box holds no object before the move starts, so code of the
@@ -1479,8 +1473,6 @@ public:
         return taken;
     }
 
-    void view() && = delete("a borrow of a temporary Box dangles at the end of the full expression");
-    void view() const&& = delete("a borrow of a temporary Box dangles at the end of the full expression");
     T& operator*() && = delete("a borrow of a temporary Box dangles at the end of the full expression");
     T const& operator*() const&& = delete("a borrow of a temporary Box dangles at the end of the full expression");
     T* operator->() && = delete("a borrow of a temporary Box dangles at the end of the full expression");

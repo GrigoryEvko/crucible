@@ -68,6 +68,13 @@ using ::foundation::core::Hole;
 using ::foundation::core::mint_box;
 using ::foundation::core::mint_hole;
 
+// The address of the object of a Box, read in the read frame of the Box.
+template <class T>
+[[nodiscard]] ::foundation::core::Address address_in(Box<T> const& box) noexcept {
+    return ::foundation::core::with_view(
+        box, [](T const& object) noexcept { return ::foundation::core::address_of(::foundation::core::to(object)); });
+}
+
 // The count of live Counted objects.  A Box in a Hole must destroy each
 // object one time and leak none.
 int live_objects = 0;
@@ -124,10 +131,10 @@ void test_steps_take_one_allocation() {
 void test_box_keeps_the_storage_of_the_hole() {
     CountedHole hole = mint_hole<sizeof(Counted), alignof(Counted)>(::foundation::effects::testing::test().alloc);
     Box<Counted> first = mint_box<Counted>(std::move(hole), std::uint64_t{1});
-    auto const first_address = ::foundation::core::address_of(first.view());
+    auto const first_address = address_in(first);
     CountedHole again = mint_hole(std::move(first));
     Box<Counted> second = mint_box<Counted>(std::move(again), std::uint64_t{2});
-    CRUCIBLE_FATAL_INVARIANT(::foundation::core::address_of(second.view()) == first_address);
+    CRUCIBLE_FATAL_INVARIANT(address_in(second) == first_address);
     CRUCIBLE_FATAL_INVARIANT(second->label() == 2);
 }
 
@@ -174,7 +181,7 @@ void test_hole_at_alignment() {
     using Value = AlignedValue<Alignment>;
     auto hole = mint_hole<sizeof(Value), alignof(Value)>(::foundation::effects::testing::test().alloc);
     Box<Value> box = mint_box<Value>(std::move(hole), Value{Alignment});
-    CRUCIBLE_FATAL_INVARIANT(::foundation::core::address_of(box.view()).template is_aligned<Alignment>());
+    CRUCIBLE_FATAL_INVARIANT(address_in(box).template is_aligned<Alignment>());
     CRUCIBLE_FATAL_INVARIANT(box->value == Alignment);
 }
 

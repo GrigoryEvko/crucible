@@ -17,7 +17,7 @@ finding stores view-escape stored-borrow src/stores.cpp:36:27 | borrow of the lo
 finding stores view-escape stored-borrow src/stores.cpp:43:55 | borrow of the local local into the object of the member function
 finding stores view-escape stored-borrow src/stores.cpp:52:46 | borrow of the parameter list into the object of the member function
 finding stores view-escape stored-borrow src/stores.cpp:61:50 | borrow of the local local into the static kept
-finding stores view-escape stored-borrow src/stores.cpp:68:100 | borrow of the local local into the object of the member function
+finding stores view-escape stored-borrow src/stores.cpp:68:102 | borrow of the local local into the object of the member function
 finding stores process-wide-state unmarked-static src/stores.cpp:59:32 | planted::keep_in_static()::kept
 finding stores view-escape static-borrow src/stores.cpp:59:32 | planted::keep_in_static()::kept
 error stores src/stores.cpp:31 | this function stores a borrow of the local local into the parameter out, and the borrowed object ends with the frame of the function

@@ -489,25 +489,22 @@ static_assert(!AsksAlignment<Address, 24>);
 
 // ── Box ────────────────────────────────────────────────────────────────
 
-// A borrow of a temporary Box is refused.
+// A Box gives no Ref of its object: not from a Box, a const Box or a
+// temporary Box.  It lends the object through the dereference and the two
+// frames, with_mut and with_view, only.
 template <class B>
 concept BorrowsFromTemporary = requires(B&& box) { static_cast<B&&>(box).view(); };
 template <class B>
 concept BorrowsFromLvalue = requires(B& box) { box.view(); };
 static_assert(!BorrowsFromTemporary<Box<int>>);
-static_assert(BorrowsFromLvalue<Box<int>>);
-
-// view() gives a Ref of the object, and a Ref of a const object from a
-// const Box.  Each call gives a fresh brand, and no caller names it.  The
-// Box borrows through view() and the dereference only.
-static_assert(std::is_same_v<decltype(target_of(std::declval<Box<int>&>().view())), Target<int>>);
-static_assert(std::is_same_v<decltype(target_of(std::declval<Box<int> const&>().view())), Target<int const>>);
-static_assert(!std::is_same_v<decltype(std::declval<Box<int>&>().view()), decltype(std::declval<Box<int>&>().view())>);
-static_assert(::foundation::brand::IsFreshBrand<decltype(brand_of(std::declval<Box<int>&>().view()))>);
-template <class B>
-concept ViewNamesBrand = requires(B& box) { box.template view<CheckBrand>(); };
-static_assert(!ViewNamesBrand<Box<int>>);
+static_assert(!BorrowsFromLvalue<Box<int>> && !BorrowsFromLvalue<Box<int> const>);
 static_assert(!HasGet<Box<int>>);
+
+// The control of BorrowsFromLvalue: a class with a member view().
+struct ViewControl {
+    [[nodiscard]] int view() const noexcept;
+};
+static_assert(BorrowsFromLvalue<ViewControl> && BorrowsFromLvalue<ViewControl const>);
 
 // ── Hole ───────────────────────────────────────────────────────────────
 

@@ -358,20 +358,24 @@ int main() {
         // then its first element.
         ::fixy::View<uint64_t const, 1024> const inserted = inserted_hashes->view();
         ::fixy::View<uint64_t const, 1024> const absent = absent_hashes->view();
+        // The two rows run in the read frame of the table, so each probe
+        // reads the table through a reference that the frame tested one time.
         uint32_t hit_idx = 0;
-        bench::add_report(reports, bench::run(name_hit, [&, t = table.view()] {
-                              bool found = t->find(
-                                  inserted.at(::fixy::Index<1024>::check(hit_idx & 1023).expect("a mask of 10 bits")));
-                              bench::do_not_optimize(found);
-                              ++hit_idx;
-                          }));
         uint32_t miss_idx = 0;
-        bench::add_report(reports, bench::run(name_miss, [&, t = table.view()] {
-                              bool found = t->find(
-                                  absent.at(::fixy::Index<1024>::check(miss_idx & 1023).expect("a mask of 10 bits")));
-                              bench::do_not_optimize(found);
-                              ++miss_idx;
-                          }));
+        ::foundation::core::with_view(table, [&](MiniSwissTable const& probed) noexcept {
+            bench::add_report(reports, bench::run(name_hit, [&] {
+                                  bool found = probed.find(inserted.at(
+                                      ::fixy::Index<1024>::check(hit_idx & 1023).expect("a mask of 10 bits")));
+                                  bench::do_not_optimize(found);
+                                  ++hit_idx;
+                              }));
+            bench::add_report(reports, bench::run(name_miss, [&] {
+                                  bool found = probed.find(absent.at(
+                                      ::fixy::Index<1024>::check(miss_idx & 1023).expect("a mask of 10 bits")));
+                                  bench::do_not_optimize(found);
+                                  ++miss_idx;
+                              }));
+        });
     };
 
     bench_probe_at("25% load", 0.25);

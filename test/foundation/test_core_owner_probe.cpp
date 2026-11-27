@@ -267,7 +267,11 @@ struct BoxProbe {
                 ::foundation::core::TextView{
                     "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
             expect_dies(
-                test, [&source] noexcept { static_cast<void>(through(source).view()); },
+                test,
+                [&source] noexcept {
+                    static_cast<void>(::foundation::core::with_view(
+                        through(source), [](BoxNode const& node) noexcept { return node.label; }));
+                },
                 ::foundation::core::TextView{
                     "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
         }
