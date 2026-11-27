@@ -56,6 +56,17 @@ static_assert(Sets<Kinds, Tags> && !Sets<Kinds, Other>);
 static_assert(std::is_same_v<decltype(Kinds::from_bits(0)), Option<Kinds>>);
 static_assert(std::is_same_v<decltype(Kinds{}.with<Data>(0)), Option<Kinds>>);
 
+// with_fitting takes only a tag of the layout and an unsigned value whose type
+// has no more bits than the field, and it gives the word itself.
+template <class Word, class Tag, class Value>
+concept Fits = requires(Word const& word, Value value) { word.template with_fitting<Tag>(value); };
+static_assert(Fits<Kinds, Tags, std::uint8_t> && Fits<Kinds, Tags, std::uint8_t const>);
+static_assert(!Fits<Kinds, Tags, std::uint16_t> && !Fits<Kinds, Data, std::uint8_t>);
+static_assert(!Fits<Kinds, Tags, std::int8_t> && !Fits<Kinds, Tags, bool> && !Fits<Kinds, Tags, char>);
+static_assert(!Fits<Kinds, Other, std::uint8_t> && !Fits<Kinds, Tags, int>);
+static_assert(Fits<Wide, Tags, std::uint32_t> && !Fits<Wide, Data, std::uint32_t> && Fits<Byte, Data, std::uint8_t>);
+static_assert(std::is_same_v<decltype(Kinds{}.with_fitting<Tags>(std::uint8_t{0})), Kinds>);
+
 // A layout with a free bit has a niche, so its Option is one word.  A layout
 // that fills its word has none, and its Option holds a flag.
 static_assert(sizeof(Option<Kinds>) == sizeof(Kinds) && sizeof(Option<Byte>) > sizeof(Byte));
@@ -73,13 +84,16 @@ static_assert(sizeof(Option<Wide>) > sizeof(Wide));
     Wide const wide = Wide{}.with<Data>(std::uint32_t{0xFFFFFFu}).expect("24 bits hold the value");
     bool const is_top = wide.bits() == 0xFFFFFF0000000000ull && wide.get<Tags>() == 0;
     Byte const byte = Byte{}.with<Data>(std::uint8_t{0xFF}).expect("a field of the whole word holds each value");
+    Kinds const fitted = word.with_fitting<Tags>(std::uint8_t{0x0F});
+    bool const is_fitted = fitted.bits() == 0x780Fu && fitted.get<Data>() == 0x1Eu
+                        && Byte{}.with_fitting<Data>(std::uint8_t{0xA5}).bits() == 0xA5u;
     // The niche of the word: the empty Option of each door, and the full
     // Option of the highest word that the fields hold.
     bool const is_niche_kept = Kinds::from_bits(0x7FFFu).is_some() && Kinds{}.with<Data>(std::uint8_t{0x1F}).is_some()
                             && Kinds::from_bits(0xFFFFu).is_none();
     return Kinds{}.bits() == 0 && is_split && is_word_refused && is_changed && is_value_refused && is_top
         && byte.get<Data>() == 0xFF && !(word == changed) && word == Kinds::from_bits(0x7ABCu).expect("as above")
-        && is_niche_kept;
+        && is_niche_kept && is_fitted;
 }
 static_assert(operates());
 

@@ -5432,6 +5432,14 @@ foundation_neg_compile_test(neg_core_packed_word_tag_twice
 foundation_neg_compile_test(neg_core_packed_word_tag_of_no_field
   "no matching function for call to .foundation::core::PackedWord<short unsigned int, foundation::core::BitField<Tags, 10>, foundation::core::BitField<Data, 5> >::get<Other>\\(\\) const."
   "required for the satisfaction of .NamesOneField<Tag, Fields \\.\\.\\.>. \\[with Tag = Other;")
+# with_fitting takes only an unsigned value whose type has no more bits than
+# the field: a wider type and a signed type do not compile.
+foundation_neg_compile_test(neg_core_packed_word_fitting_wider_value
+  "no matching function for call to .*with_fitting<Data>\\(uint8_t\\)."
+  "the expression .sizeof \\(Value\\) \\* 8 <= \\(width_of_<Tag>\\) \\[with Value = unsigned char;.* Tag = Data\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_packed_word_fitting_signed_value
+  "no matching function for call to .*with_fitting<Tags>\\(int8_t\\)."
+  "UnsignedInteger<Value>.*\\[with Value = signed char\\]")
 
 # A SlotMap gives each value a key of its slot and its generation, refuses a
 # stale, a forged or a removed key, retires a slot at the wrap of its

@@ -39,6 +39,18 @@ void test_operations() {
     CRUCIBLE_FATAL_INVARIANT(full.bits() == 0x8000000000000000ull && full.get<Data>() == 0 && full.get<Flag>() == 1);
 }
 
+// with_fitting writes a value whose type fits its field, keeps each other
+// field, and gives the word that with gives for the same value.
+void test_fitting_writes() {
+    Kinds const word = Kinds::from_bits(0x7ABCu).expect("the word holds only the bits of the fields");
+    Kinds const tagged = word.with_fitting<Tags>(std::uint8_t{0xFF});
+    CRUCIBLE_FATAL_INVARIANT(tagged.bits() == 0x78FFu && tagged.get<Tags>() == 0xFFu && tagged.get<Data>() == 0x1Eu);
+    CRUCIBLE_FATAL_INVARIANT(tagged == word.with<Tags>(std::uint16_t{0xFF}).expect("ten bits hold 0xFF"));
+    Full const full = Full{}.with_fitting<Data>(std::uint16_t{0xFFFF}).with_fitting<Tags>(std::uint32_t{0xFFFFFFFFu});
+    CRUCIBLE_FATAL_INVARIANT(full.bits() == 0x0001FFFEFFFFFFFFull && full.get<Flag>() == 0);
+    CRUCIBLE_FATAL_INVARIANT(full.get<Data>() == 0xFFFFu && full.get<Tags>() == 0xFFFFFFFFu);
+}
+
 // from_bits refuses a word with a bit above the last field, and with refuses
 // a value with a bit past the width of its field.  A refusal changes nothing.
 void test_refusals() {
@@ -64,6 +76,9 @@ void test_against_the_hand_written_word() {
         for (Kinds const word : Kinds::from_bits(raw)) {
             is_parsed = true;
             CRUCIBLE_FATAL_INVARIANT(word.get<Tags>() == (raw & 0x3FFu) && word.get<Data>() == ((raw >> 10) & 0x1Fu));
+            auto const byte = static_cast<std::uint8_t>(stream.below(0x100u));
+            CRUCIBLE_FATAL_INVARIANT(word.with_fitting<Tags>(byte).bits()
+                                     == static_cast<std::uint16_t>((raw & ~0x3FFu) | byte));
             auto const tags = static_cast<std::uint16_t>(stream.below(0x800u));
             bool is_tagged = false;
             for (Kinds const tagged : word.with<Tags>(tags)) {
@@ -88,6 +103,7 @@ void test_against_the_hand_written_word() {
 
 int main() {
     test_operations();
+    test_fitting_writes();
     test_refusals();
     test_against_the_hand_written_word();
     return 0;

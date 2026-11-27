@@ -30,6 +30,13 @@
 //   with<Tag>(value)        the same word with the field of Tag set to value,
 //                           or no value when value holds a bit past the width
 //                           of the field.  One compare, a mask and an or
+//   with_fitting<Tag>(value)  the same word with the field of Tag set to
+//                           value, for an unsigned value whose type has no
+//                           more bits than the field.  The type proves the
+//                           fit, so the write has no test and gives the word
+//                           itself.  A mask and an or.  A signed value or a
+//                           wider type does not compile: a signed source goes
+//                           through one explicit conversion at the call
 //   ==                      true when the two words are equal
 //
 // A PackedWord is trivially copyable, with the size, the alignment and the
@@ -205,6 +212,18 @@ public:
         std::uint64_t const placed =
             (std::uint64_t{bits_} & used_bits_ & ~mask_of_<Tag>) | (std::uint64_t{value} << shift_of_<Tag>);
         return Result::some(PackedWord{detail::packed_word_from_<Word>(placed)});
+    }
+
+    // The same word with the field of Tag set to value, for an unsigned value
+    // whose type has no more bits than the field.  The constraint proves that
+    // each value fits, so the write has no test and gives the word itself.
+    // The mask of the used bits keeps each free bit zero, as with does.
+    template <class Tag, class Value>
+        requires NamesOneField<Tag, Fields...> && UnsignedInteger<Value> && (sizeof(Value) * 8 <= width_of_<Tag>)
+    [[nodiscard]] constexpr PackedWord with_fitting(Value value) const noexcept {
+        std::uint64_t const placed =
+            (std::uint64_t{bits_} & used_bits_ & ~mask_of_<Tag>) | (std::uint64_t{value} << shift_of_<Tag>);
+        return PackedWord{detail::packed_word_from_<Word>(placed)};
     }
 
     [[nodiscard]] friend constexpr bool operator==(PackedWord left, PackedWord right) noexcept {
