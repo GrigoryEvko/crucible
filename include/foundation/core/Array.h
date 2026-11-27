@@ -1502,8 +1502,14 @@ struct HeapArrayState {
         return HeapArrayState{};
     }
 
-    static constexpr void release(HeapArrayState const& state) noexcept {
-        release_heap_elements_<T, Align>(state.first, state.count);
+    // Ends the elements and gives the storage back.  The test of null
+    // storage always inlines, so the release of a state that a move or a take
+    // emptied folds to no code in its caller, such as a move assignment into
+    // an emptied array.  The body of the release can stay out of line.
+    CRUCIBLE_INLINE static constexpr void release(HeapArrayState const& state) noexcept {
+        if (state.first != nullptr) {
+            release_heap_elements_<T, Align>(state.first, state.count);
+        }
     }
 };
 
