@@ -8,10 +8,11 @@
 // platforms. Every operation below is +, -, *, a fused multiply-add,
 // sqrt, an absolute value, a sign copy, a comparison, a conversion or a
 // bit_cast. IEEE 754 requires the fused multiply-add and sqrt to be
-// correctly rounded, so std::fma and std::sqrt are the two library calls
-// that give the same bits everywhere.
+// correctly rounded, so fp::fma and fp::sqrt of the base give the same
+// bits everywhere: the instruction where the target has one, and the exact
+// software form of the base where it does not.
 //
-// Every product that feeds a sum is one std::fma. The compiler may fuse
+// Every product that feeds a sum is one fp::fma. The compiler may fuse
 // a written a * b + c into one operation under -ffp-contract=on or
 // -ffp-contract=fast, when the target has a fused instruction, and leave
 // it as two roundings otherwise. The same source then gives different
@@ -27,7 +28,7 @@
 //
 // Design notes:
 //
-//  1. Every function is constexpr.  C++26 makes std::sqrt usable in a
+//  1. Every function is constexpr.  fp::fma and fp::sqrt are usable in a
 //     constant expression, so the pinned values are static assertions
 //     rather than a function that computes them and discards the result.
 //     They are in test/layer/checks/fixy/fp/Polynomial.cpp, and one
@@ -59,7 +60,6 @@
 
 #include <array>
 #include <bit>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -68,14 +68,14 @@ namespace fixy::fp {
 namespace detail {
 
 // Evaluates coefficients[0] + point * (coefficients[1] + point * (...)) in
-// Horner form, one std::fma for each step.  O(N) in the number of
+// Horner form, one fp::fma for each step.  O(N) in the number of
 // coefficients.
 template <std::size_t N>
 [[nodiscard]] constexpr float horner(float point, const std::array<float, N>& coefficients) noexcept {
     static_assert(N >= 2, "a Horner chain needs a constant term and at least one more coefficient");
     float sum = coefficients[N - 1];
     for (std::size_t k = N - 1; k-- > 0;) {
-        sum = std::fma(point, sum, coefficients[k]);
+        sum = ::fixy::fp::fma(point, sum, coefficients[k]);
     }
     return sum;
 }
@@ -120,7 +120,9 @@ inline constexpr std::array<float, 5> kCosSeries{
 // restores the implicit leading one of the significand.  A zero, a
 // subnormal, an infinity and a NaN each break that reading, and the sign
 // bit is masked away, so each would give a wrong value, not a trap.
-[[nodiscard]] constexpr bool is_positive_normal(float value) noexcept { return std::isnormal(value) && value > 0.0f; }
+[[nodiscard]] constexpr bool is_positive_normal(float value) noexcept {
+    return ::fixy::fp::is_normal(value) && value > 0.0f;
+}
 
 // Splitting the argument into 2^e * m leaves m in [1, 2), and the second
 // reduction to [sqrt(2)/2, sqrt(2)] is what keeps the series usable.
@@ -151,7 +153,7 @@ inline constexpr std::array<float, 5> kCosSeries{
     const float log_mantissa = offset * detail::horner(-offset, detail::kLogSeries);
 
     const float ln2 = 0x1.62E430p-1f;  // log(2)
-    return std::fma(static_cast<float>(exponent), ln2, log_mantissa);
+    return ::fixy::fp::fma(static_cast<float>(exponent), ln2, log_mantissa);
 }
 
 // One turn, 2*pi as a float.  It is exactly four times the float pi/2 of
@@ -171,7 +173,7 @@ inline constexpr float kOneTurn = 0x1.921FB6p+2f;
 // multiple rounds, and past about 3.4e9 the multiple overflows int32 and
 // the conversion is undefined behaviour.  An infinity is outside the
 // domain, and so is a NaN, because every comparison with a NaN is false.
-[[nodiscard]] constexpr bool is_within_one_turn(float angle) noexcept { return std::fabs(angle) <= kOneTurn; }
+[[nodiscard]] constexpr bool is_within_one_turn(float angle) noexcept { return ::fixy::fp::abs(angle) <= kOneTurn; }
 
 struct ReduceResult {
     float reduced = 0.0f;
@@ -188,10 +190,10 @@ struct ReduceResult {
     // not from nearbyint. One fma adds half a unit, with the sign of the
     // angle, to the exact product and rounds once. The conversion then
     // truncates toward zero in every rounding mode.
-    const float biased_multiple = std::fma(angle, two_over_pi, std::copysign(0.5f, angle));
+    const float biased_multiple = ::fixy::fp::fma(angle, two_over_pi, ::fixy::fp::copy_sign(0.5f, angle));
     const std::int32_t multiple = static_cast<std::int32_t>(biased_multiple);
 
-    const float reduced = std::fma(-static_cast<float>(multiple), pi_over_two, angle);
+    const float reduced = ::fixy::fp::fma(-static_cast<float>(multiple), pi_over_two, angle);
     const std::int32_t quadrant = static_cast<std::int32_t>(static_cast<std::uint32_t>(multiple) & 0x3u);
 
     return ReduceResult{reduced, quadrant};
@@ -266,7 +268,7 @@ struct ReduceResult {
     const float second_uniform = (static_cast<float>(u2_raw) + 1.0f) * two_pow_neg32;
 
     const float minus_two_log = -2.0f * log_poly(first_uniform);
-    const float radius = std::sqrt(minus_two_log);
+    const float radius = ::fixy::fp::sqrt(minus_two_log);
 
     const float theta = kOneTurn * second_uniform;
 
