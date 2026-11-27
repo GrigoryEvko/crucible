@@ -359,10 +359,12 @@ void check_host_index_is_one_device(Arena& arena) {
     // The decode door of a C record stores -1 for each index of the host, and
     // it keeps the index of a different device.
     crucible::TensorMeta const decoded_host =
-        crucible::decode_tensor_meta(fields_on(crucible::DeviceType::CPU, 0), crucible::ExternalDataPtr{})
+        crucible::decode_tensor_meta(fields_on(crucible::DeviceType::CPU, 0),
+                                     ::fixy::Option<crucible::TensorDataKey>{::fixy::none})
             .expect("the fields of a host tensor decode");
     crucible::TensorMeta const decoded_cuda =
-        crucible::decode_tensor_meta(fields_on(crucible::DeviceType::CUDA, 1), crucible::ExternalDataPtr{})
+        crucible::decode_tensor_meta(fields_on(crucible::DeviceType::CUDA, 1),
+                                     ::fixy::Option<crucible::TensorDataKey>{::fixy::none})
             .expect("the fields of a CUDA tensor decode");
     CRUCIBLE_FATAL_INVARIANT(decoded_host.device_idx == -1);
     CRUCIBLE_FATAL_INVARIANT(decoded_cuda.device_idx == 1);

@@ -2735,29 +2735,51 @@ crucible_neg_compile_test(neg_tensor_flags_from_byte
   "error: .constexpr crucible::TensorFlags::TensorFlags\\(uint8_t\\). is private within this context"
   "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
 
-# TensorMeta::data_ptr stores
-# ExternalDataPtr = Tagged<void*, source::External>.  Two HS14
-# fixtures cover the provenance gate's two field-write directions:
-#   * neg_tensor_meta_data_ptr_raw_pointer — raw void* cannot assign
-#     directly to the explicit Tagged field.
-#   * neg_tensor_meta_data_ptr_cross_tag — Tagged<void*, Sanitized>
-#     cannot pass as source::External.
+# TensorMeta::data_ptr holds an Option of the key of an address
+# (TensorDataKey), which only external_data_ptr gives from a pointer of the
+# front end, and whose address only the members of TensorMeta re-mint.  Two
+# fixtures cover the field write:
+#   * neg_tensor_meta_data_ptr_raw_pointer: a raw void* does not assign to
+#     the field.
+#   * neg_tensor_meta_data_ptr_cross_tag: the key of another owner does not
+#     pass as the key of a descriptor.
 crucible_neg_compile_test(neg_tensor_meta_data_ptr_raw_pointer
-  "no match for .operator=. .operand types are .crucible::ExternalDataPtr."
-  ".aka .fixy::Tagged<void\\*, fixy::tags::source::External>.. and .void\\*..")
+  "no match for .operator=. .operand types are .foundation::core::Option<foundation::core::ForeignAddressKey<crucible::TensorMeta> >."
+  "and .void\\*.")
 crucible_neg_compile_test(neg_tensor_meta_data_ptr_cross_tag
-  "no match for .operator=. .operand types are .crucible::ExternalDataPtr."
-  ".aka .fixy::Tagged<void\\*, fixy::tags::source::External>.. and .fixy::Tagged<void\\*, fixy::tags::source::Sanitized>..")
+  "no match for .operator=. .operand types are .foundation::core::Option<foundation::core::ForeignAddressKey<crucible::TensorMeta> >."
+  "and .const foundation::core::Option<foundation::core::ForeignAddressKey<.anonymous.::OtherOwner> >.")
 
-# mint_synthetic_data_ptr gives the data pointer of a synthetic address of a
-# test or a bench.  Two fixtures cover its two gates:
-#   * neg_tensor_meta_synthetic_address_zero — the zero address breaks the
+# The external tag of a descriptor names it by reference, so the door
+# refuses a temporary descriptor.
+crucible_neg_compile_test(neg_tensor_meta_external_of_temporary
+  "use of deleted function .void crucible::external_tensor_meta\\(const TensorMeta&&\\)."
+  "the tag names its descriptor by reference, and a temporary descriptor ends at the end of the full expression")
+
+# No byte door makes a descriptor: the bit cast of the Scalar family and the
+# decode of the Protocol family refuse it, because the descriptor and the key
+# of its address carry no_start_over_bytes.
+crucible_neg_compile_test(neg_tensor_meta_bit_cast
+  "no matching function for call to .bit_cast<crucible::TensorMeta>\\(const foundation::core::FixedArray<std::byte, 176>&\\)."
+  "is_plain_at.*with T = crucible::TensorMeta.* evaluated to .false.")
+crucible_neg_compile_test(neg_tensor_meta_protocol_decode
+  "no matching function for call to .decode<crucible::TensorMeta>\\(foundation::core::View<const std::byte, 156>\\)."
+  "neg_tensor_meta_protocol_decode\\.cpp:[0-9]+:[0-9]+: error")
+
+# mint_synthetic_data_ptr gives the key of a synthetic address of a test or a
+# bench.  Three fixtures cover its gates:
+#   * neg_tensor_meta_synthetic_address_zero: the zero address breaks the
 #     precondition of the mint in a constant evaluation.
-#   * neg_tensor_meta_synthetic_address_raw_integer — a raw integer is no
-#     SyntheticAddress, so the constraint of the mint refuses it.
+#   * neg_tensor_meta_synthetic_address_other_enum: an enumeration of another
+#     type with the same base type is no SyntheticAddress.
+#   * neg_tensor_meta_synthetic_address_raw_integer: a raw integer is no
+#     SyntheticAddress.
 crucible_neg_compile_test(neg_tensor_meta_synthetic_address_zero
   "foundation/contracts/Pre\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\). is not a constant expression"
   "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+crucible_neg_compile_test(neg_tensor_meta_synthetic_address_other_enum
+  "no matching function for call to .mint_synthetic_data_ptr\\(.anonymous.::OtherAddress\\)."
+  "is_same_v<Address, crucible::SyntheticAddress> .with Address = <unnamed>::OtherAddress.. evaluated to .false.")
 crucible_neg_compile_test(neg_tensor_meta_synthetic_address_raw_integer
   "no matching function for call to .mint_synthetic_data_ptr\\(uint64_t\\)."
   "is_same_v<Address, crucible::SyntheticAddress> .with Address = long unsigned int.. evaluated to .false.")
@@ -4333,11 +4355,11 @@ crucible_neg_compile_test(neg_tracering_reset_with_the_producer_end
 crucible_neg_compile_test(neg_metalog_reset_with_the_producer_end
   "cannot convert .crucible::MetaLog::Producer. .aka .fixy::concurrent::SpscEnd<crucible::MetaLog, fixy::concurrent::SpscSide::producer>.. to .crucible::MetaLog::EndPair&."
   "neg_metalog_reset_with_the_producer_end\\.cpp:17:[0-9]+: error: cannot convert")
-# A frame of one log in a frame of another one holds a borrow of the outer
-# end, which the store gate of the frame door refuses.
+# Two frames of two logs, one in the other, give the ends of two owners, and
+# the reset takes only a pair, which a pair door builds from one split.
 crucible_neg_compile_test(neg_metalog_nested_frames_of_two_logs
-  "neg_metalog_nested_frames_of_two_logs\\.cpp:[0-9]+:[0-9]+: error: no matching function for call to .with_consumer\\("
-  "required for the satisfaction of .StoresNoBorrowOutside<Body>.")
+  "neg_metalog_nested_frames_of_two_logs\\.cpp:23:[0-9]+: error: no matching function for call to .crucible::MetaLog::reset\\(crucible::MetaLog::Producer&, crucible::MetaLog::Consumer&\\)."
+  "candidate expects 1 argument, 2 provided")
 # Two frames of two rings, one in the other, give the ends of two owners, and
 # the reset takes only a pair, which a pair door builds from one split.  The
 # door of two held sides of two holders of one class gives no pair either.
@@ -5124,8 +5146,8 @@ crucible_neg_compile_test(neg_vessel_data_slots_take_no_argument_position
 
 # ─── Vessel typed-accessor provenance fences ──────────────────────
 #
-# data_ptr_typed returns Tagged<void*, source::External>; refusing
-# implicit conversion into Tagged<void*, source::Sanitized> stops a
+# data_ptr_typed returns the key of a data pointer, which gives no pointer;
+# refusing its conversion into Tagged<void*, source::Sanitized> stops a
 # refactor from laundering raw-FFI bytes into the trust-validated
 # slot the dispatch path expects.  schema_name_typed returns an Option of
 # Tagged<CText, source::Interned>; refusing the converse (Interned →
@@ -5133,8 +5155,8 @@ crucible_neg_compile_test(neg_vessel_data_slots_take_no_argument_position
 # distinguishable at the type level.  Two fixtures, two directions of the
 # wrong-tag axis, so neither retag direction can silently launder.
 crucible_neg_compile_test(neg_data_ptr_typed_wrong_tag
-    "conversion from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
-    "to non-scalar type .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Sanitized>. requested")
+    "conversion from .foundation::core::Option<foundation::core::ForeignAddressKey<crucible::TensorMeta> >."
+    "to non-scalar type .fixy::Tagged<void\\*, fixy::tags::source::Sanitized>. requested")
 crucible_neg_compile_test(neg_schema_name_typed_wrong_tag
     "conversion from .Option<Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>>. to non-scalar type .Option<Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>>. requested"
     "neg_schema_name_typed_wrong_tag.cpp:24")

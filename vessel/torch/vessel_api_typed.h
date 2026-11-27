@@ -17,7 +17,7 @@
 //   as_meta_typed(metas, n)   : const CrucibleMeta*, n   -> Option<TypedMeta>
 //   metas_from_typed(typed)   : TypedMeta                -> const CrucibleMeta*
 //
-//   data_ptr_typed(typed, i)  : TypedMeta, std::size_t   -> ExternalDataPtr
+//   data_ptr_typed(typed, i)  : TypedMeta, std::size_t   -> Option<TensorDataKey>
 //   decode_ffi_meta(record)   : const CrucibleMeta&      -> Option<TensorMeta>
 //   decode_ffi_records(...)   : TypedMeta, slots&&       -> Option<ViewMut<TensorMeta>>
 //
@@ -94,8 +94,8 @@ namespace crucible::vessel {
 //
 // ABIBoundary names where a value came from, so mint_tagged builds a
 // value under it.  A check that the value passed reaches Sanitized only
-// by retag along the catalog edge.  The data pointer of a meta is the
-// ExternalDataPtr of TensorMeta, another ::fixy Tagged.
+// by retag along the catalog edge.  The data pointer of a meta becomes the
+// TensorDataKey of TensorMeta, which gives no pointer.
 //
 // An array of a C caller, as the pointer to its first element.  The records
 // keep their C type.  decode_ffi_meta below makes a TensorMeta from one
@@ -178,19 +178,17 @@ template <class Element>
 
 // ── Per-meta data_ptr typed accessor ───────────────────────────────
 //
-// Crucible's TensorMeta::data_ptr is a `void*` whose provenance is
-// "data pages PyTorch handed to us — externally-owned, lifetime
-// controlled by the autograd / caching-allocator graph on the Python
-// side".  The field is an ExternalDataPtr, a `Tagged<void*,
-// source::External>`, so downstream consumers (memory-plan recording,
-// pool-shadow-handle binding, Cipher snapshot serializer) carry the
-// provenance into their own type-level reasoning.  This helper reads
-// the pointer of one record through CrucibleMeta.
+// The data pointer of a record of a C caller points into data pages that
+// PyTorch gave, whose life the autograd and the caching allocator of the
+// Python side control.  TensorMeta::data_ptr holds the key of that address
+// (TensorDataKey), which compares and keys a storage and gives no pointer, and
+// only the members of TensorMeta re-mint the address.  This helper gives the
+// key of the pointer of one record, or no value for the null pointer.
 //
 // `i` MUST be a valid index in the typed meta array (caller is the
 // authority on the array length, which travels via `n_metas` through
 // the C ABI).  The precondition refuses a null array in each build.
-[[nodiscard]] CRUCIBLE_HOT ExternalDataPtr data_ptr_typed(TypedMeta typed, std::size_t i) noexcept {
+[[nodiscard]] CRUCIBLE_HOT ::fixy::Option<TensorDataKey> data_ptr_typed(TypedMeta typed, std::size_t i) noexcept {
     const CrucibleMeta* metas = typed.value();
     CRUCIBLE_PRE(metas != nullptr);
     return external_data_ptr(metas[i].data_ptr);

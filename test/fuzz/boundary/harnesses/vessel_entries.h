@@ -202,7 +202,7 @@ inline void claim_decoded(CrucibleMeta const& record, TensorMeta const& meta) no
         CRUCIBLE_FUZZ_CLAIM(kName, raw_tensor_dim(meta.sizes[lane]) == record.sizes[lane]);
         CRUCIBLE_FUZZ_CLAIM(kName, raw_tensor_dim(meta.strides[lane]) == record.strides[lane]);
     }
-    CRUCIBLE_FUZZ_CLAIM(kName, meta.data_ptr.value() == record.data_ptr);
+    CRUCIBLE_FUZZ_CLAIM(kName, meta.data_ptr == external_data_ptr(record.data_ptr));
     CRUCIBLE_FUZZ_CLAIM(kName, static_cast<std::int8_t>(meta.dtype) == record.dtype);
     CRUCIBLE_FUZZ_CLAIM(kName, static_cast<std::int8_t>(meta.device_type) == record.device_type);
     CRUCIBLE_FUZZ_CLAIM(kName, meta.device_idx == normalize_device_index(meta.device_type, record.device_idx));

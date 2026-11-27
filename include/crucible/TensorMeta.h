@@ -21,10 +21,26 @@ namespace crucible {
 // arrays of this length, so any larger dimension count reads out of bounds.
 inline constexpr uint8_t kMaxTensorNDim = 8;
 
-// A storage address arrives from a frontend, a trace or a file. It is hashed
-// and compared as an opaque cookie and never dereferenced, until some later
-// validator retags it.
-using ExternalDataPtr = ::fixy::Tagged<void*, ::fixy::tags::source::External>;
+struct TensorMeta;
+
+// The key of the address of the data of a tensor, which the front end gave
+// at the record of the op.  It compares for equality and gives the key of a
+// storage, and no pointer comes back from it.  TensorMeta is its owner, so
+// only the members of TensorMeta re-mint the address (data_address and
+// storage_address).
+using TensorDataKey = ::fixy::ForeignAddressKey<TensorMeta>;
+
+// The address of a storage that a test or a bench gives in place of the data
+// pointer of a front end, as a number.  The record path compares the key of
+// the address and keys a storage by it, and no code of a test reads through
+// it.  Zero is no address, as the null pointer of a front end is no storage.
+enum class SyntheticAddress : std::uint64_t {
+};
+
+// A synthetic address, and no other type, so a raw number cannot reach the
+// mint.
+template <class Address>
+concept SyntheticAddressValue = std::is_same_v<Address, SyntheticAddress>;
 
 // This value derives from an autograd object's identity, which is local to
 // one process. It must never be used as a key that outlives the run.
@@ -40,7 +56,6 @@ inline constexpr int64_t kMaxTensorDimExtent = ::fixy::max_of<int64_t> / kTensor
 
 using TensorDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorDimExtent>, int64_t>;
 
-struct TensorMeta;
 class TensorShape;
 
 // The lanes of the sizes or of the strides of a tensor.  The Protocol family
@@ -354,9 +369,9 @@ template <class Sizes, class Strides>
 // decode_tensor_meta is the one door from bytes of outside.
 //
 // The descriptor moves between threads, and two threads read it at once
-// (foundation/Transfer.h).  Its one pointer, data_ptr, is a cookie that the
-// code hashes and compares and never dereferences, so the descriptor states
-// the two properties that its fields hide.
+// (foundation/Transfer.h).  Its data_ptr is the key of an address, which the
+// code compares and keys, and which only the members of the descriptor
+// re-mint, so the descriptor states the two properties.
 struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_bytes{}]]
       [[= ::foundation::transfer::sendable{}]][[= ::foundation::transfer::shareable{}]] TensorMeta {
     // The lanes past ndim must start at zero, and the reason is the wire
@@ -374,7 +389,7 @@ struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_b
     // zeroed by default-construction whether or not its holder writes braces.
     // Removing the braces at a holder saves nothing.
     // A session payload walk reads the descriptor as data: data_ptr is the
-    // cookie above, which reaches no token, no loan and no session endpoint
+    // key above, which reaches no token, no loan and no session endpoint
     // (fixy/session/Classification.h).
     using session_payload_is_data = void;
 
@@ -383,7 +398,9 @@ struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_b
     // refuses a write from outside.
     TensorDimArray sizes{};
     TensorDimArray strides{};
-    [[= ::fixy::local_part{}]] ExternalDataPtr data_ptr{};
+    // The key of the address of the data, or no value for a tensor with no
+    // data pointer.
+    [[= ::fixy::local_part{}]] ::fixy::Option<TensorDataKey> data_ptr{};
     TensorRank ndim{};
     ScalarType dtype = ScalarType::Undefined;
     DeviceType device_type = DeviceType::CPU;
@@ -435,40 +452,59 @@ struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_b
     [[nodiscard]] friend constexpr bool operator==(TensorMeta const& left, TensorMeta const& right) noexcept {
         return ::fixy::equal(left, right);
     }
+
+    // The two doors that re-mint the address of the data, each through
+    // address_below_.
+    friend auto data_address(TensorMeta const& meta) noexcept -> ::fixy::Option<TensorData>;
+    friend auto storage_address(TensorMeta const& meta) noexcept -> ::fixy::Option<TensorData>;
+
+    // The door that makes the key of a synthetic address, through
+    // synthetic_key_.
+    template <SyntheticAddressValue Address>
+    friend constexpr auto mint_synthetic_data_ptr(Address address) noexcept -> ::fixy::Option<TensorDataKey>;
+
+private:
+    // The key of a synthetic address, which mint_synthetic_data_ptr checks to
+    // be not zero.  TensorMeta owns the key, so this member and address_below_
+    // are the two places that read or write the word of a key.  O(1).
+    [[nodiscard]] static constexpr TensorDataKey synthetic_key_(SyntheticAddress address) noexcept {
+        return TensorDataKey::of_word_(std::to_underlying(address));
+    }
+
+    // The address bytes below the address of the data, on the device of the
+    // tensor, or no address for a tensor with no data pointer and for a count
+    // past the largest offset of a pointer.  The front end gave the address
+    // at the record of the op, so the door cannot prove that the bytes live.
+    // The count is the offset of the element at the zero index of a tensor of
+    // PyTorch from the first byte of its storage, so the address below is in
+    // the same storage.  TensorMeta owns the key of the address, so this
+    // member is the one road from a key back to an address.  O(1).
+    [[nodiscard]] static auto address_below_(TensorMeta const& meta, uint64_t bytes) noexcept
+        -> ::fixy::Option<TensorData>;
 };
 
 // The door of the front end.  The front end gives the data pointer of a
-// tensor as a C pointer, and the door tags it as external.  value() of the
-// tagged pointer gives the C pointer back.
+// tensor as a C pointer, and the door gives the key of its address, or no
+// value for the null pointer.  No pointer comes back from the key.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the front end gave the data pointer of the tensor at the record of the op")
-[[nodiscard]] inline constexpr ExternalDataPtr external_data_ptr(void* ptr) noexcept {
-    return ::fixy::mint_tagged<::fixy::tags::source::External>(ptr);
+[[nodiscard]] inline ::fixy::Option<TensorDataKey> external_data_ptr(void* ptr) noexcept {
+    return ::fixy::mint_foreign_run_address(ptr).match(
+        [](::fixy::RunAddress address) noexcept {
+            return ::fixy::Option<TensorDataKey>::some(::fixy::mint_foreign_address_key<TensorMeta>(address));
+        },
+        [] noexcept { return ::fixy::Option<TensorDataKey>{::fixy::none}; });
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-// The address of a storage that a test or a bench gives in place of the data
-// pointer of a front end, as a number.  The data pointer is a cookie: the
-// record path hashes it and compares it, and no code reads through it.  Zero
-// is no address, as the null pointer of a front end is no storage.
-enum class SyntheticAddress : std::uint64_t {
-};
-
-// A synthetic address, and no other type, so a raw number cannot reach the
-// mint.
-template <class Address>
-concept SyntheticAddressValue = std::is_same_v<Address, SyntheticAddress>;
-
-// The data pointer of a synthetic address, for a test or a bench.  The
-// address is not zero.  The pointer holds the bits of the address, and no
-// code reads through it.  No door of the base makes a pointer from an
-// integer, so the bits go through the bit cast of the compiler in a region.
-CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a test or a bench gives a synthetic address as the data pointer of a tensor")
+// The key of a synthetic address, for a test or a bench.  The address is not
+// zero, so the key has a value, and a constant address of zero is a compile
+// error.  A synthetic address is an integer from its start, so the key holds
+// its bits with no pointer, and no code reads through it.  O(1).
 template <SyntheticAddressValue Address>
-[[nodiscard]] constexpr ExternalDataPtr mint_synthetic_data_ptr(Address address) noexcept {
+[[nodiscard]] constexpr auto mint_synthetic_data_ptr(Address address) noexcept -> ::fixy::Option<TensorDataKey> {
     CRUCIBLE_PRE(address != SyntheticAddress{});
-    return ::fixy::mint_tagged<::fixy::tags::source::External>(__builtin_bit_cast(void*, address));
+    return ::fixy::Option<TensorDataKey>::some(TensorMeta::synthetic_key_(address));
 }
-CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The device that holds the bytes of the tensor.  The constructor of
 // TensorDevice gives the index of normalize_device_index (crucible/Types.h).
@@ -510,45 +546,38 @@ struct StorageKey {
 // The key of the storage of the tensor.  Two views of one storage give one
 // key at each offset.
 [[nodiscard]] inline StorageKey storage_key(const TensorMeta& meta) noexcept {
-    return StorageKey{.address = ::fixy::mint_address_key(meta.data_ptr.value()).lower_by(storage_offset_bytes(meta)),
-                      .generation = meta.storage_generation,
-                      .pad = 0};
+    const ::fixy::AddressKey address =
+        meta.data_ptr.match([](TensorDataKey key) noexcept { return key.address_key(); },
+                            [] noexcept { return ::fixy::mint_address_key(static_cast<void const*>(nullptr)); });
+    return StorageKey{
+        .address = address.lower_by(storage_offset_bytes(meta)), .generation = meta.storage_generation, .pad = 0};
 }
 
-namespace detail {
-
-// The address bytes below the data pointer of the tensor, on its device, or
-// no address for a tensor with no data pointer and for a count past the
-// largest offset of a pointer.  The front end gave the address, so the door
-// cannot prove that the bytes live.  The count is the offset of the element
-// at the zero index of a tensor of PyTorch from the first byte of its
-// storage, so the address below is in the same storage.
-[[nodiscard]] inline ::fixy::Option<TensorData> foreign_address_below(const TensorMeta& meta, uint64_t bytes) noexcept {
-    if (meta.data_ptr.value() == nullptr || bytes > uint64_t{PTRDIFF_MAX}) return ::fixy::none;
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the front end gave the data pointer of the tensor at the record of the op")
-    const ::fixy::Option<::fixy::RunAddress> address = ::fixy::mint_foreign_run_address(
-        static_cast<char*>(meta.data_ptr.value()) - static_cast<std::ptrdiff_t>(bytes));
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    return address.match(
-        [&meta](::fixy::RunAddress found) noexcept { return ::fixy::some(TensorData{found, device_of(meta)}); },
+inline auto TensorMeta::address_below_(TensorMeta const& meta, uint64_t bytes) noexcept -> ::fixy::Option<TensorData> {
+    if (bytes > uint64_t{PTRDIFF_MAX}) return ::fixy::none;
+    return meta.data_ptr.match(
+        [&meta, bytes](TensorDataKey key) noexcept {
+            const ::fixy::Option<::fixy::RunAddress> address = TensorDataKey::remint_(key, bytes);
+            return address.match(
+                [&meta](::fixy::RunAddress found) noexcept { return ::fixy::some(TensorData{found, device_of(meta)}); },
+                [] noexcept { return ::fixy::Option<TensorData>{::fixy::none}; });
+        },
         [] noexcept { return ::fixy::Option<TensorData>{::fixy::none}; });
 }
-
-}  // namespace detail
 
 // The address of the bytes of the tensor on its device, or no address for a
 // tensor with no data pointer.  The front end gave the address, so the door
 // cannot prove that the bytes live.
-[[nodiscard]] inline ::fixy::Option<TensorData> data_address(const TensorMeta& meta) noexcept {
-    return detail::foreign_address_below(meta, 0);
+[[nodiscard]] inline auto data_address(const TensorMeta& meta) noexcept -> ::fixy::Option<TensorData> {
+    return TensorMeta::address_below_(meta, 0);
 }
 
 // The address of the first byte of the storage of the tensor on its device,
 // or no address for a tensor with no data pointer.  A slot of a memory plan
 // holds one storage, so the address of a slot is the address of its storage,
 // and a view at an offset starts storage_offset elements later.
-[[nodiscard]] inline ::fixy::Option<TensorData> storage_address(const TensorMeta& meta) noexcept {
-    return detail::foreign_address_below(meta, storage_offset_bytes(meta));
+[[nodiscard]] inline auto storage_address(const TensorMeta& meta) noexcept -> ::fixy::Option<TensorData> {
+    return TensorMeta::address_below_(meta, storage_offset_bytes(meta));
 }
 
 [[nodiscard]] inline constexpr GradFnHash grad_fn_hash(uint64_t hash) noexcept {
@@ -563,9 +592,15 @@ namespace detail {
 
 using ExternalTensorMeta = ::fixy::Tagged<const TensorMeta&, ::fixy::tags::source::External>;
 
-[[nodiscard]] inline constexpr ExternalTensorMeta external_tensor_meta(const TensorMeta& meta) noexcept {
+[[nodiscard]] inline constexpr ExternalTensorMeta external_tensor_meta(const TensorMeta& meta
+                                                                       CRUCIBLE_LIFETIMEBOUND) noexcept {
     return ::fixy::mint_tagged<::fixy::tags::source::External, const TensorMeta&>(meta);
 }
+
+// The tag of a temporary descriptor would name a descriptor that ends at the
+// end of the full expression.
+void external_tensor_meta(const TensorMeta&& meta) = delete(
+    "the tag names its descriptor by reference, and a temporary descriptor ends at the end of the full expression");
 
 // The fields of one tensor descriptor as a writer outside the process gave
 // them: a C caller of the vessel, a metadata record of a trace file, or the
@@ -617,7 +652,7 @@ struct[[= ::fixy::derive_protocol{}]] UncheckedTensorMeta {
 // The storage generation of the TensorMeta stays zero, because a writer
 // outside the process gives no generation.  Linear in kMaxTensorNDim.
 [[nodiscard]] inline ::fixy::Option<TensorMeta> decode_tensor_meta(UncheckedTensorMeta const& fields,
-                                                                   ExternalDataPtr data_ptr) noexcept {
+                                                                   ::fixy::Option<TensorDataKey> data_ptr) noexcept {
     const uint8_t ndim = fields.ndim;
     if (ndim > kMaxTensorNDim) return ::fixy::none;
     ::fixy::FixedArray<TensorDim, kMaxTensorNDim> sizes = zero_tensor_dims();

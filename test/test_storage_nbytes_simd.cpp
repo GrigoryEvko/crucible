@@ -133,16 +133,12 @@ using ExactSpan = ::fixy::Saturated<uint64_t>;
     return meta;
 }
 
-[[nodiscard]] static ExternalTensorMeta external_meta(const TensorMeta& meta) noexcept {
-    return external_tensor_meta(meta);
-}
-
 static void check_equiv(const TensorMeta& meta, ::fixy::TextView what) noexcept {
     // Equality on the saturated type is defaulted, so it compares the
     // value and the clamped flag together.  Both paths must agree on
     // both: a difference in the flag alone would mean one path saturated
     // silently while the other returned a real byte count.
-    const auto external = external_meta(meta);
+    const auto external = external_tensor_meta(meta);
     const auto scalar = compute_storage_nbytes_scalar(external);
     const auto simd_v = compute_storage_nbytes_simd(external);
     const auto scalar_det = compute_storage_nbytes_scalar_det(external);
@@ -174,7 +170,7 @@ static void test_scalar_tensor() {
     TensorMeta meta{};
     meta.dtype = ScalarType::Float;
     check_equiv(meta, "scalar-float");
-    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(meta))
+    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_tensor_meta(meta))
                                     == ExactSpan::exact(element_size(ScalarType::Float).raw()));
 
     meta.dtype = ScalarType::Double;
@@ -190,7 +186,7 @@ static void test_zero_size_tensor() {
     // A zero in any dimension takes the whole tensor to zero bytes.  The
     // lambda keeps one copy of the inlined vector path in this test.
     const auto expect_zero_bytes = [](const TensorMeta& meta) {
-        CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(meta)) == ExactSpan::exact(0));
+        CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_tensor_meta(meta)) == ExactSpan::exact(0));
     };
 
     auto m1 = make_meta({0}, {1});
@@ -212,13 +208,13 @@ static void test_common_shapes() {
     // 4096 floats at four bytes each make 16384 bytes.
     auto m1d = make_meta({4096}, {1});
     check_equiv(m1d, "1D-contig");
-    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m1d)) == ExactSpan::exact(16384));
+    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_tensor_meta(m1d)) == ExactSpan::exact(16384));
 
     // 128 by 256 is 32768 elements, which at four bytes each make
     // 131072 bytes.
     auto m2d = make_meta({128, 256}, {256, 1});
     check_equiv(m2d, "2D-matrix");
-    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m2d)) == ExactSpan::exact(131072));
+    CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_tensor_meta(m2d)) == ExactSpan::exact(131072));
 
     auto mnchw = make_meta({32, 64, 224, 224}, {64 * 224 * 224, 224 * 224, 224, 1});
     check_equiv(mnchw, "4D-NCHW");
@@ -298,7 +294,7 @@ static void test_dtype_variations() {
         m.dtype = dt;
         check_equiv(m, "dtype-variation");
         const uint64_t expected = element_size(dt).times(uint64_t{12});
-        CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_meta(m)) == ExactSpan::exact(expected));
+        CRUCIBLE_TEST_ASSERT(kTest, compute_storage_nbytes_simd(external_tensor_meta(m)) == ExactSpan::exact(expected));
     }
 
     ::fixy::check::pass(kTest, "  test_dtype_variations: PASSED\n");
@@ -312,12 +308,12 @@ static void test_overflow_multiply() {
     // 2^32 plus one, times 2^32, is about 2^64 and overflows int64.
     auto m1 = make_meta({(int64_t{1} << 32) + 2}, {int64_t{1} << 32});
     {
-        const auto sc = compute_storage_nbytes_scalar(external_meta(m1));
+        const auto sc = compute_storage_nbytes_scalar(external_tensor_meta(m1));
         CRUCIBLE_TEST_ASSERT(kTest, sc.value() == UINT64_MAX);
         CRUCIBLE_TEST_ASSERT(kTest, sc.was_clamped());
     }
     {
-        const auto sv = compute_storage_nbytes_simd(external_meta(m1));
+        const auto sv = compute_storage_nbytes_simd(external_tensor_meta(m1));
         CRUCIBLE_TEST_ASSERT(kTest, sv.value() == UINT64_MAX);
         CRUCIBLE_TEST_ASSERT(kTest, sv.was_clamped());
     }
@@ -376,7 +372,8 @@ static void test_negative_size() {
     // A modular subtraction gives INT64_MAX for INT64_MIN, and a stride of
     // one keeps the product in range, so the span is one past INT64_MAX: it
     // saturates.
-    const auto saturated = compute_storage_nbytes_scalar(external_meta(make_meta({INT64_MIN}, {1})));
+    const TensorMeta lowest_size = make_meta({INT64_MIN}, {1});
+    const auto saturated = compute_storage_nbytes_scalar(external_tensor_meta(lowest_size));
     CRUCIBLE_TEST_ASSERT(kTest, saturated.was_clamped());
 
     ::fixy::check::pass(kTest, "  test_negative_size: PASSED\n");
@@ -404,7 +401,7 @@ static void test_dead_lanes_hold_extremes() {
 
     // Three steps of eight elements past the first, plus the first, of four
     // bytes each.
-    const auto span = compute_storage_nbytes_simd(external_meta(m));
+    const auto span = compute_storage_nbytes_simd(external_tensor_meta(m));
     CRUCIBLE_TEST_ASSERT(kTest, !span.was_clamped() && span.value() == 100);
 
     ::fixy::check::pass(kTest, "  test_dead_lanes_hold_extremes: PASSED\n");

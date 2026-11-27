@@ -382,7 +382,7 @@ inline void write_meta(Writer<Brand, Extent>& w, const TensorMeta& m) {
 // pointer and no grad_fn.
 inline TensorMeta read_meta(Reader& r) {
     const UncheckedTensorMeta fields = r.read_image(UncheckedTensorMeta{});
-    ::fixy::Option<TensorMeta> meta = decode_tensor_meta(fields, external_data_ptr(nullptr));
+    ::fixy::Option<TensorMeta> meta = decode_tensor_meta(fields, ::fixy::Option<TensorDataKey>{::fixy::none});
     if (meta.is_none()) [[unlikely]]
         r.refuse(LoadError::field_out_of_range);
     return std::move(meta).value_or(TensorMeta{});

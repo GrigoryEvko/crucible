@@ -437,7 +437,7 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
             SlotId& input_slot = *input_slot_ids.get(j).expect("the window holds each input of the op");
             producer = OpIndex{};
             input_slot = SlotId{};
-            if (input_meta.data_ptr.value() == nullptr) continue;
+            if (input_meta.data_ptr.is_none()) continue;
             const PtrMapKey input_key = storage_key(input_meta);
             const uint64_t input_span = span_bytes_of_(input_meta);
             const PtrSlotPosition found = ptr_map_find(state.scratch_map_, local_gen, input_key);
@@ -506,7 +506,7 @@ BackgroundThread::fill_region_runs_(DagFrame<Fresh>& frame, TraceBuildState& sta
             const TensorMeta& output_meta = *output_metas.get(j).expect("the window holds each output of the op");
             SlotId& output_slot = *output_slot_ids.get(j).expect("the window holds each output of the op");
             output_slot = SlotId{};
-            if (output_meta.data_ptr.value() == nullptr) continue;
+            if (output_meta.data_ptr.is_none()) continue;
             const PtrMapKey output_key = storage_key(output_meta);
             const uint64_t output_span = span_bytes_of_(output_meta);
             const PtrSlotPosition found = ptr_map_find(state.scratch_map_, local_gen, output_key);

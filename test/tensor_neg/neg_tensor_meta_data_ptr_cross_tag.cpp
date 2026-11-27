@@ -1,25 +1,27 @@
 // Negative-compile test. This file must fail to compile.
 //
-// TensorMeta::data_ptr is ExternalDataPtr, ::fixy::Tagged<void*,
-// source::External>.  A pointer under a different provenance tag cannot be
-// written into it as if it came from the external tensor-storage boundary.
+// Violation: the key of an address of another owner goes into the data
+// pointer of a descriptor.  The members of the owner of a key re-mint its
+// address, so a key of another owner would let that owner reach the bytes
+// of a tensor.  Two owners make two types of the one template, and no
+// conversion joins them.
 //
-// The pointer here is minted External and retagged Sanitized along the
-// admitted edge, so the only defect is the tag at the field write.
-//
-// Distinct mismatch class from neg_tensor_meta_data_ptr_raw_pointer.cpp:
-//   * Companion: a raw void* is refused at the field write.
-//   * This fixture: Tagged<void*, Sanitized> is not ExternalDataPtr.
+// The companion fixture neg_tensor_meta_data_ptr_raw_pointer gives a raw
+// pointer.
 
 #include <crucible/TensorMeta.h>
+#include <fixy/Core.h>
+
+namespace {
+struct OtherOwner {};
+}  // namespace
 
 int main() {
-    auto sanitized = ::fixy::mint_tagged<::fixy::tags::source::External>(static_cast<void*>(nullptr))
-                         .retag<::fixy::tags::source::Sanitized>();
-
+    unsigned char byte = 0;
+    ::fixy::Option<::fixy::ForeignAddressKey<OtherOwner>> const other =
+        ::fixy::Option<::fixy::ForeignAddressKey<OtherOwner>>::some(::fixy::mint_foreign_address_key<OtherOwner>(
+            ::fixy::mint_foreign_run_address(&byte).expect("a byte of the stack is not null")));
     crucible::TensorMeta meta{};
-
-    // must fail: Tagged<void*, Sanitized> is not ExternalDataPtr.
-    meta.data_ptr = sanitized;
+    meta.data_ptr = other;
     return 0;
 }

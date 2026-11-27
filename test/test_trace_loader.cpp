@@ -343,7 +343,7 @@ static void test_encoders_round_trip_through_the_loader() {
     CRUCIBLE_TEST_ASSERT(kTest, loaded.storage_offset == 5);
     CRUCIBLE_TEST_ASSERT(kTest, loaded.version == 7);
     CRUCIBLE_TEST_ASSERT(kTest, loaded.storage_nbytes == 64);
-    CRUCIBLE_TEST_ASSERT(kTest, loaded.data_ptr.value() == nullptr);
+    CRUCIBLE_TEST_ASSERT(kTest, loaded.data_ptr.is_none());
     ::fixy::check::pass(kTest, "  test_encoders_round_trip:       PASSED\n");
 }
 

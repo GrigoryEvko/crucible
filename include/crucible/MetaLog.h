@@ -446,9 +446,9 @@ public:
     // contract otherwise forbids.  The door takes the pair of the two ends of
     // the log, so the thread is in the frame of the two sides of the log, and
     // no other thread is in a frame of it.  Only a pair door builds a pair,
-    // from the two ends of one split, so two frames of two logs give no pair.
-    // A reset of a log whose consumer another thread can hold thus does not
-    // compile.
+    // from the two ends of one split, so two frames of two logs give no pair
+    // (neg_metalog_nested_frames_of_two_logs).  A reset of a log whose
+    // consumer another thread can hold thus does not compile.
     static void reset(EndPair& ends) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         Producer& producer = ends.producer();
         Consumer& consumer = ends.consumer();

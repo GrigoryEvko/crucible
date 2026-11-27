@@ -1,10 +1,12 @@
 // Negative-compile test.  This file must fail to compile.
 //
-// A frame of one metadata log in a frame of another one holds the ends of two
-// logs.  The inner body holds a reference to the end of the outer log, where
-// it could keep a borrow, so the store gate of the frame door refuses it.
+// MetaLog::reset moves the counters of a log back to the start.  A frame of
+// one log in a frame of another one gives a body the ends of two logs, and the
+// reset would move the counters of a log whose consumer a second thread can
+// hold.  The reset takes the pair of the two ends of one split, and only a
+// pair door builds a pair, so two ends of two logs reach no reset.
 //
-// Expected diagnostic: the store gate of the frame door.
+// Expected diagnostic: the reset takes a pair, not two ends.
 
 #include <crucible/MetaLog.h>
 #include <fixy/concurrent/SpscEnds.h>
@@ -18,8 +20,7 @@ int main() {
         first.split, first.producer_token, [&second](crucible::MetaLog::Producer& producer) noexcept {
             ::fixy::concurrent::with_consumer(second.split, second.consumer_token,
                                               [&producer](crucible::MetaLog::Consumer& consumer) noexcept {
-                                                  static_cast<void>(producer);
-                                                  static_cast<void>(consumer);
+                                                  crucible::MetaLog::reset(producer, consumer);
                                               });
         });
     return 0;

@@ -336,8 +336,8 @@ static void check_descriptor_images_agree() {
                 *loaded_op.input_metas().get(j).expect("a test reads an element at or past the count of its View");
             const crucible::TensorMeta& source_meta =
                 *source_op.input_metas().get(j).expect("a test reads an element at or past the count of its View");
-            CRUCIBLE_TEST_ASSERT(kTest, loaded_meta.data_ptr.value() == nullptr
-                                            && "data_ptr must be null after deserialization");
+            CRUCIBLE_TEST_ASSERT(kTest,
+                                 loaded_meta.data_ptr.is_none() && "data_ptr must be null after deserialization");
             CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_grad_fn_hash(source_meta) != 0
                                             && "test fixture must exercise non-zero Family-B input");
             CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_grad_fn_hash(loaded_meta) == 0
@@ -358,7 +358,7 @@ static void check_descriptor_images_agree() {
                 *loaded_op.output_metas().get(j).expect("a test reads an element at or past the count of its View");
             const crucible::TensorMeta& source_meta =
                 *source_op.output_metas().get(j).expect("a test reads an element at or past the count of its View");
-            CRUCIBLE_TEST_ASSERT(kTest, loaded_meta.data_ptr.value() == nullptr);
+            CRUCIBLE_TEST_ASSERT(kTest, loaded_meta.data_ptr.is_none());
             CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_grad_fn_hash(source_meta) != 0);
             CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_grad_fn_hash(loaded_meta) == 0);
         }

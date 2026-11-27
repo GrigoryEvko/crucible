@@ -733,7 +733,7 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
             for (const TraceEntry& te : ref_ops) {
                 uint8_t port = 0;
                 for (const TensorMeta& m : te.output_metas()) {
-                    if (m.data_ptr.value() != nullptr)
+                    if (m.data_ptr.is_some())
                         (void)BackgroundThread::ptr_map_insert(BuildScratchOfBench::map(state),
                                                                BuildScratchOfBench::map_key(state), local_gen,
                                                                crucible::storage_key(m), OpIndex{i}, port, SlotId{0});
@@ -787,7 +787,7 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
                 uint8_t port = 0;
                 for (const TensorMeta& m : te.output_metas()) {
                     const uint8_t this_port = port++;
-                    if (m.data_ptr.value() == nullptr) continue;
+                    if (m.data_ptr.is_none()) continue;
                     auto result = BackgroundThread::ptr_map_insert(
                         BuildScratchOfBench::map(state), BuildScratchOfBench::map_key(state), local_gen,
                         crucible::storage_key(m), OpIndex{i}, this_port, SlotId{0});

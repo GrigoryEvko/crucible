@@ -5,11 +5,15 @@
 
 namespace crucible {
 
-static_assert(sizeof(ExternalDataPtr) == sizeof(void*),
-              "Tagged<void*, source::External> must EBO-collapse so TensorMeta "
-              "stays layout-stable");
-static_assert(std::is_trivially_copyable_v<ExternalDataPtr>);
-static_assert(std::is_standard_layout_v<ExternalDataPtr>);
+// The data pointer is the key of an address in one word, with no pointer.  No
+// byte door makes a key or a descriptor, and the key gives no pointer back.
+static_assert(sizeof(::fixy::Option<TensorDataKey>) == sizeof(void*),
+              "an Option of the key of an address takes one word, so TensorMeta keeps its layout");
+static_assert(std::is_trivially_copyable_v<::fixy::Option<TensorDataKey>>);
+static_assert(std::is_standard_layout_v<::fixy::Option<TensorDataKey>>);
+static_assert(!::fixy::BitValid<TensorDataKey> && !::fixy::BitValid<TensorMeta>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<TensorMeta>);
+static_assert(offsetof(TensorMeta, data_ptr) == 128);
 
 static_assert(sizeof(GradFnHash) == sizeof(uint64_t), "Tagged<uint64_t, hash_family::FamilyB> must EBO-collapse so "
                                                       "TensorMeta stays layout-stable");
@@ -165,11 +169,13 @@ static_assert(is_unequal_after([](TensorMeta& meta) {
     meta.set_shape(shape_of(::fixy::FixedArray<TensorDim, 4>{zero, zero, zero, zero},
                             ::fixy::FixedArray<TensorDim, 4>{zero, zero, zero, tensor_dim(1)}));
 }));
-static_assert(is_unequal_after([](TensorMeta& meta) { meta.data_ptr = external_data_ptr(static_cast<void*>(&meta)); }));
 static_assert(is_unequal_after([](TensorMeta& meta) {
     const TensorDim zero = tensor_dim(0);
     meta.set_shape(
         shape_of(::fixy::FixedArray<TensorDim, 2>{zero, zero}, ::fixy::FixedArray<TensorDim, 2>{zero, zero}));
+}));
+static_assert(is_unequal_after([](TensorMeta& meta) {
+    meta.data_ptr = mint_synthetic_data_ptr(SyntheticAddress{0x10000});
 }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.dtype = ScalarType::Int; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.device_type = DeviceType::CUDA; }));
@@ -213,11 +219,16 @@ template <class Change>
     return ::fixy::hash(changed) == ::fixy::hash(TensorMeta{});
 }
 
-static_assert(keeps_hash_after([](TensorMeta& meta) { meta.data_ptr = external_data_ptr(static_cast<void*>(&meta)); }));
 static_assert(keeps_hash_after([](TensorMeta& meta) {
     meta.storage_generation = StorageGeneration::known(AllocationCount{1});
 }));
 static_assert(keeps_hash_after([](TensorMeta& meta) { meta.grad_fn_hash = grad_fn_hash(1); }));
+static_assert(keeps_hash_after([](TensorMeta& meta) {
+    meta.data_ptr = mint_synthetic_data_ptr(SyntheticAddress{0x10000});
+}));
+static_assert(mint_synthetic_data_ptr(SyntheticAddress{0x10000}) == mint_synthetic_data_ptr(SyntheticAddress{0x10000})
+              && !(mint_synthetic_data_ptr(SyntheticAddress{0x10000})
+                   == mint_synthetic_data_ptr(SyntheticAddress{0x20000})));
 static_assert(!keeps_hash_after([](TensorMeta& meta) { meta.set_shape(shape_with_last_size(tensor_dim(1))); }));
 static_assert(!keeps_hash_after([](TensorMeta& meta) { meta.storage_nbytes = 1; }));
 

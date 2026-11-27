@@ -1,20 +1,11 @@
 // Negative-compile test.  This file must fail to compile.
 //
-// Violation: assigning the result of `data_ptr_typed(...)`, which is
-// `::fixy::Tagged<void*, source::External>`, into a slot of
-// `::fixy::Tagged<void*, source::Sanitized>`.  Two tags make two
-// distinct classes of the one template, and no conversion joins them.
-//
-// The accessor carries External provenance to the consumers downstream.
-// A refactor that widened the source tag, or that retagged on
-// assignment, would let raw FFI bytes pass as Sanitized memory that the
-// dispatcher trusts.  This fixture shows that the type system refuses
-// that laundering.  The two types differ in the tag alone: both tags are
-// in fixy::tags::source, and the payload is void* on each side.  The
-// registration regex names the two tags, so only the refusal of the
-// External-to-Sanitized conversion satisfies it.
-//
-// [GCC-WRAPPER-TEXT] — function-argument type-mismatch rejection.
+// Violation: the result of `data_ptr_typed(...)`, the key of the data
+// pointer of a record, goes into a pointer under the tag Sanitized.  The key
+// gives no pointer back, and no conversion makes a tagged pointer from it, so
+// raw bytes of a foreign caller cannot pass as Sanitized memory that the
+// dispatcher trusts.  Only the members of TensorMeta re-mint the address of
+// the key.
 
 #include "../../vessel/torch/vessel_api_typed.h"
 
@@ -27,9 +18,6 @@ int main() {
     ::fixy::FixedArray<CrucibleMeta, 1> metas{};
     auto typed = crucible::vessel::as_meta_typed(&metas.at(::fixy::index<0>()), 1).expect("the door admits one record");
 
-    // data_ptr_typed returns ::fixy::Tagged<void*, source::External>.
-    // Should fail: the target ::fixy::Tagged<void*, source::Sanitized>
-    // is a different class; only retag along the catalog edge reaches it.
     ::fixy::Tagged<void*, ::fixy::tags::source::Sanitized> wrong = crucible::vessel::data_ptr_typed(typed, 0);
     return wrong.value() == nullptr ? 0 : 1;
 }

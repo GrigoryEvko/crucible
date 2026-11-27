@@ -1,16 +1,11 @@
 // Negative-compile test. This file must fail to compile.
 //
-// HS14 fixture #1 of 2 for the provenance gate of TensorMeta::data_ptr
-// (Tagged<void*, source::External>).
+// Violation: a raw pointer goes into the data pointer of a descriptor.  The
+// field holds the key of an address, which only external_data_ptr gives from
+// a pointer of the front end, so no assignment takes a raw pointer.
 //
-// Premise: TensorMeta::data_ptr is a foreign tensor-storage address
-// observed through PyTorch / trace / disk boundaries.  A raw pointer
-// must not be assignable into the field without explicitly crossing
-// the External provenance gate with external_data_ptr(ptr).
-//
-// Distinct mismatch class from neg_tensor_meta_data_ptr_cross_tag.cpp:
-//   * This fixture: raw void* rejected at the field write surface.
-//   * Companion: wrong Tagged provenance rejected at the same surface.
+// The companion fixture neg_tensor_meta_data_ptr_cross_tag gives the key of
+// another owner.
 
 #include <crucible/TensorMeta.h>
 #include <foundation/Quarantine.h>
@@ -19,8 +14,6 @@ int main() {
     crucible::TensorMeta meta{};
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it")
     void* raw = nullptr;
-
-    // must fail: data_ptr is ExternalDataPtr, not a raw void*.
     meta.data_ptr = raw;
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     return 0;

@@ -86,7 +86,7 @@ using Lanes = ::fixy::FixedArray<std::int64_t, kMaxTensorNDim>;
 
 // True when decode_tensor_meta gives a descriptor of the fields.
 [[nodiscard]] bool is_decoded(UncheckedTensorMeta const& fields) noexcept {
-    return ::crucible::decode_tensor_meta(fields, ::crucible::ExternalDataPtr{}).is_some();
+    return ::crucible::decode_tensor_meta(fields, ::fixy::Option<::crucible::TensorDataKey>{::fixy::none}).is_some();
 }
 
 // True when read_meta reads the image of the fields with no refusal.  A
@@ -207,7 +207,8 @@ void routes_refuse_a_rank_past_the_bound(::fixy::TestRunnerCtx const& test) noex
         CRUCIBLE_TEST_ASSERT(test, is_admitted(route, largest_rank));
     }
 
-    ::fixy::Option<TensorMeta> decoded = ::crucible::decode_tensor_meta(matrix, ::crucible::ExternalDataPtr{});
+    ::fixy::Option<TensorMeta> decoded =
+        ::crucible::decode_tensor_meta(matrix, ::fixy::Option<::crucible::TensorDataKey>{::fixy::none});
     CRUCIBLE_TEST_ASSERT(test, decoded.is_some());
     TensorMeta const meta = std::move(decoded).expect("the fields of a matrix decode");
     CRUCIBLE_TEST_ASSERT(test, meta.ndim == 2);

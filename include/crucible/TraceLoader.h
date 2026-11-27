@@ -455,7 +455,7 @@ decode_trace_meta(::fixy::View<std::byte const, sizeof(TensorMeta)> raw) noexcep
     fields.version = read_record_field_<uint32_t, offsetof(TensorMeta, version)>(raw);
     fields.storage_nbytes = read_record_field_<uint64_t, offsetof(TensorMeta, storage_nbytes)>(raw);
     fields.grad_fn_hash = read_record_field_<uint64_t, offsetof(TensorMeta, grad_fn_hash)>(raw);
-    return decode_tensor_meta(fields, ExternalDataPtr{});
+    return decode_tensor_meta(fields, ::fixy::Option<TensorDataKey>{::fixy::none});
 }
 
 namespace detail {
@@ -499,7 +499,7 @@ decode_first_trace_meta_(::fixy::View<std::byte const, TRACE_FIRST_META_BYTES> r
     fields.version = read_record_field_<uint32_t, kFirstMetaVersionAt>(raw);
     fields.storage_nbytes = read_record_field_<uint32_t, kFirstMetaStorageBytesAt>(raw);
     fields.grad_fn_hash = read_record_field_<uint64_t, kFirstMetaGradFnHashAt>(raw);
-    return decode_tensor_meta(fields, ExternalDataPtr{});
+    return decode_tensor_meta(fields, ::fixy::Option<TensorDataKey>{::fixy::none});
 }
 
 // One metadata record of the format of MetaBytes: of today, or of the first

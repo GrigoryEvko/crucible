@@ -9,5 +9,5 @@
 
 int main() {
     auto const pointer = crucible::mint_synthetic_data_ptr(std::uint64_t{0x1000});
-    return pointer.value() == nullptr ? 0 : 1;
+    return pointer.is_some() ? 0 : 1;
 }

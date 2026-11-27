@@ -51,7 +51,7 @@ static void test_single_append_returns_index_zero() {
     CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
     const TensorMeta got = log.copy_record(idx);
-    CRUCIBLE_TEST_ASSERT(kTest, got.data_ptr.value() == m.data_ptr.value());
+    CRUCIBLE_TEST_ASSERT(kTest, got.data_ptr == m.data_ptr);
     CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(got.sizes[0]) == 128);
     CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(got.sizes[1]) == 256);
     // A copy of a record and the record of the caller lie outside the buffer.
@@ -80,9 +80,8 @@ static void test_batch_append_and_monotonic() {
         [&log_read, idx1](auto run) noexcept { log_read.copy_run(idx1, std::move(run)); });
     for (size_t i = 0; i < 8; ++i) {
         CRUCIBLE_TEST_ASSERT(
-            kTest,
-            copied.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value()
-                == batch.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value());
+            kTest, copied.get(i).expect("a test reads an element at or past the count of its array")->data_ptr
+                       == batch.get(i).expect("a test reads an element at or past the count of its array")->data_ptr);
     }
     ::fixy::check::pass(kTest, "  test_batch_monotonic:           PASSED\n");
 }
@@ -147,18 +146,15 @@ static void test_copy_run_across_the_end() {
         [&log_read, idx](auto run) noexcept { log_read.copy_run(idx, std::move(run)); });
     for (uint32_t i = 0; i < 5; ++i) {
         CRUCIBLE_TEST_ASSERT(
-            kTest,
-            copied.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value()
-                == tail5.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value());
+            kTest, copied.get(i).expect("a test reads an element at or past the count of its array")->data_ptr
+                       == tail5.get(i).expect("a test reads an element at or past the count of its array")->data_ptr);
     }
 
     // A run that does not pass the end is one copy.
     ::fixy::FixedArray<TensorMeta, 2> const head2 = ::fixy::build_fixed_array<TensorMeta, 2>(
         [&log_read, near_end](auto run) noexcept { log_read.copy_run(MetaIndex{near_end + 3}, std::move(run)); });
-    CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<0>()).data_ptr.value()
-                                    == tail5.at(::fixy::index<3>()).data_ptr.value());
-    CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<1>()).data_ptr.value()
-                                    == tail5.at(::fixy::index<4>()).data_ptr.value());
+    CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<0>()).data_ptr == tail5.at(::fixy::index<3>()).data_ptr);
+    CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<1>()).data_ptr == tail5.at(::fixy::index<4>()).data_ptr);
     ::fixy::check::pass(kTest, "  test_copy_run_across_the_end:   PASSED\n");
 }
 
@@ -195,14 +191,13 @@ static void test_counters_pass_two_to_the_32() {
         [&log_read, first](auto cells) noexcept { log_read.copy_run(first, std::move(cells)); });
     for (uint32_t i = 0; i < 32; ++i) {
         CRUCIBLE_TEST_ASSERT(
-            kTest,
-            copied.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value()
-                == run.get(i).expect("a test reads an element at or past the count of its array")->data_ptr.value());
+            kTest, copied.get(i).expect("a test reads an element at or past the count of its array")->data_ptr
+                       == run.get(i).expect("a test reads an element at or past the count of its array")->data_ptr);
     }
     const TensorMeta read_below = log.copy_record(last_below);
     const TensorMeta read_across = log.copy_record(across);
-    CRUCIBLE_TEST_ASSERT(kTest, read_below.data_ptr.value() == run.at(::fixy::index<15>()).data_ptr.value());
-    CRUCIBLE_TEST_ASSERT(kTest, read_across.data_ptr.value() == run.at(::fixy::index<16>()).data_ptr.value());
+    CRUCIBLE_TEST_ASSERT(kTest, read_below.data_ptr == run.at(::fixy::index<15>()).data_ptr);
+    CRUCIBLE_TEST_ASSERT(kTest, read_across.data_ptr == run.at(::fixy::index<16>()).data_ptr);
 
     log.release_to(::crucible::MetaIndex{across.raw() + 16});
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
@@ -335,9 +330,9 @@ static void test_spsc_concurrent_integrity() {
             }
             for (uint32_t k = 0; k < avail; ++k) {
                 const TensorMeta m = log.copy_record(MetaIndex{next + k});
-                const ExternalDataPtr expected =
+                const ::fixy::Option<TensorDataKey> expected =
                     mint_synthetic_data_ptr(SyntheticAddress{uint64_t{next + k + 1} << 16});
-                CRUCIBLE_TEST_ASSERT(kTest, m.data_ptr.value() == expected.value());
+                CRUCIBLE_TEST_ASSERT(kTest, m.data_ptr == expected);
                 // The remaining fields are identical in every record,
                 // so they carry no sequence information.  They are
                 // checked anyway: a torn read shows up here.
@@ -390,7 +385,7 @@ static void test_try_append_pure() {
         CRUCIBLE_TEST_ASSERT(kTest, idx.raw() == 0);
         CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 1);
         const TensorMeta got = log.copy_record(idx);
-        CRUCIBLE_TEST_ASSERT(kTest, got.data_ptr.value() == m.data_ptr.value());
+        CRUCIBLE_TEST_ASSERT(kTest, got.data_ptr == m.data_ptr);
     }
 
     {
@@ -478,9 +473,9 @@ static void test_try_append_pure_concurrent() {
             }
             for (uint32_t k = 0; k < avail; ++k) {
                 const TensorMeta m = log.copy_record(MetaIndex{next + k});
-                const ExternalDataPtr expected =
+                const ::fixy::Option<TensorDataKey> expected =
                     mint_synthetic_data_ptr(SyntheticAddress{uint64_t{next + k + 1} << 16});
-                CRUCIBLE_TEST_ASSERT(kTest, m.data_ptr.value() == expected.value());
+                CRUCIBLE_TEST_ASSERT(kTest, m.data_ptr == expected);
                 CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(m.sizes[0]) == 128);
                 CRUCIBLE_TEST_ASSERT(kTest, ::crucible::raw_tensor_dim(m.sizes[1]) == 256);
                 CRUCIBLE_TEST_ASSERT(kTest, m.dtype == ScalarType::Float);

@@ -58,7 +58,7 @@ that the axis does not apply to the row.
 | `mint_meta_run` | `include/crucible/MetaLog.h` | Y | Y | Y | Y | token | · | HS14: 12 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
-| `mint_synthetic_data_ptr` | `include/crucible/TensorMeta.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_synthetic_data_ptr` | `include/crucible/TensorMeta.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_tensor_shape` | `include/crucible/TensorMeta.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_validated_op(crucible::TraceRing::ValidatedEntry)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | · | token | · | HS14: 14 |
 | `mint_validated_op(crucible::TraceRing::ValidatedEntry, crucible::SealedRecords<T0_0>&)` | `include/crucible/ValidatedOp.h` | Y | Y | Y | Y | token | · | HS14: 14 |
@@ -344,12 +344,13 @@ that the axis does not apply to the row.
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 38 |
 | `mint_box_built` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 10 |
-| `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 33 |
+| `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 34 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_epoch_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 20 |
 | `mint_erased_address` | `include/foundation/core/CallRef.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_fixed_heap_array` | `include/foundation/core/FixedHeapArray.h` | Y | - | Y | Y | token | · | HS14: 10 |
-| `mint_foreign_run_address` | `include/foundation/core/DataAddress.h` | Y | - | Y | Y | token | · | HS14: 2 |
+| `mint_foreign_address_key` | `include/foundation/core/DataAddress.h` | Y | - | Y | Y | token | · | HS14: 5 |
+| `mint_foreign_run_address` | `include/foundation/core/DataAddress.h` | Y | - | Y | Y | token | · | HS14: 6 |
 | `mint_foreign_text(const char*, std::size_t)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_foreign_text(foundation::core::View<const std::byte, 18446744073709551615>)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
@@ -437,4 +438,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 86 | 48 | 30 | 8 | 0 | 7 |
-| substrate (`include/foundation/`, `include/fixy/`) | 191 | 72 | 115 | 4 | 0 | 2 |
+| substrate (`include/foundation/`, `include/fixy/`) | 193 | 72 | 117 | 4 | 0 | 2 |

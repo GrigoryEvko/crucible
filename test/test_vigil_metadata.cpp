@@ -151,7 +151,7 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
                         "a test reads an element at or past the count of its View"),
                     sizeof(crucible::TensorMeta));
     }
-    CRUCIBLE_TEST_ASSERT(kTest, recorded[0][0].data_ptr.value() == parameter_ptr());
+    CRUCIBLE_TEST_ASSERT(kTest, recorded[0][0].data_ptr == ::crucible::external_data_ptr(parameter_ptr()));
     auto [bytes_before, serialized_before] = ::fixy::with_mut(
         ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, size_t{1} << 16, std::byte{0}),
         [&region](auto run) noexcept { return crucible::serialize_region(::fixy::to(*region), std::move(run)); });

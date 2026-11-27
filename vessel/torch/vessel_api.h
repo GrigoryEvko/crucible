@@ -39,7 +39,7 @@
 // pointer that is not null and that has the alignment of the element type.
 // An entry that gets another pair gives its refusal: the action REFUSED, or
 // 0 with no write for an entry that writes into an array of the caller.
-//   * CrucibleMeta::data_ptr  → Tagged<void*, source::External>
+//   * CrucibleMeta::data_ptr  → Option<TensorDataKey>
 //                               via `data_ptr_typed(typed_meta, i)`
 //                               — provenance threads into
 //                               TensorMeta-consuming code without

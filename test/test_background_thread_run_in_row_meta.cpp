@@ -518,7 +518,7 @@ static void check_built_graph_owns_its_metadata(crucible::test::RigLog& metalog,
                          .expect("a test reads an element at or past the count of its View");
                 CRUCIBLE_TEST_ASSERT(kTest, !log.holds_record(first_meta)
                                                 && "an op of the graph points into the buffer of the metadata log");
-                CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
+                CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr == output_meta(op).data_ptr);
                 CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_tensor_dim(first_meta.sizes[0]) == 64);
             }
             // The graph gives the entry of the ops that the caller gives, and no
@@ -592,7 +592,7 @@ static void check_build_and_release_pass_two_to_the_32(crucible::test::RigLog& m
                          .output_metas()
                          .get(0)
                          .expect("a test reads an element at or past the count of its View");
-                CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
+                CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr == output_meta(op).data_ptr);
             }
             built_parts = ::fixy::Option<BuiltRegion>::some(std::move(region_parts));
         });

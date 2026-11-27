@@ -29,7 +29,7 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 namespace {
 
-using crucible::ExternalDataPtr;
+using crucible::TensorDataKey;
 using crucible::vessel::TypedMeta;
 using crucible::vessel::TypedSchemaName;
 
@@ -71,29 +71,32 @@ static_assert(!std::is_convertible_v<::fixy::Tagged<const CrucibleMeta*, ::fixy:
 static_assert(::fixy::MintableTag<::fixy::tags::source::ABIBoundary>);
 static_assert(!::fixy::MintableTag<::fixy::tags::source::Sanitized>);
 
-// A typed data pointer collapses to the bare pointer width.  A typed
-// schema name is a C text in the storage of the table, and the tag
-// collapses around it.
+// The key of a data pointer, in an Option, takes the width of the bare
+// pointer.  A typed schema name is a C text in the storage of the table, and
+// the tag collapses around it.
 
-static_assert(
-    std::is_same_v<decltype(crucible::vessel::data_ptr_typed(std::declval<TypedMeta>(), 0)), ExternalDataPtr>);
-static_assert(std::is_same_v<ExternalDataPtr, ::fixy::Tagged<void*, ::fixy::tags::source::External>>);
-static_assert(sizeof(ExternalDataPtr) == sizeof(void*));
-static_assert(alignof(ExternalDataPtr) == alignof(void*));
-static_assert(std::is_trivially_copy_constructible_v<ExternalDataPtr>);
+using DataKey = ::fixy::Option<TensorDataKey>;
+static_assert(std::is_same_v<decltype(crucible::vessel::data_ptr_typed(std::declval<TypedMeta>(), 0)), DataKey>);
+static_assert(sizeof(DataKey) == sizeof(void*));
+static_assert(alignof(DataKey) == alignof(void*));
+static_assert(std::is_trivially_copy_constructible_v<DataKey>);
 
 static_assert(std::is_same_v<TypedSchemaName, crucible::InternedSchemaName>);
 static_assert(sizeof(TypedSchemaName) == sizeof(::fixy::CText));
 static_assert(alignof(TypedSchemaName) == alignof(::fixy::CText));
 static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
 
-// The data pointer's provenance differs from the containing meta's, so
-// a value carrying the container's tag cannot take its place.
-static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::source::ABIBoundary>, ExternalDataPtr>);
-static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::source::Sanitized>, ExternalDataPtr>);
-// A tag is a type, not a name.  The trust family also has a tag named
-// External, and a pointer under that tag cannot enter a meta either.
-static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::trust::External>, ExternalDataPtr>);
+// A data pointer enters a meta only as the key that external_data_ptr gives.
+// A pointer under a tag of the boundary or of the trust family, a raw pointer
+// and the key of another owner cannot take its place.
+namespace {
+struct OtherOwner {};
+}  // namespace
+static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::source::ABIBoundary>, DataKey>);
+static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::source::Sanitized>, DataKey>);
+static_assert(!std::is_convertible_v<::fixy::Tagged<void*, ::fixy::tags::trust::External>, DataKey>);
+static_assert(!std::is_convertible_v<void*, DataKey>);
+static_assert(!std::is_convertible_v<::fixy::Option<::fixy::ForeignAddressKey<OtherOwner>>, DataKey>);
 
 // A validated name and raw input from the boundary cannot be confused
 // for one another.
@@ -267,18 +270,18 @@ void test_data_ptr_typed() {
     auto p1 = crucible::vessel::data_ptr_typed(typed_arr, 1);
     auto p2 = crucible::vessel::data_ptr_typed(typed_arr, 2);
 
-    EXPECT(p0.value() == first.data_ptr, "data_ptr_typed[0] must read the wire pointer");
-    EXPECT(p1.value() == second.data_ptr, "data_ptr_typed[1] must read the wire pointer");
-    EXPECT(p2.value() == third.data_ptr, "data_ptr_typed[2] must read the wire pointer");
+    EXPECT(p0 == crucible::external_data_ptr(first.data_ptr), "data_ptr_typed[0] must read the wire pointer");
+    EXPECT(p1 == crucible::external_data_ptr(second.data_ptr), "data_ptr_typed[1] must read the wire pointer");
+    EXPECT(p2 == crucible::external_data_ptr(third.data_ptr), "data_ptr_typed[2] must read the wire pointer");
 
     // Distinct inputs stay distinct, so nothing is cached or aliased.
-    EXPECT(p0.value() != p1.value(), "distinct meta data_ptrs must yield distinct typed values");
-    EXPECT(p1.value() != p2.value(), "distinct meta data_ptrs must yield distinct typed values");
+    EXPECT(!(p0 == p1), "distinct meta data_ptrs must yield distinct typed values");
+    EXPECT(!(p1 == p2), "distinct meta data_ptrs must yield distinct typed values");
 
-    // The wrapper must hold exactly the bytes of the bare pointer.
+    // The key holds exactly the bits of the bare pointer.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the case compares the bytes of a typed data pointer with the C pointer")
     EXPECT(std::memcmp(&p0, &first.data_ptr, sizeof(first.data_ptr)) == 0,
-           "ExternalDataPtr layout must be byte-identical to void*");
+           "the key of a data pointer must hold the bits of the void*");
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
@@ -359,7 +362,7 @@ void test_ffi_records_read_the_c_records() {
                         EXPECT(read.dtype == crucible::ScalarType::Float,
                                "a record holds the element type that the caller wrote");
                         EXPECT(read.requires_grad, "a record holds the gradient flag that the caller wrote");
-                        EXPECT(read.data_ptr.value() == written.data_ptr,
+                        EXPECT(read.data_ptr == crucible::external_data_ptr(written.data_ptr),
                                "a record holds the data pointer that the caller wrote");
                         EXPECT(read.storage_nbytes == 444, "a record holds the storage size that the caller wrote");
                         EXPECT(crucible::raw_grad_fn_hash(read) == 0xABC2U,
