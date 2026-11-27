@@ -56,7 +56,9 @@
 //     r_hi = RN(r1 - k L2), and r_lo = RN(RN(r1 - r_hi) - k L2).
 //     P' = C2 + C3 r_hi + r_hi^2 (C4 + C5 r_hi), and q = r_hi^2 P' +
 //     tail (1 + r_hi) + r_lo (1 + r_hi).  r_lo (1 + r_hi) joins after the
-//     polynomial, so r_lo is off the longest chain.
+//     polynomial, so r_lo is off the longest chain.  A level with no fma
+//     takes a multiply and an add for r_lo (1 + r_hi), and the budget holds
+//     the larger round of the two forms.
 //     hi = RN(s + s r_hi), and lo = RN(s q + RN(s + s r_hi - hi)).
 //     Then |hi + lo - exp(x)| <= eps_fast exp(x), with eps_fast = 2^-65.17.
 //     The rounding test: with E = 2^-65 hi, if RN(hi + RN(lo + E)) and
@@ -414,7 +416,14 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     // r_lo (1 + r_hi) joins after the polynomial, so r_lo is off the longest
     // chain.
     double const tail_terms = fma_of_finite(tail, reduced, tail);
+    // The levels with no fused multiply-add take a multiply and an add for
+    // r_lo (1 + r_hi).  Their two rounds are below 2^-113, so the bits of the
+    // correct round are the same.
+#if defined(__FMA__) || defined(__aarch64__)
     double const low_terms = fma_of_finite(reduced_low, reduced, reduced_low);
+#else
+    double const low_terms = reduced_low + reduced_low * reduced;
+#endif
     double const polynomial = fma_of_finite(squared, high_pair, low_pair);
     double const rest = fma_of_finite(squared, polynomial, tail_terms) + low_terms;
     double const high = fma_of_finite(scale, reduced, scale);

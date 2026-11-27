@@ -536,8 +536,11 @@ def exp_fast_budget(
     g_second = 2 * c2 + 6 * c3 * widened + 12 * c4 * widened**2 + 20 * c5 * widened**3
     # The rounds of q: b = RN(tail + tail r_hi), c = RN(r_lo + r_lo r_hi), the pairs of P', P',
     # q1 = RN(r_hi^2 P' + b) and q = RN(q1 + c).  c joins after the polynomial, so r_lo is off the longest chain.
+    # A level with no fma computes c = RN(r_lo + RN(r_lo r_hi)), and the budget takes the larger of the two forms.
     b_most = tail_most * (1 + reach) * (1 + u)
-    c_most = low_most * (1 + reach) * (1 + u)
+    product_most = low_most * reach * (1 + u)
+    c_round = max(u * low_most * (1 + reach), u * low_most * reach + u * (low_most + product_most))
+    c_most = (low_most + product_most) * (1 + u)
     low_pair = c2 + c3 * reach
     high_pair = c4 + c5 * reach
     square_most = reach**2 * (1 + u)
@@ -555,7 +558,7 @@ def exp_fast_budget(
             + low_most**2 * g_second / 2,
         ),
         ("round of b", u * b_most),
-        ("round of c", u * c_most),
+        ("rounds of c", c_round),
         ("round of r_hi^2, times P'", u * reach**2 * poly_most),
         ("rounds of P', times r_hi^2", reach**2 * poly_round),
         ("round of q1", u * q1_most),
