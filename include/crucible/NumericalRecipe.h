@@ -135,14 +135,45 @@ template <typename E>
 // no ScalarType.  No recipe then packs to either word, and no two recipes share
 // a hash.  The check file of this header does a check of these facts.
 inline constexpr uint64_t kReservedSalt = 0x5245434950454944ULL;  // "RECIPEID"
+
+// The eight fields of the word of a recipe, one byte each from bit 0.
+struct AccumDtypeField final {};
+struct OutDtypeField final {};
+struct ReductionField final {};
+struct RoundingField final {};
+struct ScalePolicyField final {};
+struct SoftmaxField final {};
+struct DeterminismField final {};
+struct RecipeFlagsField final {};
+
+using RecipeWord =
+    ::fixy::PackedWord<uint64_t, ::fixy::BitField<AccumDtypeField, 8>, ::fixy::BitField<OutDtypeField, 8>,
+                       ::fixy::BitField<ReductionField, 8>, ::fixy::BitField<RoundingField, 8>,
+                       ::fixy::BitField<ScalePolicyField, 8>, ::fixy::BitField<SoftmaxField, 8>,
+                       ::fixy::BitField<DeterminismField, 8>, ::fixy::BitField<RecipeFlagsField, 8>>;
 }  // namespace detail_recipe
 
 [[nodiscard, gnu::pure]] constexpr RecipeHash compute_recipe_hash(const NumericalRecipe& r) noexcept {
     using detail_recipe::enum_byte;
-    const uint64_t packed = (uint64_t(enum_byte(r.accum_dtype)) << 0) | (uint64_t(enum_byte(r.out_dtype)) << 8)
-                          | (uint64_t(enum_byte(r.reduction_algo)) << 16) | (uint64_t(enum_byte(r.rounding)) << 24)
-                          | (uint64_t(enum_byte(r.scale_policy)) << 32) | (uint64_t(enum_byte(r.softmax)) << 40)
-                          | (uint64_t(enum_byte(r.determinism)) << 48) | (uint64_t(r.flags.raw()) << 56);
+    namespace field = detail_recipe;
+    const uint64_t packed = detail_recipe::RecipeWord{}
+                                .with<field::AccumDtypeField>(enum_byte(r.accum_dtype))
+                                .expect("a byte fits a field of 8 bits")
+                                .with<field::OutDtypeField>(enum_byte(r.out_dtype))
+                                .expect("a byte fits a field of 8 bits")
+                                .with<field::ReductionField>(enum_byte(r.reduction_algo))
+                                .expect("a byte fits a field of 8 bits")
+                                .with<field::RoundingField>(enum_byte(r.rounding))
+                                .expect("a byte fits a field of 8 bits")
+                                .with<field::ScalePolicyField>(enum_byte(r.scale_policy))
+                                .expect("a byte fits a field of 8 bits")
+                                .with<field::SoftmaxField>(enum_byte(r.softmax))
+                                .expect("a byte fits a field of 8 bits")
+                                .with<field::DeterminismField>(enum_byte(r.determinism))
+                                .expect("a byte fits a field of 8 bits")
+                                .with<field::RecipeFlagsField>(r.flags.raw())
+                                .expect("a byte fits a field of 8 bits")
+                                .bits();
     const uint64_t mixed = ::foundation::reflect::fmix64(packed);
     const bool is_reserved = mixed == 0 || mixed == RecipeHash::sentinel().raw();
     const RecipeHash result{is_reserved ? ::foundation::reflect::fmix64(mixed ^ detail_recipe::kReservedSalt) : mixed};
@@ -209,6 +240,18 @@ namespace detail_recipe {
 // The salt of the hash of a numerics policy, so the word of a policy and the
 // word of a recipe of the same bytes give two hashes.
 inline constexpr uint64_t kNumericsSalt = 0x4E554D4552494353ULL;  // "NUMERICS"
+
+// The fields of the word of a numerics policy: four bytes from bit 0, and the
+// eager word in the high 32 bits.
+struct PolicyDeterminismField final {};
+struct Accum16Field final {};
+struct Accum8Field final {};
+struct PolicyFlagsField final {};
+struct EagerField final {};
+
+using PolicyWord = ::fixy::PackedWord<uint64_t, ::fixy::BitField<PolicyDeterminismField, 8>,
+                                      ::fixy::BitField<Accum16Field, 8>, ::fixy::BitField<Accum8Field, 8>,
+                                      ::fixy::BitField<PolicyFlagsField, 8>, ::fixy::BitField<EagerField, 32>>;
 }  // namespace detail_recipe
 
 // The hash of the policy and the eager word.  The four bytes of the policy and
@@ -219,10 +262,19 @@ inline constexpr uint64_t kNumericsSalt = 0x4E554D4552494353ULL;  // "NUMERICS"
 [[nodiscard, gnu::pure]] constexpr NumericsHash compute_numerics_hash(const NumericsPolicy& policy,
                                                                       EagerNumerics eager) noexcept {
     using detail_recipe::enum_byte;
-    const uint64_t packed = (uint64_t(enum_byte(policy.determinism)) << 0)
-                          | (uint64_t(enum_byte(policy.accum_16bit)) << 8)
-                          | (uint64_t(enum_byte(policy.accum_8bit)) << 16) | (uint64_t(policy.flags.raw()) << 24)
-                          | (uint64_t(eager.bits) << 32);
+    namespace field = detail_recipe;
+    const uint64_t packed = detail_recipe::PolicyWord{}
+                                .with<field::PolicyDeterminismField>(enum_byte(policy.determinism))
+                                .expect("a byte fits a field of 8 bits")
+                                .with<field::Accum16Field>(enum_byte(policy.accum_16bit))
+                                .expect("a byte fits a field of 8 bits")
+                                .with<field::Accum8Field>(enum_byte(policy.accum_8bit))
+                                .expect("a byte fits a field of 8 bits")
+                                .with<field::PolicyFlagsField>(policy.flags.raw())
+                                .expect("a byte fits a field of 8 bits")
+                                .with<field::EagerField>(eager.bits)
+                                .expect("a word of 32 bits fits a field of 32 bits")
+                                .bits();
     const uint64_t mixed = ::foundation::reflect::fmix64(packed ^ detail_recipe::kNumericsSalt);
     const bool is_reserved = mixed == 0 || mixed == NumericsHash::sentinel().raw();
     const NumericsHash result{is_reserved ? ::foundation::reflect::fmix64(mixed ^ detail_recipe::kReservedSalt)
