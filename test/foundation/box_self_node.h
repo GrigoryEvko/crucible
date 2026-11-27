@@ -47,7 +47,7 @@ template <class List, class Tree>
 [[nodiscard]] auto build_nodes() noexcept {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::foundation::core::Box<List> tail = ::foundation::core::mint_box<List>(alloc);
-    tail->value = 2;
+    tail = ::foundation::core::with_mut(std::move(tail), [](List& node) noexcept { node.value = 2; });
     List head{};
     head.value = 1;
     head.next = ::foundation::core::Option<::foundation::core::Box<List>>::some(std::move(tail));
@@ -55,24 +55,28 @@ template <class List, class Tree>
     // The assignment ends the node that the target holds.
     ::foundation::core::Box<List> target = ::foundation::core::mint_box<List>(alloc);
     target = ::foundation::core::mint_box<List>(alloc);
-    target->value = 8;
+    target = ::foundation::core::with_mut(std::move(target), [](List& node) noexcept { node.value = 8; });
 
     ::foundation::core::Box<Tree> leaf = ::foundation::core::mint_box<Tree>(alloc);
-    leaf->value = 4;
+    leaf = ::foundation::core::with_mut(std::move(leaf), [](Tree& node) noexcept { node.value = 4; });
     Tree root{};
     root.left = ::foundation::core::Option<::foundation::core::Box<Tree>>::some(std::move(leaf));
 
-    const bool is_list_linked =
-        head.next.is_some_and([](::foundation::core::Box<List> const& next) noexcept { return next->value == 2; });
-    const bool is_tree_linked =
-        root.left.is_some_and([](::foundation::core::Box<Tree> const& left) noexcept { return left->value == 4; });
+    const bool is_list_linked = head.next.is_some_and([](::foundation::core::Box<List> const& next) noexcept {
+        return ::foundation::core::with_view(next, [](List const& node) noexcept { return node.value == 2; });
+    });
+    const bool is_tree_linked = root.left.is_some_and([](::foundation::core::Box<Tree> const& left) noexcept {
+        return ::foundation::core::with_view(left, [](Tree const& node) noexcept { return node.value == 4; });
+    });
 
     static_assert(!::foundation::linear::is_linear_type(^^List) && !::foundation::linear::is_linear_type(^^Tree));
     static_assert(::foundation::core::DroppablePayload<::foundation::core::Box<List>>);
     static_assert(::foundation::transfer::Sendable<List> && ::foundation::transfer::SendableOwned<List>
                   && ::foundation::transfer::SendableBeside<List>);
     static_assert(::foundation::transfer::Sendable<Tree> && ::foundation::transfer::SendableOwned<Tree>);
-    return head.value + (is_list_linked ? 2 : 0) + (is_tree_linked ? 4 : 0) + target->value;
+    int const target_value =
+        ::foundation::core::with_view(target, [](List const& node) noexcept { return node.value; });
+    return head.value + (is_list_linked ? 2 : 0) + (is_tree_linked ? 4 : 0) + target_value;
 }
 
 }  // namespace box_self_node

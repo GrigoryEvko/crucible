@@ -221,7 +221,9 @@ void test_large_request_takes_its_own_block() {
 
 // An arena of a family tag lives past one scope, alone and in a Box.  Each
 // Ref and each run carries the tag, and the Box builds the arena in its own
-// storage, so a Ref of the boxed arena stays valid after a move of the Box.
+// storage, so an object of the boxed arena stays after a move of the Box.
+// The frames of the Box make the object, keep its position, and find it again
+// after the move.
 void test_family_arena_lives_in_a_box() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     BumpArena<TestFamily> arena = ::foundation::core::mint_bump_arena<TestFamily>(Bytes{4096});
@@ -231,9 +233,17 @@ void test_family_arena_lives_in_a_box() {
 
     ::foundation::core::Box<BumpArena<TestFamily>> boxed =
         ::foundation::core::mint_box<BumpArena<TestFamily>>(alloc, Bytes{4096});
-    Ref<int, TestFamily> const eight = boxed->make<int>(alloc, 8);
-    ::foundation::core::Box<BumpArena<TestFamily>> moved = std::move(boxed);
-    CRUCIBLE_FATAL_INVARIANT(*eight == 8 && moved->retained_bytes() == 4096);
+    auto [eight_at, made] =
+        ::foundation::core::with_mut(std::move(boxed), [alloc](BumpArena<TestFamily>& held) noexcept {
+            Ref<int, TestFamily> const eight = held.make<int>(alloc, 8);
+            return held.position_of(eight).expect("the arena made the object");
+        });
+    ::foundation::core::Box<BumpArena<TestFamily>> moved = std::move(made);
+    [[maybe_unused]] auto [is_kept, kept] =
+        ::foundation::core::with_mut(std::move(moved), [eight_at](BumpArena<TestFamily>& held) noexcept {
+            return held.retained_bytes() == 4096 && *held.at(eight_at).expect("the position is of this arena") == 8;
+        });
+    CRUCIBLE_FATAL_INVARIANT(is_kept);
 }
 
 // A position of an object names the same object in its arena, in the first
@@ -246,24 +256,46 @@ void test_position_names_its_object_in_its_arena() {
         ::foundation::core::mint_box<BumpArena<TestFamily>>(alloc, Bytes{4096});
     ::foundation::core::Box<BumpArena<TestFamily>> other =
         ::foundation::core::mint_box<BumpArena<TestFamily>>(alloc, Bytes{4096});
-    Ref<Pair, TestFamily> const first = held->make<Pair>(alloc, Pair{.key = 7, .count = 3, .flags = 1});
-    static_cast<void>(take(*held, 20000));
-    Ref<Pair, TestFamily> const later = held->make<Pair>(alloc, Pair{.key = 9, .count = 4, .flags = 2});
-    Ref<Pair, TestFamily> const stranger = other->make<Pair>(alloc, Pair{.key = 5, .count = 1, .flags = 0});
 
-    auto const first_position = held->position_of(first).expect("the arena made the first object");
-    auto const later_position = held->position_of(later).expect("the arena made the later object");
-    CRUCIBLE_FATAL_INVARIANT(!(first_position == later_position));
-    CRUCIBLE_FATAL_INVARIANT(held->position_of(stranger).is_none());
+    // The two arenas make their objects in their frames.  The frames give the
+    // positions and the addresses of the objects.
+    using Position = ::foundation::core::ArenaPosition<Pair, TestFamily>;
+    using Made = ::foundation::core::Record<Position, Position, Address, Address>;
+    auto [made, made_in] =
+        ::foundation::core::with_mut(std::move(held), [alloc, &other](BumpArena<TestFamily>& arena) noexcept {
+            Ref<Pair, TestFamily> const first = arena.make<Pair>(alloc, Pair{.key = 7, .count = 3, .flags = 1});
+            static_cast<void>(take(arena, 20000));
+            Ref<Pair, TestFamily> const later = arena.make<Pair>(alloc, Pair{.key = 9, .count = 4, .flags = 2});
+            auto [is_stranger_refused, stranger_in] =
+                ::foundation::core::with_mut(std::move(other), [alloc, &arena](BumpArena<TestFamily>& second) noexcept {
+                    Ref<Pair, TestFamily> const stranger =
+                        second.make<Pair>(alloc, Pair{.key = 5, .count = 1, .flags = 0});
+                    return arena.position_of(stranger).is_none();
+                });
+            other = std::move(stranger_in);
+            CRUCIBLE_FATAL_INVARIANT(is_stranger_refused);
+            return Made{arena.position_of(first).expect("the arena made the first object"),
+                        arena.position_of(later).expect("the arena made the later object"), address_of(first),
+                        address_of(later)};
+        });
+    auto const& [first_at, later_at, first_address, later_address] = made;
+    CRUCIBLE_FATAL_INVARIANT(!(first_at == later_at));
 
     // The Box moves, and the position names the same object, because the
     // arena keeps its blocks and its identity.
-    ::foundation::core::Box<BumpArena<TestFamily>> moved = std::move(held);
-    Ref<Pair, TestFamily> const first_again = moved->at(first_position).expect("the position is of this arena");
-    Ref<Pair, TestFamily> const later_again = moved->at(later_position).expect("the position is of this arena");
-    CRUCIBLE_FATAL_INVARIANT(address_of(first_again) == address_of(first) && first_again->key == 7);
-    CRUCIBLE_FATAL_INVARIANT(address_of(later_again) == address_of(later) && later_again->key == 9);
-    CRUCIBLE_FATAL_INVARIANT(other->at(first_position).is_none());
+    ::foundation::core::Box<BumpArena<TestFamily>> moved = std::move(made_in);
+    [[maybe_unused]] auto [is_found, found_in] =
+        ::foundation::core::with_mut(std::move(moved), [&first_at, &later_at, &first_address,
+                                                        &later_address](BumpArena<TestFamily>& arena) noexcept {
+            Ref<Pair, TestFamily> const first_again = arena.at(first_at).expect("the position is of this arena");
+            Ref<Pair, TestFamily> const later_again = arena.at(later_at).expect("the position is of this arena");
+            return address_of(first_again) == first_address && first_again->key == 7
+                && address_of(later_again) == later_address && later_again->key == 9;
+        });
+    CRUCIBLE_FATAL_INVARIANT(is_found);
+    [[maybe_unused]] auto [is_foreign_refused, other_in] = ::foundation::core::with_mut(
+        std::move(other), [&first_at](BumpArena<TestFamily>& arena) noexcept { return arena.at(first_at).is_none(); });
+    CRUCIBLE_FATAL_INVARIANT(is_foreign_refused);
 }
 
 // An object of an arena that holds a run and a link of the arena.

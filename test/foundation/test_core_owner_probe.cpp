@@ -211,9 +211,17 @@ BoxNode::~BoxNode() { --live_nodes; }
 Box<BoxNode> make_chain(int first, int last) {
     Box<BoxNode> head = ::foundation::core::mint_box<BoxNode>(kAlloc, first);
     if (first < last) {
-        head->next = ::foundation::core::some(NextLink{make_chain(first + 1, last)});
+        NextLink next{make_chain(first + 1, last)};
+        head = ::foundation::core::with_mut(std::move(head), [&next](BoxNode& node) noexcept {
+            node.next = ::foundation::core::some(std::move(next));
+        });
     }
     return head;
+}
+
+// The label of the node of a Box, in the read frame of the Box.
+[[nodiscard]] int label_in(Box<BoxNode> const& node) noexcept {
+    return ::foundation::core::with_view(node, [](BoxNode const& held) noexcept { return held.label; });
 }
 
 struct BoxProbe {
@@ -224,7 +232,7 @@ struct BoxProbe {
             Box<BoxNode> head = make_chain(1, 3);
             move_into(head, head);
             CRUCIBLE_FATAL_INVARIANT(live_nodes == 3);
-            CRUCIBLE_FATAL_INVARIANT(head->label == 1);
+            CRUCIBLE_FATAL_INVARIANT(label_in(head) == 1);
         }
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
@@ -247,7 +255,7 @@ struct BoxProbe {
             CRUCIBLE_FATAL_INVARIANT(live_nodes == 4);
             Box<BoxNode> taken{static_cast<Box<BoxNode>&&>(target)};
             target = make_chain(1, 1);
-            CRUCIBLE_FATAL_INVARIANT(taken->label == 1);
+            CRUCIBLE_FATAL_INVARIANT(label_in(taken) == 1);
             CRUCIBLE_FATAL_INVARIANT(live_nodes == 5);
         }
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
@@ -261,9 +269,9 @@ struct BoxProbe {
             ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
             Box<BoxNode> source = make_chain(1, 1);
             Box<BoxNode> const target{static_cast<Box<BoxNode>&&>(through(source))};
-            CRUCIBLE_FATAL_INVARIANT(target->label == 1);
+            CRUCIBLE_FATAL_INVARIANT(label_in(target) == 1);
             expect_dies(
-                test, [&source] noexcept { static_cast<void>(through(source)->label); },
+                test, [&source] noexcept { static_cast<void>(label_in(through(source))); },
                 ::foundation::core::TextView{
                     "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
             expect_dies(

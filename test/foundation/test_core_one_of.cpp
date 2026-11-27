@@ -282,7 +282,8 @@ void test_lent_alternative_write_aborts(TestRunnerCtx const& test) {
                     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                     replace_reading(held);
                     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-                    return handle->value;
+                    return ::foundation::core::with_view(handle,
+                                                         [](Handle const& payload) noexcept { return payload.value; });
                 },
                 [](Refusal const&) noexcept { return 0; }));
         },
@@ -291,8 +292,11 @@ void test_lent_alternative_write_aborts(TestRunnerCtx const& test) {
             "an arm"});
 
     BoxedReading held = box_handle(82);
-    int const seen = held.match([](::foundation::core::Box<Handle> const& handle) noexcept { return handle->value; },
-                                [](Refusal const&) noexcept { return 0; });
+    int const seen = held.match(
+        [](::foundation::core::Box<Handle> const& handle) noexcept {
+            return ::foundation::core::with_view(handle, [](Handle const& payload) noexcept { return payload.value; });
+        },
+        [](Refusal const&) noexcept { return 0; });
     replace_reading(held);
     CRUCIBLE_FATAL_INVARIANT(seen == 82 && held.is<Refusal>());
 }

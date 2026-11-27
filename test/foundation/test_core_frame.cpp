@@ -247,8 +247,12 @@ void test_option() {
         ::foundation::core::some(::foundation::core::mint_box<int>(allocation(), 3));
     int const read = boxed.with_mut(
         [](auto box) noexcept {
-            **box *= 7;
-            return **box;
+            auto [value, held] = ::foundation::core::with_mut(std::move(*box), [](int& number) noexcept {
+                number *= 7;
+                return number;
+            });
+            *box = std::move(held);
+            return value;
         },
         [] noexcept { return -1; });
     CRUCIBLE_TEST_ASSERT(kTest, read == 21);

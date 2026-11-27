@@ -29,7 +29,8 @@ using producer_claim_libraries::SharedBrand;
 
 void cycle_on_this_thread() {
     ::fixy::Box<SharedBrand> brand = producer_claim_libraries::make_brand();
-    producer_claim_libraries::win_claim(*brand);
+    brand = ::fixy::with_mut(std::move(brand),
+                             [](SharedBrand& shared) noexcept { producer_claim_libraries::win_claim(shared); });
     producer_claim_libraries::destroy_brand(std::move(brand));
 }
 

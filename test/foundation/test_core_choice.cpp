@@ -639,7 +639,8 @@ void test_lent_write_aborts() {
                     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                     replace_result(held);
                     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-                    return handle->value;
+                    return ::foundation::core::with_view(handle,
+                                                         [](Handle const& payload) noexcept { return payload.value; });
                 },
                 [](Refusal const&) noexcept { return 0; }));
         },
@@ -777,8 +778,12 @@ void test_result_owning_assignment() {
         CRUCIBLE_FATAL_INVARIANT(live_owners == 2);
         target = static_cast<Owned&&>(source);
         CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && target.is_ok());
-        int const handle = target.match([](Box<CountedOwner> const& owner) noexcept { return owner->handle(); },
-                                        [](Refusal) noexcept { return 0; });
+        int const handle = target.match(
+            [](Box<CountedOwner> const& owner) noexcept {
+                return ::foundation::core::with_view(
+                    owner, [](CountedOwner const& payload) noexcept { return payload.handle(); });
+            },
+            [](Refusal) noexcept { return 0; });
         CRUCIBLE_FATAL_INVARIANT(handle == 52);
         target = Owned{err(Refusal::closed)};
         CRUCIBLE_FATAL_INVARIANT(live_owners == 0 && target.is_err());
@@ -803,8 +808,12 @@ public:
     ~ReadsItsResult() {
         handle_ = 0;
         ++reads_of_the_result;
-        handle_seen = reached_result().match([](Box<ReadsItsResult> const& held) noexcept { return held->handle_; },
-                                             [](Refusal const&) noexcept { return -1; });
+        handle_seen = reached_result().match(
+            [](Box<ReadsItsResult> const& held) noexcept {
+                return ::foundation::core::with_view(
+                    held, [](ReadsItsResult const& payload) noexcept { return payload.handle_; });
+            },
+            [](Refusal const&) noexcept { return -1; });
     }
 
 private:
@@ -1085,7 +1094,8 @@ void test_combinator_lend_aborts() {
                 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                 replace_result(held);
                 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-                return handle->value == 77;
+                return ::foundation::core::with_view(
+                    handle, [](Handle const& payload) noexcept { return payload.value == 77; });
             }));
         },
         ::foundation::core::TextView{

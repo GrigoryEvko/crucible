@@ -75,6 +75,12 @@ template <class T>
         box, [](T const& object) noexcept { return ::foundation::core::address_of(::foundation::core::to(object)); });
 }
 
+// The label of the object of a Box, in the read frame of the Box.
+template <class T>
+[[nodiscard]] auto label_in(Box<T> const& box) noexcept {
+    return ::foundation::core::with_view(box, [](T const& object) noexcept { return object.label(); });
+}
+
 // The count of live Counted objects.  A Box in a Hole must destroy each
 // object one time and leak none.
 int live_objects = 0;
@@ -116,7 +122,7 @@ void test_steps_take_one_allocation() {
     for (std::uint64_t step = 0; step < steps; ++step) {
         Box<Counted> box = mint_box<Counted>(std::move(hole), step);
         CRUCIBLE_FATAL_INVARIANT(live_objects == 1);
-        CRUCIBLE_FATAL_INVARIANT(box->label() == step);
+        CRUCIBLE_FATAL_INVARIANT(label_in(box) == step);
         hole = mint_hole(std::move(box));
         CRUCIBLE_FATAL_INVARIANT(live_objects == 0);
     }
@@ -135,7 +141,7 @@ void test_box_keeps_the_storage_of_the_hole() {
     CountedHole again = mint_hole(std::move(first));
     Box<Counted> second = mint_box<Counted>(std::move(again), std::uint64_t{2});
     CRUCIBLE_FATAL_INVARIANT(address_in(second) == first_address);
-    CRUCIBLE_FATAL_INVARIANT(second->label() == 2);
+    CRUCIBLE_FATAL_INVARIANT(label_in(second) == 2);
 }
 
 // The end of a Box built in a Hole gives the storage back with the size and
@@ -182,7 +188,8 @@ void test_hole_at_alignment() {
     auto hole = mint_hole<sizeof(Value), alignof(Value)>(::foundation::effects::testing::test().alloc);
     Box<Value> box = mint_box<Value>(std::move(hole), Value{Alignment});
     CRUCIBLE_FATAL_INVARIANT(address_in(box).template is_aligned<Alignment>());
-    CRUCIBLE_FATAL_INVARIANT(box->value == Alignment);
+    CRUCIBLE_FATAL_INVARIANT(
+        ::foundation::core::with_view(box, [](Value const& object) noexcept { return object.value; }) == Alignment);
 }
 
 void test_each_alignment() {
@@ -246,7 +253,7 @@ void test_hole_of_moved_from_box_aborts(::fixy::TestRunnerCtx const& test) {
         test, [&source] noexcept { mint_hole(std::move(source)).consume(); },
         ::foundation::core::TextView{
             "foundation: fatal: a borrow of a Box that holds no object: the Box was moved from or consumed"});
-    CRUCIBLE_FATAL_INVARIANT(target->label() == 4);
+    CRUCIBLE_FATAL_INVARIANT(label_in(target) == 4);
 }
 
 }  // namespace
