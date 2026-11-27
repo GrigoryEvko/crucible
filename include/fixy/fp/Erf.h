@@ -318,6 +318,9 @@ template <int Degree>
     using ::fixy::fp::detail::fma_of_finite;
     double const square = value * value;
     double sum = kErfP[Degree];
+    // Degree is a constant, so the loop unrolls into a chain of fma with no
+    // counter and no branch.  The order of the fma is the order of the loop.
+#pragma GCC unroll 16
     for (int term = Degree - 1; term >= 0; --term) {
         sum = fma_of_finite(square, sum, kErfP[term]);
     }
@@ -336,6 +339,7 @@ template <int Degree>
     double const offset = magnitude - center;
     ErfInterval const& entry = kErfTable[index];
     double sum = entry.terms[Degree - 1];
+#pragma GCC unroll 16
     for (int term = Degree - 2; term >= 0; --term) {
         sum = ::fixy::fp::detail::fma_of_finite(offset, sum, entry.terms[term]);
     }
