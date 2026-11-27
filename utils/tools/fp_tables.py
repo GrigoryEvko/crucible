@@ -386,8 +386,11 @@ def print_log() -> None:
 
 # ── log, float ─────────────────────────────────────────────────────
 
-LOGF_TABLE_BITS = 6
-LOGF_OFFSET = 0x3F330000
+LOGF_TABLE_BITS = 7
+# The bits of the float 0x1.67p-1: the start of the range of z.  1 is at the middle of an interval in the bits.
+LOGF_OFFSET = 0x3F338000
+# The degree of the tail polynomial of log1p(r) - r = r^2 (A0 + ... + A3 r^3).
+LOGF_DEGREE = 3
 
 
 def float_of_bits(bits: int) -> float:
@@ -395,20 +398,31 @@ def float_of_bits(bits: int) -> float:
     return float(struct.unpack("<f", struct.pack("<I", bits & 0xFFFFFFFF))[0])
 
 
+def print_doubles(values: Sequence[float], per_line: int) -> None:
+    """Print doubles as rows of C++ hexadecimal float literals, `per_line` on each row.  O(len(values))."""
+    for start in range(0, len(values), per_line):
+        print("    " + " ".join(f"{hex_double(value)}," for value in values[start : start + per_line]))
+
+
 def print_logf() -> None:
-    """Print the table and the polynomial of the float log of Log.h."""
+    """Print the two tables and the polynomial of the float log of Log.h."""
     entries = 1 << LOGF_TABLE_BITS
     step = 1 << (23 - LOGF_TABLE_BITS)
     print(f"// ln2: {hex_double(round_double(mp.log(2)))}")
-    print("// Table: invc (29 significant bits, 1 in the interval of 1), logc.")
+    inverses: list[float] = []
+    logcs: list[float] = []
     largest_reduced = mp.mpf(0)
     for index in range(entries):
         low = mp.mpf(float_of_bits(LOGF_OFFSET + index * step))
         high = mp.mpf(float_of_bits(LOGF_OFFSET + (index + 1) * step))
         inverse = mp.mpf(1) if low <= 1 < high else round_to_bits(2 / (low + high), 29)
-        logc = -mp.log(inverse)
         largest_reduced = max(largest_reduced, abs(low * inverse - 1), abs(high * inverse - 1))
-        print(f"    {{{hex_double(round_double(inverse))}, {hex_double(round_double(logc))}}},")
+        inverses.append(round_double(inverse))
+        logcs.append(round_double(-mp.log(inverse)))
+    print("// Table: invc (29 significant bits, 1 in the interval of 1).")
+    print_doubles(inverses, 4)
+    print("// Table: logc.")
+    print_doubles(logcs, 4)
     print(f"// largest |r| of the table: 2^{log2_text(largest_reduced)}")
     bound = largest_reduced * (1 + mp.mpf(2) ** -20)
 
@@ -420,7 +434,7 @@ def print_logf() -> None:
     def log_weight(point: Any) -> Any:
         return abs(point)
 
-    fit_and_print("float A", log_tail, log_weight, -bound, bound, 4)
+    fit_and_print("float A", log_tail, log_weight, -bound, bound, LOGF_DEGREE)
 
 
 # ── erf ────────────────────────────────────────────────────────────
