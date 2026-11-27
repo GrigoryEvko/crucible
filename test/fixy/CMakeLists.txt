@@ -7772,6 +7772,8 @@ target_compile_definitions(test_fp_elementary PRIVATE CRUCIBLE_TEST_HAS_V1_UNIT=
 # command of test_fp_elementary.cpp, with the flags of the build and again
 # with -ffp-contract=off at the end, and the two counts of each function must
 # be equal (test/fixy/check_fp_fma.py).  A host that is not x86_64 gives a skip.
+# The count of aarch64 becomes a step of the gate when a gate preset of
+# aarch64 runs code.  The docstring of the check gives that count.
 crucible_script_test(NAME fp_elementary_no_contraction
   COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/check_fp_fma.py ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR})
 set_tests_properties(fp_elementary_no_contraction PROPERTIES SKIP_RETURN_CODE 77 LABELS "fixy")
