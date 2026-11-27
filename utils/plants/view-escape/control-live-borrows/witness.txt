@@ -29,7 +29,8 @@
 # class reads the moved-from owner.  A View of the heap block of a member of a
 # linear object lives past the move, and a View of an inline array is read before
 # the move.  In the unit holders a door of an owner in a Box lends its run to a
-# closure that ends a different Box, and the Box ends after the door.
+# closure that ends a different Box, and the Box ends after the door.  In the unit
+# takes a View of the array that take() moves out lives while the result lives.
 
 compile live src/live.cpp
 flag live -freflection
@@ -86,3 +87,7 @@ exit linear_moves pass
 compile holders src/holders.cpp
 flag holders -freflection
 exit holders pass
+
+compile takes src/takes.cpp
+flag takes -freflection
+exit takes pass

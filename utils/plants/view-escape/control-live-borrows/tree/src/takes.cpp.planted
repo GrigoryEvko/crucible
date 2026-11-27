@@ -1,0 +1,38 @@
+// A View of the storage that take() moves out into its result lives while the
+// result lives: a holder class of the plant and a KeyedMaskedArray, read while the
+// result lives.  A View of the result itself lives too.
+#include <foundation/core/Array.h>
+#include <foundation/core/KeyedArray.h>
+#include <foundation/core/KeyedMint.h>
+#include <foundation/effects/Effect.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Alloc = ::foundation::effects::Alloc;
+
+struct Holder {
+    fc::HeapArray<int> storage_;
+    [[nodiscard]] fc::View<int const> view() const& noexcept { return storage_.view(); }
+    [[nodiscard]] fc::HeapArray<int> take() & noexcept { return std::move(storage_); }
+};
+
+int read_while_the_result_lives(Alloc alloc) noexcept {
+    Holder holder{fc::mint_heap_array<int>(alloc, 8, 1)};
+    fc::View<int const> const before = holder.view();
+    fc::HeapArray<int> const given = holder.take();
+    return *before.get(3).expect("the View holds 8 elements") + static_cast<int>(given.size());
+}
+
+int read_while_the_keyed_result_lives(Alloc alloc) noexcept {
+    auto [table, key] = fc::mint_keyed_owner(fc::keyed_masked_array_owner<int>, fc::mint_masked_array<int>(alloc, 8));
+    fc::View<int const> const before = table.view();
+    fc::MaskedArray<int> const given = table.take(std::move(key));
+    fc::View<int const> const after = given.view();
+    return *before.get(3).expect("the View holds 8 elements") + *after.get(3).expect("the View holds 8 elements");
+}
+
+}  // namespace planted

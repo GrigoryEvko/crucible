@@ -108,7 +108,12 @@
 //     result, unless the body of the call ends such an owner.  When the result holds
 //     no owner of the object, and one different argument by a pointer or a reference
 //     that is not const can hold the object, as the pointer of std::construct_at
-//     does, the loan goes to the object of that argument.  An object behind a pointer
+//     does, the loan goes to the object of that argument.  A call that takes the
+//     object by a reference that writes it can move a member out into its result,
+//     as take() of a keyed holder gives its array out.  When the class of the result
+//     is an owner that the object holds by value, each loan whose owner the result
+//     can hold also names the object of the result, so the end of the result ends
+//     the borrow (share_with_result).  An object behind a pointer
 //     is no local of the body, so a body that moves an owner into it ends nothing.
 //     The front end gives a trivial assignment of a class from a temporary as a read
 //     of the temporary through its address, so the store gets the loans of the
@@ -189,6 +194,11 @@
 //     such a member through a door of its class stays past the move.  A borrow of an
 //     erased type, as a void pointer, meets the bytes only through a run of one-byte
 //     elements.
+//     A loan that a call through a writing reference shares with its result also
+//     stays on the object (share_with_result), because the walk does not see whether
+//     the body moved the member out or made a new owner.  So a later change of the
+//     emptied object ends the borrow too (fail closed).  A keyed holder has no door
+//     that changes it after take(), because take() ends the key.
 
 #include "plugin.h"
 
@@ -3048,7 +3058,53 @@ private:
                 take_moved(facts, arguments, index, place);
             } else {
                 end_by_call(facts, argument, index, place);
+                share_with_result(facts, argument, place);
             }
+        }
+    }
+
+    // A call that takes the object at PLACE by a reference that writes it, and whose
+    // result is of an owner class that the object holds by value, can move that
+    // member out into the result, as take() of a keyed holder does (the transfer).
+    // Each loan whose owner the result can hold then also names the object of the
+    // result: a derived loan beside the loan on the object.  Complexity: linear in
+    // the loans and in the loans of the locals.
+    void share_with_result(const CallFacts& facts, const Argument& argument, int place) {
+        int const holder = facts.result_place;
+        if (!state_.is_reachable || holder == kNoPlace || facts.is_constructor || facts.is_assignment
+            || places_.root_decl(holder) == places_.root_decl(place)) {
+            return;
+        }
+        tree const given = element_class(facts.result);
+        const TypeSet& parts = ended_parts(argument.held);
+        if (given == NULL_TREE || !CLASS_TYPE_P(given)
+            || !std::binary_search(parts.begin(), parts.end(), static_cast<unsigned>(TYPE_UID(given)))) {
+            return;
+        }
+        std::map<int, int> shared;
+        std::size_t const count = loans_.size();
+        for (std::size_t index = 0; index < count; ++index) {
+            if (!places_.holds(place, loans_[index].place) || !is_inner_loan(loans_[index], facts.result)) {
+                continue;
+            }
+            Loan made = loans_[index];
+            made.place = holder;
+            made.is_moved = true;
+            int const loan = static_cast<int>(index);
+            shared.emplace(loan, add_derived_loan(std::move(made), loan));
+        }
+        if (shared.empty()) {
+            return;
+        }
+        for (auto& [local, loans] : state_.loans) {
+            std::vector<int> added;
+            for (int loan : loans) {
+                auto found = shared.find(loan);
+                if (found != shared.end()) {
+                    added.push_back(found->second);
+                }
+            }
+            loans.insert(loans.end(), added.begin(), added.end());
         }
     }
 

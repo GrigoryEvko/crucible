@@ -56,6 +56,11 @@
 # captured reference: a keyed FixedArray and its with_mut (33), and a WindowStack and
 # its with_window (47).
 #
+# In the unit takes a call through a reference that writes a holder moves its array
+# out into its result, as take() does, and a View of the array is stale after the
+# end of the result: a holder class of the plant (31), a discarded result (38), and
+# a KeyedMaskedArray (48).
+#
 # In the unit numbers a borrow of a resource by its number is stale after: an
 # assignment of its owner, the end of the scope of its owner, a member door and a
 # function door that take the owner by an rvalue reference, and a generic function
@@ -353,3 +358,13 @@ finding holders view-escape stale-borrow src/holders.cpp:33:18 | borrow of box i
 finding holders view-escape stale-borrow src/holders.cpp:47:21 | borrow of box in a closure of foundation::core::WindowStack::with_window after a call of a closure that captures box
 error holders src/holders.cpp:33 | this use reads a borrow of box in a closure of foundation::core::FixedArray::with_mut after a call of a closure that captures box
 error holders src/holders.cpp:47 | this use reads a borrow of box in a closure of foundation::core::WindowStack::with_window after a call of a closure that captures box
+
+compile takes src/takes.cpp
+flag takes -freflection
+exit takes fail
+finding takes view-escape stale-borrow src/takes.cpp:31:13 | borrow of holder in before after the end of the scope of given
+finding takes view-escape stale-borrow src/takes.cpp:38:13 | borrow of holder in before after the end of the scope of a temporary
+finding takes view-escape stale-borrow src/takes.cpp:48:13 | borrow of table in before after the end of the scope of given
+error takes src/takes.cpp:31 | this use reads a borrow of holder in before after the end of the scope of given
+error takes src/takes.cpp:38 | this use reads a borrow of holder in before after the end of the scope of a temporary
+error takes src/takes.cpp:48 | this use reads a borrow of table in before after the end of the scope of given
