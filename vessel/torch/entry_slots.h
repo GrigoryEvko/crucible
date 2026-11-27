@@ -475,22 +475,59 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
 // The seed of the guard word: "guardwrd" in ASCII.
 inline constexpr uint64_t kGuardSeed = 0x6775617264777264ULL;
 
-// The bit of the header of the guard word where the data slots start, after
-// the tags of the five slots.
-inline constexpr uint32_t kGuardDataShift = 32 + crucible::ScalarSlotKinds::kDataShift;
+namespace side {
+
+// The fields of the header of the guard word (GuardHeader).
+struct GuardInputCountField final {};
+struct GuardScalarCountField final {};
+struct GuardTagsField final {};
+struct GuardDataSlotsField final {};
+struct GuardFreeBitField final {};
+struct GuardDepthField final {};
+
+}  // namespace side
+
+// The bits of the tags and of the data slots in the header of the guard word.
+inline constexpr uint32_t kGuardTagBits = crucible::kScalarTypeBits * crucible::kScalarSlots;
+inline constexpr uint32_t kGuardDataBits = crucible::kScalarSlots;
+
+// The header of the guard word: the input count in bits 0 to 15, the scalar
+// count in bits 16 to 31, the tags of the stored slots in bits 32 to 41, the
+// data slots in bits 42 to 46, a free bit that stays zero, and the depth in
+// bits 48 to 63.  The tags and the data slots have the layout of the word of
+// ScalarSlotKinds.
+using GuardHeader = ::fixy::PackedWord<
+    uint64_t, ::fixy::BitField<side::GuardInputCountField, 16>, ::fixy::BitField<side::GuardScalarCountField, 16>,
+    ::fixy::BitField<side::GuardTagsField, kGuardTagBits>, ::fixy::BitField<side::GuardDataSlotsField, kGuardDataBits>,
+    ::fixy::BitField<side::GuardFreeBitField, 16 - kGuardTagBits - kGuardDataBits>,
+    ::fixy::BitField<side::GuardDepthField, 16>>;
 
 [[nodiscard]] inline crucible::ShapeHash compute_shape_hash(::fixy::View<const crucible::TensorMeta> inputs,
                                                             crucible::TraceRing::Entry const& entry,
                                                             crucible::OpDepth depth) noexcept {
     // The slots past the count hold zero, and their tags and data bits are
     // zero.  The masks keep each bit of a slot past the count out of the word
-    // all the same.
+    // all the same.  Each mask has the width of the stored slots, which is
+    // known only at run time, so the masks stay in front of the fields.  The
+    // data slots come from the entry and not through its DataSlots, because
+    // the entry of a C caller is not yet checked here.
     const uint32_t stored = ::fixy::min(uint32_t{entry.num_scalar_args}, uint32_t{kInlineScalars});
     const uint32_t tag_mask = (uint32_t{1} << (crucible::kScalarTypeBits * stored)) - 1;
-    const uint32_t data_bits = uint32_t{entry.data_slot_bits} & ((uint32_t{1} << stored) - 1);
-    const uint64_t header = uint64_t{entry.num_inputs} | (uint64_t{entry.num_scalar_args} << 16)
-                          | (uint64_t{entry.packed_scalar_types() & tag_mask} << 32)
-                          | (uint64_t{data_bits} << kGuardDataShift) | (uint64_t{depth.raw()} << 48);
+    const uint32_t data_mask = (uint32_t{1} << stored) - 1;
+    const uint64_t header =
+        GuardHeader{}
+            .with<side::GuardInputCountField>(entry.num_inputs)
+            .expect("a count of 16 bits fits a field of 16 bits")
+            .with<side::GuardScalarCountField>(entry.num_scalar_args)
+            .expect("a count of 8 bits fits a field of 16 bits")
+            .with<side::GuardTagsField>(static_cast<uint16_t>(entry.packed_scalar_types() & tag_mask))
+            .expect("the mask keeps the tags of the stored slots")
+            .with<side::GuardDataSlotsField>(static_cast<uint8_t>(entry.data_slot_bits & data_mask))
+            .expect("the mask keeps the data slots of the stored slots")
+            .with<side::GuardDepthField>(depth.raw())
+            .expect("a depth of 16 bits fits a field of 16 bits")
+            .bits();
+    const uint32_t data_bits = uint32_t{entry.data_slot_bits} & data_mask;
 
     uint64_t word = ::foundation::reflect::combine_ids(kGuardSeed, header);
     for (crucible::TensorMeta const& input : inputs)

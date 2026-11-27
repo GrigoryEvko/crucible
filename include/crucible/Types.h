@@ -409,7 +409,8 @@ class ScalarSlotKinds {
 
 public:
     // The first bit of the data slots in the word, after the tags of the
-    // inline slots.  The guard word of the vessel places its bits by it.
+    // inline slots.  The header of the guard word of the vessel has the same
+    // two fields side by side (GuardHeader of vessel/torch/entry_slots.h).
     static constexpr uint32_t kDataShift = kScalarTypeBits * kScalarSlots;
 
     constexpr ScalarSlotKinds() noexcept = default;
