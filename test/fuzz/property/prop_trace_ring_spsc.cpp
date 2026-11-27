@@ -149,22 +149,13 @@ void slot_at(const Mirror&&, Rest&&...) =
 
 }  // namespace
 
-int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
+namespace {
+
+// The stress and the property loop over the ring, in the frame of the Box of
+// the ring (run_property below).
+int run_on_ring(crucible::test::OpenRing& ring, crucible::fuzz::prop::Config const& cfg) {
     using namespace crucible;
     using namespace crucible::fuzz::prop;
-
-    // Each iteration runs up to ~4K ring ops + O(N) mirror bookkeeping
-    // — cap to keep 100K iters tractable in CI.
-    const Config cfg = parse_args(arguments, 100000);
-
-    // Hoist the 5.25 MB ring out of the per-iteration allocation path.
-    // reset() restores all three cursors (head, tail, cached_tail_)
-    // between iterations; payload bytes in entries[] remain but are
-    // invisible because size() == 0 after reset.
-    // Each door of the ring of the harness opens the side of the door for one
-    // call (OpenRing of test/trace_rig.h).
-    ::fixy::Box<crucible::test::OpenRing> ring =
-        ::fixy::mint_box<crucible::test::OpenRing>(::foundation::effects::testing::test().alloc);
 
     // ── One-shot stress: fill-to-capacity + (CAP+1)-th rejects ─────
     //
@@ -181,11 +172,11 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
         for (uint32_t i = 0; i < PREFILL; ++i) {
             TraceRing::Entry e{};
             e.schema_hash = SchemaHash{0xBEEF0000ULL | i};
-            const bool is_appended = ring->try_append(e);
+            const bool is_appended = ring.try_append(e);
             CRUCIBLE_FATAL_INVARIANT(is_appended);
         }
         auto const [discarded, discard] = ::fixy::build_fixed_array<TraceRing::Entry, PREFILL>(
-            [&ring](auto run) noexcept { return ring->drain(std::move(run)); });
+            [&ring](auto run) noexcept { return ring.drain(std::move(run)); });
         CRUCIBLE_FATAL_INVARIANT(discarded == PREFILL);
 
         // Fill to exactly CAPACITY.
@@ -194,19 +185,19 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             e.schema_hash = SchemaHash{uint64_t{i} + 1};  // non-zero, unique
             e.shape_hash = ShapeHash{~uint64_t{i} + 1};
             const bool is_appended =
-                ring->try_append(e, MetaIndex{i}, ScopeHash{0xA0000000ULL | i}, CallsiteHash{0xB0000000ULL | i},
-                                 OpDepth{static_cast<uint16_t>(i)});
+                ring.try_append(e, MetaIndex{i}, ScopeHash{0xA0000000ULL | i}, CallsiteHash{0xB0000000ULL | i},
+                                OpDepth{static_cast<uint16_t>(i)});
             CRUCIBLE_FATAL_INVARIANT(is_appended);
         }
-        CRUCIBLE_FATAL_INVARIANT(ring->size().peek() == CAP);
+        CRUCIBLE_FATAL_INVARIANT(ring.size().peek() == CAP);
 
         // (CAP+1)-th must be rejected without mutating the ring.
         {
             TraceRing::Entry e{};
             e.schema_hash = SchemaHash{0xDEADBEEFCAFEBABEULL};
-            const bool is_appended = ring->try_append(e);
+            const bool is_appended = ring.try_append(e);
             CRUCIBLE_FATAL_INVARIANT(!is_appended);  // must refuse
-            CRUCIBLE_FATAL_INVARIANT(ring->size().peek() == CAP);  // must not mutate
+            CRUCIBLE_FATAL_INVARIANT(ring.size().peek() == CAP);  // must not mutate
         }
 
         // Drain everything; verify FIFO order + wrap-around memcpy.
@@ -224,8 +215,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                     return out_s.with_mut(out_s_key, [&](auto run_s) noexcept {
                         return out_c.with_mut(out_c_key, [&](auto run_c) noexcept {
                             return out_d.with_mut(out_d_key, [&](auto run_d) noexcept {
-                                return ring->drain(std::move(run_e), std::move(run_m), std::move(run_s),
-                                                   std::move(run_c), std::move(run_d));
+                                return ring.drain(std::move(run_e), std::move(run_m), std::move(run_s),
+                                                  std::move(run_c), std::move(run_d));
                             });
                         });
                     });
@@ -245,12 +236,12 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             }
             delivered += got;
         }
-        CRUCIBLE_FATAL_INVARIANT(ring->size().peek() == 0);
+        CRUCIBLE_FATAL_INVARIANT(ring.size().peek() == 0);
 
         // Clean slate for the property loop.
-        ring->reset();
-        CRUCIBLE_FATAL_INVARIANT(ring->size().peek() == 0);
-        CRUCIBLE_FATAL_INVARIANT(ring->total_produced() == 0);  // post() already checked, belt+braces
+        ring.reset();
+        CRUCIBLE_FATAL_INVARIANT(ring.size().peek() == 0);
+        CRUCIBLE_FATAL_INVARIANT(ring.total_produced() == 0);  // post() already checked, belt+braces
     }
 
     // ── Randomised property loop ───────────────────────────────────
@@ -277,7 +268,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             return s;
         },
         [&ring](const Schedule& s) -> bool {
-            ring->reset();
+            ring.reset();
 
             // Mirror queue: entries the producer successfully pushed
             // but the consumer hasn't drained yet.  Implemented as a
@@ -311,14 +302,14 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                         if (pay_idx >= MIRROR_CAPACITY) break;  // defensive
                         const MirrorSlot& src = slot_at(s.payload, pay_idx++);
 
-                        const uint32_t size_before = ring->size().peek();
+                        const uint32_t size_before = ring.size().peek();
                         const bool accepted =
-                            ring->try_append(src.entry, src.meta_start, src.scope_hash, src.callsite_hash, src.depth);
+                            ring.try_append(src.entry, src.meta_start, src.scope_hash, src.callsite_hash, src.depth);
 
                         // (B) capacity: single-threaded, cannot be full
                         //     in this harness (mirror_live ≤ 4K « CAP).
                         if (!accepted) return false;
-                        if (ring->size().peek() != size_before + 1u) return false;
+                        if (ring.size().peek() != size_before + 1u) return false;
 
                         // Record on the mirror for later FIFO comparison.
                         mirror.set(::fixy::Index<MIRROR_CAPACITY>::check(mirror_head & (MIRROR_CAPACITY - 1u))
@@ -327,7 +318,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                         ++mirror_head;
 
                         // (C) producer cursor strictly advanced by 1.
-                        const uint64_t tp = ring->total_produced();
+                        const uint64_t tp = ring.total_produced();
                         if (tp != last_total_produced + 1u) return false;
                         last_total_produced = tp;
                     }
@@ -338,16 +329,16 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                             return out_s.with_mut(out_s_key, [&](auto run_s) noexcept {
                                 return out_c.with_mut(out_c_key, [&](auto run_c) noexcept {
                                     return out_d.with_mut(out_d_key, [&](auto run_d) noexcept {
-                                        return ring->drain(::fixy::take_window(std::move(run_e), 0, want)
-                                                               .expect("a phase fits the buffer"),
-                                                           ::fixy::take_window(std::move(run_m), 0, want)
-                                                               .expect("a phase fits the buffer"),
-                                                           ::fixy::take_window(std::move(run_s), 0, want)
-                                                               .expect("a phase fits the buffer"),
-                                                           ::fixy::take_window(std::move(run_c), 0, want)
-                                                               .expect("a phase fits the buffer"),
-                                                           ::fixy::take_window(std::move(run_d), 0, want)
-                                                               .expect("a phase fits the buffer"));
+                                        return ring.drain(::fixy::take_window(std::move(run_e), 0, want)
+                                                              .expect("a phase fits the buffer"),
+                                                          ::fixy::take_window(std::move(run_m), 0, want)
+                                                              .expect("a phase fits the buffer"),
+                                                          ::fixy::take_window(std::move(run_s), 0, want)
+                                                              .expect("a phase fits the buffer"),
+                                                          ::fixy::take_window(std::move(run_c), 0, want)
+                                                              .expect("a phase fits the buffer"),
+                                                          ::fixy::take_window(std::move(run_d), 0, want)
+                                                              .expect("a phase fits the buffer"));
                                     });
                                 });
                             });
@@ -378,11 +369,11 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
 
                 // (D) size() agrees with the mirror on every phase boundary.
                 const uint32_t mirror_live = mirror_head - mirror_tail;
-                if (ring->size().peek() != mirror_live) return false;
+                if (ring.size().peek() != mirror_live) return false;
 
                 // total_produced never regresses (acquire-load on a
                 // producer-owned atomic we just wrote monotonically).
-                if (ring->total_produced() < last_total_produced) return false;
+                if (ring.total_produced() < last_total_produced) return false;
             }
 
             // End-of-run: drained + still-live == total appended.
@@ -391,4 +382,24 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
 
             return true;
         });
+}
+
+}  // namespace
+
+int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
+    // Each iteration runs up to ~4K ring ops + O(N) mirror bookkeeping
+    // — cap to keep 100K iters tractable in CI.
+    const Config cfg = parse_args(arguments, 100000);
+
+    // Hoist the 5.25 MB ring out of the per-iteration allocation path.
+    // reset() restores all three cursors (head, tail, cached_tail_)
+    // between iterations; payload bytes in entries[] remain but are
+    // invisible because size() == 0 after reset.
+    // Each door of the ring of the harness opens the side of the door for one
+    // call (OpenRing of test/trace_rig.h).
+    ::fixy::Box<crucible::test::OpenRing> boxed =
+        ::fixy::mint_box<crucible::test::OpenRing>(::foundation::effects::testing::test().alloc);
+    [[maybe_unused]] auto [result, held] = ::fixy::with_mut(
+        std::move(boxed), [&cfg](crucible::test::OpenRing& ring) noexcept { return run_on_ring(ring, cfg); });
+    return result;
 }

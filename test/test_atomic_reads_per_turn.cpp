@@ -205,12 +205,13 @@ int main() {
     // read gives, and the foreground moves that count.
     const auto test = ::foundation::effects::testing::test();
     const ::fixy::Box<crucible::TraceRing> ring = ::fixy::mint_box<crucible::TraceRing>(test.alloc);
-    const crucible::TraceRing& ring_view = *ring;
-    failures += failures_of(
-        fixy::TextView{"TraceRing::total_produced"},
-        [&ring_view] [[gnu::always_inline, gnu::no_instrument_function]] () noexcept {
-            return ring_view.total_produced();
-        },
-        std::uint64_t{0});
+    failures += ::foundation::core::with_view(ring, [](crucible::TraceRing const& ring_view) noexcept {
+        return failures_of(
+            fixy::TextView{"TraceRing::total_produced"},
+            [&ring_view] [[gnu::always_inline, gnu::no_instrument_function]] () noexcept {
+                return ring_view.total_produced();
+            },
+            std::uint64_t{0});
+    });
     return failures == 0 ? 0 : 1;
 }

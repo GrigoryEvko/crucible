@@ -97,17 +97,17 @@ static_assert(!AppendsPure<NarrowedBgCtx> && !DrainsPure<NarrowedBgCtx>);
 
 // Each function holds one group of cases, so that no function of the test
 // is larger than the limit of the kind function of the rule object-size.
-void single_thread_cases() {
-    ::fixy::Box<crucible::test::OpenRing> ring = mint_ring();
-
-    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
+// Each group runs on the ring in the frame with_mut(std::move(boxed), body)
+// of its Box.
+void single_thread_cases_on(crucible::test::OpenRing& ring) {
+    CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 0);
 
     crucible::TraceRing::Entry e{};
     e.schema_hash = SchemaHash{0xDEADBEEF};
     e.num_inputs = 2;
     e.num_outputs = 1;
-    CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(e, MetaIndex{42}, ScopeHash{0x1234}, CallsiteHash{0x5678}));
-    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(e, MetaIndex{42}, ScopeHash{0x1234}, CallsiteHash{0x5678}));
+    CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 1);
 
     auto [out, out_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<crucible::TraceRing::Entry, 1>);
     auto [meta, meta_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<MetaIndex, 1>);
@@ -117,8 +117,8 @@ void single_thread_cases() {
         return meta.with_mut(meta_key, [&](auto meta_run) noexcept {
             return scope.with_mut(scope_key, [&](auto scope_run) noexcept {
                 return callsite.with_mut(callsite_key, [&](auto callsite_run) noexcept {
-                    return ring->drain(std::move(out_run), std::move(meta_run), std::move(scope_run),
-                                       std::move(callsite_run));
+                    return ring.drain(std::move(out_run), std::move(meta_run), std::move(scope_run),
+                                      std::move(callsite_run));
                 });
             });
         });
@@ -130,32 +130,32 @@ void single_thread_cases() {
     CRUCIBLE_TEST_ASSERT(kTest, meta.at(index<0>()) == MetaIndex{42});
     CRUCIBLE_TEST_ASSERT(kTest, scope.at(index<0>()) == ScopeHash{0x1234});
     CRUCIBLE_TEST_ASSERT(kTest, callsite.at(index<0>()) == CallsiteHash{0x5678});
-    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 0);
 
     for (uint32_t i = 0; i < 1000; i++) {
         crucible::TraceRing::Entry entry{};
         entry.schema_hash = SchemaHash{i};
-        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(entry));
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(entry));
     }
-    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1000);
+    CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 1000);
 
     auto [batch, batch_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<crucible::TraceRing::Entry, 2048>);
-    n = batch.with_mut(batch_key, [&ring](auto run) noexcept { return ring->drain(std::move(run)); });
+    n = batch.with_mut(batch_key, [&ring](auto run) noexcept { return ring.drain(std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, n == 1000);
     for (uint32_t i = 0; i < 1000; i++)
         CRUCIBLE_TEST_ASSERT(
             kTest, batch.get(i).expect("a test reads an element at or past the count of its array")->schema_hash
                        == SchemaHash{i});
 
-    ring->reset();
-    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
+    ring.reset();
+    CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 0);
 
     // One cache line.
     static_assert(sizeof(crucible::TraceRing::Entry) == 64);
 
     // An empty output drains nothing.
     uint32_t zero = batch.with_mut(batch_key, [&ring](auto run) noexcept {
-        return ring->drain(::fixy::take_window(std::move(run), 0, 0).expect("an empty window fits"));
+        return ring.drain(::fixy::take_window(std::move(run), 0, 0).expect("an empty window fits"));
     });
     CRUCIBLE_TEST_ASSERT(kTest, zero == 0);
 
@@ -166,23 +166,23 @@ void single_thread_cases() {
         for (uint32_t i = 0; i < CAP - 100; i++) {
             crucible::TraceRing::Entry wr{};
             wr.schema_hash = SchemaHash{i};
-            CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(wr));
+            CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(wr));
         }
         // A buffer of the whole ring is too large for the stack.
         auto [big, big_key] =
             ::fixy::mint_keyed_owner(::fixy::fixed_heap_array_owner<crucible::TraceRing::Entry, CAP>,
                                      ::foundation::effects::testing::test().alloc, crucible::TraceRing::Entry{});
         CRUCIBLE_TEST_ASSERT(kTest, big.with_mut(big_key, [&ring](auto run) noexcept {
-            return ring->drain(std::move(run));
+            return ring.drain(std::move(run));
         }) == CAP - 100);
 
         // head = tail = CAP - 100, so the next 200 appends straddle the wrap.
         for (uint32_t i = 0; i < 200; i++) {
             crucible::TraceRing::Entry wr{};
             wr.schema_hash = SchemaHash{100000 + i};
-            CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(wr));
+            CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(wr));
         }
-        uint32_t n_wrap = big.with_mut(big_key, [&ring](auto run) noexcept { return ring->drain(std::move(run)); });
+        uint32_t n_wrap = big.with_mut(big_key, [&ring](auto run) noexcept { return ring.drain(std::move(run)); });
         CRUCIBLE_TEST_ASSERT(kTest, n_wrap == 200);
         for (uint32_t i = 0; i < 200; i++)
             CRUCIBLE_TEST_ASSERT(
@@ -191,20 +191,26 @@ void single_thread_cases() {
                     == SchemaHash{100000 + i});
     }
 
-    uint64_t hi0 = ring->total_produced();
+    uint64_t hi0 = ring.total_produced();
     crucible::TraceRing::Entry hm{};
     hm.schema_hash = SchemaHash{0xABCD};
-    CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(hm));
-    CRUCIBLE_TEST_ASSERT(kTest, ring->total_produced() == hi0 + 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(hm));
+    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == hi0 + 1);
+}
+
+void single_thread_cases() {
+    ::fixy::Box<crucible::test::OpenRing> boxed = mint_ring();
+    boxed = ::fixy::with_mut(std::move(boxed),
+                             [](crucible::test::OpenRing& ring) noexcept { single_thread_cases_on(ring); });
 }
 
 // Producer and consumer exchange N entries live.  On x86 a wrongly
 // relaxed publish store would pass by accident, so the ordering claim
 // made here only bites on a weakly ordered target.
 void concurrent_raw_case() {
-    {
+    ::fixy::Box<crucible::test::OpenRing> boxed = mint_ring();
+    boxed = ::fixy::with_mut(std::move(boxed), [](crucible::test::OpenRing& ring) noexcept {
         constexpr uint32_t N = 200000;
-        ::fixy::Box<crucible::test::OpenRing> ring = mint_ring();
 
         ::fixy::Atomic<bool> producer_done{false};
         ::fixy::Atomic<uint32_t, ::fixy::Counter> producer_spins{0};
@@ -214,8 +220,8 @@ void concurrent_raw_case() {
                 crucible::TraceRing::Entry entry{};
                 entry.schema_hash = SchemaHash{i + 1};  // non-zero, unique
                 entry.shape_hash = ShapeHash{~uint64_t{i} + 1};
-                if (ring->try_append(entry, MetaIndex{i}, ScopeHash{0xA0000000ull | i},
-                                     CallsiteHash{0xB0000000ull | i})) [[likely]] {
+                if (ring.try_append(entry, MetaIndex{i}, ScopeHash{0xA0000000ull | i}, CallsiteHash{0xB0000000ull | i}))
+                    [[likely]] {
                     ++i;
                 } else {
                     CRUCIBLE_SPIN_PAUSE;
@@ -243,14 +249,14 @@ void concurrent_raw_case() {
                     return batch_meta.with_mut(batch_meta_key, [&](auto meta_run) noexcept {
                         return batch_scope.with_mut(batch_scope_key, [&](auto scope_run) noexcept {
                             return batch_csite.with_mut(batch_csite_key, [&](auto csite_run) noexcept {
-                                return ring->drain(std::move(out_run), std::move(meta_run), std::move(scope_run),
-                                                   std::move(csite_run));
+                                return ring.drain(std::move(out_run), std::move(meta_run), std::move(scope_run),
+                                                  std::move(csite_run));
                             });
                         });
                     });
                 });
                 if (got == 0) {
-                    if (producer_done.load_acquire() && ring->size().peek() == 0) {
+                    if (producer_done.load_acquire() && ring.size().peek() == 0) {
                         break;
                     }
                     CRUCIBLE_SPIN_PAUSE;
@@ -291,33 +297,29 @@ void concurrent_raw_case() {
                             "test_trace_ring: concurrent SPSC integrity "
                             "(N={}, producer_spins={}) OK\n",
                             N, producer_spins.load_acquire());
-    }
+    });
 }
 
 void pure_facade_cases() {
-    {
-        ::fixy::Box<crucible::test::OpenRing> ring = mint_ring();
-
+    ::fixy::Box<crucible::test::OpenRing> boxed = mint_ring();
+    boxed = ::fixy::with_mut(std::move(boxed), [](crucible::test::OpenRing& ring) noexcept {
         crucible::TraceRing::Entry e1{};
         e1.schema_hash = SchemaHash{0xCAFE0001};
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             ring->try_append_pure(kPure, e1, MetaIndex{1}, ScopeHash{0xC1}, CallsiteHash{0xD1}));
-        CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append_pure(kPure, e1, MetaIndex{1}, ScopeHash{0xC1}, CallsiteHash{0xD1}));
+        CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 1);
 
         crucible::TraceRing::Entry e2{};
         e2.schema_hash = SchemaHash{0xCAFE0002};
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             ring->try_append_pure(kPure, e2, MetaIndex{2}, ScopeHash{0xC2}, CallsiteHash{0xD2}));
-        CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 2);
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append_pure(kPure, e2, MetaIndex{2}, ScopeHash{0xC2}, CallsiteHash{0xD2}));
+        CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 2);
 
         crucible::TraceRing::Entry e3{};
         e3.schema_hash = SchemaHash{0xCAFE0003};
-        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(e3, MetaIndex{3}, ScopeHash{0xC3}, CallsiteHash{0xD3}));
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(e3, MetaIndex{3}, ScopeHash{0xC3}, CallsiteHash{0xD3}));
         crucible::TraceRing::Entry e4{};
         e4.schema_hash = SchemaHash{0xCAFE0004};
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             ring->try_append_pure(kPure, e4, MetaIndex{4}, ScopeHash{0xC4}, CallsiteHash{0xD4}));
-        CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 4);
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append_pure(kPure, e4, MetaIndex{4}, ScopeHash{0xC4}, CallsiteHash{0xD4}));
+        CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 4);
 
         {
             auto [batch_out, batch_out_key] =
@@ -329,8 +331,8 @@ void pure_facade_cases() {
                 return batch_meta.with_mut(batch_meta_key, [&](auto meta_run) noexcept {
                     return batch_scope.with_mut(batch_scope_key, [&](auto scope_run) noexcept {
                         return batch_csite.with_mut(batch_csite_key, [&](auto csite_run) noexcept {
-                            return ring->drain_pure(kPure, std::move(out_run), std::move(meta_run),
-                                                    std::move(scope_run), std::move(csite_run));
+                            return ring.drain_pure(kPure, std::move(out_run), std::move(meta_run), std::move(scope_run),
+                                                   std::move(csite_run));
                         });
                     });
                 });
@@ -346,14 +348,14 @@ void pure_facade_cases() {
                                             && batch_scope.at(index<3>()) == ScopeHash{0xC4});
             CRUCIBLE_TEST_ASSERT(kTest, batch_csite.at(index<0>()) == CallsiteHash{0xD1}
                                             && batch_csite.at(index<3>()) == CallsiteHash{0xD4});
-            CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
+            CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 0);
         }
 
         {
             auto const [zero_drained, empty_out] =
                 ::fixy::build_fixed_array<crucible::TraceRing::Entry, 1>([&ring](auto run) noexcept {
-                    return ring->drain_pure(kPure,
-                                            ::fixy::take_window(std::move(run), 0, 0).expect("an empty window fits"));
+                    return ring.drain_pure(kPure,
+                                           ::fixy::take_window(std::move(run), 0, 0).expect("an empty window fits"));
                 });
             CRUCIBLE_TEST_ASSERT(kTest, zero_drained == 0);
         }
@@ -361,19 +363,19 @@ void pure_facade_cases() {
         {
             crucible::TraceRing::Entry e5{};
             e5.schema_hash = SchemaHash{0xCAFE0005};
-            CRUCIBLE_TEST_ASSERT(kTest, ring->try_append_pure(kPure, e5));
+            CRUCIBLE_TEST_ASSERT(kTest, ring.try_append_pure(kPure, e5));
 
             crucible::TraceRing::Entry e6{};
             e6.schema_hash = SchemaHash{0xCAFE0006};
-            CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(e6));
+            CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(e6));
 
             auto [one, one_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<crucible::TraceRing::Entry, 1>);
             uint32_t g1 =
-                one.with_mut(one_key, [&ring](auto run) noexcept { return ring->drain_pure(kPure, std::move(run)); });
+                one.with_mut(one_key, [&ring](auto run) noexcept { return ring.drain_pure(kPure, std::move(run)); });
             CRUCIBLE_TEST_ASSERT(kTest, g1 == 1);
             CRUCIBLE_TEST_ASSERT(kTest, one.at(index<0>()).schema_hash == SchemaHash{0xCAFE0005});
 
-            uint32_t g2 = one.with_mut(one_key, [&ring](auto run) noexcept { return ring->drain(std::move(run)); });
+            uint32_t g2 = one.with_mut(one_key, [&ring](auto run) noexcept { return ring.drain(std::move(run)); });
             CRUCIBLE_TEST_ASSERT(kTest, g2 == 1);
             CRUCIBLE_TEST_ASSERT(kTest, one.at(index<0>()).schema_hash == SchemaHash{0xCAFE0006});
         }
@@ -389,15 +391,15 @@ void pure_facade_cases() {
                                             eff::Effect::Block>>);  // multi-atom
 
         ::fixy::check::pass(kTest, "test_trace_ring: try_append_pure / drain_pure OK\n");
-    }
+    });
 }
 
 // The same exchange driven through the row-typed facades, to show the
 // wrapper does not change the ordering the raw API provides.
 void concurrent_pure_case() {
-    {
+    ::fixy::Box<crucible::test::OpenRing> boxed = mint_ring();
+    boxed = ::fixy::with_mut(std::move(boxed), [](crucible::test::OpenRing& ring) noexcept {
         constexpr uint32_t N = 100000;
-        ::fixy::Box<crucible::test::OpenRing> ring = mint_ring();
 
         ::fixy::Atomic<bool> producer_done{false};
         ::fixy::Atomic<uint32_t, ::fixy::Counter> producer_spins{0};
@@ -407,8 +409,8 @@ void concurrent_pure_case() {
                 crucible::TraceRing::Entry entry{};
                 entry.schema_hash = SchemaHash{i + 7};
                 entry.shape_hash = ShapeHash{~uint64_t{i} + 7};
-                if (ring->try_append_pure(kPure, entry, MetaIndex{i + 1}, ScopeHash{0xE0000000ull | i},
-                                          CallsiteHash{0xF0000000ull | i})) [[likely]] {
+                if (ring.try_append_pure(kPure, entry, MetaIndex{i + 1}, ScopeHash{0xE0000000ull | i},
+                                         CallsiteHash{0xF0000000ull | i})) [[likely]] {
                     ++i;
                 } else {
                     CRUCIBLE_SPIN_PAUSE;
@@ -434,14 +436,14 @@ void concurrent_pure_case() {
                     return pure_meta.with_mut(pure_meta_key, [&](auto meta_run) noexcept {
                         return pure_scope.with_mut(pure_scope_key, [&](auto scope_run) noexcept {
                             return pure_csite.with_mut(pure_csite_key, [&](auto csite_run) noexcept {
-                                return ring->drain_pure(kPure, std::move(out_run), std::move(meta_run),
-                                                        std::move(scope_run), std::move(csite_run));
+                                return ring.drain_pure(kPure, std::move(out_run), std::move(meta_run),
+                                                       std::move(scope_run), std::move(csite_run));
                             });
                         });
                     });
                 });
                 if (got == 0) {
-                    if (producer_done.load_acquire() && ring->size().peek() == 0) {
+                    if (producer_done.load_acquire() && ring.size().peek() == 0) {
                         break;
                     }
                     CRUCIBLE_SPIN_PAUSE;
@@ -481,25 +483,25 @@ void concurrent_pure_case() {
                             "test_trace_ring: try_append_pure/drain_pure concurrent "
                             "(N={}, producer_spins={}) OK\n",
                             N, producer_spins.load_acquire());
-    }
+    });
 }
 
 void pure_edge_cases() {
-    {
+    ::fixy::Box<crucible::test::OpenRing> boxed = mint_ring();
+    boxed = ::fixy::with_mut(std::move(boxed), [](crucible::test::OpenRing& ring) noexcept {
         constexpr uint32_t CAP = crucible::TraceRing::CAPACITY;
-        ::fixy::Box<crucible::test::OpenRing> ring = mint_ring();
 
         {
             crucible::TraceRing::Entry e_bare{};
             e_bare.schema_hash = SchemaHash{0xA0AA};
-            CRUCIBLE_TEST_ASSERT(kTest, ring->try_append_pure(kPure, e_bare));
-            CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);
+            CRUCIBLE_TEST_ASSERT(kTest, ring.try_append_pure(kPure, e_bare));
+            CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 1);
 
             auto const [got_a, one_a] = ::fixy::build_fixed_array<crucible::TraceRing::Entry, 1>(
-                [&ring](auto run) noexcept { return ring->drain_pure(kPure, std::move(run)); });
+                [&ring](auto run) noexcept { return ring.drain_pure(kPure, std::move(run)); });
             CRUCIBLE_TEST_ASSERT(kTest, got_a == 1);
             CRUCIBLE_TEST_ASSERT(kTest, one_a.at(index<0>()).schema_hash == SchemaHash{0xA0AA});
-            CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
+            CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 0);
         }
 
         // A wrapper that always returned true on a full ring would slip past
@@ -509,23 +511,23 @@ void pure_edge_cases() {
             for (uint32_t i = 0; i < CAP; ++i) {
                 crucible::TraceRing::Entry full_e{};
                 full_e.schema_hash = SchemaHash{0xB0000000u | i};
-                bool ok = ring->try_append_pure(kPure, full_e);
+                bool ok = ring.try_append_pure(kPure, full_e);
                 CRUCIBLE_TEST_ASSERT(kTest, ok && "ring should accept CAPACITY entries");
             }
-            CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == CAP);
+            CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == CAP);
 
             crucible::TraceRing::Entry overflow_e{};
             overflow_e.schema_hash = SchemaHash{0xDEADBEEF};
-            bool ok_overflow = ring->try_append_pure(kPure, overflow_e);
+            bool ok_overflow = ring.try_append_pure(kPure, overflow_e);
             CRUCIBLE_TEST_ASSERT(kTest, !ok_overflow);
-            CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == CAP);
+            CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == CAP);
 
             // A buffer of the whole ring is too large for the stack.
             auto [full_drain, full_drain_key] =
                 ::fixy::mint_keyed_owner(::fixy::fixed_heap_array_owner<crucible::TraceRing::Entry, CAP>,
                                          ::foundation::effects::testing::test().alloc, crucible::TraceRing::Entry{});
             uint32_t got_b = full_drain.with_mut(
-                full_drain_key, [&ring](auto run) noexcept { return ring->drain_pure(kPure, std::move(run)); });
+                full_drain_key, [&ring](auto run) noexcept { return ring.drain_pure(kPure, std::move(run)); });
             CRUCIBLE_TEST_ASSERT(kTest, got_b == CAP);
             for (uint32_t i = 0; i < CAP; ++i) {
                 CRUCIBLE_TEST_ASSERT(kTest, full_drain.view()
@@ -534,7 +536,7 @@ void pure_edge_cases() {
                                                     ->schema_hash
                                                 == SchemaHash{0xB0000000u | i});
             }
-            CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
+            CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 0);
         }
 
         {
@@ -543,19 +545,19 @@ void pure_edge_cases() {
             for (uint32_t i = 0; i < CAP - 100; ++i) {
                 crucible::TraceRing::Entry pad_e{};
                 pad_e.schema_hash = SchemaHash{0xC0000000u | i};
-                CRUCIBLE_TEST_ASSERT(kTest, ring->try_append_pure(kPure, pad_e));
+                CRUCIBLE_TEST_ASSERT(kTest, ring.try_append_pure(kPure, pad_e));
             }
             auto [pad_drain, pad_drain_key] =
                 ::fixy::mint_keyed_owner(::fixy::fixed_heap_array_owner<crucible::TraceRing::Entry, CAP>,
                                          ::foundation::effects::testing::test().alloc, crucible::TraceRing::Entry{});
             uint32_t got_pad = pad_drain.with_mut(
-                pad_drain_key, [&ring](auto run) noexcept { return ring->drain_pure(kPure, std::move(run)); });
+                pad_drain_key, [&ring](auto run) noexcept { return ring.drain_pure(kPure, std::move(run)); });
             CRUCIBLE_TEST_ASSERT(kTest, got_pad == CAP - 100);
 
             for (uint32_t i = 0; i < 200; ++i) {
                 crucible::TraceRing::Entry wrap_e{};
                 wrap_e.schema_hash = SchemaHash{0xCAFE0000u | i};
-                CRUCIBLE_TEST_ASSERT(kTest, ring->try_append_pure(kPure, wrap_e));
+                CRUCIBLE_TEST_ASSERT(kTest, ring.try_append_pure(kPure, wrap_e));
             }
 
             auto [wrap_drain, wrap_drain_key] =
@@ -574,8 +576,8 @@ void pure_edge_cases() {
                 return wrap_meta.with_mut(wrap_meta_key, [&](auto meta_run) noexcept {
                     return wrap_scope.with_mut(wrap_scope_key, [&](auto scope_run) noexcept {
                         return wrap_csite.with_mut(wrap_csite_key, [&](auto csite_run) noexcept {
-                            return ring->drain_pure(kPure, std::move(out_run), std::move(meta_run),
-                                                    std::move(scope_run), std::move(csite_run));
+                            return ring.drain_pure(kPure, std::move(out_run), std::move(meta_run), std::move(scope_run),
+                                                   std::move(csite_run));
                         });
                     });
                 });
@@ -606,14 +608,14 @@ void pure_edge_cases() {
             crucible::TraceRing::Entry mix_e{};
             mix_e.schema_hash = SchemaHash{0xD0D0};
             CRUCIBLE_TEST_ASSERT(
-                kTest, ring->try_append_pure(kPure, mix_e, MetaIndex{42}, ScopeHash{0xDEAD}, CallsiteHash{0xBEEF}));
+                kTest, ring.try_append_pure(kPure, mix_e, MetaIndex{42}, ScopeHash{0xDEAD}, CallsiteHash{0xBEEF}));
 
             auto [mix_out, mix_out_key] =
                 ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<crucible::TraceRing::Entry, 1>);
             auto [mix_meta, mix_meta_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<MetaIndex, 1>);
             uint32_t got_mix = mix_out.with_mut(mix_out_key, [&](auto out_run) noexcept {
                 return mix_meta.with_mut(mix_meta_key, [&](auto meta_run) noexcept {
-                    return ring->drain_pure(kPure, std::move(out_run), std::move(meta_run));
+                    return ring.drain_pure(kPure, std::move(out_run), std::move(meta_run));
                 });
             });
             CRUCIBLE_TEST_ASSERT(kTest, got_mix == 1);
@@ -623,7 +625,7 @@ void pure_edge_cases() {
             crucible::TraceRing::Entry mix_e2{};
             mix_e2.schema_hash = SchemaHash{0xD2D2};
             CRUCIBLE_TEST_ASSERT(
-                kTest, ring->try_append_pure(kPure, mix_e2, MetaIndex{99}, ScopeHash{0xCAFE}, CallsiteHash{0xF00D}));
+                kTest, ring.try_append_pure(kPure, mix_e2, MetaIndex{99}, ScopeHash{0xCAFE}, CallsiteHash{0xF00D}));
 
             auto [mix_out2, mix_out2_key] =
                 ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<crucible::TraceRing::Entry, 1>);
@@ -632,7 +634,7 @@ void pure_edge_cases() {
             uint32_t got_mix2 = mix_out2.with_mut(mix_out2_key, [&](auto out_run) noexcept {
                 return mix_meta2.with_mut(mix_meta2_key, [&](auto meta_run) noexcept {
                     return mix_scope2.with_mut(mix_scope2_key, [&](auto scope_run) noexcept {
-                        return ring->drain_pure(kPure, std::move(out_run), std::move(meta_run), std::move(scope_run));
+                        return ring.drain_pure(kPure, std::move(out_run), std::move(meta_run), std::move(scope_run));
                     });
                 });
             });
@@ -640,13 +642,13 @@ void pure_edge_cases() {
             CRUCIBLE_TEST_ASSERT(kTest, mix_out2.at(index<0>()).schema_hash == SchemaHash{0xD2D2});
             CRUCIBLE_TEST_ASSERT(kTest, mix_meta2.at(index<0>()) == MetaIndex{99});
             CRUCIBLE_TEST_ASSERT(kTest, mix_scope2.at(index<0>()) == ScopeHash{0xCAFE});
-            CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
+            CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 0);
         }
 
         ::fixy::check::pass(kTest, "test_trace_ring: try_append_pure/drain_pure edge cases "
                                    "(bare default + full ring + wrap-around + "
                                    "nullable outputs) OK\n");
-    }
+    });
 }
 
 }  // namespace

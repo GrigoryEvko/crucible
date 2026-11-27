@@ -247,7 +247,9 @@ int main() {
             ::foundation::effects::testing::test().alloc,
             ::crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
                                                   ::crucible::perf::SensesMask{.sched_switch = true}));
-        if (senses->sched_switch().is_none()) {
+        bool const has_no_counter = ::foundation::core::with_view(
+            senses, [](::crucible::perf::Senses const& source) noexcept { return source.sched_switch().is_none(); });
+        if (has_no_counter) {
             failures += crucible::test::verdict_of_no_load("warden::DeadlineWatchdog with a sched_switch source");
         } else {
             // The watchdog takes the Senses, and the test reads them no more.

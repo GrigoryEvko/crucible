@@ -88,28 +88,35 @@ static_assert(!AppendsToRing<AllocCtx> && !DrainsRing<AllocCtx> && !AppendsToLog
 static_assert(::fixy::HotPathLattice::leq(HotPathTier_v::Warm, hot_path_tier_v<eff::Row<>>));
 static_assert(!::fixy::HotPathLattice::leq(HotPathTier_v::Hot, hot_path_tier_v<eff::Row<eff::Effect::Alloc>>));
 
+// The ring and the log are on the heap, and each test writes them in the
+// frame with_mut(std::move(boxed), body) of their Box.
 void test_ring_append_under_the_foreground() {
-    ::fixy::Box<crucible::test::OpenRing> ring = ::fixy::mint_box<crucible::test::OpenRing>(eff::testing::test().alloc);
-    auto const foreground = eff::testing::foreground();
-    CRUCIBLE_TEST_ASSERT(
-        kTest, ring->try_append_pure(foreground, make_entry(1), MetaIndex::none(), ScopeHash{0}, CallsiteHash{0}));
-    auto [drained, drained_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<TraceRing::Entry, 4>);
-    CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut(drained_key, [&ring, &foreground](auto run) noexcept {
-        return ring->drain_pure(foreground, std::move(run));
-    }) == 1u);
-    CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut(drained_key, [&ring, &foreground](auto run) noexcept {
-        return ring->drain_pure(foreground, std::move(run));
-    }) == 0u);
+    ::fixy::Box<crucible::test::OpenRing> boxed =
+        ::fixy::mint_box<crucible::test::OpenRing>(eff::testing::test().alloc);
+    boxed = ::fixy::with_mut(std::move(boxed), [](crucible::test::OpenRing& ring) noexcept {
+        auto const foreground = eff::testing::foreground();
+        CRUCIBLE_TEST_ASSERT(
+            kTest, ring.try_append_pure(foreground, make_entry(1), MetaIndex::none(), ScopeHash{0}, CallsiteHash{0}));
+        auto [drained, drained_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<TraceRing::Entry, 4>);
+        CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut(drained_key, [&ring, &foreground](auto run) noexcept {
+            return ring.drain_pure(foreground, std::move(run));
+        }) == 1u);
+        CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut(drained_key, [&ring, &foreground](auto run) noexcept {
+            return ring.drain_pure(foreground, std::move(run));
+        }) == 0u);
+    });
 }
 
 void test_log_append_under_the_foreground() {
-    ::fixy::Box<crucible::test::OpenLog> log = ::fixy::mint_box<crucible::test::OpenLog>(eff::testing::test().alloc);
-    TensorMeta meta{};
-    meta.set_shape(::crucible::vector_tensor_shape(::crucible::tensor_dim(16)));
-    const ::fixy::FixedArray<TensorMeta, 1> record{meta};
-    MetaIndex const index = log->try_append_pure(eff::testing::foreground(), crucible::mint_meta_run(record.view()));
-    CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
-    CRUCIBLE_TEST_ASSERT(kTest, index.raw() == 0);
+    ::fixy::Box<crucible::test::OpenLog> boxed = ::fixy::mint_box<crucible::test::OpenLog>(eff::testing::test().alloc);
+    boxed = ::fixy::with_mut(std::move(boxed), [](crucible::test::OpenLog& log) noexcept {
+        TensorMeta meta{};
+        meta.set_shape(::crucible::vector_tensor_shape(::crucible::tensor_dim(16)));
+        const ::fixy::FixedArray<TensorMeta, 1> record{meta};
+        MetaIndex const index = log.try_append_pure(eff::testing::foreground(), crucible::mint_meta_run(record.view()));
+        CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
+        CRUCIBLE_TEST_ASSERT(kTest, index.raw() == 0);
+    });
 }
 
 // The fixtures of the pure gates (test/trace_neg) open their ends through

@@ -121,46 +121,48 @@ enum class DrainForm : uint8_t {
     return drained;
 }
 
-static void test_empty_returns_zero() {
-    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
+// Each test runs on the ring in the frame with_mut(std::move(boxed), body) of
+// the Box of the ring (run_on_ring).
+template <class Test>
+static void run_on_ring(Test test) noexcept {
+    ::fixy::Box<crucible::test::OpenRing> boxed = make_ring();
+    boxed = ::fixy::with_mut(std::move(boxed), [&test](crucible::test::OpenRing& ring) noexcept { test(ring); });
+}
 
+static void test_empty_returns_zero(crucible::test::OpenRing& ring) {
     Outputs out = make_outputs(8);
-    uint32_t const n = drain_into(*ring, out, 0, 8, DrainForm::PopBatch);
+    uint32_t const n = drain_into(ring, out, 0, 8, DrainForm::PopBatch);
     CRUCIBLE_TEST_ASSERT(kTest, n == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 0);
 
     ::fixy::check::pass(kTest, "  test_empty_returns_zero: PASSED\n");
 }
 
 // Five empty outputs return zero and drain nothing.
-static void test_max_count_zero() {
-    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
-
+static void test_max_count_zero(crucible::test::OpenRing& ring) {
     // The ring is deliberately non-empty: a zero count must win over
     // available entries.
-    CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(make_entry(7)));
-    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(make_entry(7)));
+    CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 1);
 
     // Five empty windows of five frames.
     Outputs out = make_outputs(1);
-    uint32_t const n = drain_into(*ring, out, 0, 0, DrainForm::PopBatch);
+    uint32_t const n = drain_into(ring, out, 0, 0, DrainForm::PopBatch);
     CRUCIBLE_TEST_ASSERT(kTest, n == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);  // entry not drained
+    CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 1);  // entry not drained
 
     ::fixy::check::pass(kTest, "  test_max_count_zero: PASSED\n");
 }
 
 // The outputs are five keyed arrays, so the drain has the fixed extent of a
 // batch, as the drain stage of the background thread has.
-static void test_single_thread_fifo() {
-    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
-
+static void test_single_thread_fifo(crucible::test::OpenRing& ring) {
     constexpr uint32_t N = 100;
     for (uint64_t i = 0; i < N; ++i) {
         CRUCIBLE_TEST_ASSERT(
-            kTest, ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
+            kTest, ring.try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
     }
-    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == N);
+    CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == N);
 
     auto [out_entries, out_entries_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<TraceRing::Entry, N>);
     auto [out_metas, out_metas_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<MetaIndex, N>);
@@ -173,7 +175,7 @@ static void test_single_thread_fifo() {
             return out_scopes.with_mut(out_scopes_key, [&](auto scope_run) noexcept {
                 return out_calls.with_mut(out_calls_key, [&](auto call_run) noexcept {
                     return out_depths.with_mut(out_depths_key, [&](auto depth_run) noexcept {
-                        return pop_batch(*ring, std::move(entry_run), std::move(meta_run), std::move(scope_run),
+                        return pop_batch(ring, std::move(entry_run), std::move(meta_run), std::move(scope_run),
                                          std::move(call_run), std::move(depth_run));
                     });
                 });
@@ -181,7 +183,7 @@ static void test_single_thread_fifo() {
         });
     });
     CRUCIBLE_TEST_ASSERT(kTest, n == N);
-    CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, ring.size().peek() == 0);
 
     for (uint32_t i = 0; i < N; ++i) {
         CRUCIBLE_TEST_ASSERT(
@@ -210,13 +212,11 @@ static void test_single_thread_fifo() {
     ::fixy::check::pass(kTest, "  test_single_thread_fifo: PASSED\n");
 }
 
-static void test_multi_batch_drain() {
-    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
-
+static void test_multi_batch_drain(crucible::test::OpenRing& ring) {
     constexpr uint32_t N = 1000;
     for (uint64_t i = 0; i < N; ++i) {
         CRUCIBLE_TEST_ASSERT(
-            kTest, ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
+            kTest, ring.try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
     }
 
     Outputs out = make_outputs(N);
@@ -227,7 +227,7 @@ static void test_multi_batch_drain() {
     constexpr ::fixy::FixedArray<uint32_t, 9> batch_sizes{7, 13, 31, 64, 100, 200, 500, 100, 50};
     uint32_t total = 0;
     for (uint32_t batch_size : batch_sizes) {
-        total += drain_into(*ring, out, total, ::fixy::min(batch_size, N - total), DrainForm::PopBatch);
+        total += drain_into(ring, out, total, ::fixy::min(batch_size, N - total), DrainForm::PopBatch);
         if (total >= N) break;
     }
 
@@ -252,28 +252,26 @@ static void test_multi_batch_drain() {
 // head and tail away from zero without leaving live entries behind,
 // which is the only way to reach that boundary from an empty ring.
 
-static void test_wrap_around() {
-    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
-
+static void test_wrap_around(crucible::test::OpenRing& ring) {
     constexpr uint32_t HALF = TraceRing::CAPACITY / 2;
     for (uint64_t i = 0; i < HALF; ++i) {
-        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(make_entry(i)));
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(make_entry(i)));
     }
     {
         Outputs half = make_outputs(HALF);
-        CRUCIBLE_TEST_ASSERT(kTest, drain_into(*ring, half, 0, HALF, DrainForm::PopBatch) == HALF);
+        CRUCIBLE_TEST_ASSERT(kTest, drain_into(ring, half, 0, HALF, DrainForm::PopBatch) == HALF);
     }
 
     constexpr uint32_t WRAP_N = 1000;
     for (uint64_t i = 0; i < WRAP_N; ++i) {
         // The payloads start well above the ones drained already, so an
         // entry from the first round would be recognisable here.
-        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(make_entry(0x10000ULL + i), MetaIndex::none(), ScopeHash{},
-                                                     CallsiteHash{}, make_depth(i)));
+        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(make_entry(0x10000ULL + i), MetaIndex::none(), ScopeHash{},
+                                                    CallsiteHash{}, make_depth(i)));
     }
 
     Outputs out = make_outputs(WRAP_N);
-    uint32_t const n = drain_into(*ring, out, 0, WRAP_N, DrainForm::PopBatch);
+    uint32_t const n = drain_into(ring, out, 0, WRAP_N, DrainForm::PopBatch);
     CRUCIBLE_TEST_ASSERT(kTest, n == WRAP_N);
 
     for (uint32_t i = 0; i < WRAP_N; ++i) {
@@ -293,16 +291,13 @@ static void test_wrap_around() {
 // sequences are then compared field by field.  This is the claim the
 // rest of the file only approaches from one side at a time.
 
-static void test_equivalence_with_single_pop() {
-    ::fixy::Box<crucible::test::OpenRing> ring_a = make_ring();
-    ::fixy::Box<crucible::test::OpenRing> ring_b = make_ring();
-
+static void test_equivalence_with_single_pop(crucible::test::OpenRing& ring_a, crucible::test::OpenRing& ring_b) {
     constexpr uint32_t N = 5000;
     for (uint64_t i = 0; i < N; ++i) {
         CRUCIBLE_TEST_ASSERT(
-            kTest, ring_a->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
+            kTest, ring_a.try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
         CRUCIBLE_TEST_ASSERT(
-            kTest, ring_b->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
+            kTest, ring_b.try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
     }
 
     Outputs a_out = make_outputs(N);
@@ -318,13 +313,13 @@ static void test_equivalence_with_single_pop() {
         ++draw;
         const uint32_t drawn = 1u + block.at(::fixy::index<0>()) % 64u;
         uint32_t batch = ::fixy::min(drawn, N - a_total);
-        uint32_t const n = drain_into(*ring_a, a_out, a_total, batch, DrainForm::PopBatch);
+        uint32_t const n = drain_into(ring_a, a_out, a_total, batch, DrainForm::PopBatch);
         CRUCIBLE_TEST_ASSERT(kTest, n == batch);  // the batch is clamped, so it always fills
         a_total += n;
     }
 
     for (uint32_t i = 0; i < N; ++i) {
-        CRUCIBLE_TEST_ASSERT(kTest, drain_into(*ring_b, b_out, i, 1, DrainForm::Drain) == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, drain_into(ring_b, b_out, i, 1, DrainForm::Drain) == 1);
     }
 
     for (uint32_t i = 0; i < N; ++i) {
@@ -360,8 +355,7 @@ static void test_equivalence_with_single_pop() {
 // drains.  Mixing the two drain paths against a live producer is what
 // exposes an index that one path advances differently from the other.
 
-static void test_spsc_stress() {
-    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
+static void test_spsc_stress(crucible::test::OpenRing& ring) {
     constexpr uint64_t N = 100000;
 
     ::fixy::report(::fixy::Sink::Out, "  test_spsc_stress: 1 producer + 1 consumer, N={}...\n",
@@ -380,7 +374,7 @@ static void test_spsc_stress() {
 
     auto producer = [&] noexcept {
         for (uint64_t i = 0; i < N; ++i) {
-            while (!ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i))) {
+            while (!ring.try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i))) {
                 // The ring is full, so back off and retry the same
                 // index rather than dropping it.
                 CRUCIBLE_SPIN_PAUSE;
@@ -397,13 +391,13 @@ static void test_spsc_stress() {
             uint32_t got = 0;
             const uint64_t m = mode++ & 0x3;
             if (m == 0) {
-                got = drain_into(*ring, out, 0, 64, DrainForm::PopBatch);
+                got = drain_into(ring, out, 0, 64, DrainForm::PopBatch);
             } else if (m == 1) {
-                got = drain_into(*ring, out, 0, 16, DrainForm::PopBatch);
+                got = drain_into(ring, out, 0, 16, DrainForm::PopBatch);
             } else if (m == 2) {
-                got = drain_into(*ring, out, 0, 32, DrainForm::Drain);
+                got = drain_into(ring, out, 0, 32, DrainForm::Drain);
             } else {
-                got = drain_into(*ring, out, 0, 1, DrainForm::Drain);
+                got = drain_into(ring, out, 0, 1, DrainForm::Drain);
             }
 
             if (got > 0) {
@@ -417,7 +411,7 @@ static void test_spsc_stress() {
                         }
                     });
                 received += got;
-            } else if (producer_done.load_acquire() && ring->size().peek() == 0) {
+            } else if (producer_done.load_acquire() && ring.size().peek() == 0) {
                 break;
             } else {
                 CRUCIBLE_SPIN_PAUSE;
@@ -447,13 +441,16 @@ static void test_spsc_stress() {
 int main() {
     ::fixy::report(::fixy::Sink::Out, "test_trace_ring_pop_batch:\n");
 
-    test_empty_returns_zero();
-    test_max_count_zero();
-    test_single_thread_fifo();
-    test_multi_batch_drain();
-    test_wrap_around();
-    test_equivalence_with_single_pop();
-    test_spsc_stress();
+    run_on_ring([](crucible::test::OpenRing& ring) noexcept { test_empty_returns_zero(ring); });
+    run_on_ring([](crucible::test::OpenRing& ring) noexcept { test_max_count_zero(ring); });
+    run_on_ring([](crucible::test::OpenRing& ring) noexcept { test_single_thread_fifo(ring); });
+    run_on_ring([](crucible::test::OpenRing& ring) noexcept { test_multi_batch_drain(ring); });
+    run_on_ring([](crucible::test::OpenRing& ring) noexcept { test_wrap_around(ring); });
+    run_on_ring([](crucible::test::OpenRing& ring_a) noexcept {
+        run_on_ring(
+            [&ring_a](crucible::test::OpenRing& ring_b) noexcept { test_equivalence_with_single_pop(ring_a, ring_b); });
+    });
+    run_on_ring([](crucible::test::OpenRing& ring) noexcept { test_spsc_stress(ring); });
 
     ::fixy::check::pass(kTest, "test_trace_ring_pop_batch: ALL PASSED\n");
     return 0;
