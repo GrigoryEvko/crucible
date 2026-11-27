@@ -1,8 +1,9 @@
 // End-to-end tests drive the detector, but only along its ordinary path.
 // What needs direct coverage is where a signature match and an iteration
 // boundary disagree: a signature that occurs more than once per iteration,
-// a body built from repeated layers, a period that stops holding, and the
-// refuted period that must survive a restart.
+// a body built from repeated layers, a run of equal groups inside one
+// iteration, a period that stops holding, and the refuted period that must
+// survive a restart.
 
 #include <crucible/IterationDetector.h>
 #include <crucible/IterationDetectorState.h>
@@ -216,6 +217,145 @@ uint64_t next_random(uint64_t& state) {
     for (const Op op : head)
         static_cast<void>(body.append(op).expect("the MLP has 46 ops"));
     return body;
+}
+
+// The ops of one iteration of a loop of aten::_foreach_add over 12 tensors of
+// one extent, then a relu of one output, as the CPU path records them.  Each
+// tensor gives one group of six ops in post-order (empty_strided, copy_,
+// _to_copy, to.dtype, add.Tensor, add.Scalar), so the iteration holds a run
+// of 12 equal groups.  Then come _foreach_add, clamp_min and relu.
+inline constexpr std::size_t kForeachTensors = 12;
+inline constexpr std::size_t kForeachGroupOps = 6;
+inline constexpr std::size_t kForeachOps = kForeachTensors * kForeachGroupOps + 3;
+
+[[nodiscard]] ::fixy::FixedList<Op, kForeachOps> foreach_add_body() {
+    ::fixy::FixedList<Op, kForeachOps> body{};
+    for (std::size_t tensor = 0; tensor < kForeachTensors; ++tensor) {
+        for (uint64_t member = 0; member < kForeachGroupOps; ++member)
+            static_cast<void>(body.append(Op{0x610 + member, 0x16}).expect("the loop has 75 ops"));
+    }
+    for (uint64_t tail = 0; tail < 3; ++tail)
+        static_cast<void>(body.append(Op{0x620 + tail, 0x16}).expect("the loop has 75 ops"));
+    return body;
+}
+
+// The ops of one iteration of a loop of aten::_fused_adam_ over 10
+// parameters.  The CPU kernel reads each step tensor of rank zero with
+// item(), which runs _local_scalar_dense, so the iteration holds a run of
+// ten equal pairs, then _fused_adam_ itself.
+inline constexpr std::size_t kAdamParams = 10;
+inline constexpr std::size_t kAdamOps = 2 * kAdamParams + 1;
+
+[[nodiscard]] ::fixy::FixedList<Op, kAdamOps> fused_adam_body() {
+    ::fixy::FixedList<Op, kAdamOps> body{};
+    for (std::size_t param = 0; param < kAdamParams; ++param) {
+        static_cast<void>(body.append(Op{0x710, 0x0}).expect("the loop has 21 ops"));
+        static_cast<void>(body.append(Op{0x711, 0x0}).expect("the loop has 21 ops"));
+    }
+    static_cast<void>(body.append(Op{0x712, 0x8}).expect("the loop has 21 ops"));
+    return body;
+}
+
+[[nodiscard]] bool is_same_op(Op left, Op right) { return left.schema == right.schema && left.shape == right.shape; }
+
+// When the foreground of the model takes a region that the detector published.
+enum class Uptake : std::uint8_t {
+    // At the op after the boundary that published the region.
+    AtOnce,
+    // At the first op of the next iteration of the loop.
+    NextIteration,
+};
+
+// What the foreground of the model does with an op.
+enum class ForegroundMode : std::uint8_t {
+    Records,
+    Aligns,
+    Replays,
+};
+
+// The ops of a region of the model, and the ops that the detector received
+// since its last restart.  The longest body of a model run has 75 ops, and a
+// run feeds at most 40 iterations of it.
+inline constexpr std::size_t kRegionCapacity = 128;
+inline constexpr std::size_t kRecordedCapacity = 4096;
+using RegionOps = ::fixy::FixedList<Op, kRegionCapacity>;
+
+// The state of a model run at its end.
+struct ForegroundRun {
+    ForegroundMode mode = ForegroundMode::Records;
+    // The length of the region that the foreground replays at the end, or
+    // zero when it does not replay.
+    std::size_t region_length = 0;
+    uint32_t divergences = 0;
+};
+
+// Feeds iterations copies of body through a model of the foreground of the
+// Vigil.  The foreground records each op into the detector.  A boundary
+// publishes the iteration that it completed as a region, and the foreground
+// takes it at uptake.  Then it aligns: it records nothing until the last K
+// ops equal the first K ops of the region.  Then it replays: it records
+// nothing while each op equals the next op of the region.  An op that does
+// not is a divergence: the detector restarts, the op is not recorded, and the
+// foreground records again from the next op.  Complexity: O(ops * K), with
+// O(P) for each published region.
+[[nodiscard]] ForegroundRun run_with_foreground(IterationDetector& detector, ::fixy::View<Op const> body,
+                                                Iterations iterations, Uptake uptake) {
+    ForegroundRun run{};
+    ::fixy::FixedList<Op, kRecordedCapacity> recorded{};
+    RegionOps region{};
+    RegionOps pending{};
+    bool has_pending = false;
+    uint64_t aligned_ops = 0;
+    uint64_t cursor = 0;
+    const uint64_t total = uint64_t{std::to_underlying(iterations)} * body.size();
+    for (uint64_t n = 0; n < total; ++n) {
+        const Op op = op_at(body, BodyOffset{static_cast<uint32_t>(n % body.size())});
+        const bool starts_iteration = n % body.size() == 0;
+        if (run.mode == ForegroundMode::Records && has_pending && (uptake == Uptake::AtOnce || starts_iteration)) {
+            region.clear();
+            for (const Op pending_op : pending)
+                static_cast<void>(region.append(pending_op).expect("a region fits kRegionCapacity"));
+            has_pending = false;
+            aligned_ops = 0;
+            run.mode = ForegroundMode::Aligns;
+        }
+        if (run.mode == ForegroundMode::Records) {
+            static_cast<void>(recorded.append(op).expect("the ops since a restart fit kRecordedCapacity"));
+            if (!detector.check(kAlloc, SchemaHash{op.schema}, ShapeHash{op.shape})) continue;
+            const std::size_t length = detector.last_completed_len;
+            const std::size_t first = recorded.size() - K - length;
+            pending.clear();
+            for (std::size_t offset = 0; offset < length; ++offset)
+                static_cast<void>(
+                    pending.append(op_at(recorded.view(), BodyOffset{static_cast<uint32_t>(first + offset)}))
+                        .expect("a region fits kRegionCapacity"));
+            has_pending = true;
+            continue;
+        }
+        if (run.mode == ForegroundMode::Aligns) {
+            ++aligned_ops;
+            if (aligned_ops < K) continue;
+            bool is_aligned = true;
+            for (uint32_t i = 0; i < K && is_aligned; ++i)
+                is_aligned = is_same_op(op_at(body, BodyOffset{static_cast<uint32_t>((n + 1 - K + i) % body.size())}),
+                                        op_at(region.view(), BodyOffset{i}));
+            if (!is_aligned) continue;
+            run.mode = ForegroundMode::Replays;
+            cursor = K;
+            continue;
+        }
+        if (is_same_op(op, op_at(region.view(), BodyOffset{static_cast<uint32_t>(cursor % region.size())}))) {
+            ++cursor;
+            continue;
+        }
+        ++run.divergences;
+        detector.restart_after_divergence();
+        recorded.clear();
+        has_pending = false;
+        run.mode = ForegroundMode::Records;
+    }
+    run.region_length = run.mode == ForegroundMode::Replays ? region.size() : 0;
+    return run;
 }
 
 void test_signature_build_requires_K_ops() {
@@ -490,19 +630,123 @@ void test_random_bodies_settle_on_true_period() {
     ::fixy::check::pass(kTest, "  test_random_bodies:              PASSED ({} streams)\n", streams);
 }
 
-void test_restart_without_unique_phase_refutes_nothing() {
-    // A stream of one repeated op has no window that occurs once per period.
-    // A divergence then says nothing about the period, so it stays eligible.
+// Feeds iterations copies of body, then restarts the detector as a divergence
+// of the region of the accepted period does, and gives the boundaries.
+[[nodiscard]] Boundaries feed_then_diverge(IterationDetector& detector, ::fixy::View<Op const> body,
+                                           Iterations iterations) {
+    Boundaries boundaries = feed(detector, body, iterations);
+    detector.restart_after_divergence();
+    return boundaries;
+}
+
+void test_divergence_refutes_a_power_body_and_one_longer_power_is_its_fallback() {
+    // A stream of one repeated op gives the period 5, five copies of its root.
+    // Each window occurs once in each copy of the root, and each copy is the
+    // same op, so the foreground follows the same ops from each copy.  A
+    // divergence then refutes the period.  The search accepts the next
+    // multiple of the root once, and after its divergence no longer power.
     const ::fixy::FixedArray<Op, 1> body{Op{7, 0}};
     IterationDetector d;
-    const Boundaries boundaries = feed(d, body.view(), Iterations{30});
-    CRUCIBLE_TEST_ASSERT(kTest, boundaries.size() != 0);
-    CRUCIBLE_TEST_ASSERT(kTest, !d.phase_is_unique);
+    const Boundaries base = feed(d, body.view(), Iterations{30});
+    assert_settles_on(base, Period{5}, TailCount{3});
+    CRUCIBLE_TEST_ASSERT(kTest, d.phase_is_unique);
+    const uint64_t base_sum = d.period_body_sum_;
     d.restart_after_divergence();
-    CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 0);
-    const Boundaries again = feed(d, body.view(), Iterations{30});
-    assert_settles_on(again, Period{5}, TailCount{3});
-    ::fixy::check::pass(kTest, "  test_restart_no_unique_phase:    PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, d.refuted_count_ == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, d.is_refuted(5, base_sum));
+    const Boundaries fallback = feed_then_diverge(d, body.view(), Iterations{60});
+    assert_settles_on(fallback, Period{6}, TailCount{3});
+    const Boundaries after = feed(d, body.view(), Iterations{60});
+    CRUCIBLE_TEST_ASSERT(kTest, after.size() == 0);
+    ::fixy::check::pass(kTest, "  test_power_body_refuted:         PASSED\n");
+}
+
+void test_second_divergence_leaves_no_period_until_reset_because_one_fallback_is_the_limit() {
+    // The limit of the rule on powers.  A divergence refutes the true period
+    // of 8 ops, and the stream gets the fallback of 16 ops, two iterations.
+    // A divergence of the fallback refutes it too.  Each longer power is
+    // skipped, so the stream has no period until reset().
+    ::fixy::FixedList<Op, 8> body{};
+    for (uint64_t i = 0; i < 8; ++i)
+        static_cast<void>(body.append(Op{0x300 + i, 0x400 + i}).expect("the body has 8 ops"));
+    IterationDetector d;
+    const Boundaries before = feed_then_diverge(d, body.view(), Iterations{4});
+    CRUCIBLE_TEST_ASSERT(kTest, before.size() != 0);
+    const Boundaries fallback = feed(d, body.view(), Iterations{40});
+    assert_settles_on(fallback, Period{16}, TailCount{10});
+    CRUCIBLE_TEST_ASSERT(kTest, d.phase_is_unique);
+    d.restart_after_divergence();
+    const Boundaries after = feed(d, body.view(), Iterations{80});
+    CRUCIBLE_TEST_ASSERT(kTest, after.size() == 0);
+    d.reset();
+    const Boundaries fresh = feed(d, body.view(), Iterations{20});
+    assert_settles_on(fresh, Period{8}, TailCount{10});
+    ::fixy::check::pass(kTest, "  test_one_fallback_is_the_limit:  PASSED\n");
+}
+
+void test_a_run_of_equal_groups_gives_at_most_two_periods() {
+    // The run of 12 equal groups of 6 ops holds a square of each multiple of
+    // 6 up to 30.  The group of 6 ops and its fallback of 12 ops break at the
+    // end of the run, and each longer multiple is skipped, so the next period
+    // is the iteration.
+    const auto body = foreach_add_body();
+    IterationDetector d;
+    const Boundaries boundaries = feed(d, body.view(), Iterations{30});
+    for (const auto& boundary : boundaries)
+        CRUCIBLE_TEST_ASSERT(kTest, boundary.length == kForeachGroupOps || boundary.length == 2 * kForeachGroupOps
+                                        || boundary.length == kForeachOps);
+    assert_settles_on(boundaries, Period{static_cast<uint32_t>(kForeachOps)}, TailCount{10});
+    ::fixy::check::pass(kTest, "  test_run_gives_two_periods:      PASSED\n");
+}
+
+void test_power_of_a_short_root_has_a_unique_phase() {
+    // The run of ten equal pairs gives the period 6, three copies of a root
+    // of two ops.  Its window occurs once in each copy of the root, so a
+    // divergence refutes it, and the next period is the iteration of 21 ops.
+    const auto body = fused_adam_body();
+    IterationDetector d;
+    bool accepted_pairs = false;
+    for (uint64_t op_index = 0; op_index < kAdamOps * 4 && !accepted_pairs; ++op_index) {
+        const Op op = op_at(body.view(), BodyOffset{static_cast<uint32_t>(op_index % kAdamOps)});
+        accepted_pairs = d.check(kAlloc, SchemaHash{op.schema}, ShapeHash{op.shape}) && d.last_completed_len == 6;
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, accepted_pairs);
+    CRUCIBLE_TEST_ASSERT(kTest, d.phase_is_unique);
+    const uint64_t body_sum = d.period_body_sum_;
+    d.restart_after_divergence();
+    CRUCIBLE_TEST_ASSERT(kTest, d.is_refuted(6, body_sum));
+    const Boundaries boundaries = feed(d, body.view(), Iterations{20});
+    for (const auto& boundary : boundaries)
+        CRUCIBLE_TEST_ASSERT(kTest, boundary.length == kAdamOps);
+    assert_settles_on(boundaries, Period{static_cast<uint32_t>(kAdamOps)}, TailCount{10});
+    ::fixy::check::pass(kTest, "  test_short_root_unique_phase:    PASSED\n");
+}
+
+void test_equal_groups_replay_through_the_foreground() {
+    // The two loops of the vessel plants, with the model of the foreground
+    // at two latencies.  Each settles on the region of its iteration.  The
+    // loop of _foreach_add diverges two times: from the region of one group,
+    // then from its fallback of two groups.  The loop of _fused_adam_
+    // diverges one time, because its run of 20 ops holds no square of its
+    // fallback of 8 ops.
+    const auto foreach_body = foreach_add_body();
+    const auto adam_body = fused_adam_body();
+    constexpr ::fixy::FixedArray<Uptake, 2> kUptakes{Uptake::AtOnce, Uptake::NextIteration};
+    for (const Uptake uptake : kUptakes) {
+        IterationDetector foreach_detector;
+        const ForegroundRun foreach_run =
+            run_with_foreground(foreach_detector, foreach_body.view(), Iterations{40}, uptake);
+        CRUCIBLE_TEST_ASSERT(kTest, foreach_run.mode == ForegroundMode::Replays);
+        CRUCIBLE_TEST_ASSERT(kTest, foreach_run.region_length == kForeachOps);
+        CRUCIBLE_TEST_ASSERT(kTest, foreach_run.divergences == 2);
+
+        IterationDetector adam_detector;
+        const ForegroundRun adam_run = run_with_foreground(adam_detector, adam_body.view(), Iterations{40}, uptake);
+        CRUCIBLE_TEST_ASSERT(kTest, adam_run.mode == ForegroundMode::Replays);
+        CRUCIBLE_TEST_ASSERT(kTest, adam_run.region_length == kAdamOps);
+        CRUCIBLE_TEST_ASSERT(kTest, adam_run.divergences == 1);
+    }
+    ::fixy::check::pass(kTest, "  test_equal_groups_replay:        PASSED\n");
 }
 
 void test_reset_clears_everything() {
@@ -575,9 +819,13 @@ int main() {
     test_gap_in_the_recording_does_not_refute();
     test_short_periods();
     test_random_bodies_settle_on_true_period();
-    test_restart_without_unique_phase_refutes_nothing();
+    test_divergence_refutes_a_power_body_and_one_longer_power_is_its_fallback();
+    test_second_divergence_leaves_no_period_until_reset_because_one_fallback_is_the_limit();
+    test_a_run_of_equal_groups_gives_at_most_two_periods();
+    test_power_of_a_short_root_has_a_unique_phase();
+    test_equal_groups_replay_through_the_foreground();
     test_reset_clears_everything();
     test_typestate_witness_minting();
-    ::fixy::check::pass(kTest, "test_iteration_detector: 14 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_iteration_detector: 18 groups, all passed\n");
     return 0;
 }

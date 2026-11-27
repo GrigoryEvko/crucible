@@ -39,6 +39,12 @@ namespace crucible {
 // the search skips it.  Otherwise the same layer square is found again after
 // each restart.
 //
+// A run of equal groups inside one iteration, such as one group of ops for
+// each tensor of an optimizer step, gives a square of each multiple of the
+// group.  The body of such a square is a power of a shorter root.  The search
+// accepts the smallest multiple of a root that is K or more, and the next
+// multiple as one fallback, so a run gives at most two periods.
+//
 // One break does not refute a period.  The recorded stream has gaps: the
 // foreground records nothing while it aligns or replays, and a gap breaks
 // the true period once, after which it holds again.  A period is refuted on
@@ -114,10 +120,12 @@ struct IterationDetector {
     // True while a period is accepted.
     bool confirmed = false;
 
-    // The phase window of the accepted period occurs once per period. Only
-    // then does a divergence refute the period: with a repeated phase window
-    // the foreground can align at the wrong copy, and the divergence says
-    // nothing about the period.
+    // The phase window of the accepted period occurs once in each copy of
+    // the root of the body. Only then does a divergence refute the period:
+    // with a phase window that repeats at other places of the body, the
+    // foreground can align at the wrong copy, and the divergence says nothing
+    // about the period. Each copy of the root is the same ops, so the
+    // foreground follows the same ops from each copy of its window.
     bool phase_is_unique = false;
 
     SignatureLen signature_len = ::fixy::mint_bounded_monotonic<uint32_t, K>(0u);
@@ -350,16 +358,19 @@ private:
     }
 
     // The fingerprint of the keys before index, for an index from base_ up
-    // to pos_.
-    [[nodiscard]] uint64_t prefix_poly_before_(uint64_t index) const noexcept {
+    // to pos_.  The search reads four of them for each candidate, so each
+    // read is in line in each unit.
+    [[nodiscard]] CRUCIBLE_INLINE uint64_t prefix_poly_before_(uint64_t index) const noexcept {
         return index == 0 ? 0 : prefix_polys_.at_masked(index - 1);
     }
 
-    [[nodiscard]] uint64_t prefix_sum_before_(uint64_t index) const noexcept {
+    [[nodiscard]] CRUCIBLE_INLINE uint64_t prefix_sum_before_(uint64_t index) const noexcept {
         return index == 0 ? 0 : prefix_sums_.at_masked(index - 1);
     }
 
-    [[nodiscard]] uint64_t window_fingerprint_(uint64_t start) const noexcept {
+    // The search reads the fingerprint of the window of each new op, so the
+    // read is in line in each unit, as the exchange of the table is.
+    [[nodiscard]] CRUCIBLE_INLINE uint64_t window_fingerprint_(uint64_t start) const noexcept {
         return prefix_poly_before_(start + K) - prefix_poly_before_(start) * power_of_base_(K);
     }
 
@@ -390,7 +401,7 @@ private:
 
     // Records start as the newest window of its fingerprint, and returns the
     // slot value that it replaces: the earlier start plus one, or zero.
-    [[nodiscard]] uint64_t table_exchange_(uint64_t fingerprint, uint64_t start) {
+    [[nodiscard]] CRUCIBLE_INLINE uint64_t table_exchange_(uint64_t fingerprint, uint64_t start) {
         // The load stays at most one half, so the probe meets an empty slot.
         // Each probe reads its slot, and the walk stops at an empty slot,
         // which it claims, or at the slot of the fingerprint, which it takes.
@@ -505,7 +516,7 @@ private:
     // The fingerprints reject almost every unequal pair in O(1). The key
     // compare makes the answer exact, and it runs O(length) only on a pair
     // that is almost surely equal.
-    [[nodiscard]] bool windows_equal_(uint64_t left, uint64_t right, uint64_t length) const noexcept {
+    [[nodiscard]] CRUCIBLE_INLINE bool windows_equal_(uint64_t left, uint64_t right, uint64_t length) const noexcept {
         const uint64_t power = power_of_base_(length);
         const uint64_t left_poly = prefix_poly_before_(left + length) - prefix_poly_before_(left) * power;
         const uint64_t right_poly = prefix_poly_before_(right + length) - prefix_poly_before_(right) * power;
@@ -517,13 +528,58 @@ private:
     }
 
     // Is [start - 2P, start) two copies of one body of length P?
-    [[nodiscard]] bool is_square_(uint64_t start, uint64_t period) const noexcept {
+    [[nodiscard]] CRUCIBLE_INLINE bool is_square_(uint64_t start, uint64_t period) const noexcept {
         return windows_equal_(start - 2 * period, start - period, period);
+    }
+
+    // The length of the shortest word whose power is the body of the square
+    // of period that ends at start: the smallest divisor d of the period at
+    // which the body repeats with period d.  A primitive body gives the
+    // period.
+    //
+    // Complexity: O(sqrt(P)) for the scan of the divisors of P, one
+    // fingerprint compare for each divisor, and a key compare of O(P) only on
+    // a match.  search_ runs it only for a found square that is not refuted,
+    // and accept_ runs it once.  The body is out of line, so the path of
+    // each op holds no scan.
+    [[nodiscard]] CRUCIBLE_COLD uint64_t root_length_(uint64_t start, Period period) const noexcept {
+        const uint32_t length = period.value();
+        const uint64_t body_begin = start - length;
+        // The divisors up to the square root of the length, then the larger
+        // divisor of each of them, each scan in increasing order.
+        uint32_t divisor = 1;
+        for (; divisor * divisor <= length; ++divisor) {
+            if (length % divisor == 0 && windows_equal_(body_begin, body_begin + divisor, length - divisor))
+                return divisor;
+        }
+        for (uint32_t cofactor = divisor - 1; cofactor > 1; --cofactor) {
+            const uint32_t larger = length / cofactor;
+            if (length % cofactor == 0 && larger != cofactor
+                && windows_equal_(body_begin, body_begin + larger, length - larger))
+                return larger;
+        }
+        return length;
     }
 
     // Tests the earlier windows equal to the window at start, the nearest
     // first, so the candidate periods come in increasing order.
-    [[nodiscard]] bool search_(uint64_t start, uint64_t earlier_link) {
+    //
+    // The search accepts two multiples of the root of r keys of a body: the
+    // smallest one that is K or more, and the next one.  It skips a square
+    // of P keys when P - 2r is K or more.  Then the windows at start - (P - r)
+    // and start - (P - 2r) equal the window at start, and squares of P - r
+    // and P - 2r end at start, so the search tested them first.  It reached P
+    // only because they were refuted, or skipped by this rule.
+    //
+    // A run of equal groups inside one iteration thus gives at most two
+    // periods, and the stream then gets its true period.  The next multiple
+    // is the fallback for a true period that one divergence refuted: the
+    // stream then gets a period of two iterations.
+    //
+    // The limit of the rule: a divergence of the fallback refutes it too, and
+    // the stream then has no period until reset().  An expiry of each
+    // refutation, or a second strike for each period, is the planned cure.
+    [[nodiscard]] CRUCIBLE_INLINE bool search_(uint64_t start, uint64_t earlier_link) {
         uint64_t link = earlier_link;
         for (uint32_t tested = 0; link != 0 && tested < MAX_CANDIDATES; ++tested) {
             const uint64_t earlier = link - 1;
@@ -533,8 +589,10 @@ private:
             if (period >= K && is_square_(start, period)) {
                 const uint64_t body_sum = window_sum_(start - period, start);
                 const auto length = static_cast<uint32_t>(period);
-                if (!is_refuted(length, body_sum))
-                    return accept_(start, ::fixy::mint_refined<kPeriodBound>(length), body_sum);
+                if (!is_refuted(length, body_sum)) {
+                    const Period candidate = ::fixy::mint_refined<kPeriodBound>(length);
+                    if (period < 2 * root_length_(start, candidate) + K) return accept_(start, candidate, body_sum);
+                }
             }
             link = earlier_links_.at_masked(earlier);
         }
@@ -557,10 +615,16 @@ private:
     // later copy of a window at an earlier phase.  For the first copy, the
     // links back over P window starts count its copies.
     //
-    // Complexity: O(P), once per accepted period.
-    [[nodiscard]] bool accept_(uint64_t start, Period period, uint64_t body_sum) {
+    // A body that is a power of a root of r keys holds each window once in
+    // each copy of the root, P / r times.  Each copy is the same ops, so the
+    // phase is unique when its window occurs once in each copy of the root.
+    //
+    // Complexity: O(P), once per accepted period.  The body is out of line,
+    // so the loop of the search holds no loop of the phase.
+    [[nodiscard]] CRUCIBLE_COLD bool accept_(uint64_t start, Period period, uint64_t body_sum) {
         const uint64_t length = period.value();
         const uint64_t body_begin = start - length;
+        const uint64_t root = root_length_(start, period);
         uint32_t best_phase = 0;
         uint64_t best_count = ~uint64_t{0};
         for (uint32_t phase = 0; phase < length; ++phase) {
@@ -581,7 +645,7 @@ private:
         period_ = period.value();
         period_body_sum_ = body_sum;
         current_period_reported_ = false;
-        phase_is_unique = best_count == 1;
+        phase_is_unique = best_count * root == length;
         confirmed = true;
         next_boundary_ = start + best_phase;
         if (best_phase == 0) return fire_();
