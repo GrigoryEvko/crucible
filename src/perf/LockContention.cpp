@@ -40,8 +40,9 @@ LockContention::~LockContention() = default;
 
 uint64_t LockContention::wait_count() const noexcept { return detail::ring_count(state_); }
 
-::fixy::mmap::SharedView<const TimelineLockEvent> LockContention::timeline_view() const noexcept {
-    return detail::ring_events(state_);
+::fixy::mmap::SharedView<const TimelineLockEvent>
+LockContention::timeline_view(this LockContention const& self) noexcept {
+    return detail::ring_events(OwnerKey{}, self.state_);
 }
 
 uint64_t LockContention::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }

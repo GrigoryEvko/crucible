@@ -150,7 +150,9 @@ public:
     // The live counters in the mapping, each read with an acquire load, or no
     // value for a moved-from hub.  The words borrow the mapping of the hub.
     [[nodiscard]] ::fixy::Option<::fixy::mmap::SharedView<uint64_t const, NUM_COUNTERS>>
-    counters_view(::foundation::effects::cap::Nondet nondet) const noexcept;
+    counters_view(this SenseHub const& self CRUCIBLE_LIFETIMEBOUND, ::foundation::effects::cap::Nondet nondet) noexcept;
+    void counters_view(this SenseHub const&& self, ::foundation::effects::cap::Nondet nondet) =
+        delete("the words borrow the mapping of the hub, which a temporary hub ends");
 
     // An unattachable tracepoint drops one program silently, so these
     // two counts report how much of the map is live.
@@ -170,6 +172,9 @@ public:
 private:
     // The door builds the facade in each load.
     friend struct detail::FacadeDoor;
+    // The key of the owner door of the Box of the state (borrow_owned of
+    // foundation/core/Ref.h).
+    using OwnerKey = ::foundation::core::box_owner_key<SenseHub>;
     struct State;
     explicit SenseHub(::fixy::Box<State> state) noexcept;
 

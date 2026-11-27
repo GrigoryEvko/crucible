@@ -39,8 +39,8 @@ SchedTpBtf::~SchedTpBtf() = default;
 
 uint64_t SchedTpBtf::context_switches() const noexcept { return detail::ring_count(state_); }
 
-::fixy::mmap::SharedView<const TimelineSchedEvent> SchedTpBtf::timeline_view() const noexcept {
-    return detail::ring_events(state_);
+::fixy::mmap::SharedView<const TimelineSchedEvent> SchedTpBtf::timeline_view(this SchedTpBtf const& self) noexcept {
+    return detail::ring_events(OwnerKey{}, self.state_);
 }
 
 uint64_t SchedTpBtf::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }

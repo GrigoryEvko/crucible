@@ -46,7 +46,10 @@ public:
     // read_ticket<&TimelineSyscallEvent::commit>.  A record that the ring
     // wrote over, that is not whole yet, or whose write dropped gives no
     // value.
-    [[nodiscard]] ::fixy::mmap::SharedView<const TimelineSyscallEvent> timeline_view() const noexcept;
+    [[nodiscard]] ::fixy::mmap::SharedView<const TimelineSyscallEvent> timeline_view(this SyscallTpBtf const& self
+                                                                                     CRUCIBLE_LIFETIMEBOUND) noexcept;
+    void timeline_view(this SyscallTpBtf const&& self) =
+        delete("the view borrows the ring of the facade, which a temporary facade ends");
 
     // The index counts claims forever, so the newest ticket is
     // `write_idx - 1`, and its slot is that ticket masked to the capacity.
@@ -74,6 +77,9 @@ public:
 private:
     // The door builds the facade in each load.
     friend struct detail::FacadeDoor;
+    // The key of the owner door of the Box of the state (borrow_owned of
+    // foundation/core/Ref.h).
+    using OwnerKey = ::foundation::core::box_owner_key<SyscallTpBtf>;
     struct State;
     explicit SyscallTpBtf(::fixy::Box<State> state) noexcept;
 

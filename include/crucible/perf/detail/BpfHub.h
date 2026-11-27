@@ -445,18 +445,36 @@ struct FacadeDoor {
     // that the facade is unavailable, and fill already reported the reason.
     template <class Facade, ::foundation::effects::IsExecCtx Ctx, class Fill>
     [[nodiscard]] static ::fixy::Option<Facade> load(Ctx const& ctx, Fill fill) noexcept {
-        ::fixy::Box<State<Facade>> state = ::fixy::mint_box<State<Facade>>(ctx.cap().alloc);
-        if (!fill(*state)) return ::fixy::none;
+        auto [is_filled, state] = ::fixy::with_mut(::fixy::mint_box<State<Facade>>(ctx.cap().alloc),
+                                                   [&fill](State<Facade>& held) noexcept { return fill(held); });
+        if (!is_filled) return ::fixy::none;
         return ::fixy::Option<Facade>::some(Facade{std::move(state)});
     }
 };
 
-// read(state) of the state that a facade holds, or fallback for a
-// moved-from facade.
+// read(state) of the state that a facade holds, in the read frame of its
+// Box, or fallback for a moved-from facade.  read gives a value that holds no
+// borrow of the state.
 template <class State, class Value, class Read>
 [[nodiscard]] Value read_held(HeldState<State> const& held, Value fallback, Read read) noexcept {
-    return held.match([&read](::fixy::Box<State> const& state) noexcept -> Value { return read(*state); },
-                      [&fallback] noexcept -> Value { return fallback; });
+    return held.match(
+        [&read](::fixy::Box<State> const& state) noexcept -> Value {
+            return ::foundation::core::with_view(state, read);
+        },
+        [&fallback] noexcept -> Value { return fallback; });
+}
+
+// read(state) of the state that a facade holds, or fallback for a
+// moved-from facade, where read gives a view of the state.  The facade gives
+// its key, so the owner door of its Box (borrow_owned of
+// foundation/core/Ref.h) reads the state, and the view stays a borrow of the
+// facade.  The view door of the facade is bound to the facade.
+template <class Owner, class State, class Value, class Read>
+[[nodiscard]] Value view_held(::foundation::core::box_owner_key<Owner> const& key, HeldState<State> const& held,
+                              Value fallback, Read read) noexcept {
+    return held.match(
+        [&key, &read](::fixy::Box<State> const& state) noexcept -> Value { return read(borrow_owned(key, state)); },
+        [&fallback] noexcept -> Value { return fallback; });
 }
 
 // Loads a ring facade.  An empty result means that the facade is
@@ -499,10 +517,11 @@ template <class State>
     return read_held(held, uint64_t{0}, [](State const& state) noexcept { return state.dropped(); });
 }
 
-template <class State>
+// The view of the events of the ring, with the key of the facade.
+template <class Owner, class State>
 [[nodiscard]] ::fixy::mmap::SharedView<const typename State::event_type>
-ring_events(HeldState<State> const& held) noexcept {
-    return read_held(held, ::fixy::mmap::SharedView<const typename State::event_type>{},
+ring_events(::foundation::core::box_owner_key<Owner> const& key, HeldState<State> const& held) noexcept {
+    return view_held(key, held, ::fixy::mmap::SharedView<const typename State::event_type>{},
                      [](State const& state) noexcept { return state.events(); });
 }
 

@@ -83,7 +83,10 @@ public:
     // the record of a ticket through its commit word, with
     // read_ticket<&PmuSampleEvent::commit>.  A record that the ring wrote
     // over, that is not whole yet, or whose write dropped gives no value.
-    [[nodiscard]] ::fixy::mmap::SharedView<const PmuSampleEvent> timeline_view() const noexcept;
+    [[nodiscard]] ::fixy::mmap::SharedView<const PmuSampleEvent> timeline_view(this PmuSample const& self
+                                                                               CRUCIBLE_LIFETIMEBOUND) noexcept;
+    void timeline_view(this PmuSample const&& self) =
+        delete("the view borrows the ring of the facade, which a temporary facade ends");
 
     // Slot order, not ts_ns, is the order in which samples were
     // recorded.  Cores overflow in parallel, so two samples can carry
@@ -111,6 +114,9 @@ public:
 private:
     // The door builds the facade in each load.
     friend struct detail::FacadeDoor;
+    // The key of the owner door of the Box of the state (borrow_owned of
+    // foundation/core/Ref.h).
+    using OwnerKey = ::foundation::core::box_owner_key<PmuSample>;
     struct State;
     explicit PmuSample(::fixy::Box<State> state) noexcept;
 

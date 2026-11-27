@@ -36,8 +36,8 @@ SchedSwitch::~SchedSwitch() = default;
 
 uint64_t SchedSwitch::context_switches() const noexcept { return detail::ring_count(state_); }
 
-::fixy::mmap::SharedView<const TimelineSchedEvent> SchedSwitch::timeline_view() const noexcept {
-    return detail::ring_events(state_);
+::fixy::mmap::SharedView<const TimelineSchedEvent> SchedSwitch::timeline_view(this SchedSwitch const& self) noexcept {
+    return detail::ring_events(OwnerKey{}, self.state_);
 }
 
 uint64_t SchedSwitch::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }

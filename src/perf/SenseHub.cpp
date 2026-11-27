@@ -63,18 +63,21 @@ Snapshot SenseHub::read(::foundation::effects::cap::Nondet /*nondet*/) const noe
     };
     state_.match(
         [&read_counters](::fixy::Box<State> const& state) noexcept {
-            state->counters.match(read_counters, []() noexcept {});
+            ::foundation::core::with_view(state, [&read_counters](State const& held) noexcept {
+                held.counters.match(read_counters, []() noexcept {});
+            });
         },
         []() noexcept {});
     return snapshot;
 }
 
 ::fixy::Option<::fixy::mmap::SharedView<uint64_t const, NUM_COUNTERS>>
-SenseHub::counters_view(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
+SenseHub::counters_view(this SenseHub const& self, ::foundation::effects::cap::Nondet /*nondet*/) noexcept {
     using Counters = ::fixy::Option<::fixy::mmap::SharedView<uint64_t const, NUM_COUNTERS>>;
-    return state_.match(
+    return self.state_.match(
         [](::fixy::Box<State> const& state) noexcept {
-            return state->counters.match(
+            State const& held = borrow_owned(OwnerKey{}, state);
+            return held.counters.match(
                 [](detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped) noexcept {
                     return mapped.template view_at<uint64_t const, NUM_COUNTERS>(0);
                 },
