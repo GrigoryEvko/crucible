@@ -174,8 +174,8 @@ function(crucible_pinned_source tool result)
     ERROR_QUIET
     OUTPUT_STRIP_TRAILING_WHITESPACE)
   if(NOT status EQUAL 0 OR directory STREQUAL "")
-    message(STATUS "bench_alloc_scaling: the pinned ${tool} is not installed, so the bench omits its rows.  Install it "
-                   "with: python3 ${CMAKE_SOURCE_DIR}/utils/bin/setup install ${tool}")
+    message(STATUS "bench: the pinned ${tool} is not installed, so the benches omit its rows.  Install it with: "
+                   "python3 ${CMAKE_SOURCE_DIR}/utils/bin/setup install ${tool}")
     set(${result} "" PARENT_SCOPE)
     return()
   endif()
@@ -503,16 +503,87 @@ if(_record_leaf_not_measured)
   set_tests_properties(bench_strided_budget PROPERTIES DISABLED TRUE)
 endif()
 
+# The library core_math_reference holds the six C files of exp, log and erf
+# of the pinned CORE-MATH, for float and double.  The bench and the sweep of
+# fixy/fp below read it.  A tools directory with no install of the pin gives
+# no library.
+#
+# Each C reference of fixy/fp (CORE-MATH, SLEEF, GMP and MPFR) compiles with
+# the control-flow flags of the tree, _CRUCIBLE_CFI_FLAGS of
+# cmake/CodeFlags.cmake.  The link keeps the control-flow property of an
+# executable only if each input has it, and guard_artifacts refuses an
+# executable with no such property.  _fp_reference_cfi_text is the same list
+# as one text, for the C flags of a configure script or of a CMake project.
+list(JOIN _CRUCIBLE_CFI_FLAGS " " _fp_reference_cfi_text)
+crucible_pinned_source(core-math _core_math_directory)
+if(NOT _core_math_directory STREQUAL "")
+  add_library(core_math_reference STATIC
+    "${_core_math_directory}/src/binary32/exp/expf.c"
+    "${_core_math_directory}/src/binary32/log/logf.c"
+    "${_core_math_directory}/src/binary32/erf/erff.c"
+    "${_core_math_directory}/src/binary64/exp/exp.c"
+    "${_core_math_directory}/src/binary64/log/log.c"
+    "${_core_math_directory}/src/binary64/erf/erf.c")
+  target_compile_options(core_math_reference PRIVATE -O2 -march=native -fPIC ${_CRUCIBLE_CFI_FLAGS})
+endif()
+
+# The bench of exp, log and erf of fixy/fp against glibc libm, CORE-MATH and
+# SLEEF (bench/bench_fp_elementary.cpp).  Each reference has a unit of its
+# own: fp_elementary_glibc.cpp, fp_elementary_core_math.cpp and
+# fp_elementary_sleef.cpp.  The library sleef_reference comes from the CMake
+# of the pinned SLEEF, as a static library with no test, no DFT and no quad
+# library.  Its build writes only into the build directory, in some seconds.
+# The unit of SLEEF declares the calls of SLEEF itself, so the library gives
+# no include directory: the generated header is in the build directory, under
+# the source root.  A pin that the tools directory does not hold gives no
+# rows of that reference.
+crucible_bench(bench_fp_elementary)
+target_sources(bench_fp_elementary PRIVATE fp_elementary_glibc.cpp)
+if(TARGET core_math_reference)
+  target_sources(bench_fp_elementary PRIVATE fp_elementary_core_math.cpp)
+  target_link_libraries(bench_fp_elementary PRIVATE core_math_reference)
+  target_compile_definitions(bench_fp_elementary PRIVATE CRUCIBLE_BENCH_CORE_MATH=1)
+endif()
+crucible_pinned_source(sleef _sleef_directory)
+if(NOT _sleef_directory STREQUAL "")
+  set(_sleef_prefix "${CMAKE_CURRENT_BINARY_DIR}/sleef_reference/prefix")
+  ExternalProject_Add(sleef_reference_build
+    SOURCE_DIR "${_sleef_directory}"
+    BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/sleef_reference/build"
+    DOWNLOAD_COMMAND ""
+    UPDATE_COMMAND ""
+    CMAKE_ARGS "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}" -DCMAKE_BUILD_TYPE=Release
+               "-DCMAKE_C_FLAGS=${_fp_reference_cfi_text}"
+               "-DCMAKE_INSTALL_PREFIX=${_sleef_prefix}" -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=OFF
+               -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+               -DSLEEF_BUILD_TESTS=OFF -DSLEEF_BUILD_GNUABI_LIBS=OFF -DSLEEF_BUILD_DFT=OFF -DSLEEF_BUILD_QUAD=OFF
+               -DSLEEF_ENABLE_TLFLOAT=OFF -DSLEEF_ENABLE_TESTER4=OFF -DSLEEF_DISABLE_MPFR=ON -DSLEEF_DISABLE_SSL=ON
+               -DSLEEF_DISABLE_FFTW=ON -DSLEEF_SHOW_CONFIG=OFF
+    # Ninja gives the build no job server, so the job count is fixed.
+    BUILD_COMMAND "${CMAKE_COMMAND}" --build . -j 8
+    BUILD_BYPRODUCTS "${_sleef_prefix}/lib/libsleef.a"
+    LOG_CONFIGURE ON
+    LOG_BUILD ON
+    LOG_INSTALL ON
+    LOG_OUTPUT_ON_FAILURE ON)
+  add_library(sleef_reference STATIC IMPORTED)
+  set_target_properties(sleef_reference PROPERTIES IMPORTED_LOCATION "${_sleef_prefix}/lib/libsleef.a")
+  add_dependencies(sleef_reference sleef_reference_build)
+  target_sources(bench_fp_elementary PRIVATE fp_elementary_sleef.cpp)
+  target_link_libraries(bench_fp_elementary PRIVATE sleef_reference)
+  target_compile_definitions(bench_fp_elementary PRIVATE CRUCIBLE_BENCH_SLEEF=1)
+endif()
+
 # The sweep of exp, log and erf of fixy/fp against its oracles
 # (bench/fp_sweep.cpp): each float input against the pinned CORE-MATH, and a
 # sample of double inputs against the pinned MPFR.  Only the preset bench
-# sets CRUCIBLE_FP_SWEEP, so the gate builds no oracle: bench-fuzz leaves it
-# off.  The sweep is no bench: it measures no time, and `loop bench` does not
-# list it.  Its six tests with the label fp_sweep are tests of the build of
-# the nightly preset bench, so the nightly entry runs them in its `loop test`
-# of that build, each time that an input of a test changes.
+# sets CRUCIBLE_FP_SWEEP, so the gate builds no MPFR and no sweep: bench-fuzz
+# leaves it off.  The sweep is no bench: it measures no time, and `loop bench`
+# does not list it.  Its six tests with the label fp_sweep are tests of the
+# build of the nightly preset bench, so the nightly entry runs them in its
+# `loop test` of that build, each time that an input of a test changes.
 #
-# The library core_math_reference holds the six C files of CORE-MATH.  GMP
+# The sweep reads the library core_math_reference above.  GMP
 # and MPFR build with their configure scripts into the build directory, MPFR
 # against that GMP, as static libraries with no shared library.  Each build
 # writes only into its binary directory, so the sources of the tools
@@ -523,10 +594,9 @@ endif()
 option(CRUCIBLE_FP_SWEEP "Build the sweep of fixy/fp against CORE-MATH and MPFR" OFF)
 set(_fp_sweep_ready OFF)
 if(CRUCIBLE_FP_SWEEP)
-  crucible_pinned_source(core-math _core_math_directory)
   crucible_pinned_source(gmp _gmp_directory)
   crucible_pinned_source(mpfr _mpfr_directory)
-  if(_core_math_directory STREQUAL "" OR _gmp_directory STREQUAL "" OR _mpfr_directory STREQUAL ""
+  if(NOT TARGET core_math_reference OR _gmp_directory STREQUAL "" OR _mpfr_directory STREQUAL ""
      OR NOT CRUCIBLE_MAKE_PROGRAM)
     message(STATUS "bench_fp_sweep: the sweep needs the pinned core-math, gmp and mpfr and the program make, so the "
                    "build has no sweep.  Install the pins with: python3 ${CMAKE_SOURCE_DIR}/utils/bin/setup install "
@@ -536,15 +606,6 @@ if(CRUCIBLE_FP_SWEEP)
   endif()
 endif()
 if(_fp_sweep_ready)
-  add_library(core_math_reference STATIC
-    "${_core_math_directory}/src/binary32/exp/expf.c"
-    "${_core_math_directory}/src/binary32/log/logf.c"
-    "${_core_math_directory}/src/binary32/erf/erff.c"
-    "${_core_math_directory}/src/binary64/exp/exp.c"
-    "${_core_math_directory}/src/binary64/log/log.c"
-    "${_core_math_directory}/src/binary64/erf/erf.c")
-  target_compile_options(core_math_reference PRIVATE -O2 -march=native -fPIC)
-
   # The tests of the configure script of GMP 6.3.0 declare functions in the
   # form of C before C23, which GCC 16 refuses in its default C23, so the
   # two builds name the language C17 with the extensions of GNU.
@@ -554,7 +615,8 @@ if(_fp_sweep_ready)
     BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/gmp_reference/build"
     DOWNLOAD_COMMAND ""
     UPDATE_COMMAND ""
-    CONFIGURE_COMMAND "${_gmp_directory}/configure" "CC=${CMAKE_C_COMPILER}" "CFLAGS=-O2 -fPIC -std=gnu17"
+    CONFIGURE_COMMAND "${_gmp_directory}/configure" "CC=${CMAKE_C_COMPILER}"
+                      "CFLAGS=-O2 -fPIC -std=gnu17 ${_fp_reference_cfi_text}"
                       "--prefix=${_gmp_prefix}" --disable-shared --enable-static
     BUILD_COMMAND "${CRUCIBLE_MAKE_PROGRAM}" -j 8
     INSTALL_COMMAND "${CRUCIBLE_MAKE_PROGRAM}" install
@@ -569,7 +631,8 @@ if(_fp_sweep_ready)
     BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/mpfr_reference/build"
     DOWNLOAD_COMMAND ""
     UPDATE_COMMAND ""
-    CONFIGURE_COMMAND "${_mpfr_directory}/configure" "CC=${CMAKE_C_COMPILER}" "CFLAGS=-O2 -fPIC -std=gnu17"
+    CONFIGURE_COMMAND "${_mpfr_directory}/configure" "CC=${CMAKE_C_COMPILER}"
+                      "CFLAGS=-O2 -fPIC -std=gnu17 ${_fp_reference_cfi_text}"
                       "--prefix=${_mpfr_prefix}" "--with-gmp=${_gmp_prefix}" --disable-shared --enable-static
     BUILD_COMMAND "${CRUCIBLE_MAKE_PROGRAM}" -j 8
     INSTALL_COMMAND "${CRUCIBLE_MAKE_PROGRAM}" install
