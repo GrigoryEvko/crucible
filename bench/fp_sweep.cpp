@@ -11,6 +11,11 @@
 //                                    that are not the correctly rounded result
 //                                    of CORE-MATH
 //
+//   bench_fp_sweep fma TYPE          the fma of a target with no fused
+//                                    multiply-add against the exact form and
+//                                    the instruction, for float or double
+//                                    (bench/fp_sweep_fma.h)
+//
 // FUNCTION is exp, log or erf.  The sample of a double function has regions:
 // a walk of the bit patterns of the domain, and a walk of the values of each
 // hard region (near 0, near the edges of overflow and underflow, the
@@ -20,8 +25,8 @@
 // run.
 //
 // Only the preset bench builds the sweep (CRUCIBLE_FP_SWEEP of
-// bench/CMakeLists.txt), and the nightly entry runs its six tests in the
-// build of that preset.  Exit 0 when each result holds its bound, 1 when
+// bench/CMakeLists.txt), and the nightly entry runs its tests in the build
+// of that preset.  Exit 0 when each result holds its bound, 1 when
 // one does not, 2 on a usage error.  Complexity: 2^32 calls of each side for a
 // float function, and 2^21 inputs of each region for a double function.
 
@@ -32,6 +37,7 @@
 #include <fixy/os/Args.h>
 #include <foundation/Quarantine.h>
 
+#include "fp_sweep_fma.h"
 #include "fp_sweep_oracles.h"
 
 #include <cstdint>
@@ -44,6 +50,9 @@ namespace {
 constexpr std::uint64_t kRegionCount = std::uint64_t{1} << 21;
 // The count of the mismatches that the float sweep writes.
 constexpr std::uint64_t kShownMismatches = 16;
+// The rounds of an fma sweep: about 13 cases of a float and 26 of a double
+// in each round (bench/fp_sweep_fma.cpp).
+constexpr std::uint64_t kFmaRounds = std::uint64_t{1} << 24;
 
 // The bound of each double function in units of the last place, from the
 // comments of fixy/fp/Exp.h, Log.h and Erf.h.
@@ -267,10 +276,18 @@ template <std::size_t Count>
     ::fixy::Option<::fixy::CText> const kind = arguments.get(1);
     ::fixy::Option<::fixy::CText> const name = arguments.get(2);
     if (arguments.size() != 3 || kind.is_none() || name.is_none()) {
-        ::fixy::report(::fixy::Sink::Err, "usage: bench_fp_sweep float|double exp|log|erf\n");
+        ::fixy::report(::fixy::Sink::Err, "usage: bench_fp_sweep float|double exp|log|erf, or bench_fp_sweep fma "
+                                          "float|double\n");
         return 2;
     }
     ::fixy::TextView const kind_text = ::fixy::Option<::fixy::CText>{kind}.expect("the count is three").view();
+    if (kind_text == "fma") {
+        ::fixy::TextView const type_text = ::fixy::Option<::fixy::CText>{name}.expect("the count is three").view();
+        if (type_text == "float") return sweep_fma_float(kFmaRounds);
+        if (type_text == "double") return sweep_fma_double(kFmaRounds);
+        ::fixy::report(::fixy::Sink::Err, "usage: bench_fp_sweep fma float|double\n");
+        return 2;
+    }
     ::fixy::Option<Function> const function =
         function_of(::fixy::Option<::fixy::CText>{name}.expect("the count is three").view());
     if (function.is_none() || (kind_text != "float" && kind_text != "double")) {

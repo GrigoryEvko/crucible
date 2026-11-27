@@ -579,9 +579,11 @@ endif()
 # sample of double inputs against the pinned MPFR.  Only the preset bench
 # sets CRUCIBLE_FP_SWEEP, so the gate builds no MPFR and no sweep: bench-fuzz
 # leaves it off.  The sweep is no bench: it measures no time, and `loop bench`
-# does not list it.  Its six tests with the label fp_sweep are tests of the
-# build of the nightly preset bench, so the nightly entry runs them in its
-# `loop test` of that build, each time that an input of a test changes.
+# does not list it.  Its tests with the label fp_sweep are tests of the build
+# of the nightly preset bench, so the nightly entry runs them in its `loop
+# test` of that build, each time that an input of a test changes: six of exp,
+# log and erf, and on x86_64 two of fp::fma with no fused multiply-add
+# (bench/fp_sweep_fma.h).
 #
 # The sweep reads the library core_math_reference above.  GMP
 # and MPFR build with their configure scripts into the build directory, MPFR
@@ -649,7 +651,7 @@ if(_fp_sweep_ready)
   set_target_properties(gmp_reference PROPERTIES IMPORTED_LOCATION "${_gmp_prefix}/lib/libgmp.a")
   add_dependencies(gmp_reference gmp_reference_build)
 
-  add_executable(bench_fp_sweep fp_sweep.cpp fp_sweep_oracles.cpp)
+  add_executable(bench_fp_sweep fp_sweep.cpp fp_sweep_oracles.cpp fp_sweep_fma.cpp fp_sweep_fma_baseline.cpp)
   target_link_libraries(bench_fp_sweep PRIVATE fixy core_math_reference mpfr_reference gmp_reference)
   # The headers of MPFR and GMP are in the build directory, so their include
   # directory is a system directory of the oracle unit alone.
@@ -663,6 +665,17 @@ if(_fp_sweep_ready)
       set_tests_properties(fp_sweep_${_sweep_function}_${_sweep_kind} PROPERTIES TIMEOUT 3600 LABELS "fp_sweep")
     endforeach()
   endforeach()
+  # The baseline unit of the fma sweep compiles for x86-64, which has no fused
+  # multiply-add, so its fp::fma is the form in doubles.  The other units
+  # compile for the host, and their fp::fma is the instruction, the second
+  # oracle.  An aarch64 build has no such unit, so it has no fma sweep.
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    set_source_files_properties(fp_sweep_fma_baseline.cpp PROPERTIES COMPILE_OPTIONS -march=x86-64)
+    foreach(_sweep_type float double)
+      add_test(NAME fp_sweep_fma_${_sweep_type} COMMAND bench_fp_sweep fma ${_sweep_type})
+      set_tests_properties(fp_sweep_fma_${_sweep_type} PROPERTIES TIMEOUT 3600 LABELS "fp_sweep")
+    endforeach()
+  endif()
 endif()
 
 # The scan of the timed windows of each bench.  test/bench_windows/check_windows.py
