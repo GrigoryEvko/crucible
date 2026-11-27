@@ -216,11 +216,11 @@ include/fixy/concurrent/ | replace-pending:<string> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/concurrent/ | replace-pending:<tuple> | 3 | - | -
 include/fixy/concurrent/ | replace-pending:<vector> | 2 | - | -
-include/fixy/fp/ | base-std-entity | 14 | - | -
+include/fixy/fp/ | base-std-entity | 6 | - | -
 include/fixy/fp/ | base-std-object | 4 | - | -
 include/fixy/fp/ | replace-pending:<array> | 1 | - | -
 include/fixy/fp/ | replace-pending:<bit> | 2 | - | -
-include/fixy/fp/ | replace-pending:<cmath> | 2 | - | -
+include/fixy/fp/ | replace-pending:<cmath> | 1 | - | -
 include/fixy/handle/ | base-std-entity | 6 | - | -
 include/fixy/handle/ | base-std-object | 4 | - | -
 include/fixy/handle/ | replace-pending:<array> | 1 | - | -
@@ -501,7 +501,6 @@ test/fixy/neg/ | enum-cast | 1 | - | a cast of a number into an enumeration with
 test/fixy/neg/ | lifetime-start | 2 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | ABI: the fixture stands for a buffer that a foreign caller gives | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | opted-out | 2 | PROBE: a static function of the library escapes to the template | the two fixtures of the walk of a scope brand behind a CallRef keep a function of a library in a static to give its address to a template, so the refusal of the CallRef is their one reason
-test/fixy/neg/ | opted-out | 1 | PROBE: the fixture builds a keyed claim through std::bit_cast, and the compiler refuses it | -
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture builds a keyed claim with std::bit_cast, and the compiler refuses it | -
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -547,7 +546,6 @@ test/fixy/neg/ | raw-pointer-object | 14 | - | -
 test/fixy/neg/ | region | 1 | ABI: the fixture gives the foreign door the address of a foreign entry | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | region | 1 | ABI: the fixture stands for a buffer that a foreign caller gives | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | region | 2 | PROBE: a static function of the library escapes to the template | the two fixtures of the walk of a scope brand behind a CallRef keep a function of a library in a static to give its address to a template, so the refusal of the CallRef is their one reason
-test/fixy/neg/ | region | 1 | PROBE: the fixture builds a keyed claim through std::bit_cast, and the compiler refuses it | -
 test/fixy/neg/ | region | 1 | PROBE: the fixture builds a keyed claim with std::bit_cast, and the compiler refuses it | -
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/neg/ | region | 1 | PROBE: the fixture forges InRange<1, 4096> with a call operator that admits each value | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -633,6 +631,7 @@ test/foundation/ | opted-out | 1 | PROBE: the layout test reads the address of t
 test/foundation/ | opted-out | 2 | PROBE: the lend count of a list stops a change in a callee of the frame | the rule borrow-match makes a call of an arm that ends the sum a compile error, so a death test of the lend count keeps such a call in a PROBE region
 test/foundation/ | opted-out | 6 | PROBE: the lend count of a sum stops a write in a callee of the arm | the rule borrow-match makes a call of an arm that ends the sum a compile error, so a death test of the lend count keeps such a call in a PROBE region
 test/foundation/ | opted-out | 1 | PROBE: the signature reflection reads a raw pointer parameter | -
+test/foundation/ | opted-out | 3 | PROBE: the sums write the block that a run reads, and the overlap check judges it | the overlap tests of the sum of runs give the buffer and a View of a run of it to one door on purpose, and the kind stale-borrow of the rule view-escape refuses such a call, so they stand in PROBE regions
 test/foundation/ | opted-out | 6 | PROBE: the test ends a linear sum that no consumer took | -
 test/foundation/ | opted-out | 3 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | opted-out | 4 | PROBE: the walk of the Protocol family over a C array part and a pointer part | the float rule of Equatable over a C array of a float, in a class with an own == and in a class with ieee_equality
@@ -681,6 +680,7 @@ test/foundation/ | region | 1 | PROBE: the layout test reads the address of the 
 test/foundation/ | region | 2 | PROBE: the lend count of a list stops a change in a callee of the frame | the rule borrow-match makes a call of an arm that ends the sum a compile error, so a death test of the lend count keeps such a call in a PROBE region
 test/foundation/ | region | 6 | PROBE: the lend count of a sum stops a write in a callee of the arm | the rule borrow-match makes a call of an arm that ends the sum a compile error, so a death test of the lend count keeps such a call in a PROBE region
 test/foundation/ | region | 1 | PROBE: the signature reflection reads a raw pointer parameter | -
+test/foundation/ | region | 2 | PROBE: the sums write the block that a run reads, and the overlap check judges it | the overlap tests of the sum of runs give the buffer and a View of a run of it to one door on purpose, and the kind stale-borrow of the rule view-escape refuses such a call, so they stand in PROBE regions
 test/foundation/ | region | 2 | PROBE: the test ends a linear sum that no consumer took | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | region | 1 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -

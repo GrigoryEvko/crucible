@@ -6,6 +6,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Reduce.h>
 #include <foundation/effects/Effect.h>
 
@@ -416,15 +417,19 @@ void test_sum_of_runs_refuses_a_partial_overlap() {
     ::fixy::FixedArray<View<float const>, 2> const runs{View<float const>{run_view}, View<float const>{other.view()}};
     View<View<float const> const> const both{runs.view()};
     using ::foundation::core::RunsError;
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the sums write the block that a run reads, and the overlap check judges it")
     CRUCIBLE_TEST_ASSERT(kTest, is_refused_with(sum_runs_into(buffer, both, 2, kCount), RunsError::PartialOverlap));
     CRUCIBLE_TEST_ASSERT(kTest, is_refused_with(sum_runs_into(buffer, both, 0, kCount), RunsError::PartialOverlap));
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     for (std::size_t position = 0; position < kCount + 2; ++position) {
         CRUCIBLE_TEST_ASSERT(
             kTest,
             same_bits(*buffer.view().get(position).expect("a test reads an element at or past the count of its View"),
                       *before.view().get(position).expect("a test reads an element at or past the count of its View")));
     }
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the sums write the block that a run reads, and the overlap check judges it")
     CRUCIBLE_TEST_ASSERT(kTest, sum_runs_into(buffer, both, 1, kCount).is_ok());
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     for (std::size_t offset = 0; offset < kCount; ++offset) {
         float const expected =
             *before.view().get(1 + offset).expect("a test reads an element at or past the count of its View")

@@ -10,7 +10,8 @@
 # In the unit segments a SegmentList of Views keeps a borrow of an element across
 # an append and across an append with code of the element.  In the unit beside one
 # argument of a call gives a borrow, and a different argument names its object, but
-# no callee ends it.  In the unit through a closure argument holds a borrow through
+# no callee ends it.  A callee moves the owner on and back, and gives the borrow to
+# no closure.  In the unit through a closure argument holds a borrow through
 # its captures, beside an argument that gives an object, but no callee changes the
 # object of the borrow: a capture of the owner itself (31), a View of a different
 # owner (38), and a callee that only reads the owner (45).  In the unit in_place a

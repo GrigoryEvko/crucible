@@ -174,15 +174,25 @@
 //     loan, and neither does a container of borrows.  A closure with a declared
 //     result that holds a borrow gives its result the loans of its captures, and a
 //     generic closure gives none.  A call that consumes an owner beside a plain
-//     argument that borrows it ends the borrow only when its body ends the owner
-//     (the ends beside a borrow).  A closure that ends an owner whose storage holds
-//     the object of a different argument, as a Box holds a keyed array, gives a
+//     argument that borrows it ends the borrow when its body ends the owner, or
+//     when its body moves or lends the owner and a closure of a body captures the
+//     parameter of the borrow (the ends beside a borrow).  A capture names the
+//     parameter by a reference or a copy, through a constructor or a local copy,
+//     but a borrow that a different call makes from the parameter, as a window
+//     of a View, names no parameter (fail open).  The record of a body holds no
+//     order, so a read of the borrow before the end is a finding too (fail
+//     closed, the plant plant-live-limits), and so is a capture by a closure that
+//     runs before the move.  A closure that ends an owner whose storage holds the
+//     object of a different argument, as a Box holds a keyed array, gives a
 //     finding when the callee lends that object to the closure (the holders).  A
-//     member function of that object counts as a lender, also when it only reads the
-//     object, because the record does not show which member lends (fail closed).
+//     member function of that object counts as a lender, also when it only reads
+//     the object, because the record does not show which member lends (fail
+//     closed).
 //     The product gives an arena and a pointer into it to one object (Vigil.h,
-//     keep_load_), and the split mints take a Box and the Ref of its object
-//     (SpscEnds.h), and their bodies keep the owner.
+//     keep_load_), and its body keeps the owner.  The split mints take a Box and
+//     the Ref of its object (SpscEnds.h).  Their bodies move the owner on, but no
+//     closure captures the borrow, and a move of a Box keeps its block, so they
+//     give no finding.
 //     A callee with no body that takes a class which the unit never completes ends
 //     only a loan whose route or targets hold that class.  So an end through such a
 //     class, of an owner that it reaches by a path that the unit cannot see, is no
@@ -436,6 +446,7 @@ struct Ends {
     TypeSet moved;
     TypeSet lent;
     bool is_lent = false;
+    bool is_captured = false;  // a closure of the body captures the parameter (the ends beside a borrow)
     std::set<Taking> takings;
 
     void add(const Ends& other) {
@@ -443,11 +454,13 @@ struct Ends {
         add_types(moved, other.moved);
         add_types(lent, other.lent);
         is_lent = is_lent || other.is_lent;
+        is_captured = is_captured || other.is_captured;
         takings.insert(other.takings.begin(), other.takings.end());
     }
 
     bool operator==(const Ends& other) const {
         return ended == other.ended && moved == other.moved && lent == other.lent && is_lent == other.is_lent
+            && is_captured == other.is_captured
             && !std::lexicographical_compare(takings.begin(), takings.end(), other.takings.begin(), other.takings.end())
             && !std::lexicographical_compare(other.takings.begin(), other.takings.end(), takings.begin(),
                                              takings.end());
@@ -488,6 +501,8 @@ struct StaleUse {
     bool is_through = false;  // a closure holds the loan through a capture, so a move of an owner changes it
     TypeSet named;  // the types that the loan through a capture names, or none for the whole object
     Taking closure;  // the parameter that gets the closure of a loan through a capture
+    bool is_plain = false;  // a plain borrow beside a writer, which a move changes only through a capture
+    Taking borrow_taking;  // the parameter that gets the plain borrow
     bool is_holder = false;  // a closure ends an owner that holds the object that the callee lends
     bool is_receiver = false;  // the lent object is the object of a member function
     Taking lender;  // the parameter that gets the lent object
@@ -1199,12 +1214,66 @@ private:
         return found;
     }
 
+    // The place of the parameter that VALUE names, or kNoPlace: the parameter itself,
+    // its object by a reference, or a local that a copy of the parameter starts.
+    int parameter_named_by(tree value) {
+        tree const named = value != NULL_TREE ? strip_value(object_of(value)) : NULL_TREE;
+        int const place = named != NULL_TREE && TREE_CODE(named) == PARM_DECL ? places_.root(named)
+                        : value != NULL_TREE                                  ? place_of_pointee(value)
+                                                                              : kNoPlace;
+        tree const root = place != kNoPlace ? places_.root_decl(place) : named;
+        if (root == NULL_TREE) {
+            return kNoPlace;
+        }
+        if (TREE_CODE(root) == PARM_DECL) {
+            return place;
+        }
+        auto copy = parameter_copies_.find(DECL_P(root) ? DECL_UID(root) : 0U);
+        return copy != parameter_copies_.end() ? copy->second : kNoPlace;
+    }
+
+    // The place of the parameter that the capture value VALUE names, by a reference
+    // or by a copy, directly, through a temporary, through a constructor or through
+    // a local copy, or kNoPlace (the ends beside a borrow).
+    int captured_parameter(tree value) {
+        int place = parameter_named_by(value);
+        tree init = strip_value(value);
+        if (init != NULL_TREE && TREE_CODE(init) == TARGET_EXPR) {
+            init = strip_value(TARGET_EXPR_INITIAL(init));
+        }
+        if (place == kNoPlace && init != NULL_TREE && init != strip_value(value)) {
+            place = parameter_named_by(init);
+        }
+        if (place == kNoPlace && init != NULL_TREE
+            && (TREE_CODE(init) == AGGR_INIT_EXPR || TREE_CODE(init) == CALL_EXPR)) {
+            tree const constructor = cp_get_callee_fndecl_nofold(init);
+            // The first argument of a constructor is the object that it builds, also
+            // in an AGGR_INIT_EXPR.
+            if (constructor != NULL_TREE && DECL_CONSTRUCTOR_P(constructor)) {
+                for (int index = 1; index < argument_count(init) && place == kNoPlace; ++index) {
+                    place = captured_parameter(argument_at(init, index));
+                }
+            }
+        }
+        return place;
+    }
+
     // The loans of the value VALUE of the member FIELD of an object.  CLOSURE is
-    // the class of a closure, or null.
+    // the class of a closure, or null.  A capture of a parameter gives the parameter
+    // the effect is_captured.
     std::vector<int> loans_of_member(tree field, tree value, tree closure) {
         bool const is_field = field != NULL_TREE && TREE_CODE(field) == FIELD_DECL;
         unsigned const closure_id = closure != NULL_TREE ? TYPE_UID(TYPE_MAIN_VARIANT(closure)) : 0U;
         std::vector<int> found;
+        if (is_field && closure_id != 0) {
+            int const parameter = captured_parameter(value);
+            if (parameter != kNoPlace) {
+                visit_effects(parameter, [](Effect& effect) {
+                    effect.all.is_captured = true;
+                    effect.inner.is_captured = true;
+                });
+            }
+        }
         if (!is_field || !is_indirect_type(TREE_TYPE(field))) {
             for (int loan : loans_of_value(value)) {
                 // The call operator can write through a borrow that it captures.
@@ -2077,6 +2146,10 @@ private:
         reads_cursors_ = outer;
         transfer_temporary(value, places_.root(decl));
         store_local(decl, value);
+        int const copied = captured_parameter(value);
+        if (copied != kNoPlace) {
+            parameter_copies_[DECL_UID(decl)] = copied;
+        }
     }
 
     void walk_branches(tree condition, tree first, tree second) {
@@ -2643,10 +2716,14 @@ private:
         }
     }
 
-    // The callee can use the borrow BORROW of one argument after the argument at
-    // WRITER_INDEX ends its object.  The use is at the call.
-    void note_end_beside(const Binding& borrow, const Argument& borrow_argument, const Binding& writer,
-                         const Argument& writer_argument, std::size_t writer_index, tree callee) {
+    // The callee can use the borrow BORROW of the argument at BORROW_INDEX after the
+    // argument at WRITER_INDEX ends its object.  The use is at the call.  A plain
+    // borrow gets the judge of a borrow through a capture too: a move of an owner of
+    // the borrow changes it when the callee captures the parameter of the borrow in
+    // a closure, which can read it while the owner is away.
+    void note_end_beside(const Binding& borrow, const Argument& borrow_argument, std::size_t borrow_index,
+                         const Binding& writer, const Argument& writer_argument, std::size_t writer_index,
+                         tree callee) {
         End end = make_end(EndKind::call, writer.place);
         end.callee = callee;
         if (writer.is_capture) {
@@ -2664,8 +2741,16 @@ private:
         }
         tree const named = strip_value(object_of(borrow_argument.node));
         bool const is_named = named != NULL_TREE && DECL_P(named) && DECL_NAME(named) != NULL_TREE;
+        std::size_t const recorded = reading_.uses.size();
         record_use(is_named ? identifier_text(DECL_NAME(named)) : std::string("an argument of the call"), borrow.loan,
                    {add_end(end)});
+        if (reading_.uses.size() != recorded) {
+            StaleUse& use = reading_.uses.back();
+            use.is_through = true;
+            use.is_plain = true;
+            use.named = loans_[borrow.loan].types;
+            use.borrow_taking = taking_of_parameter(callee, borrow_index, borrow_argument.held);
+        }
     }
 
     // A call that gets a borrow in one argument, and a different argument that can
@@ -2688,7 +2773,7 @@ private:
                     for (const Binding& end : bindings[writer]) {
                         if (borrow.loan >= 0 && !borrow.is_write && end.is_write
                             && places_.overlaps(loans_[borrow.loan].place, end.place)) {
-                            note_end_beside(borrow, arguments[lender], end, arguments[writer], writer, callee);
+                            note_end_beside(borrow, arguments[lender], lender, end, arguments[writer], writer, callee);
                         }
                     }
                 }
@@ -3358,6 +3443,9 @@ private:
     // True while the event in hand takes an object by a move.
     bool is_rvalue_end_ = false;
     std::unordered_map<int, int> parameters_;
+    // The parameter that a local copy of it, or of its address, names (the ends
+    // beside a borrow).
+    std::unordered_map<unsigned, int> parameter_copies_;
     Places places_;
     std::vector<Loan> loans_;
     std::map<decltype(std::declval<Loan>().key(UNKNOWN_LOCATION)), int> loan_index_;
@@ -3588,6 +3676,7 @@ struct TakingEnds {
     TypeSet unseen;
     TypeSet lent;  // the types that a body lends to a closure
     bool is_lent = false;
+    bool is_captured = false;  // a closure of a body captures the parameter
     std::set<unsigned> unseen_callees;  // the functions with no body in the unit that a taking reaches
 };
 
@@ -3614,6 +3703,7 @@ void collect_ends(const Taking& taking, TakingEnds& ends, std::set<std::pair<std
     add_types(ends.moved, of_call.moved);
     add_types(ends.lent, of_call.lent);
     ends.is_lent = ends.is_lent || of_call.is_lent;
+    ends.is_captured = ends.is_captured || of_call.is_captured;
     for (const Taking& next : of_call.takings) {
         collect_ends(next, ends, seen);
     }
@@ -3652,18 +3742,22 @@ std::string judged_text(const JudgedEnd& end) {
 // The text of END when it changes the loan of USE, which a closure holds through a
 // capture, or an empty text.  A move of an owner of the loan out of its object, a
 // lend of the object to a closure, and a function with no body that gets the object
-// and the closure change it too (the borrows through a capture).
+// and the closure change it too (the borrows through a capture).  A move or a lend
+// changes a plain borrow beside the owner only when a closure of the callee captures
+// the parameter of the borrow, because a move of an owner keeps its block, and the
+// lend ends before the callee reads the borrow outside a closure.
 std::string judged_through_text(const StaleUse& use, const JudgedEnd& end) {
     std::string const text = judged_text(end);
     if (!text.empty() || end.kind != EndKind::call) {
         return text;
     }
     const TakingEnds& ends = ends_of(end.taking);
-    if (have_common_type(end.types, ends.moved)) {
+    bool const can_read_away = !use.is_plain || ends_of(use.borrow_taking).is_captured;
+    if (can_read_away && have_common_type(end.types, ends.moved)) {
         return end.text + ", which moves an owner of the borrow";
     }
     // A loan of the whole object names each type that a lend can name.
-    if (ends.is_lent && (use.named.empty() || can_name_one_object(use.named, ends.lent))) {
+    if (can_read_away && ends.is_lent && (use.named.empty() || can_name_one_object(use.named, ends.lent))) {
         return end.text + ", which lends the object to a closure under a unique borrow";
     }
     // A function with no body in the unit that gets the object and the closure can
@@ -3732,10 +3826,12 @@ CallEnd call_end(const Taking& taking, unsigned owners) {
 
 void finish_live_borrows() {
     // A use through a capture comes after each other use, so a finding of a
-    // different form at the same place keeps its text.
+    // different form at the same place keeps its text.  A plain borrow beside a
+    // writer keeps its place in the first pass.
     for (bool const is_through_pass : {false, true}) {
         for (const StaleUse& use : stale_uses) {
-            Place place = use.is_through == is_through_pass ? place_of(use.location, Scope::quarantine) : Place{};
+            bool const is_late = use.is_through && !use.is_plain;
+            Place place = is_late == is_through_pass ? place_of(use.location, Scope::quarantine) : Place{};
             if (place.file == nullptr) {
                 continue;
             }

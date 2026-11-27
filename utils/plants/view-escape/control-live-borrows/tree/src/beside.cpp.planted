@@ -60,4 +60,23 @@ unsigned long view_beside_a_kept_owner(Keeper& keeper) noexcept {
     return keep(keeper, std::move(items), view);
 }
 
+// A move of an owner keeps its block, so a callee that moves the owner on and
+// gives the borrow to no closure reads live storage.
+template <class Body>
+Items run_with(Items items, Body body) noexcept {
+    body();
+    return items;
+}
+
+unsigned long move_on_and_read(Items& items, View view) noexcept {
+    items = run_with(std::move(items), []() noexcept {});
+    return view.size();
+}
+
+unsigned long view_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return move_on_and_read(items, view);
+}
+
 }  // namespace planted

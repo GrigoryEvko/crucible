@@ -74,4 +74,100 @@ unsigned long view_beside_a_consumed_owner() noexcept {
     return consume(std::move(items), view);
 }
 
+// The callee moves the owner into a call, and a closure that the call runs reads
+// the borrow while the owner is away: a capture by a reference and a capture by a
+// copy.  The last callee gives the owner to a call that ends it, and then it reads
+// the borrow.
+template <class Body>
+Items run_with(Items items, Body body) noexcept {
+    body();
+    return items;
+}
+
+unsigned long move_on_and_capture(Items& items, View const& view) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [&view, &size]() noexcept { size = view.size(); });
+    return size;
+}
+
+unsigned long move_on_and_copy(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [view, &size]() noexcept { size = view.size(); });
+    return size;
+}
+
+void drop(Items items) noexcept {
+    items = Items{};
+}
+
+unsigned long end_in_a_call_and_read(Items&& items, View view) noexcept {
+    drop(std::move(items));
+    return view.size();
+}
+
+unsigned long view_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return move_on_and_capture(items, view);
+}
+
+unsigned long copy_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return move_on_and_copy(items, view);
+}
+
+unsigned long view_beside_an_owner_that_a_call_ends() noexcept {
+    Items items{};
+    View const view = items.view();
+    return end_in_a_call_and_read(std::move(items), view);
+}
+
+// The closure holds a copy of the borrow in more forms: a class with a written
+// copy constructor, a capture that a constructor builds from the parameter, and
+// a capture of a local copy of the parameter.
+struct CopiedWindow {
+    View view{};
+    explicit CopiedWindow(View from) noexcept : view(from) {}
+    CopiedWindow(CopiedWindow const& other) noexcept : view(other.view) {}
+    CopiedWindow& operator=(CopiedWindow const&) = delete("a planted window does not assign");
+};
+
+unsigned long move_on_and_copy_window(Items& items, CopiedWindow const& window) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [window, &size]() noexcept { size = window.view.size(); });
+    return size;
+}
+
+unsigned long move_on_and_build(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    items = run_with(std::move(items), [built = CopiedWindow{view}, &size]() noexcept { size = built.view.size(); });
+    return size;
+}
+
+unsigned long move_on_and_copy_local(Items& items, View view) noexcept {
+    unsigned long size = 0;
+    View const local = view;
+    items = run_with(std::move(items), [local, &size]() noexcept { size = local.size(); });
+    return size;
+}
+
+unsigned long window_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    CopiedWindow const window{items.view()};
+    return move_on_and_copy_window(items, window);
+}
+
+unsigned long built_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return move_on_and_build(items, view);
+}
+
+unsigned long local_beside_an_owner_that_moves_on() noexcept {
+    Items items{};
+    View const view = items.view();
+    return move_on_and_copy_local(items, view);
+}
+
 }  // namespace planted

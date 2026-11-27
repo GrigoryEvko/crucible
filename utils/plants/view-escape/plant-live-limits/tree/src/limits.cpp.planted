@@ -101,4 +101,22 @@ unsigned long owner_of_the_same_class(Two two) noexcept {
     return view.size();
 }
 
+// The record of a callee holds no order, so a callee that reads a borrow and
+// then gives the owner beside it to a call that ends the owner ends the borrow.
+void drop(Items items) noexcept {
+    items = Items{};
+}
+
+unsigned long read_and_end(Items&& items, View view) noexcept {
+    unsigned long const size = view.size();
+    drop(std::move(items));
+    return size;
+}
+
+unsigned long read_before_the_end() noexcept {
+    Items items{};
+    View const view = items.view();
+    return read_and_end(std::move(items), view);
+}
+
 }  // namespace planted

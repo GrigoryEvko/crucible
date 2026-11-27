@@ -42,7 +42,12 @@
 # can end its object: a View beside a closure that replaces the owner (48), a class
 # that holds a View beside such a closure (53), a View beside the owner by a reference
 # that is not const (58), an element beside its list (62), and a View beside an owner
-# that the call consumes (74).  In the unit receiver the receiver of a borrow match
+# that the call consumes (74).  A callee moves the owner into a call, and a closure
+# that the call runs reads the View: a capture by a reference (111) and by a copy
+# (117).  A callee gives the owner to a call that ends it, and then it reads the View
+# (123).  The closure holds a copy of the borrow through a written copy constructor
+# (158), through a constructor in the capture (164), and through a local copy (170).
+# In the unit receiver the receiver of a borrow match
 # stands behind the operator-> of a Box, and the arm ends the Box (23).
 #
 # In the unit through a closure argument holds a borrow of an object through its
@@ -265,11 +270,23 @@ finding beside view-escape stale-borrow src/beside.cpp:53:29 | borrow of items i
 finding beside view-escape stale-borrow src/beside.cpp:58:28 | borrow of items in an argument of the call after a call of planted::replace_and_read with items
 finding beside view-escape stale-borrow src/beside.cpp:62:26 | borrow of list in an argument of the call after a call of planted::clear_and_read with list
 finding beside view-escape stale-borrow src/beside.cpp:74:19 | borrow of items in an argument of the call after a call of planted::consume with items
+finding beside view-escape stale-borrow src/beside.cpp:111:31 | borrow of items in view after a call of planted::move_on_and_capture with items, which moves an owner of the borrow
+finding beside view-escape stale-borrow src/beside.cpp:117:28 | borrow of items in an argument of the call after a call of planted::move_on_and_copy with items, which moves an owner of the borrow
+finding beside view-escape stale-borrow src/beside.cpp:123:34 | borrow of items in an argument of the call after a call of planted::end_in_a_call_and_read with items
+finding beside view-escape stale-borrow src/beside.cpp:158:35 | borrow of items in window after a call of planted::move_on_and_copy_window with items, which moves an owner of the borrow
+finding beside view-escape stale-borrow src/beside.cpp:164:29 | borrow of items in an argument of the call after a call of planted::move_on_and_build with items, which moves an owner of the borrow
+finding beside view-escape stale-borrow src/beside.cpp:170:34 | borrow of items in an argument of the call after a call of planted::move_on_and_copy_local with items, which moves an owner of the borrow
 error beside src/beside.cpp:48 | this use reads a borrow of items in an argument of the call after a call of a closure that captures items
 error beside src/beside.cpp:53 | this use reads a borrow of items in an argument of the call after a call of a closure that captures items
 error beside src/beside.cpp:58 | this use reads a borrow of items in an argument of the call after a call of planted::replace_and_read with items
 error beside src/beside.cpp:62 | this use reads a borrow of list in an argument of the call after a call of planted::clear_and_read with list
 error beside src/beside.cpp:74 | this use reads a borrow of items in an argument of the call after a call of planted::consume with items
+error beside src/beside.cpp:111 | this use reads a borrow of items in view after a call of planted::move_on_and_capture with items, which moves an owner of the borrow
+error beside src/beside.cpp:117 | this use reads a borrow of items in an argument of the call after a call of planted::move_on_and_copy with items, which moves an owner of the borrow
+error beside src/beside.cpp:123 | this use reads a borrow of items in an argument of the call after a call of planted::end_in_a_call_and_read with items
+error beside src/beside.cpp:158 | this use reads a borrow of items in window after a call of planted::move_on_and_copy_window with items, which moves an owner of the borrow
+error beside src/beside.cpp:164 | this use reads a borrow of items in an argument of the call after a call of planted::move_on_and_build with items, which moves an owner of the borrow
+error beside src/beside.cpp:170 | this use reads a borrow of items in an argument of the call after a call of planted::move_on_and_copy_local with items, which moves an owner of the borrow
 
 compile through src/through.cpp
 flag through -freflection

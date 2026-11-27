@@ -7899,13 +7899,17 @@ fixy_neg_compile_test(neg_spawn_reads_beside_a_region_of_boxes
   "an element of the region names an object past its own bytes")
 # A body of a parallel loop captures no borrow of plain elements, because a
 # second shard can write the element that the body reads.  Each fixture holds
-# one form of the borrow, and the message names the capture and reads().
+# one form of the borrow, and the message names the capture and reads().  A
+# fixture that gives the rig a borrow of the items also gives the error of the
+# plugin that parallel_loop_rig.h names.
 fixy_neg_compile_test(neg_spawn_parallel_for_captured_view
   "static assertion failed: mint_parallel_for: the body captures .view. \\(field __view, type const foundation::core::View<const long unsigned int>\\)"
-  "Give the run to the door in reads\\(\\)")
+  "Give the run to the door in reads\\(\\)"
+  "neg_spawn_parallel_for_captured_view\\.cpp:14:[0-9]+: error: this use reads a borrow of items in borrow_of_items after a call of .*give_region_and_borrow with items, which moves an owner of the borrow")
 fixy_neg_compile_test(neg_spawn_parallel_for_view_by_reference
   "static assertion failed: mint_parallel_for: the body captures .view. \\(field __view, type const foundation::core::View<const long unsigned int>&\\)"
-  "Give the run to the door in reads\\(\\)")
+  "Give the run to the door in reads\\(\\)"
+  "neg_spawn_parallel_for_view_by_reference\\.cpp:12:[0-9]+: error: this use reads a borrow of items in borrow_of_items after a call of .*give_region_and_borrow with items, which moves an owner of the borrow")
 fixy_neg_compile_test(neg_spawn_parallel_for_captured_borrow_of_region
   "static assertion failed: mint_parallel_for: the body captures .borrow. \\(field __borrow, type const foundation::core::View<const long unsigned int>\\)"
   "Give the run to the door in reads\\(\\)")
@@ -7914,10 +7918,12 @@ fixy_neg_compile_test(neg_spawn_parallel_for_borrow_of_region_by_reference
   "Give the run to the door in reads\\(\\)")
 fixy_neg_compile_test(neg_spawn_parallel_for_captured_strided_view
   "static assertion failed: mint_parallel_for: the body captures .strided. \\(field __strided, type const foundation::core::StridedView<const long unsigned int, 1>\\)"
-  "Give the run to the door in reads\\(\\)")
+  "Give the run to the door in reads\\(\\)"
+  "neg_spawn_parallel_for_captured_strided_view\\.cpp:18:[0-9]+: error: this use reads a borrow of items in strided_items after a call of .*give_region_and_borrow with items, which moves an owner of the borrow")
 fixy_neg_compile_test(neg_spawn_parallel_for_captured_ref
   "static assertion failed: mint_parallel_for: the body captures .last. \\(field __last, type const foundation::core::Ref<const long unsigned int"
-  "Give the run to the door in reads\\(\\)")
+  "Give the run to the door in reads\\(\\)"
+  "neg_spawn_parallel_for_captured_ref\\.cpp:15:[0-9]+: error: this use reads a borrow of items in last_element after a call of .*give_region_and_borrow with items, which moves an owner of the borrow")
 fixy_neg_compile_test(neg_spawn_parallel_for_view_in_a_captured_closure
   "static assertion failed: mint_parallel_for: the body captures .first_of_run. \\(field __first_of_run, type const main\\(\\)::<lambda\\(\\)>\\)"
   "The first part that refuses it: foundation::core::View<const long unsigned int>"
