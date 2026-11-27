@@ -85,6 +85,18 @@ using TwoLanes = TwoLanesOwner::Ring;
 // The allocation capability of the rings and the snapshots of the rows.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
+// The report of a row on a T of its own, made from args.  The T lives on the
+// heap, and the row runs in the frame with_mut(std::move(box), body) of its
+// Box, with a Ref of the T.  A report owns its samples, so it is no result of
+// a frame: the body moves it into report.
+template <class T, class Row, class... Args>
+[[nodiscard]] bench::Report report_on(Row const& row, Args... args) {
+    ::fixy::Box<T> box = ::fixy::mint_box<T>(kAlloc, args...);
+    bench::Report report{};
+    box = ::fixy::with_mut(std::move(box), [&row, &report](T& object) noexcept { report = row(::fixy::to(object)); });
+    return report;
+}
+
 }  // namespace
 
 int main() {
@@ -124,15 +136,13 @@ int main() {
         }(),
 
         // ── SpscRing: pure push (huge cap, never fills) ───────────────
-        [&] {
-            ::fixy::Box<HugeSpsc> ring_box = ::fixy::mint_box<HugeSpsc>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
+        report_on<HugeSpsc>([&](auto const ring) {
             std::uint64_t i = 0;
             return bench::run("spsc_ring.try_push (huge cap, no drain)", [&] {
                 const bool ok = ring->try_push(++i);
                 bench::do_not_optimize(ok);
             });
-        }(),
+        }),
 
         // ── SpscRing: BATCHED push+pop pair (per-item amortized) ──────
         // Push 64 items into ring, immediately pop 64 items out.  Keeps
@@ -149,9 +159,7 @@ int main() {
         // total ≈ 7ns memcpy + 6 atomics (~1.3ns) + harness overhead
         // (~5ns) ≈ 13-15ns measured.  Per-item ≈ 0.117ns.
         // (Zen 4+ would emit AVX-512 ZMM stores; this CPU does not.)
-        [&] {
-            ::fixy::Box<HugeSpsc> ring_box = ::fixy::mint_box<HugeSpsc>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
+        report_on<HugeSpsc>([&](auto const ring) {
             alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> tx{};
             alignas(64) auto minted = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::uint64_t, 64>);
             auto& [rx, rx_key] = minted;
@@ -164,12 +172,10 @@ int main() {
                 bench::do_not_optimize(np);
                 bench::do_not_optimize(nc);
             });
-        }(),
+        }),
 
         // ── SpscRing: pure pop (pre-filled, never empties) ────────────
-        [&] {
-            ::fixy::Box<HugeSpsc> ring_box = ::fixy::mint_box<HugeSpsc>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
+        report_on<HugeSpsc>([&](auto const ring) {
             // Pre-fill enough so 100k pops don't drain — push 200k.
             for (std::uint64_t i = 0; i < 200000; ++i) {
                 (void)ring->try_push(i);
@@ -178,58 +184,52 @@ int main() {
                 auto v = ring->try_pop();
                 bench::do_not_optimize(v);
             });
-        }(),
+        }),
 
         // ── SpscRing: round-trip push+pop (depth stays 0/1) ───────────
-        [&] {
-            ::fixy::Box<SmallSpsc> ring_box = ::fixy::mint_box<SmallSpsc>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
+        report_on<SmallSpsc>([&](auto const ring) {
             std::uint64_t i = 0;
             return bench::run("spsc_ring round-trip (push+pop)", [&] {
                 (void)ring->try_push(++i);
                 auto v = ring->try_pop();
                 bench::do_not_optimize(v);
             });
-        }(),
+        }),
 
         // ── AtomicSnapshot: publish (writer-only) ─────────────────────
-        [&] {
-            ::fixy::Box<Snap> snap_box = ::fixy::mint_box<Snap>(kAlloc);
-            auto const snap = ::fixy::to(*snap_box);
+        report_on<Snap>([&](auto const snap) {
             std::uint64_t i = 0;
             return bench::run("atomic_snapshot.publish", [&] { SnapWriter::publish(*snap, ++i); });
-        }(),
+        }),
 
         // ── AtomicSnapshot: load (reader-only, no writer) ─────────────
-        [&] {
-            ::fixy::Box<Snap> snap_box = ::fixy::mint_box<Snap>(kAlloc, std::uint64_t{42});
-            auto const snap = ::fixy::to(*snap_box);
-            // The load spins with no exit while a write is in flight, so it
-            // takes a context that owns Div.
-            const ::fixy::TestRunnerCtx reader{::foundation::effects::testing::test()};
-            return bench::run("atomic_snapshot.load (uncontended)", [&] {
-                const auto v = snap->load(reader);
-                bench::do_not_optimize(v);
-            });
-        }(),
+        report_on<Snap>(
+            [&](auto const snap) {
+                // The load spins with no exit while a write is in flight, so
+                // it takes a context that owns Div.
+                const ::fixy::TestRunnerCtx reader{::foundation::effects::testing::test()};
+                return bench::run("atomic_snapshot.load (uncontended)", [&] {
+                    const auto v = snap->load(reader);
+                    bench::do_not_optimize(v);
+                });
+            },
+            std::uint64_t{42}),
 
         // ── AtomicSnapshot: try_load fast path ────────────────────────
-        [&] {
-            ::fixy::Box<Snap> snap_box = ::fixy::mint_box<Snap>(kAlloc, std::uint64_t{42});
-            auto const snap = ::fixy::to(*snap_box);
-            return bench::run("atomic_snapshot.try_load (uncontended)", [&] {
-                auto v = snap->try_load();
-                bench::do_not_optimize(v);
-            });
-        }(),
+        report_on<Snap>(
+            [&](auto const snap) {
+                return bench::run("atomic_snapshot.try_load (uncontended)", [&] {
+                    auto v = snap->try_load();
+                    bench::do_not_optimize(v);
+                });
+            },
+            std::uint64_t{42}),
 
         // ── Reference: TraceRing try_append (existing reference bench) ─
         // Same body shape as bench_trace_ring.cpp's "ring.try_append
         // (+reset-on-full, const entry)" — periodic reset on full keeps
         // the bench from saturating; tail samples include reset cost.
-        [&] {
-            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
+        report_on<crucible::test::OpenRing>([&](auto const ring) {
             crucible::TraceRing::Entry e{};
             e.schema_hash = crucible::SchemaHash{0xABCDEF};
             return bench::run("trace_ring.try_append (reference, +reset-on-full)", [&] {
@@ -237,16 +237,14 @@ int main() {
                 bench::do_not_optimize(ok);
                 if (!ok) ring->reset();
             });
-        }(),
+        }),
 
         // ── LaneRing: round trip on one thread (depth stays 0/1) ──────
         // Each sample pushes into the lane of the turn and receives the
         // item: one push of an SPSC lane, one deferred pop, and the step of
         // the turn.  The turn takes the two lanes in turn, so the lane of a
         // sample is the low bit of its count.
-        [&] {
-            ::fixy::Box<TwoLanes> ring_box = ::fixy::mint_box<TwoLanes>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
+        report_on<TwoLanes>([&](auto const ring) {
             std::uint64_t i = 0;
             return bench::run("lane_ring round-trip (push to the lane of the turn + try_receive)", [&] {
                 ++i;
@@ -254,7 +252,7 @@ int main() {
                 auto v = ring->try_receive(TwoLanesOwner::consumer());
                 bench::do_not_optimize(v);
             });
-        }(),
+        }),
     };
 
     bench::emit_reports_text(reports.view());

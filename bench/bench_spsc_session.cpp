@@ -85,30 +85,42 @@ constexpr auto kForeground = ::foundation::effects::testing::foreground();
 // Item, as it does after the typed receive.
 [[nodiscard]] inline Item pop_value(auto& consumer) noexcept { return consumer.try_pop().value_or(Item{0}); }
 
+// Runs body in the frame door with_ends of the channel of the arm Arm in the
+// Box channel.  The frame with_mut(std::move(channel), body) of the Box lends
+// the channel to the door.  The two permissions of the arm come from the root
+// of the arm in the frame, so the frame body captures no linear permission.
+template <int Arm, class Body>
+void with_boxed_ends(::fixy::Box<Channel<Arm>>& channel, Body&& body) noexcept {
+    channel = ::fixy::with_mut(std::move(channel), [&body](Channel<Arm>& held) noexcept {
+        auto [producer_perm, consumer_perm] =
+            perm::mint_permission_split<typename Channel<Arm>::producer_tag, typename Channel<Arm>::consumer_tag>(
+                arm_root<Arm>());
+        cc::with_ends(held, std::move(producer_perm), std::move(consumer_perm), std::forward<Body>(body));
+    });
+}
+
 // Each arm holds its channel on the heap (8 MB of ring) in a Box.  The frame
 // door with_ends opens the two handles of the channel before the timed row,
-// and the row runs in its body.  A report owns its samples, so it is no result
-// of a frame: the body moves the report into a local of the arm.  The brand
-// of the root of an arm stays in the function of the arm.
+// in the frame of the Box, and the row runs in its body.  A report owns its
+// samples, so it is no result of a frame: the body moves the report into a
+// local of the arm.  The root of an arm has the brand of the site of its arm
+// (arm_root), and the frame of the Box splits it.
 
 [[nodiscard]] bench::Report bare_push_bare_pop() {
     constexpr ::fixy::TextView name = "round-trip: bare push + bare pop";
     ::fixy::Box<Channel<0>> channel = ::fixy::mint_box<Channel<0>>(kAlloc);
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel<0>::producer_tag, Channel<0>::consumer_tag>(arm_root<0>());
     bench::Report report{};
     // The row reaches the two linear handles through a Ref of each.
-    cc::with_ends(*channel, std::move(producer_perm), std::move(consumer_perm),
-                  [&report](auto producer, auto consumer) noexcept {
-                      Item item = 0;
-                      report = bench::run(name, [&item, pusher = ::fixy::to(producer), popper = ::fixy::to(consumer)] {
-                          if (!pusher->try_push(++item)) [[unlikely]]
-                              stop_on_rejected_push(name);
-                          bench::do_not_optimize(pop_value(*popper));
-                      });
-                      ::foundation::linear::drop(std::move(producer));
-                      ::foundation::linear::drop(std::move(consumer));
-                  });
+    with_boxed_ends<0>(channel, [&report](auto producer, auto consumer) noexcept {
+        Item item = 0;
+        report = bench::run(name, [&item, pusher = ::fixy::to(producer), popper = ::fixy::to(consumer)] {
+            if (!pusher->try_push(++item)) [[unlikely]]
+                stop_on_rejected_push(name);
+            bench::do_not_optimize(pop_value(*popper));
+        });
+        ::foundation::linear::drop(std::move(producer));
+        ::foundation::linear::drop(std::move(consumer));
+    });
     return report;
 }
 
@@ -137,81 +149,70 @@ template <typename Session>
 [[nodiscard]] bench::Report typed_send_bare_pop() {
     constexpr ::fixy::TextView name = "round-trip: typed send + bare pop";
     ::fixy::Box<Channel<1>> channel = ::fixy::mint_box<Channel<1>>(kAlloc);
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel<1>::producer_tag, Channel<1>::consumer_tag>(arm_root<1>());
     bench::Report report{};
-    cc::with_ends(
-        *channel, std::move(producer_perm), std::move(consumer_perm), [&report](auto producer, auto consumer) noexcept {
-            Item item = 0;
-            auto [measured, session] =
-                bench::run_with(name,
-                                ::foundation::core::mint_seat(
-                                    channels::mint_substrate_session<Channel<1>, channels::Direction::Producer>(
-                                        kForeground, std::move(producer))),
-                                [&item, popper = ::fixy::to(consumer)](auto& seat) noexcept {
-                                    send_in_seat(seat, ++item);
-                                    bench::do_not_optimize(pop_value(*popper));
-                                });
-            std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
-            ::foundation::linear::drop(std::move(consumer));
-            report = std::move(measured);
-        });
+    with_boxed_ends<1>(channel, [&report](auto producer, auto consumer) noexcept {
+        Item item = 0;
+        auto [measured, session] = bench::run_with(
+            name,
+            ::foundation::core::mint_seat(channels::mint_substrate_session<Channel<1>, channels::Direction::Producer>(
+                kForeground, std::move(producer))),
+            [&item, popper = ::fixy::to(consumer)](auto& seat) noexcept {
+                send_in_seat(seat, ++item);
+                bench::do_not_optimize(pop_value(*popper));
+            });
+        std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+        ::foundation::linear::drop(std::move(consumer));
+        report = std::move(measured);
+    });
     return report;
 }
 
 [[nodiscard]] bench::Report bare_push_typed_recv() {
     constexpr ::fixy::TextView name = "round-trip: bare push + typed recv";
     ::fixy::Box<Channel<2>> channel = ::fixy::mint_box<Channel<2>>(kAlloc);
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel<2>::producer_tag, Channel<2>::consumer_tag>(arm_root<2>());
     bench::Report report{};
-    cc::with_ends(
-        *channel, std::move(producer_perm), std::move(consumer_perm), [&report](auto producer, auto consumer) noexcept {
-            Item item = 0;
-            auto [measured, session] =
-                bench::run_with(name,
-                                ::foundation::core::mint_seat(
-                                    channels::mint_substrate_session<Channel<2>, channels::Direction::Consumer>(
-                                        kForeground, std::move(consumer))),
-                                [&item, pusher = ::fixy::to(producer)](auto& seat) noexcept {
-                                    if (!pusher->try_push(++item)) [[unlikely]]
-                                        stop_on_rejected_push(name);
-                                    bench::do_not_optimize(recv_in_seat(seat));
-                                });
-            std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
-            ::foundation::linear::drop(std::move(producer));
-            report = std::move(measured);
-        });
+    with_boxed_ends<2>(channel, [&report](auto producer, auto consumer) noexcept {
+        Item item = 0;
+        auto [measured, session] = bench::run_with(
+            name,
+            ::foundation::core::mint_seat(channels::mint_substrate_session<Channel<2>, channels::Direction::Consumer>(
+                kForeground, std::move(consumer))),
+            [&item, pusher = ::fixy::to(producer)](auto& seat) noexcept {
+                if (!pusher->try_push(++item)) [[unlikely]]
+                    stop_on_rejected_push(name);
+                bench::do_not_optimize(recv_in_seat(seat));
+            });
+        std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+        ::foundation::linear::drop(std::move(producer));
+        report = std::move(measured);
+    });
     return report;
 }
 
 [[nodiscard]] bench::Report typed_send_typed_recv() {
     constexpr ::fixy::TextView name = "round-trip: typed send + typed recv";
     ::fixy::Box<Channel<3>> channel = ::fixy::mint_box<Channel<3>>(kAlloc);
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel<3>::producer_tag, Channel<3>::consumer_tag>(arm_root<3>());
     bench::Report report{};
-    cc::with_ends(
-        *channel, std::move(producer_perm), std::move(consumer_perm), [&report](auto producer, auto consumer) noexcept {
-            Item item = 0;
-            auto [measured, seats] = bench::run_with(
-                name,
-                ::fixy::Record{::foundation::core::mint_seat(
-                                   channels::mint_substrate_session<Channel<3>, channels::Direction::Producer>(
-                                       kForeground, std::move(producer))),
-                               ::foundation::core::mint_seat(
-                                   channels::mint_substrate_session<Channel<3>, channels::Direction::Consumer>(
-                                       kForeground, std::move(consumer)))},
-                [&item](auto& held) noexcept {
-                    auto& [sender, receiver] = held;
-                    send_in_seat(sender, ++item);
-                    bench::do_not_optimize(recv_in_seat(receiver));
-                });
-            auto [sender, receiver] = std::move(seats);
-            std::move(sender).take().detach(s::detach_reason::InfiniteLoopProtocol{});
-            std::move(receiver).take().detach(s::detach_reason::InfiniteLoopProtocol{});
-            report = std::move(measured);
-        });
+    with_boxed_ends<3>(channel, [&report](auto producer, auto consumer) noexcept {
+        Item item = 0;
+        auto [measured, seats] = bench::run_with(
+            name,
+            ::fixy::Record{::foundation::core::mint_seat(
+                               channels::mint_substrate_session<Channel<3>, channels::Direction::Producer>(
+                                   kForeground, std::move(producer))),
+                           ::foundation::core::mint_seat(
+                               channels::mint_substrate_session<Channel<3>, channels::Direction::Consumer>(
+                                   kForeground, std::move(consumer)))},
+            [&item](auto& held) noexcept {
+                auto& [sender, receiver] = held;
+                send_in_seat(sender, ++item);
+                bench::do_not_optimize(recv_in_seat(receiver));
+            });
+        auto [sender, receiver] = std::move(seats);
+        std::move(sender).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+        std::move(receiver).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+        report = std::move(measured);
+    });
     return report;
 }
 

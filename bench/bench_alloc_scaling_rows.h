@@ -1823,20 +1823,24 @@ struct CpuSteal {
 [[nodiscard]] inline StealTicks read_steal(RowPlaces const& places, ThreadCount threads) noexcept {
     namespace text = ::crucible::topology::text;
     StealTicks steal{};
+    // The text of /proc/stat lives on the heap, and the read and the scan run
+    // in the frame of its Box.
     ::fixy::Box<::fixy::FixedText<kStatBytes>> stat = ::fixy::mint_box<::fixy::FixedText<kStatBytes>>(bench_alloc());
-    if (::foundation::os::read_file(::fixy::CText{"/proc/stat"}, *stat).is_err()) return steal;
-    ::fixy::TextView rest = stat->view();
-    while (rest.size() > 0) {
-        ::fixy::Option<CpuSteal> const line = cpu_steal_of(text::take_line(rest));
-        if (line.is_none()) continue;
-        CpuSteal const found = ::fixy::Option<CpuSteal>{line}.value_or(CpuSteal{});
-        for (std::uint32_t slot = 0; slot < threads.raw(); ++slot) {
-            bench::CpuId const cpu = places.cpu_of(bench::ThreadSlot{slot});
-            if (cpu.is_valid() && static_cast<std::uint64_t>(cpu.raw()) == found.cpu)
-                steal.set(::fixy::Index<kMaxThreads>::check(slot).expect("a slot of a row is below kMaxThreads"),
-                          ::fixy::some(found.ticks));
+    stat = ::fixy::with_mut(std::move(stat), [&places, threads, &steal](::fixy::FixedText<kStatBytes>& read) noexcept {
+        if (::foundation::os::read_file(::fixy::CText{"/proc/stat"}, read).is_err()) return;
+        ::fixy::TextView rest = read.view();
+        while (rest.size() > 0) {
+            ::fixy::Option<CpuSteal> const line = cpu_steal_of(text::take_line(rest));
+            if (line.is_none()) continue;
+            CpuSteal const found = ::fixy::Option<CpuSteal>{line}.value_or(CpuSteal{});
+            for (std::uint32_t slot = 0; slot < threads.raw(); ++slot) {
+                bench::CpuId const cpu = places.cpu_of(bench::ThreadSlot{slot});
+                if (cpu.is_valid() && static_cast<std::uint64_t>(cpu.raw()) == found.cpu)
+                    steal.set(::fixy::Index<kMaxThreads>::check(slot).expect("a slot of a row is below kMaxThreads"),
+                              ::fixy::some(found.ticks));
+            }
         }
-    }
+    });
     return steal;
 }
 
@@ -2030,11 +2034,11 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 namespace bench_alloc {
 
 // One row of a workload with a window on the first threads.count slots
-// (the phases of a row).
+// (the phases of a row), on the control of the row.  Each worker joins
+// before the return.
 template <AllocatorAdapter A, class W>
-[[nodiscard]] RowResult run_window_row(RowPlaces const& places, ThreadCount threads, Placement placement) {
-    ::fixy::Box<RowControl> boxed = ::fixy::mint_box<RowControl>(bench_alloc());
-    RowControl& control = *boxed;
+[[nodiscard]] RowResult run_window_row_on(RowControl& control, RowPlaces const& places, ThreadCount threads,
+                                          Placement placement) {
     StealTicks const steal_before = read_steal(places, threads);
     MemoryReading memory{.start = read_resident()};
     typename W::Shared shared = W::mint_shared(threads);
@@ -2133,6 +2137,20 @@ template <AllocatorAdapter A, class W>
         harness += sample_bytes_of(report).raw();
     memory.harness = ByteCount{harness};
     result.memory = memory;
+    return result;
+}
+
+// One row of a workload with a window on the first threads.count slots.  The
+// control of the row lives on the heap, and the row runs in the frame of its
+// Box.  The result owns its reports, so it is no result of a frame: the body
+// moves it into result.
+template <AllocatorAdapter A, class W>
+[[nodiscard]] RowResult run_window_row(RowPlaces const& places, ThreadCount threads, Placement placement) {
+    ::fixy::Box<RowControl> boxed = ::fixy::mint_box<RowControl>(bench_alloc());
+    RowResult result{};
+    boxed = ::fixy::with_mut(std::move(boxed), [&places, threads, placement, &result](RowControl& control) noexcept {
+        result = run_window_row_on<A, W>(control, places, threads, placement);
+    });
     return result;
 }
 
@@ -2317,11 +2335,12 @@ struct RoundWorkload {
 
     [[nodiscard]] static ::fixy::Box<Shared> mint_shared(ThreadCount threads) noexcept {
         ::fixy::Box<Shared> shared = ::fixy::mint_box<Shared>(bench_alloc());
-        shared->banks =
-            ::fixy::mint_heap_array_with<BankCell>(bench_alloc(), 2 * std::size_t{threads.raw()},
-                                                   [](std::size_t /*position*/) noexcept { return BankCell{}; });
-        shared->threads = threads;
-        return shared;
+        return ::fixy::with_mut(std::move(shared), [threads](Shared& held) noexcept {
+            held.banks =
+                ::fixy::mint_heap_array_with<BankCell>(bench_alloc(), 2 * std::size_t{threads.raw()},
+                                                       [](std::size_t /*position*/) noexcept { return BankCell{}; });
+            held.threads = threads;
+        });
     }
 
     // The release of each block of blocks.
@@ -2433,6 +2452,18 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace bench_alloc {
 
+// The sum of the tallies of the first threads slots of the shared state of a
+// round, read in a frame of its Box.  Complexity: linear in threads.
+template <class Shared>
+[[nodiscard]] Tally sum_tallies(::fixy::Box<Shared> const& shared, ThreadCount threads) noexcept {
+    return ::foundation::core::with_view(shared, [threads](Shared const& held) noexcept {
+        Tally sum{};
+        for (std::uint32_t slot = 0; slot < threads.raw(); ++slot)
+            add_tally(sum, *held.tallies.get(slot).expect("a slot of a round is below kMaxThreads"));
+        return sum;
+    });
+}
+
 // The rows of a round workload: one row for each count.  The latency report
 // times one round.
 template <AllocatorAdapter A, RowKind Kind>
@@ -2444,26 +2475,31 @@ void run_round_rows(bench::Spread const& spread, ::fixy::View<ThreadCount const>
     for (ThreadCount const threads : counts) {
         StealTicks const steal_before = read_steal(places, threads);
         MemoryReading memory{.start = read_resident()};
+        // The shared state of the rounds lives on the heap, and each step
+        // reads or writes it in a frame of its Box.  A report owns its
+        // samples, so it is no result of a frame: the body moves it into
+        // report.
         ::fixy::Box<typename Round::Shared> shared = Round::mint_shared(threads);
         ::fixy::FixedText<64> detail{};
         static_cast<void>(::fixy::format(detail, "one round of {} threads", threads.raw())
                               .expect("the detail of a report fits in 64 characters"));
-        bench::Report report = run_of(A::kind, Kind, detail.view())
-                                   .core(main_cpu.raw())
-                                   .batch(1)
-                                   .samples(kRoundSamples)
-                                   .warmup(1)
-                                   .max_wall_ms(kRoundMs)
-                                   .measure([&shared, &spread] { run_one_round<Round>(*shared, spread); });
+        bench::Report report{};
+        auto const measure_rounds = [&report, &detail, &spread, main_cpu](typename Round::Shared& held) noexcept {
+            report = run_of(A::kind, Kind, detail.view())
+                         .core(main_cpu.raw())
+                         .batch(1)
+                         .samples(kRoundSamples)
+                         .warmup(1)
+                         .max_wall_ms(kRoundMs)
+                         .measure([&held, &spread] { run_one_round<Round>(held, spread); });
+        };
+        shared = ::fixy::with_mut(std::move(shared), measure_rounds);
         memory.steady = read_resident();
-        Tally live{};
-        for (std::uint32_t slot = 0; slot < threads.raw(); ++slot)
-            add_tally(live, *shared->tallies.get(slot).expect("a slot of a round is below kMaxThreads"));
+        Tally const live = sum_tallies(shared, threads);
         memory.live = ByteCount{live.live_bytes};
-        Round::finish(*shared);
-        Tally total{};
-        for (std::uint32_t slot = 0; slot < threads.raw(); ++slot)
-            add_tally(total, *shared->tallies.get(slot).expect("a slot of a round is below kMaxThreads"));
+        shared =
+            ::fixy::with_mut(std::move(shared), [](typename Round::Shared& held) noexcept { Round::finish(held); });
+        Tally const total = sum_tallies(shared, threads);
         check_tally(Kind, A::kind, total);
         { ::fixy::Box<typename Round::Shared> const ended{std::move(shared)}; }
         memory.end = read_resident();

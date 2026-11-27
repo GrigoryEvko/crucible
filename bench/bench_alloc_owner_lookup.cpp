@@ -304,38 +304,52 @@ struct BaseRows {
         ++taken;
     }
     core::Box<Picks> picks = core::mint_box<Picks>(foundation::effects::testing::test().alloc);
-    for (PickIndex const pick : core::IndexRange<kPicks>{}) {
-        std::uint32_t const word = draw_of(pick.raw());
-        std::uint64_t const base =
-            static_cast<std::uint64_t>(chunks.at(BlockIndex::check(word & (kBlocks - 1)).expect("a masked block")));
-        std::uint64_t const offset = ((word >> 12) & (alloc::kChunkBytes / 16 - 1)) * 16;
-        picks->addresses.set(pick, alloc::AddressWord{base + offset});
-    }
+    picks = core::with_mut(std::move(picks), [&chunks](Picks& held) noexcept {
+        for (PickIndex const pick : core::IndexRange<kPicks>{}) {
+            std::uint32_t const word = draw_of(pick.raw());
+            std::uint64_t const base =
+                static_cast<std::uint64_t>(chunks.at(BlockIndex::check(word & (kBlocks - 1)).expect("a masked block")));
+            std::uint64_t const offset = ((word >> 12) & (alloc::kChunkBytes / 16 - 1)) * 16;
+            held.addresses.set(pick, alloc::AddressWord{base + offset});
+        }
+    });
     return BaseRows{std::move(window), std::move(picks)};
 }
 
 // The row of one reference: kBlocks blocks of kReferenceBlockBytes, the table
 // of their first bytes, the measure and its line, and the release of each
-// block.
+// block.  Each table is on the heap, and each step reads or writes it in a
+// frame of its Box.  A report owns its samples, so it is no result of a
+// frame: the body moves it into report.
 template <class Calls>
 [[nodiscard]] bench::Report run_reference(fixy::TextView name, fixy::TextView label) {
     core::Box<Picks> blocks = core::mint_box<Picks>(foundation::effects::testing::test().alloc);
-    for (std::size_t block = 0; block < kBlocks; ++block) {
-        alloc::AddressWord const first = Calls::allocate(kReferenceBlockBytes);
-        if (first == alloc::AddressWord{}) fixy::fatal("{} gave no block of {} bytes", name, kReferenceBlockBytes);
-        blocks->addresses.set(PickIndex::check(block).expect("a block lies below kPicks"), first);
-    }
+    blocks = core::with_mut(std::move(blocks), [name](Picks& held) noexcept {
+        for (std::size_t block = 0; block < kBlocks; ++block) {
+            alloc::AddressWord const first = Calls::allocate(kReferenceBlockBytes);
+            if (first == alloc::AddressWord{}) fixy::fatal("{} gave no block of {} bytes", name, kReferenceBlockBytes);
+            held.addresses.set(PickIndex::check(block).expect("a block lies below kPicks"), first);
+        }
+    });
     core::Box<Picks> picks = core::mint_box<Picks>(foundation::effects::testing::test().alloc);
-    for (PickIndex const pick : core::IndexRange<kPicks>{}) {
-        alloc::AddressWord const first = blocks->addresses.at(
-            PickIndex::check(draw_of(pick.raw()) & (kBlocks - 1)).expect("a masked block lies below kPicks"));
-        picks->addresses.set(pick, first);
-    }
-    bench::Report report = measure_reads(name, Calls{}, *picks);
+    picks = core::with_mut(std::move(picks), [&blocks](Picks& held) noexcept {
+        core::with_view(blocks, [&held](Picks const& source) noexcept {
+            for (PickIndex const pick : core::IndexRange<kPicks>{}) {
+                alloc::AddressWord const first = source.addresses.at(
+                    PickIndex::check(draw_of(pick.raw()) & (kBlocks - 1)).expect("a masked block lies below kPicks"));
+                held.addresses.set(pick, first);
+            }
+        });
+    });
+    bench::Report report{};
+    core::with_view(picks,
+                    [&report, name](Picks const& held) noexcept { report = measure_reads(name, Calls{}, held); });
     print_row(label, report, resident_mebibytes());
-    for (std::size_t block = 0; block < kBlocks; ++block) {
-        Calls::release(blocks->addresses.at(PickIndex::check(block).expect("a block lies below kPicks")));
-    }
+    core::with_view(blocks, [](Picks const& held) noexcept {
+        for (std::size_t block = 0; block < kBlocks; ++block) {
+            Calls::release(held.addresses.at(PickIndex::check(block).expect("a block lies below kPicks")));
+        }
+    });
     return report;
 }
 
@@ -351,6 +365,8 @@ constexpr std::size_t kClockBatch = 256;
 constexpr std::uint64_t kChainStride = 32;
 constexpr std::size_t kChainLines = 16384;
 constexpr std::size_t kChaseWords = kChainLines * 16;
+// The order of the positions that a chain visits.
+using ChainOrder = core::FixedArray<std::uint32_t, kChainLines>;
 // The steps of one sample of a chain.
 constexpr std::size_t kChainBatch = 256;
 
@@ -522,7 +538,7 @@ void print_light(fixy::TextView name, bench::Report const& measured, double cycl
 
 // A random cycle over LINES positions (Sattolo): the order of the positions
 // that the cycle visits.  Complexity: linear in the lines.
-void build_cycle(core::FixedArray<std::uint32_t, kChainLines>& order, std::size_t lines) noexcept {
+void build_cycle(ChainOrder& order, std::size_t lines) noexcept {
     auto const at = [](std::size_t position) noexcept {
         return core::Index<kChainLines>::check(position).expect("a position below kChainLines");
     };
@@ -532,6 +548,14 @@ void build_cycle(core::FixedArray<std::uint32_t, kChainLines>& order, std::size_
         auto const other = at(draw_of(last + kPicks) % last);
         order.set(at(last), order.exchange(other, order.at(at(last))));
     }
+}
+
+// The position at step STEP of the cycle in the Box ORDER, read in a frame of
+// the Box.
+[[nodiscard]] std::uint32_t line_at(core::Box<ChainOrder> const& order, std::size_t step) noexcept {
+    return core::with_view(order, [step](ChainOrder const& held) noexcept {
+        return held.at(core::Index<kChainLines>::check(step).expect("a step below the lines"));
+    });
 }
 
 // The rows of the speed of light (the speed of light): the clock, the floor
@@ -561,8 +585,9 @@ void run_light_rows(bench::Report const& inline_read, bench::Report const& call_
     if (reserved.is_err()) fixy::fatal("{}", diagnostic.text());
     alloc::Window window = std::move(reserved).expect("a window that the ladder gave");
     alloc::WindowRecord const record = window.record();
-    core::Box<core::FixedArray<std::uint32_t, kChainLines>> order =
-        core::mint_box<core::FixedArray<std::uint32_t, kChainLines>>(foundation::effects::testing::test().alloc);
+    // The order and the chase table are on the heap, and each step reads or
+    // writes them in a frame of their Box.
+    core::Box<ChainOrder> order = core::mint_box<ChainOrder>(foundation::effects::testing::test().alloc);
     core::Box<ChaseTable> chase = core::mint_box<ChaseTable>(foundation::effects::testing::test().alloc);
     core::FixedArray<std::size_t, 3> const levels{std::size_t{256}, std::size_t{4096}, kChainLines};
     core::FixedArray<fixy::TextView, 3> const owner_names{
@@ -574,25 +599,29 @@ void run_light_rows(bench::Report const& inline_read, bench::Report const& call_
         std::size_t const wanted = levels.at(level);
         std::size_t const lines =
             wanted * kChainStride <= record.chunk_count() ? wanted : record.chunk_count() / kChainStride;
-        build_cycle(*order, lines);
+        order = core::with_mut(std::move(order), [lines](ChainOrder& held) noexcept { build_cycle(held, lines); });
         for (std::size_t step = 0; step < lines; ++step) {
-            std::uint32_t const here =
-                order->at(core::Index<kChainLines>::check(step).expect("a step below the lines"));
-            std::uint32_t const next =
-                order->at(core::Index<kChainLines>::check((step + 1) % lines).expect("a step below the lines"));
+            std::uint32_t const here = line_at(order, step);
+            std::uint32_t const next = line_at(order, (step + 1) % lines);
             window.set_owner(alloc::ChunkIndex{static_cast<std::uint32_t>(here * kChainStride)},
                              alloc::owner_entry_of(alloc::HeapId{static_cast<std::uint16_t>(next + 1)}));
-            chase->next.set(core::Index<kChaseWords>::check(std::size_t{here} * 16).expect("a word of the chase"),
-                            next * 16);
+            chase = core::with_mut(std::move(chase), [here, next](ChaseTable& table) noexcept {
+                table.next.set(core::Index<kChaseWords>::check(std::size_t{here} * 16).expect("a word of the chase"),
+                               next * 16);
+            });
         }
         OwnerChain owner_chain{record.chunk_map(), static_cast<std::uint64_t>(record.base())};
         bench::Report const owner_read =
             bench::Run(owner_names.at(level)).batch(kChainBatch).samples(kSamples).measure(owner_chain);
         bench::do_not_optimize(owner_chain.owner);
-        ChaseChain chase_chain{*chase};
-        bench::Report const chase_read =
-            bench::Run(chase_names.at(level)).batch(kChainBatch).samples(kSamples).measure(chase_chain);
-        bench::do_not_optimize(chase_chain.word);
+        // A report owns its samples, so it is no result of a frame: the body
+        // moves it into chase_read.
+        bench::Report chase_read{};
+        core::with_view(chase, [&chase_read, &chase_names, level](ChaseTable const& table) noexcept {
+            ChaseChain chase_chain{table};
+            chase_read = bench::Run(chase_names.at(level)).batch(kChainBatch).samples(kSamples).measure(chase_chain);
+            bench::do_not_optimize(chase_chain.word);
+        });
         // The floor of a hearth step is the measured chase of the same lines
         // and the two ALU cycles that a hearth step has more.
         double const chase_cycles = chase_read.pct.p50 * cycles_per_ns;
@@ -608,9 +637,18 @@ int run_bench() {
                  kBlocks, kBatch);
     BaseRows const rows = build_base_rows();
     alloc::BiasedChunkMap const map = rows.window.record().chunk_map();
-    bench::Report const inline_read = measure_reads("hearth, inline", InlineRead{map}, *rows.picks);
+    // The rows read the picks in frames of their Box.  A report owns its
+    // samples, so it is no result of a frame: each body moves it into a
+    // report of the bench.
+    bench::Report inline_read{};
+    core::with_view(rows.picks, [&inline_read, &map](Picks const& picks) noexcept {
+        inline_read = measure_reads("hearth, inline", InlineRead{map}, picks);
+    });
     print_row("hearth, inline", inline_read, resident_mebibytes());
-    bench::Report const call_read = measure_reads("hearth, call", CallRead{map}, *rows.picks);
+    bench::Report call_read{};
+    core::with_view(rows.picks, [&call_read, &map](Picks const& picks) noexcept {
+        call_read = measure_reads("hearth, call", CallRead{map}, picks);
+    });
     print_row("hearth, call  ", call_read, resident_mebibytes());
 #if defined(CRUCIBLE_BENCH_MIMALLOC)
     bench::Report const mimalloc_read = run_reference<MimallocCalls>("mimalloc 3.7.0 mi_usable_size", "mimalloc      ");
@@ -632,7 +670,9 @@ int run_bench() {
     print_ratio("hearth, inline / jemalloc", inline_read, jemalloc_read);
     print_ratio("hearth, call / jemalloc  ", call_read, jemalloc_read);
 #endif
-    run_light_rows(inline_read, call_read, *rows.picks, map);
+    core::with_view(rows.picks, [&inline_read, &call_read, &map](Picks const& picks) noexcept {
+        run_light_rows(inline_read, call_read, picks, map);
+    });
     return 0;
 }
 

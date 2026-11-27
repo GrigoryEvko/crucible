@@ -1006,27 +1006,32 @@ void end_lanes_past_the_producers(RowState& state, ThreadCount threads) noexcept
 
 // Runs one row of an op on the first threads.count slots of the spread.  The
 // state of a row holds each ring, more than half a megabyte, so it lives on the
-// heap and not on the stack of the main thread.
+// heap and not on the stack of the main thread.  The row runs in the frame of
+// its Box, and each worker joins in the body.  The result owns its reports, so
+// it is no result of a frame: the body moves it into result.
 template <OpKind Kind>
 [[nodiscard]] RowResult run_row(bench::Spread const& spread, ThreadCount threads, ConsumerPlace place) {
     ::fixy::Box<RowHome> boxed = ::fixy::mint_box<RowHome>(eff::testing::test().alloc);
-    RowHome& home = *boxed;
-    RowState& state = home.state;
-    for (::fixy::Index<kBatch> const index : state.batch.indices())
-        state.batch.set(index, Item{index.raw() + 1});
-    end_lanes_past_the_producers<Kind>(state, threads);
-    RawWorkers workers{};
-    workers.start<Kind>(home, spread, threads, place);
-    while (state.ready.value.load_acquire() + 1 < threads.raw())
-        CRUCIBLE_SPIN_PAUSE;
+    RowResult result{};
+    boxed = ::fixy::with_mut(std::move(boxed), [&spread, threads, place, &result](RowHome& home) noexcept {
+        RowState& state = home.state;
+        for (::fixy::Index<kBatch> const index : state.batch.indices())
+            state.batch.set(index, Item{index.raw() + 1});
+        end_lanes_past_the_producers<Kind>(state, threads);
+        RawWorkers workers{};
+        workers.start<Kind>(home, spread, threads, place);
+        while (state.ready.value.load_acquire() + 1 < threads.raw())
+            CRUCIBLE_SPIN_PAUSE;
 
-    Seat const own_seat = seat_of<Kind>(bench::kMeasuringSlot, threads);
-    bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
-    RowResult result =
-        finish_row<Kind>(state, threads, place, main_cpu, [&home, &own_seat] [[gnu::always_inline]] () noexcept {
-            run_op<Kind>(home, ::fixy::index<bench::kMeasuringSlot.raw()>(), own_seat);
-        });
-    workers.join();
+        Seat const own_seat = seat_of<Kind>(bench::kMeasuringSlot, threads);
+        bench::CpuId const main_cpu =
+            spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
+        result =
+            finish_row<Kind>(state, threads, place, main_cpu, [&home, &own_seat] [[gnu::always_inline]] () noexcept {
+                run_op<Kind>(home, ::fixy::index<bench::kMeasuringSlot.raw()>(), own_seat);
+            });
+        workers.join();
+    });
     return result;
 }
 

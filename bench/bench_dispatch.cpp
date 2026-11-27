@@ -463,21 +463,25 @@ int main() {
         // A TraceRing is about 5.3 MB, and the stack is 8 MB.  A second
         // large local in a sibling IIFE, or the frame of main when GCC inlines
         // each IIFE into it at -O3, goes past the guard page of the stack.
-        // So the ring lives on the heap, as it does in Vigil.  The timed body
-        // reads the ring through a reference that the Box gives one time, so
-        // no test of the Box is in the timed loop.
+        // So the ring lives on the heap, as it does in Vigil.  The row runs in
+        // the frame of the Box, and the timed body reads the ring through the
+        // reference of the frame, so no test of the Box is in the timed loop.
+        // A report owns its samples, so it is no result of a frame: the body
+        // moves it into r.
         ::fixy::Box<crucible::test::OpenRing> ring_box =
             ::fixy::mint_box<crucible::test::OpenRing>(::foundation::effects::testing::test().alloc);
-        crucible::test::OpenRing& ring = *ring_box;
         TraceRing::Entry entry{};
         entry.schema_hash = SchemaHash{0x100};
         entry.shape_hash = ShapeHash{0x200};
         entry.num_inputs = 1;
         entry.num_outputs = 1;
-        auto r = bench::run("TraceRing::try_append (raw, reset-on-full)", [&] {
-            if (!ring.try_append(entry)) [[unlikely]]
-                ring.reset();
-            bench::do_not_optimize(ring);
+        bench::Report r{};
+        ring_box = ::fixy::with_mut(std::move(ring_box), [&entry, &r](crucible::test::OpenRing& ring) noexcept {
+            r = bench::run("TraceRing::try_append (raw, reset-on-full)", [&] {
+                if (!ring.try_append(entry)) [[unlikely]]
+                    ring.reset();
+                bench::do_not_optimize(ring);
+            });
         });
         return r;
     }());

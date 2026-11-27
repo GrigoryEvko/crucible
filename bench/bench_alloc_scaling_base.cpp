@@ -44,16 +44,14 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
 // pushes it, and a worker beside it pops each Box and drops it (the rows).
 // The worker runs through run_beside of fixy/os/ThreadTasks.h, and its body
 // owns the consumer end of the channel.
-[[nodiscard]] RowResult run_box_channel_row(bench::Spread const& spread, Placement placement,
-                                            bench::CpuId consumer_cpu) {
+[[nodiscard]] RowResult run_box_channel_row_on(RowControl& control, bench::Spread const& spread, Placement placement,
+                                               bench::CpuId consumer_cpu) {
     auto root = perm::mint_permission_root<
         ::fixy::concurrent::channel_tag::Whole<::fixy::concurrent::ChannelForm::wire, BoxRowTag>>();
     using Channel = ::fixy::concurrent::box_channel_t<Message, kMailboxCells, decltype(root)>;
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<typename Channel::producer_tag, typename Channel::consumer_tag>(std::move(root));
     Channel channel{};
-    ::fixy::Box<RowControl> boxed = ::fixy::mint_box<RowControl>(bench_alloc());
-    RowControl& control = *boxed;
     RowPlaces const places{.spread = spread, .consumer = ::fixy::some(consumer_cpu)};
     StealTicks const steal_before = read_steal(places, ThreadCount{2});
     MemoryReading memory{.start = read_resident()};
@@ -146,9 +144,11 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
                 std::uint64_t dropped = 0;
                 static_cast<void>(control.ready.value.fetch_add_acq_rel(1));
                 auto const drop = [&dropped](::fixy::Box<Message>&& box) noexcept {
-                    if (box->stamp != kMessageStamp) [[unlikely]]
-                        refuse_message(box->stamp);
                     ::fixy::Box<Message> const ended{std::move(box)};
+                    auto const stamp = ::foundation::core::with_view(
+                        ended, [](Message const& message) noexcept { return message.stamp; });
+                    if (stamp != kMessageStamp) [[unlikely]]
+                        refuse_message(stamp);
                     ++dropped;
                 };
                 while (read_phase(control) != Phase::Stop) {
@@ -182,6 +182,20 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
     result.memory = memory;
     result.steal_ms = steal_ms_between(::fixy::side_as<bench::side::ReadingBefore>(steal_before),
                                        ::fixy::side_as<bench::side::ReadingAfter>(read_steal(places, ThreadCount{2})));
+    return result;
+}
+
+// The row of the box channel.  The control of the row lives on the heap, and
+// the row runs in the frame of its Box.  The result owns its reports, so it
+// is no result of a frame: the body moves it into result.
+[[nodiscard]] RowResult run_box_channel_row(bench::Spread const& spread, Placement placement,
+                                            bench::CpuId consumer_cpu) {
+    ::fixy::Box<RowControl> boxed = ::fixy::mint_box<RowControl>(bench_alloc());
+    RowResult result{};
+    boxed =
+        ::fixy::with_mut(std::move(boxed), [&spread, placement, consumer_cpu, &result](RowControl& control) noexcept {
+            result = run_box_channel_row_on(control, spread, placement, consumer_cpu);
+        });
     return result;
 }
 

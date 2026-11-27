@@ -50,6 +50,19 @@ struct PublishOwner final {
     [[nodiscard]] static constexpr Proof proof() noexcept { return {}; }
 };
 
+// The report of a row on a log of its own.  The log is on the heap, and the
+// row runs in the frame with_mut(std::move(log_box), body) of its Box, with a
+// Ref of the log.  A report owns its samples, so it is no result of a frame:
+// the body moves it into report.
+template <class Row>
+[[nodiscard]] bench::Report report_on_log(Row const& row) {
+    ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
+    bench::Report report{};
+    log_box = ::fixy::with_mut(
+        std::move(log_box), [&row, &report](crucible::test::OpenLog& log) noexcept { report = row(::fixy::to(log)); });
+    return report;
+}
+
 }  // namespace
 
 // Realistic 2D float tensor (linear / matmul input).
@@ -179,42 +192,34 @@ int main() {
     // All four buffers live heap-side; MetaLog's 168 MB allocation
     // would blow the stack.
     ::fixy::FixedArray<bench::Report, 10> reports{
-        [&] {
-            ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
-            auto const log = ::fixy::to(*log_box);
+        report_on_log([&](auto const log) {
             return bench::run("try_append(1 meta  = 168B)", [&] {
                 auto idx = log->try_append(crucible::mint_meta_run(meta1.view()));
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
-        }(),
-        [&] {
-            ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
-            auto const log = ::fixy::to(*log_box);
+        }),
+        report_on_log([&](auto const log) {
             return bench::run("try_append(2 metas = 336B)", [&] {
                 auto idx = log->try_append(crucible::mint_meta_run(meta2.view()));
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
-        }(),
-        [&] {
-            ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
-            auto const log = ::fixy::to(*log_box);
+        }),
+        report_on_log([&](auto const log) {
             return bench::run("try_append(3 metas = 504B)", [&] {
                 auto idx = log->try_append(crucible::mint_meta_run(meta3.view()));
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
-        }(),
-        [&] {
-            ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
-            auto const log = ::fixy::to(*log_box);
+        }),
+        report_on_log([&](auto const log) {
             return bench::run("try_append(8 metas = 1344B)", [&] {
                 auto idx = log->try_append(crucible::mint_meta_run(meta8.view()));
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
             });
-        }(),
+        }),
 
         // ── Throughput: sustained fill with batch drain ───────────────
         //
@@ -222,9 +227,7 @@ int main() {
         // drain). Amortizes the tail-store cost across many appends.
         // Inner counter stays a local to avoid atomic-store pollution
         // of the measurement.
-        [&] {
-            ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
-            auto const log = ::fixy::to(*log_box);
+        report_on_log([&](auto const log) {
             uint32_t since_drain = 0;
             constexpr uint32_t kD = 50000;
             return bench::run("throughput (3 metas/call, drain/50k)", [&] {
@@ -235,7 +238,7 @@ int main() {
                     since_drain = 0;
                 }
             });
-        }(),
+        }),
 
         // ── Raw atomics (floor for ordering cost) ─────────────────────
         // The head of the log is private, so the row reads a counter of the

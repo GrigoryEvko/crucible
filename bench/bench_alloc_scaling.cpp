@@ -176,20 +176,24 @@ int run_bench(::fixy::os::Args const& arguments) {
                            threads.raw(), bench::kPauseThreads);
         }
     }
+    // The record of the run lives on the heap, and the rows run in the frame
+    // of its Box.
     ::fixy::Box<RunRecord> record = ::fixy::mint_box<RunRecord>(bench_alloc());
-    run_base_rows(spread, selected, *record);
+    record = ::fixy::with_mut(std::move(record), [&spread, &selected](RunRecord& held) noexcept {
+        run_base_rows(spread, selected, held);
 #if defined(CRUCIBLE_BENCH_JEMALLOC)
-    run_jemalloc_rows(spread, selected, *record);
+        run_jemalloc_rows(spread, selected, held);
 #endif
 #if defined(CRUCIBLE_BENCH_MIMALLOC)
-    run_mimalloc_rows(spread, selected, *record);
+        run_mimalloc_rows(spread, selected, held);
 #endif
 #if defined(CRUCIBLE_BENCH_SNMALLOC)
-    run_snmalloc_rows(spread, selected, *record);
+        run_snmalloc_rows(spread, selected, held);
 #endif
-    run_glibc_rows(spread, selected, *record);
-    print_time_ratios(*record);
-    bench::emit_reports_json(record->reports.view(), bench::env_json());
+        run_glibc_rows(spread, selected, held);
+        print_time_ratios(held);
+        bench::emit_reports_json(held.reports.view(), bench::env_json());
+    });
     return 0;
 }
 

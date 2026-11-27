@@ -324,30 +324,38 @@ int main() {
         // The first 1024 inserted hashes and 1024 absent hashes, on the
         // heap as the vectors of the rows were.  Each load inserts more
         // than 1024 hashes.
+        // Each fill runs in the frames of the Boxes that it writes and reads.
         using Hashes = ::fixy::FixedArray<uint64_t, 1024>;
         ::fixy::Box<Hashes> inserted_hashes = ::fixy::mint_box<Hashes>(alloc);
         std::size_t inserted_count = 0;
         uint64_t seed = 0xDEADBEEF;
-        for (size_t i = 0; i < target_count; ++i) {
-            seed = fmix64(seed + i);
-            table->insert(seed);
-            if (inserted_count < 1024) {
-                inserted_hashes->set(::fixy::Index<1024>::check(inserted_count).expect("the count is below 1024"),
-                                     seed);
-                ++inserted_count;
-            }
-        }
+        table = ::fixy::with_mut(std::move(table), [&](MiniSwissTable& filled) noexcept {
+            inserted_hashes = ::fixy::with_mut(std::move(inserted_hashes), [&](Hashes& hashes) noexcept {
+                for (size_t i = 0; i < target_count; ++i) {
+                    seed = fmix64(seed + i);
+                    filled.insert(seed);
+                    if (inserted_count < 1024) {
+                        hashes.set(::fixy::Index<1024>::check(inserted_count).expect("the count is below 1024"), seed);
+                        ++inserted_count;
+                    }
+                }
+            });
+        });
 
         ::fixy::Box<Hashes> absent_hashes = ::fixy::mint_box<Hashes>(alloc);
         std::size_t absent_count = 0;
         seed = 0xCAFEBABE;
-        while (absent_count < 1024) {
-            seed = fmix64(seed + absent_count + 1);
-            if (!table->find(seed)) {
-                absent_hashes->set(::fixy::Index<1024>::check(absent_count).expect("the count is below 1024"), seed);
-                ++absent_count;
-            }
-        }
+        absent_hashes = ::fixy::with_mut(std::move(absent_hashes), [&](Hashes& hashes) noexcept {
+            ::foundation::core::with_view(table, [&](MiniSwissTable const& probed) noexcept {
+                while (absent_count < 1024) {
+                    seed = fmix64(seed + absent_count + 1);
+                    if (!probed.find(seed)) {
+                        hashes.set(::fixy::Index<1024>::check(absent_count).expect("the count is below 1024"), seed);
+                        ++absent_count;
+                    }
+                }
+            });
+        });
 
         const bench::RunName name_hit = bench::format_name("probe HIT  — {}", label);
         const bench::RunName name_miss = bench::format_name("probe MISS — {}", label);
@@ -356,13 +364,10 @@ int main() {
         // the check of the index.  A row reads each hash through a View
         // of the heap array, as it read a vector: the address of the View,
         // then its first element.
-        ::fixy::View<uint64_t const, 1024> const inserted = inserted_hashes->view();
-        ::fixy::View<uint64_t const, 1024> const absent = absent_hashes->view();
-        // The two rows run in the read frame of the table, so each probe
-        // reads the table through a reference that the frame tested one time.
         uint32_t hit_idx = 0;
         uint32_t miss_idx = 0;
-        ::foundation::core::with_view(table, [&](MiniSwissTable const& probed) noexcept {
+        auto const add_rows = [&](MiniSwissTable const& probed, ::fixy::View<uint64_t const, 1024> inserted,
+                                  ::fixy::View<uint64_t const, 1024> absent) noexcept {
             bench::add_report(reports, bench::run(name_hit, [&] {
                                   bool found = probed.find(inserted.at(
                                       ::fixy::Index<1024>::check(hit_idx & 1023).expect("a mask of 10 bits")));
@@ -375,6 +380,16 @@ int main() {
                                   bench::do_not_optimize(found);
                                   ++miss_idx;
                               }));
+        };
+        // The two rows run in the read frames of the table and of the two
+        // arrays of hashes, so each probe reads through references that the
+        // frames tested one time.
+        ::foundation::core::with_view(table, [&](MiniSwissTable const& probed) noexcept {
+            ::foundation::core::with_view(inserted_hashes, [&](Hashes const& inserted) noexcept {
+                ::foundation::core::with_view(absent_hashes, [&](Hashes const& absent) noexcept {
+                    add_rows(probed, inserted.view(), absent.view());
+                });
+            });
         });
     };
 

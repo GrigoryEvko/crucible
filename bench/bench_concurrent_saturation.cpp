@@ -43,33 +43,44 @@ using Item = std::uint64_t;
 // The rings of the rows live on the heap: a ring of 1M slots holds 8 MiB.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
+// The report of a row on a T of its own.  The T lives on the heap, and the row
+// runs in the frame with_mut(std::move(box), body) of its Box, with a Ref of
+// the T.  The Ref holds a pointer that is never null, so the timed loop tests
+// no empty Box.  A report owns its samples, so it is no result of a frame:
+// the body moves it into report.
+template <class T, class Row>
+[[nodiscard]] bench::Report report_on(Row const& row) {
+    ::fixy::Box<T> box = ::fixy::mint_box<T>(kAlloc);
+    bench::Report report{};
+    box = ::fixy::with_mut(std::move(box), [&row, &report](T& object) noexcept { report = row(::fixy::to(object)); });
+    return report;
+}
+
 // Batch capacity must be ≥ 1024 so we can pre-fill once and never wrap.
 template <std::size_t N>
 struct SaturationCase {
     using Ring = SpscRing<Item, (1U << 20)>;  // 1M slots — never fills
 
     static bench::Report run() {
-        ::fixy::Box<Ring> ring_box = ::fixy::mint_box<Ring>(kAlloc);
-        // The body reads the ring through a Ref, which holds a pointer that
-        // is never null, so the timed loop tests no empty Box.
-        auto const ring = ::fixy::to(*ring_box);
-        alignas(64) static ::fixy::FixedArray<Item, N> tx{};
-        alignas(64) auto minted = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<Item, N>);
-        auto& [rx, rx_key] = minted;
-        for (::fixy::Index<N> const index : tx.indices())
-            tx.set(index, index.raw());
+        return report_on<Ring>([](auto const ring) {
+            alignas(64) static ::fixy::FixedArray<Item, N> tx{};
+            alignas(64) auto minted = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<Item, N>);
+            auto& [rx, rx_key] = minted;
+            for (::fixy::Index<N> const index : tx.indices())
+                tx.set(index, index.raw());
 
-        return bench::run(bench::format_name("spsc_ring batch<{}> round-trip (push+pop)", N), [&] {
-            const std::size_t np = ring->try_push_batch(tx.view());
-            const std::size_t nc =
-                rx.with_mut(rx_key, [&ring](auto run) noexcept { return ring->try_pop_batch(std::move(run)); });
-            bench::do_not_optimize(np);
-            bench::do_not_optimize(nc);
-            // The sink reads and writes each byte of rx, so the copy of the
-            // pop into rx stays, and no other code reads rx.  A sink of one
-            // element would keep only the bytes of that element (the sink
-            // of bench_harness.h).
-            bench::mark_changed(rx);
+            return bench::run(bench::format_name("spsc_ring batch<{}> round-trip (push+pop)", N), [&] {
+                const std::size_t np = ring->try_push_batch(tx.view());
+                const std::size_t nc =
+                    rx.with_mut(rx_key, [&ring](auto run) noexcept { return ring->try_pop_batch(std::move(run)); });
+                bench::do_not_optimize(np);
+                bench::do_not_optimize(nc);
+                // The sink reads and writes each byte of rx, so the copy of
+                // the pop into rx stays, and no other code reads rx.  A sink
+                // of one element would keep only the bytes of that element
+                // (the sink of bench_harness.h).
+                bench::mark_changed(rx);
+            });
         });
     }
 };
@@ -143,15 +154,13 @@ int main() {
 
     ::fixy::FixedArray<bench::Report, 15> reports{
         // Single-call SPSC — N=1 baseline.
-        [&] {
-            ::fixy::Box<SpscRing<Item, (1U << 20)>> ring_box = ::fixy::mint_box<SpscRing<Item, (1U << 20)>>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
+        report_on<SpscRing<Item, (1U << 20)>>([](auto const ring) {
             std::uint64_t i = 0;
             return bench::run("spsc_ring.try_push (N=1, single-call)", [&] {
                 const bool ok = ring->try_push(++i);
                 bench::do_not_optimize(ok);
             });
-        }(),
+        }),
 
         // Sweep: round-trip batched push+pop, doubling N from 1 → 1024.
         SaturationCase<1>::run(),

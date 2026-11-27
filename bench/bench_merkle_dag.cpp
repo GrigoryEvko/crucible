@@ -79,6 +79,64 @@ TensorMeta make_synthetic_meta(uint8_t ndim) {
     return m;
 }
 
+// The ops of the build_trace row.
+constexpr uint32_t kTraceOps = 481;
+
+// One op of the fill of the ring: its entry, the start of its metadata in the
+// log, and its scope and callsite hashes.
+struct FillOp {
+    TraceRing::Entry entry{};
+    MetaIndex meta_start{};
+    ScopeHash scope_hash{};
+    CallsiteHash callsite_hash{};
+};
+
+using FillOps = ::fixy::FixedArray<FillOp, kTraceOps>;
+
+// Makes kTraceOps random ops, each with its metadata in the log, and writes
+// them into ops for the ring.  The random stream gives the hashes and the
+// counts of an op, then its metadata, then its scope and callsite hashes.
+void fill_log(crucible::test::OpenLog& meta_log, FillOps& ops) noexcept {
+    for (::fixy::Index<kTraceOps> const op : ::fixy::IndexRange<kTraceOps>{}) {
+        uint32_t const i = static_cast<uint32_t>(op.raw());
+        TraceRing::Entry e{};
+        e.schema_hash = SchemaHash{bench_rand()};
+        e.shape_hash = ShapeHash{bench_rand()};
+        e.num_inputs = static_cast<uint16_t>(1 + (bench_rand() % 3));
+        e.num_outputs = static_cast<uint16_t>(1 + (bench_rand() % 2));
+        e.num_scalar_args = static_cast<uint8_t>(bench_rand() % 3);
+        e.op_flags = e.op_flags.with_grad_enabled();
+
+        const uint16_t total_metas = static_cast<uint16_t>(e.num_inputs + e.num_outputs);
+        ::fixy::FixedArray<TensorMeta, 8> metas{};
+        for (uint16_t j = 0; j < total_metas && j < 8; j++) {
+            metas.update(
+                ::fixy::Index<8>::check(j).expect("the position fits the array"), [i, j](TensorMeta& meta) noexcept {
+                    meta.dtype = ScalarType::Float;
+                    meta.device_type = DeviceType::CUDA;
+                    meta.device_idx = 0;
+                    meta.set_shape(random_shape(4));
+                    meta.data_ptr = mint_synthetic_data_ptr(SyntheticAddress{0x7f0000000000ULL + (i * 8 + j) * 0x1000});
+                });
+        }
+        MetaIndex const meta_start = meta_log.try_append(mint_checked_meta_run(
+            ::fixy::View<const TensorMeta>{metas.view()}.window(0, total_metas).expect("the run fits the array")));
+        ScopeHash const scope_hash{bench_rand()};
+        CallsiteHash const callsite_hash{bench_rand()};
+        ops.set(op,
+                FillOp{.entry = e, .meta_start = meta_start, .scope_hash = scope_hash, .callsite_hash = callsite_hash});
+    }
+}
+
+// Appends each op of ops to the ring, in order.
+void fill_ring(crucible::test::OpenRing& ring, FillOps const& ops) noexcept {
+    for (::fixy::Index<kTraceOps> const op : ::fixy::IndexRange<kTraceOps>{}) {
+        FillOp const& next = ops.at(op);
+        if (!ring.try_append(next.entry, next.meta_start, next.scope_hash, next.callsite_hash)) [[unlikely]]
+            abort_full_ring(static_cast<uint32_t>(op.raw()), kTraceOps);
+    }
+}
+
 using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
 
 // Fills the op at position of the run with random hashes, and with n_in
@@ -321,43 +379,21 @@ int run_bench(::fixy::os::Args const& arguments) {
         auto test = ::foundation::effects::testing::test();
 
         // A TraceRing is 6 MiB and the stack is 8 MiB, so the ring lives
-        // on the heap, as it does in Vigil.
+        // on the heap, as it does in Vigil.  The fill and the drain of the
+        // ring run in the frames of its Box.
         // Each door of the ring and of the log of the bench opens the side of
         // the door for one call (test/trace_rig.h).
         ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(test.alloc);
-        crucible::test::OpenRing& ring = *ring_box;
         crucible::test::OpenLog meta_log{};
 
         bench_rng_state = 0x1111222233334444ULL;
-        constexpr uint32_t N = 481;
 
-        for (uint32_t i = 0; i < N; i++) {
-            TraceRing::Entry e{};
-            e.schema_hash = SchemaHash{bench_rand()};
-            e.shape_hash = ShapeHash{bench_rand()};
-            e.num_inputs = static_cast<uint16_t>(1 + (bench_rand() % 3));
-            e.num_outputs = static_cast<uint16_t>(1 + (bench_rand() % 2));
-            e.num_scalar_args = static_cast<uint8_t>(bench_rand() % 3);
-            e.op_flags = e.op_flags.with_grad_enabled();
-
-            const uint16_t total_metas = static_cast<uint16_t>(e.num_inputs + e.num_outputs);
-            ::fixy::FixedArray<TensorMeta, 8> metas{};
-            for (uint16_t j = 0; j < total_metas && j < 8; j++) {
-                metas.update(::fixy::Index<8>::check(j).expect("the position fits the array"),
-                             [i, j](TensorMeta& meta) noexcept {
-                                 meta.dtype = ScalarType::Float;
-                                 meta.device_type = DeviceType::CUDA;
-                                 meta.device_idx = 0;
-                                 meta.set_shape(random_shape(4));
-                                 meta.data_ptr = mint_synthetic_data_ptr(
-                                     SyntheticAddress{0x7f0000000000ULL + (i * 8 + j) * 0x1000});
-                             });
-            }
-            MetaIndex meta_start = meta_log.try_append(mint_checked_meta_run(
-                ::fixy::View<const TensorMeta>{metas.view()}.window(0, total_metas).expect("the run fits the array")));
-            if (!ring.try_append(e, meta_start, ScopeHash{bench_rand()}, CallsiteHash{bench_rand()})) [[unlikely]]
-                abort_full_ring(i, N);
-        }
+        // The ops go into the log first, and then into the ring in the frame
+        // of its Box, so the frame captures no log.
+        FillOps ops{};
+        fill_log(meta_log, ops);
+        ring_box = ::fixy::with_mut(std::move(ring_box),
+                                    [&ops](crucible::test::OpenRing& ring) noexcept { fill_ring(ring, ops); });
 
         // The bench drains the ring and builds the trace itself, so no stage
         // of the BackgroundThread reads the ring or the log.  The thread
@@ -378,13 +414,20 @@ int run_bench(::fixy::os::Args const& arguments) {
             ::fixy::mint_keyed_owner(::fixy::fixed_heap_array_owner<OpDepth, 4096>, test.alloc, OpDepth{});
         // The first n entries of the five batches are the drained trace.  No
         // later code writes the batches.
+        // The drain runs in the frame of the Box of the ring, in the frames of
+        // the five batches.
         const uint32_t n = batch.with_mut(batch_key, [&](auto batch_run) noexcept {
             return meta_batch.with_mut(meta_key, [&](auto meta_run) noexcept {
                 return scope_batch.with_mut(scope_key, [&](auto scope_run) noexcept {
                     return callsite_batch.with_mut(callsite_key, [&](auto callsite_run) noexcept {
                         return depth_batch.with_mut(depth_key, [&](auto depth_run) noexcept {
-                            return ring.drain(std::move(batch_run), std::move(meta_run), std::move(scope_run),
-                                              std::move(callsite_run), std::move(depth_run));
+                            auto [drained, held_ring] =
+                                ::fixy::with_mut(std::move(ring_box), [&](crucible::test::OpenRing& ring) noexcept {
+                                    return ring.drain(std::move(batch_run), std::move(meta_run), std::move(scope_run),
+                                                      std::move(callsite_run), std::move(depth_run));
+                                });
+                            ring_box = std::move(held_ring);
+                            return drained;
                         });
                     });
                 });

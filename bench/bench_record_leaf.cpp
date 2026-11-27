@@ -258,6 +258,25 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
                   .records = SealedRecords<2>{std::move(records)}};
 }
 
+// The report of a row on a ring and a log of its own, as a Vigil holds them.
+// The two live on the heap.  The row runs in the frames of the two Boxes,
+// with a Ref of the ring and a Ref of the log.  The frame of the ring makes
+// the Box of the log, so no body captures a Box.  A report owns its samples,
+// so it is no result of a frame: the inner body moves it into report.
+template <class Row>
+[[nodiscard]] bench::Report report_on_ring_and_log(::foundation::effects::Alloc alloc, Row const& row) {
+    ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(alloc);
+    bench::Report report{};
+    auto const on_ring = [&row, &report, alloc](crucible::test::OpenRing& ring) noexcept {
+        ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(alloc);
+        log_box = ::fixy::with_mut(std::move(log_box), [&row, &report, &ring](crucible::test::OpenLog& log) noexcept {
+            report = row(::fixy::to(ring), ::fixy::to(log));
+        });
+    };
+    ring_box = ::fixy::with_mut(std::move(ring_box), on_ring);
+    return report;
+}
+
 void feed_record(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
@@ -519,15 +538,6 @@ int main() {
     // The two rings live on the heap, as they do in Vigil.  The timed body
     // reads each ring through a Ref, so no test of a Box is in the timed loop.
     bench::add_report(reports, [&] {
-        const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
-        // Each door of the ring and of the log of the bench opens the side
-        // of the door for one call (test/trace_rig.h), as record_op opens
-        // the two producer sides of a Vigil.
-        ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(alloc);
-        ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(alloc);
-        auto const ring = ::fixy::to(*ring_box);
-        auto const log = ::fixy::to(*log_box);
-
         // The row makes no op, so it writes a plain copy of the entry in
         // place, as the ring does.
         const OpData d = make_op(0, 1);
@@ -536,17 +546,23 @@ int main() {
         // carries its run.
         const crucible::MetaRun records = crucible::mint_checked_meta_run(d.records->view());
         uint64_t tick = 0;
-        return bench::Run("record leaf [2 appends, no drainer]").core(record_core_of(cores)).measure([&] {
-            entry.schema_hash = SchemaHash{0x1000000u + tick++};
-            MetaIndex meta_start = log->try_append(records);
-            if (!meta_start.is_valid()) [[unlikely]] {
-                log->reset();
-                meta_start = log->try_append(records);
-            }
-            if (!ring->try_append(entry, meta_start, ScopeHash{}, CallsiteHash{})) [[unlikely]] {
-                ring->reset();
-            }
-        });
+        // Each door of the ring and of the log of the bench opens the side
+        // of the door for one call (test/trace_rig.h), as record_op opens
+        // the two producer sides of a Vigil.
+        return report_on_ring_and_log(
+            ::foundation::effects::testing::test().alloc, [&](auto const ring, auto const log) {
+                return bench::Run("record leaf [2 appends, no drainer]").core(record_core_of(cores)).measure([&] {
+                    entry.schema_hash = SchemaHash{0x1000000u + tick++};
+                    MetaIndex meta_start = log->try_append(records);
+                    if (!meta_start.is_valid()) [[unlikely]] {
+                        log->reset();
+                        meta_start = log->try_append(records);
+                    }
+                    if (!ring->try_append(entry, meta_start, ScopeHash{}, CallsiteHash{})) [[unlikely]] {
+                        ring->reset();
+                    }
+                });
+            });
     }());
 
     // ── The recording leaf, ring guaranteed to have room ────────────

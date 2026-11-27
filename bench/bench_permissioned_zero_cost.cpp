@@ -98,41 +98,49 @@ using BareRing = ::fixy::concurrent::MpscRing<Item, kCap, BareRingOwner>;
 
 bench::Report bare_mpsc_push() {
     ::fixy::Box<BareRing> ring_box = ::fixy::mint_box<BareRing>(kAlloc);
-    auto const ring = ::fixy::to(*ring_box);
-    Item i = 0;
-    return bench::run("bare MpscRing.try_push", [&] {
-        const bool ok = ring->try_push(++i);
-        bench::do_not_optimize(ok);
+    bench::Report report{};
+    ring_box = ::fixy::with_mut(std::move(ring_box), [&report](BareRing& ring) noexcept {
+        Item i = 0;
+        report = bench::run("bare MpscRing.try_push", [&] {
+            const bool ok = ring.try_push(++i);
+            bench::do_not_optimize(ok);
+        });
     });
+    return report;
 }
 
 bench::Report wrapped_mpsc_push() {
     auto [producer_root, consumer_perm] = bench_halves();
     (void)consumer_perm;
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(kAlloc, std::move(producer_root));
-    Item i = 0;
     bench::Report report{};
-    auto const lent = ::fixy::concurrent::with_producer(*ch, kNondet, [&i, &report](auto p) noexcept {
-        report = bench::run("wrapped Permissioned MPSC.ProducerHandle::try_push", [&] {
-            const bool ok = p.try_push(++i);
-            bench::do_not_optimize(ok);
+    ch = ::fixy::with_mut(std::move(ch), [&report](Channel& channel) noexcept {
+        Item i = 0;
+        auto const lent = ::fixy::concurrent::with_producer(channel, kNondet, [&i, &report](auto p) noexcept {
+            report = bench::run("wrapped Permissioned MPSC.ProducerHandle::try_push", [&] {
+                const bool ok = p.try_push(++i);
+                bench::do_not_optimize(ok);
+            });
         });
+        CRUCIBLE_BENCH_CHECK(lent.is_some());
     });
-    CRUCIBLE_BENCH_CHECK(lent.is_some());
     return report;
 }
 
 bench::Report bare_mpsc_pop() {
     ::fixy::Box<BareRing> ring_box = ::fixy::mint_box<BareRing>(kAlloc);
-    auto const ring = ::fixy::to(*ring_box);
-    for (Item i = 0; i < kCap / 2; ++i)
-        (void)ring->try_push(i);
-    // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
-    const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
-    return bench::run("bare MpscRing.try_pop", [&] {
-        auto v = ring->try_pop(BareRingOwner::consumer(), merge);
-        bench::do_not_optimize(v);
+    bench::Report report{};
+    ring_box = ::fixy::with_mut(std::move(ring_box), [&report](BareRing& ring) noexcept {
+        for (Item i = 0; i < kCap / 2; ++i)
+            (void)ring.try_push(i);
+        // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
+        const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
+        report = bench::run("bare MpscRing.try_pop", [&] {
+            auto v = ring.try_pop(BareRingOwner::consumer(), merge);
+            bench::do_not_optimize(v);
+        });
     });
+    return report;
 }
 
 bench::Report wrapped_mpsc_pop() {

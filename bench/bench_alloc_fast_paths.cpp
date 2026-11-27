@@ -536,6 +536,20 @@ template <class Calls>
     return rows;
 }
 
+// The rows of one allocator on the blocks of the Box blocks, in a frame of the
+// Box.  make_calls gives the calls of the allocator in the body, because the
+// calls of the hearth hold the heap of the thread, and a frame body captures
+// no such reference.  A row set owns its reports, so it is no result of a
+// frame: the body moves it into rows.
+template <class MakeCalls>
+[[nodiscard]] RowSet run_rows_in(fixy::TextView label, MakeCalls const& make_calls, core::Box<Blocks>& blocks) {
+    RowSet rows{};
+    blocks = core::with_mut(std::move(blocks), [label, &make_calls, &rows](Blocks& held) noexcept {
+        rows = run_rows(label, make_calls(), held);
+    });
+    return rows;
+}
+
 // The rows of one allocator, with its name at the start of each line.
 void print_rows(fixy::TextView name, RowSet const& rows) noexcept {
     bench::print("  {}:\n", name);
@@ -623,7 +637,8 @@ int run_bench() {
     alloc::HeapState& heap = alloc::claim_thread_heap();
     bench::print("=== alloc_fast_paths: blocks of 16 bytes, the mean of one operation in a window of {} operations\n",
                  kBatch);
-    RowSet const hearth = run_rows("hearth", HearthCalls{heap}, *blocks);
+    RowSet const hearth =
+        run_rows_in("hearth", [] noexcept { return HearthCalls{alloc::claim_thread_heap()}; }, blocks);
     print_rows("hearth", hearth);
     core::ElementCount const window{kBatch};
     PairLoop<HearthCallCalls> call_pair{HearthCallCalls{heap}};
@@ -637,13 +652,13 @@ int run_bench() {
     bench::do_not_optimize(scope_pair.sum);
     print_row("hearth pair, scope     ", hearth_scope);
 #if defined(CRUCIBLE_BENCH_MIMALLOC)
-    RowSet const mimalloc = run_rows("mimalloc", MimallocCalls{}, *blocks);
+    RowSet const mimalloc = run_rows_in("mimalloc", [] noexcept { return MimallocCalls{}; }, blocks);
     print_rows("mimalloc 3.7.0", mimalloc);
 #else
     bench::print("  mimalloc: the pin is not installed, so the bench has no row of it\n");
 #endif
 #if defined(CRUCIBLE_BENCH_JEMALLOC)
-    RowSet const jemalloc = run_rows("jemalloc", JemallocCalls{}, *blocks);
+    RowSet const jemalloc = run_rows_in("jemalloc", [] noexcept { return JemallocCalls{}; }, blocks);
     print_rows("jemalloc 5.4.0", jemalloc);
 #else
     bench::print("  jemalloc: the pin is not installed, so the bench has no row of it\n");

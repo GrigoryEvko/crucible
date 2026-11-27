@@ -131,14 +131,8 @@ bench::Report bench_typed_send_recv(Producer producer, Consumer consumer) {
     return std::move(report);
 }
 
-}  // namespace
-
-int main() {
-    static_assert(sizeof(PermissionedLog::ProducerEnd) == sizeof(void*));
-    static_assert(sizeof(PermissionedLog::ConsumerEnd) == sizeof(void*));
-
-    ::fixy::Box<RawLog> raw_owner = ::fixy::mint_box<RawLog>(kAlloc);
-    RawLog& raw = *raw_owner;
+// The rows of the bench, with the raw log raw for the raw row.
+void run_rows(RawLog& raw) noexcept {
     PermissionedLog log{kAlloc};
 
     namespace fp = ::foundation::permissions;
@@ -175,5 +169,17 @@ int main() {
 
         bench::emit_reports_json(reports.view(), bench::env_json());
     });
+}
+
+}  // namespace
+
+int main() {
+    static_assert(sizeof(PermissionedLog::ProducerEnd) == sizeof(void*));
+    static_assert(sizeof(PermissionedLog::ConsumerEnd) == sizeof(void*));
+
+    // The raw log lives on the heap, and the rows run in the frame of its Box.
+    ::fixy::Box<RawLog> raw_owner = ::fixy::mint_box<RawLog>(kAlloc);
+    [[maybe_unused]] ::fixy::Box<RawLog> const raw_held =
+        ::fixy::with_mut(std::move(raw_owner), [](RawLog& raw) noexcept { run_rows(raw); });
     return 0;
 }

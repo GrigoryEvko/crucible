@@ -531,33 +531,42 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
                                + (size_t{total_inputs} + total_outputs) * sizeof(SlotId);
         ::fixy::Box<::fixy::BumpArena<DagArena>> region_arena =
             ::fixy::mint_box<::fixy::BumpArena<DagArena>>(A, kRunAlignments.plus(Bytes{run_bytes}));
-        const auto op_arena_run = region_arena->build_array<TraceEntry>(
-            A, ::fixy::ElementCount{count}, [](::fixy::RunStart) noexcept { return TraceEntry{}; });
-        const auto scalar_arena_run = region_arena->array(A, total_scalars, int64_t{0});
-        const auto producer_arena_run = region_arena->array(A, total_inputs, OpIndex{});
-        const auto slot_arena_run = region_arena->array(A, total_inputs + total_outputs, SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TraceEntry const> op_run = op_arena_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<int64_t const> scalar_run = scalar_arena_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<OpIndex const> producer_run = producer_arena_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<SlotId const> slot_run = slot_arena_run.view();
-        BuildScratchOfBench::ensure_buffers(state, A, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{total_outputs});
-        const uint32_t slot_cap = ::fixy::min(BuildScratchOfBench::slot_capacity(state),
-                                              ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
-        build_scratch.arena.with_epoch([slot_cap](TraceScratch::Epoch& epoch) noexcept {
-            const auto slot_infos = epoch.array(A, slot_cap, BackgroundThread::SlotInfo{});
-            bench::do_not_optimize(slot_infos);
+        // The runs come from the arena in the frame of its Box.  The frame
+        // opens at the first read of the arena, with the one test that a read
+        // through the Box makes.  It closes after the end of the window, with
+        // the sinks of the four views, so the window holds the work of P1
+        // only.
+        uint64_t t1 = 0;
+        region_arena = ::fixy::with_mut(std::move(region_arena), [&](::fixy::BumpArena<DagArena>& arena) noexcept {
+            const auto op_arena_run = arena.build_array<TraceEntry>(
+                A, ::fixy::ElementCount{count}, [](::fixy::RunStart) noexcept { return TraceEntry{}; });
+            const auto scalar_arena_run = arena.array(A, total_scalars, int64_t{0});
+            const auto producer_arena_run = arena.array(A, total_inputs, OpIndex{});
+            const auto slot_arena_run = arena.array(A, total_inputs + total_outputs, SlotId{});
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<TraceEntry const> op_run = op_arena_run.view();
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<int64_t const> scalar_run = scalar_arena_run.view();
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<OpIndex const> producer_run = producer_arena_run.view();
+            // A plain View of an arena run: the View carries no brand of its arena.
+            const ::fixy::View<SlotId const> slot_run = slot_arena_run.view();
+            BuildScratchOfBench::ensure_buffers(state, A,
+                                                ::fixy::Quantity<::fixy::unit::Element, uint32_t>{total_outputs});
+            const uint32_t slot_cap = ::fixy::min(BuildScratchOfBench::slot_capacity(state),
+                                                  ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
+            build_scratch.arena.with_epoch([slot_cap](TraceScratch::Epoch& epoch) noexcept {
+                const auto slot_infos = epoch.array(A, slot_cap, BackgroundThread::SlotInfo{});
+                bench::do_not_optimize(slot_infos);
+            });
+
+            t1 = bench::rdtsc_end();
+
+            bench::do_not_optimize(op_run);
+            bench::do_not_optimize(scalar_run);
+            bench::do_not_optimize(producer_run);
+            bench::do_not_optimize(slot_run);
         });
-
-        const uint64_t t1 = bench::rdtsc_end();
-
-        bench::do_not_optimize(op_run);
-        bench::do_not_optimize(scalar_run);
-        bench::do_not_optimize(producer_run);
-        bench::do_not_optimize(slot_run);
         ns_p1 += static_cast<double>(t1 - t0) * nspc;
     }
 
@@ -646,26 +655,30 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
         const ::fixy::View<const CallsiteHash> callsite_hashes = trace.callsite_hashes.view();
         const ::fixy::View<const OpDepth> depths = trace.depths.view();
         uint64_t t0 = 0;
+        uint64_t t1 = 0;
 
         // The reads of the loop of build_trace_from: one branded index of an
         // op reads each of the five arrays and the op buffer.  copy_ops_ makes
-        // the runs and starts the clock.
-        const CopiedOps copied = ::fixy::mint_branded_scope(
-            trace.entries.view(), [&region = *region_arena, &log_read, first_meta, counts, &t0, meta_starts,
-                                   scope_hashes, callsite_hashes, depths](auto trace_data) noexcept {
-                return copy_ops_(region, log_read, first_meta, counts, t0, trace_data,
-                                 trace_data.parallel(meta_starts).expect("the arrays of a trace are parallel"),
-                                 trace_data.parallel(scope_hashes).expect("the arrays of a trace are parallel"),
-                                 trace_data.parallel(callsite_hashes).expect("the arrays of a trace are parallel"),
-                                 trace_data.parallel(depths).expect("the arrays of a trace are parallel"));
-            });
-        const ::fixy::View<TraceEntry const> ops = copied.ops.view();
+        // the runs and starts the clock.  The copy and the check of the ops
+        // run in the frame of the Box of the arena, which holds the runs.
+        region_arena = ::fixy::with_mut(std::move(region_arena), [&](::fixy::BumpArena<DagArena>& arena) noexcept {
+            const CopiedOps copied = ::fixy::mint_branded_scope(
+                trace.entries.view(), [&arena, &log_read, first_meta, counts, &t0, meta_starts, scope_hashes,
+                                       callsite_hashes, depths](auto trace_data) noexcept {
+                    return copy_ops_(arena, log_read, first_meta, counts, t0, trace_data,
+                                     trace_data.parallel(meta_starts).expect("the arrays of a trace are parallel"),
+                                     trace_data.parallel(scope_hashes).expect("the arrays of a trace are parallel"),
+                                     trace_data.parallel(callsite_hashes).expect("the arrays of a trace are parallel"),
+                                     trace_data.parallel(depths).expect("the arrays of a trace are parallel"));
+                });
+            const ::fixy::View<TraceEntry const> ops = copied.ops.view();
 
-        const uint64_t t1 = bench::rdtsc_end();
-        bench::do_not_optimize(ops);
-        bench::do_not_optimize(copied.copied);
+            t1 = bench::rdtsc_end();
+            bench::do_not_optimize(ops);
+            bench::do_not_optimize(copied.copied);
+            check_ops_without_metas(ops, trace.meta_starts.view());
+        });
         ns_p2a += static_cast<double>(t1 - t0) * nspc;
-        check_ops_without_metas(ops, trace.meta_starts.view());
     }
 
     // ── P2b: Content hash only ────────────────────────────────────
@@ -840,29 +853,34 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
             constexpr ::fixy::ArenaBlockSize kSlotAlignment{Bytes{alignof(TensorSlot)}};
             ::fixy::Box<::fixy::BumpArena<DagArena>> slot_arena = ::fixy::mint_box<::fixy::BumpArena<DagArena>>(
                 A, kSlotAlignment.plus(Bytes{num_slots * sizeof(TensorSlot)}));
-            auto slots_run = slot_arena->array(A, num_slots, TensorSlot{});
-            // A plain View of an arena run: the View carries no brand of its arena.
-            const ::fixy::View<TensorSlot> slots = slots_run.view();
-            uint32_t position = 0;
-            for (const auto [info, slot] :
-                 built_slots.walk().try_zip(slots.walk()).expect("the run of the slots holds each slot")) {
-                *slot = TensorSlot{.offset_bytes = 0,
-                                   .nbytes = info->nbytes,
-                                   .birth_op = info->birth_op,
-                                   .death_op = info->death_op,
-                                   .dtype = info->dtype,
-                                   .device_type = info->device_type,
-                                   .device_idx = info->device_idx,
-                                   .layout = info->layout,
-                                   .is_external = info->is_external,
-                                   .pad = {},
-                                   .slot_id = SlotId{position},
-                                   .pad2 = {}};
-                ++position;
-            }
+            // The run comes from the arena in the frame of its Box, and the
+            // frame keeps the view until its sink.
+            uint64_t t1 = 0;
+            slot_arena = ::fixy::with_mut(std::move(slot_arena), [&](::fixy::BumpArena<DagArena>& arena) noexcept {
+                auto slots_run = arena.array(A, num_slots, TensorSlot{});
+                // A plain View of an arena run: the View carries no brand of its arena.
+                const ::fixy::View<TensorSlot> slots = slots_run.view();
+                uint32_t position = 0;
+                for (const auto [info, slot] :
+                     built_slots.walk().try_zip(slots.walk()).expect("the run of the slots holds each slot")) {
+                    *slot = TensorSlot{.offset_bytes = 0,
+                                       .nbytes = info->nbytes,
+                                       .birth_op = info->birth_op,
+                                       .death_op = info->death_op,
+                                       .dtype = info->dtype,
+                                       .device_type = info->device_type,
+                                       .device_idx = info->device_idx,
+                                       .layout = info->layout,
+                                       .is_external = info->is_external,
+                                       .pad = {},
+                                       .slot_id = SlotId{position},
+                                       .pad2 = {}};
+                    ++position;
+                }
 
-            const uint64_t t1 = bench::rdtsc_end();
-            bench::do_not_optimize(slots);
+                t1 = bench::rdtsc_end();
+                bench::do_not_optimize(slots);
+            });
             ns_p3 += static_cast<double>(t1 - t0) * nspc;
         }
     }

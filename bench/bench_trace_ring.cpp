@@ -12,6 +12,20 @@ namespace {
 // The allocation capability of the ring of each row.
 constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
+// The report of a row on a ring of its own.  The ring is on the heap, and the
+// row runs in the frame with_mut(std::move(ring_box), body) of its Box, with a
+// Ref of the ring.  A report owns its samples, so it is no result of a frame:
+// the body moves it into report.
+template <class Row>
+[[nodiscard]] bench::Report report_on_ring(Row const& row) {
+    ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
+    bench::Report report{};
+    ring_box = ::fixy::with_mut(std::move(ring_box), [&row, &report](crucible::test::OpenRing& ring) noexcept {
+        report = row(::fixy::to(ring));
+    });
+    return report;
+}
+
 }  // namespace
 
 int main() {
@@ -33,9 +47,7 @@ int main() {
     // (OpenRing of test/trace_rig.h), as the record path opens the producer
     // side of the ring of a Vigil.
     ::fixy::FixedArray<bench::Report, 5> reports{
-        [&] {
-            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
+        report_on_ring([&](auto const ring) {
             crucible::TraceRing::Entry e{};
             std::uint64_t h = 0;
             // Note: body performs ring.reset() inside the timed region when
@@ -48,10 +60,8 @@ int main() {
                 bench::do_not_optimize(ok);
                 if (!ok) ring->reset();  // prevent full-ring saturation
             });
-        }(),
-        [&] {
-            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
+        }),
+        report_on_ring([&](auto const ring) {
             crucible::TraceRing::Entry e{};
             e.schema_hash = crucible::SchemaHash{0xABCDEF};
             // Same (+reset-on-full) trade-off as above; entry stays constant
@@ -61,28 +71,20 @@ int main() {
                 bench::do_not_optimize(ok);
                 if (!ok) ring->reset();
             });
-        }(),
-        [&] {
-            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
+        }),
+        report_on_ring([&](auto const ring) {
             return bench::run("ring.size()", [&] {
                 const auto s = ring->size();
                 bench::do_not_optimize(s);
             });
-        }(),
-        [&] {
-            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
+        }),
+        report_on_ring([&](auto const ring) {
             return bench::run("ring.total_produced()", [&] {
                 const auto s = ring->total_produced();
                 bench::do_not_optimize(s);
             });
-        }(),
-        [&] {
-            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
-            auto const ring = ::fixy::to(*ring_box);
-            return bench::run("ring.reset()", [&] { ring->reset(); });
-        }(),
+        }),
+        report_on_ring([&](auto const ring) { return bench::run("ring.reset()", [&] { ring->reset(); }); }),
     };
 
     bench::emit_reports_text(reports.view());
