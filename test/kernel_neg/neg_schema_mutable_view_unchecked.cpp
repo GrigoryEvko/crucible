@@ -7,10 +7,13 @@
 
 #include <crucible/SchemaTable.h>
 
+// A write section of the table.  The fixture never links, so the function
+// has no body.
+crucible::WriteSection<crucible::SchemaTable>& held_section() noexcept;
+
 int main() {
     crucible::SchemaTable table;
-    table.register_name(::foundation::effects::testing::foreground<crucible::Vigil>(),
-                        ::foundation::effects::testing::test().alloc,
+    table.register_name(held_section(), ::foundation::effects::testing::test().alloc,
                         table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>()),
                         crucible::InternalSchemaName{crucible::SchemaHash{0x42}, ::fixy::TextView{"aten::mm"}});
     return 0;

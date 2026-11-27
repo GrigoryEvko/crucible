@@ -8,7 +8,9 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 #include "padding_bytes.h"
+#include "write_section_overlap.h"
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -38,6 +40,45 @@ using ExtHash = ::fixy::Tagged<crucible::SchemaHash, ::fixy::tags::source::Exter
 // A mutable view asks for the context of a Vigil's producer claim.  These
 // tests use no Vigil, so they take that context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
+
+// Registers one schema in table through a write section of its own, or gives
+// false when the claim gives no section, because the table is sealed.
+[[nodiscard]] static bool register_in_section(crucible::CKernelTable& table,
+                                              crucible::CKernelTable::MutableView const& view,
+                                              crucible::SchemaHash schema_hash, crucible::CKernelId id) {
+    return table.try_enter_write_section(kTest).match(
+        [&table, &view, schema_hash, id](crucible::WriteSection<crucible::CKernelTable> section) {
+            table.register_op(section, view, schema_hash, id);
+            return true;
+        },
+        [] { return false; });
+}
+
+// Takes the section away from its caller.  The move leaves the section of the
+// caller with no binding, through a route that the rule use-after-move does
+// not read: a callee that takes the section by an lvalue reference.
+static void take_section_away(crucible::WriteSection<crucible::CKernelTable>& section) noexcept {
+    crucible::WriteSection<crucible::CKernelTable> const taken{std::move(section)};
+}
+
+// register_op refuses a section that a move emptied, in a child process of
+// expect_dies.
+static void register_through_a_moved_section() noexcept {
+    crucible::CKernelTable table;
+    const auto view = table.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    static_cast<void>(table.try_enter_write_section(kTest).match(
+        [&table, &view](crucible::WriteSection<crucible::CKernelTable> section) noexcept {
+            take_section_away(section);
+            table.register_op(section, view, crucible::SchemaHash{0x61}, crucible::CKernelId::GEMM_MM);
+            return true;
+        },
+        [] noexcept { return false; }));
+}
+
+// The proof of a reopen of a kernel table, which the test context builds.
+[[nodiscard]] static crucible::TableReopen<crucible::CKernelTable> reopen_of_test() {
+    return crucible::TableReopen<crucible::CKernelTable>{::foundation::effects::testing::test()};
+}
 
 int main() {
     using namespace crucible;
@@ -130,7 +171,7 @@ int main() {
         CRUCIBLE_TEST_ASSERT(test, !t.is_sealed());
         const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
 
-        const bool was_registered = t.register_op(kTest, mv, SchemaHash{0x1}, CKernelId::GEMM_MM);
+        const bool was_registered = register_in_section(t, mv, SchemaHash{0x1}, CKernelId::GEMM_MM);
         CRUCIBLE_TEST_ASSERT(test, was_registered);
         CRUCIBLE_TEST_ASSERT(test, t.count() == 1);
 
@@ -145,21 +186,22 @@ int main() {
 
         // A view minted before the seal proves only that the table was open
         // then.  Its write after the seal is refused and changes nothing.
-        const bool was_added_after_seal = t.register_op(kTest, mv, SchemaHash{0x3}, CKernelId::SDPA);
+        const bool was_added_after_seal = register_in_section(t, mv, SchemaHash{0x3}, CKernelId::SDPA);
         CRUCIBLE_TEST_ASSERT(test, !was_added_after_seal);
-        const bool was_replaced_after_seal = t.register_op(kTest, mv, SchemaHash{0x1}, CKernelId::SDPA);
+        const bool was_replaced_after_seal = register_in_section(t, mv, SchemaHash{0x1}, CKernelId::SDPA);
         CRUCIBLE_TEST_ASSERT(test, !was_replaced_after_seal);
         CRUCIBLE_TEST_ASSERT(test, t.count() == 1);
         CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x1}) == CKernelId::GEMM_MM);
         CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x3}) == CKernelId::OPAQUE);
 
         // Clearing resets the seal along with the entries.
-        t.clear(::foundation::effects::testing::test());
+        t.clear(reopen_of_test());
         CRUCIBLE_TEST_ASSERT(test, !t.is_sealed());
         CRUCIBLE_TEST_ASSERT(test, t.count() == 0);
 
         const auto mv_after_clear = t.mint_mutable_view(kVigilForeground).expect("a cleared table is open");
-        const bool was_registered_after_clear = t.register_op(kTest, mv_after_clear, SchemaHash{0x2}, CKernelId::SDPA);
+        const bool was_registered_after_clear =
+            register_in_section(t, mv_after_clear, SchemaHash{0x2}, CKernelId::SDPA);
         CRUCIBLE_TEST_ASSERT(test, was_registered_after_clear);
         CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x2}) == CKernelId::SDPA);
     }
@@ -167,7 +209,7 @@ int main() {
     {
         CKernelTable t;
         const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-        const bool was_registered = t.register_op(kTest, mv, SchemaHash{0x42}, CKernelId::CONV2D);
+        const bool was_registered = register_in_section(t, mv, SchemaHash{0x42}, CKernelId::CONV2D);
         CRUCIBLE_TEST_ASSERT(test, was_registered);
         CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x42}) == CKernelId::CONV2D);
     }
@@ -177,9 +219,9 @@ int main() {
     {
         CKernelTable t;
         const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-        const bool was_mm_registered = t.register_op(kTest, mv, SchemaHash{0x111}, CKernelId::GEMM_MM);
+        const bool was_mm_registered = register_in_section(t, mv, SchemaHash{0x111}, CKernelId::GEMM_MM);
         CRUCIBLE_TEST_ASSERT(test, was_mm_registered);
-        const bool was_norm_registered = t.register_op(kTest, mv, SchemaHash{0x222}, CKernelId::LAYER_NORM);
+        const bool was_norm_registered = register_in_section(t, mv, SchemaHash{0x222}, CKernelId::LAYER_NORM);
         CRUCIBLE_TEST_ASSERT(test, was_norm_registered);
         t.seal(kTest);
         CRUCIBLE_TEST_ASSERT(test, t.classify(SchemaHash{0x111}) == CKernelId::GEMM_MM);
@@ -200,11 +242,25 @@ int main() {
     CRUCIBLE_TEST_ASSERT(test, !was_registered_after_seal);
     CRUCIBLE_TEST_ASSERT(test, classify_kernel(HASH_UNKNOWN) == CKernelId::OPAQUE);
 
-    global_ckernel_table().value()->clear(::foundation::effects::testing::test());
+    global_ckernel_table().value()->clear(reopen_of_test());
 
     // A table holds 256 entries, and each padding byte of an entry costs one
     // store at each initialization of an automatic table (padding_bytes.h).
     crucible::test::expect_no_padding_byte<^^CKernelEntry>(kTest);
+
+    // A section that a move emptied names no seal, so register_op refuses it.
+    ::fixy::check::expect_dies(test, register_through_a_moved_section,
+                               ::fixy::TextView{"contract violation: section.names(seal_)"});
+
+    // Two writers on two threads take the section of one table again and
+    // again, and no two sections of the table exist at once
+    // (write_section_overlap.h).
+    {
+        CKernelTable t;
+        const crucible::test::SectionOverlap counted = crucible::test::run_two_writers(t);
+        CRUCIBLE_TEST_ASSERT(test, counted.taken == 2 * crucible::test::kSectionRounds);
+        CRUCIBLE_TEST_ASSERT(test, counted.overlaps == 0 && counted.inside == 0);
+    }
 
     ::fixy::check::pass(test, "test_ckernel: all tests passed\n");
     return 0;

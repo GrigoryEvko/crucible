@@ -1,9 +1,10 @@
 // Negative-compile test. This file must fail to compile.
 //
-// A registration takes the context of its writer: the context of a Vigil's
-// producer claim, which takes the write section with one compare-exchange,
-// or a context that owns Div, which spins while another writer holds the
-// section.  The cold init context is neither, so it fails the gate.
+// The claim of the write section takes the context of its writer: the
+// context of a Vigil's producer claim, which takes the write section with one
+// compare-exchange, or a context that owns Div, which spins while another
+// writer holds the section.  The cold init context is neither, so it fails
+// the gate, and no registration of it gets a section.
 //
 // Expected diagnostic: CtxMayEnterWriteSection is not satisfied for the cold
 // init context.
@@ -16,9 +17,5 @@
 int main() {
     const ::fixy::ColdInitCtx init{::foundation::effects::testing::init()};
     crucible::SchemaTable table;
-    const auto view = table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>())
-                          .expect("an open table mints a mutable view");
-    (void)table.register_name(init, ::foundation::effects::testing::test().alloc, view,
-                              crucible::InternalSchemaName{crucible::SchemaHash{0x42}, ::fixy::TextView{"aten::mm"}});
-    return 0;
+    return table.try_enter_write_section(init).is_some() ? 0 : 1;
 }

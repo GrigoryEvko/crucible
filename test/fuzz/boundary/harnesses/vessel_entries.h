@@ -586,8 +586,8 @@ inline void run_vessel_entries(::fixy::View<std::byte const> bytes) noexcept {
     // comes before the state of each input.
     static_cast<void>(vessel_entries::harness_vigil());
     static_cast<void>(vessel_entries::handle_state());
-    global_schema_table().clear(::foundation::effects::testing::test());
-    late_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
+    late_schema_table().clear(TableReopen<LateSchemaTable>{::foundation::effects::testing::test()});
     if (cursor.take<std::uint8_t>() % 2U == std::to_underlying(vessel_entries::TableState::GlobalSealed))
         global_schema_table().seal(kHarnessCtx);
 

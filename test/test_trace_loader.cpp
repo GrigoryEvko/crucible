@@ -553,7 +553,7 @@ static TraceImage make_zero_op_header() {
 // gave the trace.
 static void
 test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::Sanitized> const& trace_path) {
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     constexpr SchemaHash kFirstHash{0xAAAA111122223333ULL};
     constexpr SchemaHash kHeldHash{0xBBBB444455556666ULL};
     constexpr SchemaHash kLaterHash{0xCCCC777788889999ULL};
@@ -595,7 +595,7 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
                    .is_some());
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(kHeldHash), "aten::held"));
 
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     ::fixy::check::pass(kTest, "  test_schema_name_table_collision_is_refused: PASSED\n");
 }
 
@@ -628,7 +628,7 @@ static void register_outside_fillers(::fixy::ElementCount count) {
 // load runs in a child, so the test reads the report on the standard error of
 // the child.  The old load put aten::add in the last place and gave the trace.
 static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::source::Sanitized> const& trace_path) {
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     constexpr SchemaHash kFirstHash{0xAAAA111122223333ULL};
     constexpr SchemaHash kRefusedHash{0xBBBB444455556666ULL};
     constexpr SchemaHash kLaterHash{0xCCCC777788889999ULL};
@@ -663,13 +663,13 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
 
     // A table with three places for names from outside takes the three new
     // names of the trace.  The room of internal names stays out of the count.
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     register_outside_fillers(::fixy::ElementCount{kOutsideNames - 3});
     CRUCIBLE_TEST_ASSERT(kTest, load_trace(kTestIo, kVigilForeground, trace_path, kNoReservedNames).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == kOutsideNames);
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(kLaterHash), "aten::matmul"));
 
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     ::fixy::check::pass(kTest, "  test_schema_name_table_full_is_refused: PASSED\n");
 }
 
@@ -696,7 +696,7 @@ static constexpr ::fixy::Option<SchemaNameParts> find_mul_name_on_mul_hash(Schem
 // ended the process.
 static void
 test_schema_name_reserved_for_other_name_is_refused(::fixy::Path<::fixy::tags::source::Sanitized> const& trace_path) {
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     constexpr SchemaNameReserve kOtherName{SchemaNameSearchOf<&find_other_name_on_mul_hash>{}};
     constexpr SchemaNameReserve kSameName{SchemaNameSearchOf<&find_mul_name_on_mul_hash>{}};
     CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, kVigilForeground, trace_path, kOtherName),
@@ -704,12 +704,12 @@ test_schema_name_reserved_for_other_name_is_refused(::fixy::Path<::fixy::tags::s
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, load_trace(kTestIo, kVigilForeground, trace_path, kSameName).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(kMulHash), "aten::mul"));
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     ::fixy::check::pass(kTest, "  test_schema_name_reserved_for_other_name_is_refused: PASSED\n");
 }
 
 static void test_schema_name_table_round_trip() {
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
 
     auto buf = make_zero_op_header();
     append_le<uint32_t>(buf, 3);  // num_names
@@ -749,7 +749,7 @@ static void test_schema_name_table_round_trip() {
     test_schema_name_reserved_for_other_name_is_refused(path);
     remove_image(kFileName);
 
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     ::fixy::check::pass(kTest, "  test_schema_name_table_round_trip: PASSED\n");
 }
 
@@ -758,7 +758,7 @@ static void test_schema_name_table_corrupt_zero_len() {
     // minimum, the hash would be bound to the empty string, and every later
     // lookup of that hash would return it.  The file is corrupt, so the load
     // refuses it whole.
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
 
     auto buf = make_zero_op_header();
     append_le<uint32_t>(buf, 1);  // num_names
@@ -776,7 +776,7 @@ static void test_schema_name_table_corrupt_zero_len() {
     CRUCIBLE_TEST_ASSERT(kTest, missing(global_schema_table().lookup(SchemaHash{0xDEADBEEFCAFEBABEULL})));
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
 
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     ::fixy::check::pass(kTest, "  test_schema_name_table_corrupt_zero_len: PASSED\n");
 }
 
@@ -797,7 +797,7 @@ static void test_schema_name_table_corrupt_oversize_len() {
 // that registers the names refuses it for the same reason and registers no
 // name.
 static bool is_refused_whole(TraceImage const& image, TraceLoadError error) {
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     constexpr ::fixy::CText kFileName{"crtrace-refused-name.bin"};
     const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(image.view(), kFileName);
     const bool is_load_refused = is_refused_as(load_trace(kTestIo, kVigilForeground, path, kNoReservedNames), error);
@@ -840,7 +840,7 @@ static void test_names_that_the_validator_refuses_are_refused() {
         append_text(repeated, "aten::x");
     }
     CRUCIBLE_TEST_ASSERT(kTest, is_refused_whole(repeated, TraceLoadError::NameRepeated));
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     ::fixy::check::pass(kTest, "  test_names_the_validator_refuses: PASSED\n");
 }
 
@@ -1004,7 +1004,7 @@ static void test_cut_files_at_the_section_boundaries_are_refused() {
                                                         sections.first_name};
     constexpr ::fixy::CText kFileName{"crtrace-cut.bin"};
     for (const std::size_t length : boundaries) {
-        global_schema_table().clear(::foundation::effects::testing::test());
+        global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
         const ::fixy::Path<::fixy::tags::source::Sanitized> path =
             write_image(image.view().window(0, length).expect("a cut is a prefix of the image"), kFileName);
         const ::fixy::Result<LoadedTrace, TraceLoadError> loaded =
@@ -1022,7 +1022,7 @@ static void test_cut_files_at_the_section_boundaries_are_refused() {
     CRUCIBLE_TEST_ASSERT(kTest, trace.num_ops == 2 && trace.num_metas == 4);
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(SchemaHash{0xAAAA111122223333ULL}), "aten::add"));
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(SchemaHash{0xBBBB444455556666ULL}), "aten::mul"));
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     ::fixy::check::pass(kTest, "  test_cut_files_are_refused:     PASSED\n");
 }
 
@@ -1049,7 +1049,7 @@ static void test_trailing_byte_and_count_past_the_bound_are_refused() {
 // refused a table of more than 1024 names, though the late table holds
 // LATE_SCHEMA_TABLE_CAP names.
 static void test_the_writer_maxima_pass_the_check() {
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     auto longest = make_zero_op_header();
     append_le<uint32_t>(longest, 1);
     append_le<uint64_t>(longest, 0x10E6ULL);
@@ -1072,7 +1072,7 @@ static void test_the_writer_maxima_pass_the_check() {
     remove_image(kLongestFile);
     CRUCIBLE_TEST_ASSERT(kTest, is_registered);
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(SchemaHash{0x10E6ULL}), longest_name.view()));
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
 
     const ::fixy::HeapArray<std::byte> widest =
         make_widest_name_table([](uint32_t index) noexcept { return uint64_t{index} + 1; });
@@ -1081,7 +1081,7 @@ static void test_the_writer_maxima_pass_the_check() {
         checked.match([](CheckedTraceImage const& image) noexcept { return image.num_names() == TRACE_NAMES_MAX; },
                       [](TraceLoadError) noexcept { return false; });
     CRUCIBLE_TEST_ASSERT(kTest, holds_each_name);
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     ::fixy::check::pass(kTest, "  test_the_writer_maxima:         PASSED\n");
 }
 
@@ -1271,7 +1271,7 @@ static void test_meta_bytes_break_no_claim_of_the_type() {
 // with no name in the table.  A trace with no name loads, and a load that
 // skips the names loads each trace.
 static void test_names_on_a_sealed_table_refuse_the_load() {
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     global_schema_table().seal(kTest);
 
     auto buf = make_zero_op_header();
@@ -1302,7 +1302,7 @@ static void test_names_on_a_sealed_table_refuse_the_load() {
     remove_image(kNamelessFile);
     CRUCIBLE_TEST_ASSERT(kTest, is_nameless_loaded);
 
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     ::fixy::check::pass(kTest, "  test_names_on_sealed_table:     PASSED\n");
 }
 

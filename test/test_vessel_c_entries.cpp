@@ -481,7 +481,8 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
     // writes each of them, and the loader reads the file.  The old late table
     // gave the full refusal to the 513th name, and the old loader refused a
     // name table of more than 1024 names.
-    crucible::late_schema_table().clear(::foundation::effects::testing::test());
+    crucible::late_schema_table().clear(
+        crucible::TableReopen<crucible::LateSchemaTable>{::foundation::effects::testing::test()});
     constexpr uint32_t kLateNames = 2 * crucible::SCHEMA_TABLE_CAP + 76;
     constexpr uint64_t kFirstLateHash = 0x1A7E000000000000ULL;
     for (uint32_t index = 0; index < kLateNames; ++index) {
@@ -502,7 +503,8 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
             .expect("the file name passes the path check");
     EXPECT(crucible::load_trace(kTest, many_path).is_ok(), "the loader reads a table of more than 1024 names");
     remove_export_file();
-    crucible::late_schema_table().clear(::foundation::effects::testing::test());
+    crucible::late_schema_table().clear(
+        crucible::TableReopen<crucible::LateSchemaTable>{::foundation::effects::testing::test()});
 }
 
 // The pairs of a handle with no region, from create to destroy.

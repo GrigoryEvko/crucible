@@ -7,9 +7,13 @@
 
 #include <crucible/CKernel.h>
 
+// A write section of the table.  The fixture never links, so the function
+// has no body.
+crucible::WriteSection<crucible::CKernelTable>& held_section() noexcept;
+
 int main() {
     crucible::CKernelTable table;
-    table.register_op(::foundation::effects::testing::foreground<crucible::Vigil>(),
+    table.register_op(held_section(),
                       table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>()),
                       crucible::SchemaHash{0x42}, crucible::CKernelId::GEMM_MM);
     return 0;

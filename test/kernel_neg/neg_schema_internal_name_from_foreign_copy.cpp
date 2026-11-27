@@ -13,9 +13,10 @@
 #include <crucible/Vigil.h>
 #include <fixy/Core.h>
 
-// A text that mint_foreign_text gave at a foreign ABI.  The fixture never
-// links, so the function has no body.
+// A text that mint_foreign_text gave at a foreign ABI, and a write section of
+// the table.  The fixture never links, so the two functions have no body.
 ::fixy::ForeignText foreign_name() noexcept;
+crucible::WriteSection<crucible::SchemaTable>& held_section() noexcept;
 
 int main() {
     crucible::SchemaTable table;
@@ -23,8 +24,7 @@ int main() {
                           .expect("an open table mints a mutable view");
     ::fixy::FixedText<64> full_name{};
     static_cast<void>(full_name.append(foreign_name().characters()).is_ok());
-    (void)table.register_name(::foundation::effects::testing::foreground<crucible::Vigil>(),
-                              ::foundation::effects::testing::test().alloc, view,
+    (void)table.register_name(held_section(), ::foundation::effects::testing::test().alloc, view,
                               crucible::InternalSchemaName{crucible::SchemaHash{0x42}, full_name.view()});
     return 0;
 }

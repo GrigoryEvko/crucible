@@ -150,7 +150,7 @@ inline void run_trace_file(::fixy::View<std::byte const> bytes) noexcept {
     // holds, and the load then refuses the whole trace.
     // The load takes the reserve of the harness.
     constexpr VigilFgCtx kForeground = ::foundation::effects::testing::foreground<Vigil>();
-    global_schema_table().clear(::foundation::effects::testing::test());
+    global_schema_table().clear(TableReopen<SchemaTable>{::foundation::effects::testing::test()});
     auto loaded = load_trace(kHarnessCtx, kForeground, path, kHarnessReserve);
     // A refused load registers no name.  A refusal of a reserved hash names
     // a name of the image on a reserved hash.

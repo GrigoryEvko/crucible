@@ -165,7 +165,9 @@ int main() {
             crucible::sanitize_schema_name(hashes.at(i), ::fixy::mint_tagged<::fixy::tags::source::External>(name_view))
                 .expect("each name of the bench passes the validator");
         const bool was_registered =
-            table.register_name(writer, ::foundation::effects::testing::test().alloc, mutable_view, sanitized).is_ok();
+            crucible::register_schema_name_in(table, writer, ::foundation::effects::testing::test().alloc, mutable_view,
+                                              sanitized)
+                .is_ok();
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 

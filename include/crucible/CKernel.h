@@ -69,9 +69,25 @@ struct Mutable {};
 struct Sealed {};
 }  // namespace ckernel_state
 
+class CKernelTable;
+
+// The phase gates of the two view doors of the table, found by
+// argument-dependent lookup from mint_view.  They are free functions, not
+// friends: the rule proof-routes refuses a friend function of a class that
+// states synchronized{}, and is_sealed is public.  The definitions follow
+// the class.
+[[nodiscard]] inline bool view_ok(CKernelTable const& table, std::type_identity<ckernel_state::Mutable>) noexcept;
+[[nodiscard]] inline bool view_ok(CKernelTable const& table, std::type_identity<ckernel_state::Sealed>) noexcept;
+
 // The entries, the count and the phase are private.  A public field is a
 // write that no view and no seal can refuse.
-class CKernelTable {
+//
+// Threads use one table at the same time: the writers, one at a time in the
+// write section, the seal, and the classifying readers after the seal.
+// register_op takes the write section (crucible/RegistrationSeal.h), clear
+// takes the proof of a reopen, and the seal and each read are const doors.
+// So the class states synchronized{} (foundation/Transfer.h).
+class[[= ::foundation::transfer::synchronized{}]] CKernelTable {
 public:
     CKernelTable() = default;
 
@@ -87,7 +103,7 @@ public:
     // Div.
     template <typename Ctx>
         requires CtxMaySpinForSeal<Ctx>
-    void seal(Ctx const& ctx) noexcept {
+    void seal(Ctx const& ctx) const noexcept {
         seal_.seal(ctx);
         CRUCIBLE_POST(0, seal_.is_sealed());
     }
@@ -127,12 +143,21 @@ public:
         return ::fixy::erase_brand(::fixy::mint_view<ckernel_state::Sealed>(*this));
     }
 
-    // Found by argument-dependent lookup from mint_view.
-    [[nodiscard]] friend bool view_ok(CKernelTable const& t, std::type_identity<ckernel_state::Mutable>) noexcept {
-        return !t.is_sealed();
-    }
-    [[nodiscard]] friend bool view_ok(CKernelTable const& t, std::type_identity<ckernel_state::Sealed>) noexcept {
-        return t.is_sealed();
+    // Takes the write section of this table, or gives no value when the
+    // table is sealed (crucible/RegistrationSeal.h).  The context of the
+    // writer picks the entry: one compare-exchange for the writer of a
+    // Vigil's producer claim, and a spin for a context that owns Div.
+    //
+    // A claim door (the doors of a synchronized class of
+    // foundation/Transfer.h): the compare-exchange of the seal takes the
+    // phase from Open to Writing and makes the section.  The writes of the
+    // entries happen only through register_op, which takes the section, so
+    // only on the thread that holds it, until the section ends with the
+    // release store.
+    template <typename Ctx>
+        requires CtxMayEnterWriteSection<Ctx>
+    [[nodiscard]] ::fixy::Option<WriteSection<CKernelTable>> try_enter_write_section(Ctx const& writer) noexcept {
+        return seal_.template try_enter_write_section<CKernelTable>(writer);
     }
 
     // Overflow aborts rather than truncating. A dropped registration would
@@ -140,20 +165,18 @@ public:
     // shows up much later, at replay, on whichever trace happens to use it.
     //
     // The view's type is the proof that the table was not sealed when the
-    // view was minted.  The seal can still land between the mint and the
-    // write, so the write runs inside the section of the seal.  It returns
-    // false, and writes nothing, when the table was sealed first.
+    // view was minted.  The section is the proof that no seal and no other
+    // writer runs until it ends, so the write finds no seal.
     //
-    // The view names the table it proves, and a view of another table
-    // proves nothing about this one, so that is checked in every build mode.
-    // The context of the writer picks the entry of the write section
-    // (RegistrationSeal::with_write_section): the context of a Vigil's
-    // producer claim, or a context that owns Div.
-    template <typename Ctx>
-        requires CtxMayEnterWriteSection<Ctx>
-    [[nodiscard]] bool register_op(Ctx const& writer, MutableView const& view, SchemaHash schema_hash, CKernelId id) {
+    // The view and the section each name the table that they prove, and a
+    // view or a section of another table proves nothing about this one.  The
+    // check of the view runs in every build mode, and the check of the
+    // section is a precondition.
+    void register_op(WriteSection<CKernelTable>& section, MutableView const& view, SchemaHash schema_hash,
+                     CKernelId id) {
+        CRUCIBLE_PRE(section.names(seal_));
         CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
-        return seal_.with_write_section(writer, [&] { write_op_(schema_hash, id); });
+        write_op_(schema_hash, id);
     }
 
     // gnu::pure lets the optimiser cache a result across calls. That is sound
@@ -168,11 +191,12 @@ public:
 
     // Empties the table and opens it again.  A sealed table that opens again
     // takes writes, so only a test that reuses one table across cases may
-    // do this: it takes the test context, which code that ships cannot mint.
-    // The caller makes sure that no other thread uses the table.
-    void clear(::foundation::effects::Test const& test) noexcept {
+    // do this: it takes the proof of a reopen, which only the test context
+    // builds, and code that ships cannot mint that context.  The caller
+    // makes sure that no other thread uses the table.
+    void clear(TableReopen<CKernelTable>&& reopen) noexcept {
         entries_.clear();
-        seal_.reopen(test);
+        seal_.reopen(reopen);
         CRUCIBLE_POST(0, count() == 0u);
         CRUCIBLE_POST(0, !is_sealed());
     }
@@ -207,8 +231,21 @@ private:
         "register fewer schemas"};
 
     ::fixy::FixedList<CKernelEntry, CKERNEL_TABLE_CAP> entries_{};
-    RegistrationSeal seal_;
+    // The phase of the table.  Its one word is an Atomic with acquire and
+    // release steps, so two threads write it at the same time.  It is
+    // mutable, so seal is a const door: the check of the statement
+    // synchronized{} admits a const door that writes only parts that two
+    // threads can write (foundation/Transfer.h).
+    mutable RegistrationSeal seal_;
 };
+
+inline bool view_ok(CKernelTable const& table, std::type_identity<ckernel_state::Mutable>) noexcept {
+    return !table.is_sealed();
+}
+
+inline bool view_ok(CKernelTable const& table, std::type_identity<ckernel_state::Sealed>) noexcept {
+    return table.is_sealed();
+}
 
 using CKernelTableSingleton = ::fixy::Tagged<CKernelTable*, ::fixy::tags::source::Singleton>;
 
@@ -227,7 +264,12 @@ CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline CKernelTableSingleton global_ckernel_
     CKernelTable& table = *global_ckernel_table().value();
     return table.mint_mutable_view(fg).match(
         [&fg, &table, schema_hash, id](CKernelTable::MutableView view) {
-            return table.register_op(fg, view, schema_hash.value(), id);
+            return table.try_enter_write_section(fg).match(
+                [&table, &view, schema_hash, id](WriteSection<CKernelTable> section) {
+                    table.register_op(section, view, schema_hash.value(), id);
+                    return true;
+                },
+                [] { return false; });
         },
         [] { return false; });
 }

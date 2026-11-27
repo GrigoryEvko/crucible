@@ -2119,9 +2119,10 @@ crucible_neg_compile_test(neg_schema_table_lookup_cross_tag
 
 # The schema table admits a name only when its type satisfies
 # SchemaNameSource: a Sanitized name (sanitize_schema_name checked it) or an
-# internal name (it crossed no boundary).
+# internal name (it crossed no boundary).  The writer door register_name has
+# one overload for each of the two types.
 #   * neg_schema_register_external_name: a trace-file name that the loader
-#     did not check is refused at register_name.
+#     did not check is refused at register_name, which has no overload for it.
 #   * neg_schema_register_abi_boundary_name: a C ABI name that the entry did
 #     not check is refused at register_schema_name.
 #   * neg_schema_register_retagged_name: product code that retags an External
@@ -2129,8 +2130,8 @@ crucible_neg_compile_test(neg_schema_table_lookup_cross_tag
 #   * neg_schema_sanitized_name_from_test: a test outside the friends of the
 #     Sanitized name cannot build one from a retag.
 crucible_neg_compile_test(neg_schema_register_external_name
-  "neg_schema_register_external_name.cpp:26:31: error: no matching function for call to .crucible::SchemaTableOf<512>::register_name"
-  "required for the satisfaction of .SchemaNameSource<NameType>. \\[with NameType = fixy::Tagged<foundation::core::TextView, fixy::tags::source::External>\\]")
+  "neg_schema_register_external_name.cpp:30:31: error: no matching function for call to .crucible::SchemaTableOf<512>::register_name"
+  "no known conversion for argument 4 from .const fixy::Tagged<foundation::core::TextView, fixy::tags::source::External>. to .const crucible::SanitizedSchemaName&.")
 crucible_neg_compile_test(neg_schema_register_abi_boundary_name
   "neg_schema_register_abi_boundary_name.cpp:24:42: error: no matching function for call to .register_schema_name"
   "required for the satisfaction of .SchemaNameSource<NameType>. \\[with NameType = fixy::Tagged<foundation::core::TextView, fixy::tags::source::ABIBoundary>\\]")
@@ -4449,11 +4450,11 @@ crucible_neg_compile_test(neg_cipher_durable_handle_direct_construction
 # signature requires MutableView; SealedView reaches GCC's conversion
 # diagnostic before any runtime path can exist.
 crucible_neg_compile_test(neg_schema_register_with_sealed_view
-  "cannot convert .sv. \\(type .fixy::ScopedView<crucible::SchemaTableOf<512>, crucible::schema_state::Sealed, foundation::brand::DefaultBrand>.\\) to type .const crucible::SchemaTableOf<512>::MutableView&."
-  "neg_schema_register_with_sealed_view.cpp:16")
+  "no known conversion for argument 3 from .fixy::ScopedView<crucible::SchemaTableOf<512>, crucible::schema_state::Sealed, foundation::brand::DefaultBrand>. to .const crucible::SchemaTableOf<512>::MutableView&."
+  "neg_schema_register_with_sealed_view.cpp:20")
 crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
-  "cannot convert .sv. \\(type .fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Sealed>.\\) to type .const crucible::CKernelTable::MutableView&."
-  "neg_ckernel_register_with_sealed_view.cpp:20")
+  "cannot convert .fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Sealed>. to .const crucible::CKernelTable::MutableView&."
+  "neg_ckernel_register_with_sealed_view.cpp:24")
 # A field keeps the proof of a sealed view after the table is gone, so the
 # field audit refuses it.
 crucible_neg_compile_test(neg_ckernel_mint_sealed_view_in_field
@@ -4494,15 +4495,16 @@ crucible_neg_compile_test(neg_schema_mint_mutable_view_in_field
 # A sealed table mints no mutable view.  The view comes back as an Option,
 # so a registration that forgets the seal does not compile.
 crucible_neg_compile_test(neg_schema_mutable_view_unchecked
-  "\\(type .foundation::core::Option<fixy::ScopedView<crucible::SchemaTableOf<512>, crucible::schema_state::Mutable, foundation::brand::DefaultBrand> >.\\) to type .const crucible::SchemaTableOf<512>::MutableView&."
-  "neg_schema_mutable_view_unchecked.cpp:12")
+  "no known conversion for argument 3 from .foundation::core::Option<fixy::ScopedView<crucible::SchemaTableOf<512>, crucible::schema_state::Mutable, foundation::brand::DefaultBrand> >. to .const crucible::SchemaTableOf<512>::MutableView&."
+  "neg_schema_mutable_view_unchecked.cpp:16")
 crucible_neg_compile_test(neg_ckernel_mutable_view_unchecked
-  "\\(type .foundation::core::Option<fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >.\\) to type .const crucible::CKernelTable::MutableView&."
-  "neg_ckernel_mutable_view_unchecked.cpp:12")
+  "cannot convert .foundation::core::Option<fixy::ScopedView<crucible::CKernelTable, crucible::ckernel_state::Mutable> >. to .const crucible::CKernelTable::MutableView&."
+  "neg_ckernel_mutable_view_unchecked.cpp:17")
 
 # Lock-free readers read a sealed table, so every write goes through the
 # view and the seal phase.  The entry arrays are private, and clear(), which
-# opens a sealed table again, takes the test context.
+# opens a sealed table again, takes the proof of a reopen that only the test
+# context builds.
 crucible_neg_compile_test(neg_schema_table_entries_private
   "is private within this context"
   "crucible::SchemaTableOf<512>::entries_")
@@ -4518,10 +4520,10 @@ crucible_neg_compile_test(neg_ckernel_table_clear_needs_test_context
 
 # The seal and each write section wait with no exit, so they take the context
 # of the caller (crucible/RegistrationSeal.h).  The seal takes a context that
-# owns Div.  A registration takes the context of a Vigil's producer claim or a
-# context that owns Div.  The first fixture of each pair names no context,
-# which the old forms took.  The second gives the cold init context, which
-# owns no Div.
+# owns Div.  The claim of a write section takes the context of a Vigil's
+# producer claim or a context that owns Div, and a registration takes the
+# section.  The first fixture of each pair names no context and no section.
+# The second gives the cold init context, which owns no Div.
 crucible_neg_compile_test(neg_schema_table_seal_no_context
   "no matching function for call to .crucible::SchemaTableOf<512>::seal\\(\\)."
   "neg_schema_table_seal_no_context.cpp:15")
@@ -4530,9 +4532,9 @@ crucible_neg_compile_test(neg_schema_table_seal_no_div
   "satisfaction of .CtxMaySpinForSeal<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, ")
 crucible_neg_compile_test(neg_schema_register_no_context
   "no matching function for call to .crucible::SchemaTableOf<512>::register_name\\(foundation::core::Alloc, "
-  "neg_schema_register_no_context.cpp:19")
+  "neg_schema_register_no_context.cpp:18")
 crucible_neg_compile_test(neg_schema_register_no_div
-  "no matching function for call to .crucible::SchemaTableOf<512>::register_name\\(const fixy::ColdInitCtx&, "
+  "no matching function for call to .crucible::SchemaTableOf<512>::try_enter_write_section\\(const fixy::ColdInitCtx&\\)."
   "satisfaction of .CtxMayEnterWriteSection<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, ")
 
 # An internal name is a text of the program image on a constant hash: its

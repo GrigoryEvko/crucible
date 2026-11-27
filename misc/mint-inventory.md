@@ -48,7 +48,7 @@ that the axis does not apply to the row.
 | `Cipher::mint_open_view` | `include/crucible/Cipher.h` | Y | · | Y | Y | member | · | HS14: 15 |
 | `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | Y | Y | · | member | · | HS14: 4 |
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | HS14: 4 |
-| `SchemaTableOf::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 10 |
+| `SchemaTableOf::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 9 |
 | `SchemaTableOf::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | HS14: 2 |
 | `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 4 |
 | `mint_checked_meta_run` | `include/crucible/MetaLog.h` | Y | Y | Y | Y | token | · | HS14: 3 |

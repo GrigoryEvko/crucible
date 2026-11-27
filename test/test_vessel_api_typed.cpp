@@ -691,7 +691,8 @@ void test_schema_name_full_code() {
                 == CRUCIBLE_SCHEMA_NAME_FULL,
             "each new hash at a full table gives the code of a full table");
     }
-    crucible::late_schema_table().clear(::foundation::effects::testing::test());
+    crucible::late_schema_table().clear(
+        crucible::TableReopen<crucible::LateSchemaTable>{::foundation::effects::testing::test()});
 }
 
 // An operator of the generated table reserves its schema hash.  The door of

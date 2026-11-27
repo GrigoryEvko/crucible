@@ -31,6 +31,16 @@
 //      starts.  A write that races the seal either finishes before the seal
 //      or finds Sealed and writes nothing.
 //
+// A writer holds the section as a WriteSection of its table.  The claim door
+// try_enter_write_section makes the acquire CAS, and the end of the section
+// makes the release store.  Each writer door of a table takes the section, so
+// no write runs outside the section.  The section names its table type, so a
+// section of one table type reaches no writer door of another type.  A
+// section moves, and a move leaves the source with no binding.  The guard
+// rule use-after-move refuses a use of a moved local section in the source,
+// before any run, and the precondition of each writer door refuses a
+// moved-from section that reaches the door by another route.
+//
 // The seal waits while a writer holds the section, and a writer waits while
 // another writer holds it.  One registration is a bounded, short piece of
 // work, so both waits spin with the pause instruction.  Each wait has no
@@ -58,6 +68,8 @@
 
 #include <crucible/ForegroundCtx.h>
 #include <fixy/Core.h>
+#include <foundation/ChannelBinding.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -65,6 +77,7 @@
 #include <concepts>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace crucible {
 
@@ -78,6 +91,60 @@ concept CtxMaySpinForSeal = ::foundation::effects::CtxOwnsCapability<Ctx, ::foun
 template <class Ctx>
 concept CtxMayEnterWriteSection = std::same_as<std::remove_cvref_t<Ctx>, VigilFgCtx> || CtxMaySpinForSeal<Ctx>;
 
+class RegistrationSeal;
+
+// The write section of one table of the type Table, which one writer holds.
+// The seal of the table makes a section only when its compare-exchange takes
+// the phase from Open to Writing, so the writes through the section happen
+// only on the thread that holds it, until the section ends.  The end of the
+// section makes the release store that gives the phase back to Open.  The
+// section holds the binding of its seal, so a writer door of the table
+// checks that the section names its own seal: two tables of one type have
+// two seals.  A move gives the binding to the new section and leaves the
+// source with no binding.  The end of a section with no binding stores
+// nothing, and a writer door refuses it.  Only RegistrationSeal makes a
+// section, so the class is closed, and the section is the proof of a writer
+// door of a synchronized table (foundation/Transfer.h).
+template <class Table>
+class[[= ::foundation::linear::authority{}]] WriteSection {
+public:
+    WriteSection(WriteSection const&) = delete("a section is the one write section of its table");
+    WriteSection& operator=(WriteSection const&) = delete("a section is the one write section of its table");
+    WriteSection(WriteSection&&) noexcept = default;
+    WriteSection& operator=(WriteSection&&) = delete("a section holds the write section of one seal for its life");
+
+    ~WriteSection();
+
+    // True when the section is the write section of seal.
+    [[nodiscard]] bool names(RegistrationSeal const& seal) const noexcept;
+
+private:
+    explicit WriteSection(::foundation::ChannelBinding<RegistrationSeal> seal) noexcept : seal_{std::move(seal)} {}
+
+    friend class RegistrationSeal;
+
+    ::foundation::ChannelBinding<RegistrationSeal> seal_;
+};
+
+// The proof of a test that empties one table of the type Table and opens it
+// again (the clear door of a table).  A sealed table gives no write section,
+// so the clear takes this proof in place of a section.  The constructor takes
+// the test context, which code that ships cannot mint.  A Test has no public
+// constructor other than its copy and its move, so only a holder of the test
+// context builds the proof, and the proof is a proof of the clear door of a
+// synchronized table (foundation/Transfer.h).
+template <class Table>
+class[[= ::foundation::linear::authority{}]] TableReopen final {
+public:
+    explicit TableReopen(::foundation::effects::Test const& /*test*/) noexcept {}
+
+    TableReopen(TableReopen const&) = delete("a proof of a reopen opens one table one time");
+    TableReopen& operator=(TableReopen const&) = delete("a proof of a reopen opens one table one time");
+    TableReopen(TableReopen&&) noexcept = default;
+    TableReopen& operator=(TableReopen&&) = delete("a proof of a reopen opens one table one time");
+    ~TableReopen() = default;
+};
+
 class RegistrationSeal {
 public:
     RegistrationSeal() = default;
@@ -87,29 +154,22 @@ public:
     RegistrationSeal(RegistrationSeal&&) = delete("the phase word is the identity of one table");
     RegistrationSeal& operator=(RegistrationSeal&&) = delete("the phase word is the identity of one table");
 
-    // Runs `write` while the table is open, with no other writer and no seal
-    // in between.  Returns false, and does not run `write`, when the table
-    // is sealed.  The section closes even if `write` exits early.  The
-    // context of the writer picks the entry: one compare-exchange for the
-    // writer of a Vigil's producer claim, and a spin for a context that owns
-    // Div.
-    template <typename Ctx, typename Write>
-        requires CtxMayEnterWriteSection<Ctx> && std::is_invocable_r_v<void, Write&>
-    [[nodiscard]] bool with_write_section(Ctx const& /*ctx*/,
-                                          Write&& write) noexcept(std::is_nothrow_invocable_v<Write&>) {
+    // Takes the write section of the table of the type Table that holds this
+    // seal, or gives no value when the table is sealed.  The context of the
+    // writer picks the entry: one compare-exchange for the writer of a
+    // Vigil's producer claim, and a spin for a context that owns Div.
+    template <class Table, typename Ctx>
+        requires CtxMayEnterWriteSection<Ctx>
+    [[nodiscard]] ::fixy::Option<WriteSection<Table>> try_enter_write_section(Ctx const& /*ctx*/) noexcept {
         bool is_open = false;
         if constexpr (std::same_as<Ctx, VigilFgCtx>) {
             is_open = enter_sole_writer_();
         } else {
             is_open = enter_writer_();
         }
-        if (!is_open) return false;
-        struct Leave {
-            RegistrationSeal& seal;
-            ~Leave() { seal.phase_.store_release(Phase::Open); }
-        } const leave{*this};
-        write();
-        return true;
+        if (!is_open) return ::fixy::none;
+        return ::fixy::Option<WriteSection<Table>>::some(WriteSection<Table>{
+            ::foundation::ChannelBinding<RegistrationSeal>{*this, ::foundation::BindingKey<RegistrationSeal>{}}});
     }
 
     // Seals the table.  Waits for a writer that holds the section, and seals
@@ -129,10 +189,13 @@ public:
     [[nodiscard]] bool is_sealed() const noexcept { return phase_.load_acquire() == Phase::Sealed; }
 
     // Returns a sealed table to the open phase.  Only a test reuses one
-    // table across cases, so this takes the test context, which code that
-    // ships cannot mint.  The caller makes sure that no writer and no reader
-    // uses the table at the same time.
-    void reopen(::foundation::effects::Test const&) noexcept { phase_.store_release(Phase::Open); }
+    // table across cases, so this takes the proof of a reopen, which only
+    // the test context builds.  The caller makes sure that no writer and no
+    // reader uses the table at the same time.
+    template <class Table>
+    void reopen(TableReopen<Table> const& /*reopen*/) noexcept {
+        phase_.store_release(Phase::Open);
+    }
 
 private:
     enum class Phase : std::uint8_t {
@@ -140,6 +203,9 @@ private:
         Writing,
         Sealed
     };
+
+    template <class Table>
+    friend class WriteSection;
 
     // The largest number of pauses that one wait spins between two
     // compare-exchanges.
@@ -186,7 +252,26 @@ private:
         }
     }
 
+    // Gives the section back: the release store of the last write.
+    void leave_section_() noexcept { phase_.store_release(Phase::Open); }
+
+    // The identity of this seal, which a section compares with the identity
+    // of its binding.
+    [[nodiscard]] ::foundation::ChannelIdentity<RegistrationSeal> identity_() const noexcept {
+        return ::foundation::ChannelIdentity<RegistrationSeal>{this};
+    }
+
     ::fixy::Atomic<Phase> phase_{Phase::Open};
 };
+
+template <class Table>
+WriteSection<Table>::~WriteSection() {
+    if (seal_.is_bound()) seal_->leave_section_();
+}
+
+template <class Table>
+bool WriteSection<Table>::names(RegistrationSeal const& seal) const noexcept {
+    return seal_.identity() == seal.identity_();
+}
 
 }  // namespace crucible

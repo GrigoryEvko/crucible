@@ -13,12 +13,13 @@
 #   test/layer/CMakeLists.txt divides the check files into units by weight.  --write keeps
 #   each weight, and --measure BUILD_DIR measures each weight again.
 crucible/BackgroundThread.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
-crucible/CKernel.cpp | 0.5 | ::fixy::tags::admitted_retags
+crucible/CKernel.cpp | 0.5 | ::fixy::tags::admitted_retags, ::foundation::transfer::door_probe_contexts, unknown
 crucible/CallSiteTable.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 crucible/DimHash.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/MerkleDag.cpp | 3.9 | ::foundation::transfer::door_probe_contexts, unknown
 crucible/MetaLogSession.cpp | 0.5 | ::fixy::session::combinators, ::fixy::session::pole_tables
 crucible/PermissionedMetaLog.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
+crucible/SchemaTable.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 crucible/Serialize.cpp | 8.4 | ::fixy::tags::admitted_retags
 crucible/SingletonInitGraph.cpp | 0.0 | unknown
 crucible/SwissTable.cpp | 0.1 | unknown

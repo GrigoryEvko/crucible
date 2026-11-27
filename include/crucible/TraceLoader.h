@@ -1209,7 +1209,12 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
         };
     const SchemaRegistration registration = schema_table_view.match(
         [&io, &walk_names](SchemaTable::MutableView const& view) {
-            return global_schema_table().register_names(io, io.cap().alloc, view, walk_names);
+            SchemaTable& table = global_schema_table();
+            return table.try_enter_write_section(io).match(
+                [&table, &io, &view, &walk_names](WriteSection<SchemaTable> section) {
+                    return table.register_names(section, io.cap().alloc, view, walk_names);
+                },
+                [] noexcept { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
         },
         [] noexcept { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
     if (registration.is_ok()) return trace;

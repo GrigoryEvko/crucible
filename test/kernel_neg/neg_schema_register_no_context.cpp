@@ -1,13 +1,12 @@
 // Negative-compile test. This file must fail to compile.
 //
-// A registration enters the write section of the table.  A writer whose
-// context owns Div spins while another writer holds the section, and the
-// writer of a Vigil's producer claim, the one writer of the process, takes the
-// section with one compare-exchange.  So the registration takes the context
-// of the writer, and a registration with no context does not compile.
+// A registration writes the table inside its write section.  The claim door
+// takes the context of the writer and gives the section, and each writer door
+// takes the section.  So a registration with no section and no context does
+// not compile.
 //
 // Expected diagnostic: SchemaTable::register_name has no candidate that takes
-// no context.
+// no section.
 
 #include <crucible/SchemaTable.h>
 #include <crucible/Vigil.h>

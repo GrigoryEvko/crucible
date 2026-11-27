@@ -2,8 +2,9 @@
 //
 // clear() empties the schema table and opens it again after the seal.  In
 // production code that reopens a table that lock-free readers still read.
-// clear() takes the test context, which only the test harness mints, so a
-// call without that context does not compile.
+// clear() takes the proof of a reopen, which only the test context builds,
+// and only the test harness mints that context.  So a call without that
+// proof does not compile.
 
 #include <crucible/SchemaTable.h>
 #include <fixy/Ctx.h>

@@ -412,9 +412,15 @@ private:
 // phase are private.  A public field is a write that no view and no seal can
 // refuse.  The two tables of the process are SchemaTable, the global table,
 // and LateSchemaTable, the late table.
+//
+// Threads use one table at the same time: the writers, one at a time in the
+// write section, the seal, and the readers after the seal.  Each door that
+// writes the names takes the write section (crucible/RegistrationSeal.h),
+// clear takes the proof of a reopen, and the seal and each read are const
+// doors.  So the class states synchronized{} (foundation/Transfer.h).
 template <uint32_t Capacity>
     requires(Capacity >= SCHEMA_INTERNAL_ROOM_SHARE)
-class SchemaTableOf {
+class[[= ::foundation::transfer::synchronized{}]] SchemaTableOf {
 public:
     // The room of the internal names of the table (SCHEMA_INTERNAL_ROOM_SHARE):
     // the names and the name bytes past which a name from outside gets full.
@@ -437,7 +443,7 @@ public:
     // Div.
     template <typename Ctx>
         requires CtxMaySpinForSeal<Ctx>
-    void seal(Ctx const& ctx) noexcept {
+    void seal(Ctx const& ctx) const noexcept {
         seal_.seal(ctx);
         CRUCIBLE_POST(0, seal_.is_sealed());
     }
@@ -473,23 +479,32 @@ public:
         return ::fixy::erase_brand(::fixy::mint_view<schema_state::Sealed>(*this));
     }
 
-    // Found by argument-dependent lookup from mint_view.
-    [[nodiscard]] friend bool view_ok(SchemaTableOf const& t, std::type_identity<schema_state::Mutable>) noexcept {
-        return !t.is_sealed();
-    }
-    [[nodiscard]] friend bool view_ok(SchemaTableOf const& t, std::type_identity<schema_state::Sealed>) noexcept {
-        return t.is_sealed();
+    // Takes the write section of this table, or gives no value when the
+    // table is sealed (crucible/RegistrationSeal.h).  The context of the
+    // writer picks the entry: one compare-exchange for the writer of a
+    // Vigil's producer claim, and a spin for a context that owns Div.
+    //
+    // A claim door (the doors of a synchronized class of
+    // foundation/Transfer.h): the compare-exchange of the seal takes the
+    // phase from Open to Writing and makes the section.  The writes of the
+    // entries, the name bytes and the room report happen only through a
+    // writer door that takes the section, so only on the thread that holds
+    // it, until the section ends with the release store.
+    template <typename Ctx>
+        requires CtxMayEnterWriteSection<Ctx>
+    [[nodiscard]] ::fixy::Option<WriteSection<SchemaTableOf>> try_enter_write_section(Ctx const& writer) noexcept {
+        return seal_.template try_enter_write_section<SchemaTableOf>(writer);
     }
 
     // The view's type is the proof that the table was not sealed when the
-    // view was minted.  The seal can still land between the mint and the
-    // write, so the write runs inside the section of the seal.  It gives the
-    // refusal sealed, and writes nothing, when the table was sealed first.
-    // An empty name is not a registration, and it succeeds with no write.
-    // The view names the table it proves, and a view of another table
-    // proves nothing about this one, so that is checked in every build mode.
-    // The copy of the name allocates through the allocation capability of
-    // the caller.
+    // view was minted.  The section is the proof that no seal and no other
+    // writer runs until it ends, so the write finds no seal.  An empty name
+    // is not a registration, and it succeeds with no write.  The view and
+    // the section each name the table that they prove, and a view or a
+    // section of another table proves nothing about this one.  The check of
+    // the view runs in every build mode, and the check of the section is a
+    // precondition.  The copy of the name allocates through the allocation
+    // capability of the caller.
     //
     // A different name of a held hash is a collision of two schemas, and
     // the table keeps its first name.  A new hash finds no place in a table
@@ -509,101 +524,97 @@ public:
     // its consteval constructor at compile time.  So no name of the two types
     // has the hash zero, the sentinel of no schema.
     //
-    // The context of the writer picks the entry of the write section
-    // (RegistrationSeal::with_write_section): the context of a Vigil's
-    // producer claim, or a context that owns Div.
-    template <typename Ctx, SchemaNameSource NameType>
-        requires CtxMayEnterWriteSection<Ctx>
-    [[nodiscard]] SchemaRegistration register_name(Ctx const& writer, ::foundation::effects::Alloc allocation,
-                                                   MutableView const& view, NameType const& name) {
-        CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
-        const SchemaNameParts parts = name.parts();
-        if (parts.name().size() == 0) return ::fixy::Unit{};
-        constexpr NameSource source =
-            std::same_as<NameType, InternalSchemaName> ? NameSource::internal : NameSource::outside;
-        const SchemaHash hash = name.hash();
-        ::fixy::Option<SchemaRefusal> refusal = ::fixy::none;
-        const bool was_open =
-            seal_.with_write_section(writer, [&] { refusal = write_name_(allocation, hash, parts, source); });
-        if (!was_open) return ::fixy::err(SchemaRefusal::sealed);
-        return refusal.match([](SchemaRefusal why) noexcept { return SchemaRegistration{::fixy::err(why)}; },
-                             [] noexcept { return SchemaRegistration{::fixy::Unit{}}; });
+    // The door has one overload for each of the two types of a name, and no
+    // template, so the check of the statement synchronized{} reads its
+    // parameters (foundation/Transfer.h).  Neither overload gives the
+    // refusal sealed: the claim door gives no section for a sealed table.
+    [[nodiscard]] SchemaRegistration register_name(WriteSection<SchemaTableOf>& section,
+                                                   ::foundation::effects::Alloc allocation, MutableView const& view,
+                                                   SanitizedSchemaName const& name) {
+        return register_name_(section, allocation, view, name);
+    }
+
+    [[nodiscard]] SchemaRegistration register_name(WriteSection<SchemaTableOf>& section,
+                                                   ::foundation::effects::Alloc allocation, MutableView const& view,
+                                                   InternalSchemaName const& name) {
+        return register_name_(section, allocation, view, name);
     }
 
     // Registers each name of a walk from outside the process, or none, each on
     // its own hash.  The walk calls its AddSchemaName for each name, and it
-    // gives the same names in the same order at each call.  The table runs the walk two times in
-    // one write section.  The first walk checks each name: a different name
-    // of a held hash, or a hash that the walk gives two times, is a
-    // collision, and a new hash past the room of the table is a full table.
-    // The second walk writes each name only when the first walk refused none.
-    // So a refusal writes no name, and no seal and no other writer runs
-    // between the check and the writes.  It gives sealed, and writes nothing,
-    // when the table was sealed first.  An empty name is not a registration,
-    // as for register_name.  The first walk keeps the hash of each name on
-    // the stack, so only a table of at most SCHEMA_TABLE_CAP names takes a
-    // walk.  Complexity: the walk two times, O(log n) and linear in the names
-    // of the walk for each name, and O(n) for each new hash.
-    template <typename Ctx, typename Walk>
-        requires CtxMayEnterWriteSection<Ctx> && std::is_invocable_r_v<void, Walk&, AddSchemaName const&>
-              && (Capacity <= SCHEMA_TABLE_CAP)
-    [[nodiscard]] SchemaRegistration register_names(Ctx const& writer, ::foundation::effects::Alloc allocation,
-                                                    MutableView const& view, Walk&& walk_names) {
+    // gives the same names in the same order at each call.  The table runs
+    // the walk two times in the write section that the caller holds.  The
+    // first walk checks each name: a different name of a held hash, or a
+    // hash that the walk gives two times, is a collision, and a new hash past
+    // the room of the table is a full table.  The second walk writes each
+    // name only when the first walk refused none.  So a refusal writes no
+    // name, and no seal and no other writer runs between the check and the
+    // writes.  An empty name is not a registration, as for register_name.
+    // The first walk keeps the hash of each name on the stack, so only a
+    // table of at most SCHEMA_TABLE_CAP names takes a walk.  The bound is an
+    // assertion of the body, not a constraint: the check of the statement
+    // synchronized{} reads the door on each table, and a constraint that is
+    // false on the late table leaves the door with no specialization there.
+    // Complexity: the walk two times, O(log n) and linear in the names of the
+    // walk for each name, and O(n) for each new hash.
+    template <typename Walk>
+        requires std::is_invocable_r_v<void, Walk&, AddSchemaName const&>
+    [[nodiscard]] SchemaRegistration register_names(WriteSection<SchemaTableOf>& section,
+                                                    ::foundation::effects::Alloc allocation, MutableView const& view,
+                                                    Walk&& walk_names) {
+        static_assert(Capacity <= SCHEMA_TABLE_CAP,
+                      "the first walk of register_names keeps a hash for each name on the stack, so only a table of "
+                      "at most SCHEMA_TABLE_CAP names takes a walk");
+        CRUCIBLE_PRE(section.names(seal_));
         CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
-        ::fixy::Option<SchemaRefusal> refusal = ::fixy::none;
-        const bool was_open = seal_.with_write_section(writer, [&] {
-            NameCheck check{};
-            auto check_name = [this, &check](SanitizedSchemaName const& name) noexcept {
-                if (check.refusal.is_some()) return;
-                const SchemaNameParts characters = cut_at_zero_(name.parts());
-                if (characters.name().size() == 0) return;
-                const SchemaHash hash = name.hash();
-                switch (judge_name_(check, hash, characters)) {
-                    case NameVerdict::collision:
-                        check.refusal = ::fixy::some(SchemaRefusal::collision);
-                        return;
-                    case NameVerdict::full:
-                        check.refusal = ::fixy::some(SchemaRefusal::full);
-                        return;
-                    case NameVerdict::added:
-                        ++check.added;
-                        check.added_bytes =
-                            ::fixy::ByteCount{check.added_bytes.raw() + stored_bytes_of_(characters).raw()};
-                        break;
-                    case NameVerdict::held:
-                        break;
-                    default:
-                        ::fixy::unreachable();
-                }
-                const bool is_kept = check.hashes.append(hash).is_ok();
-                CRUCIBLE_FATAL_INVARIANT(is_kept);
-            };
-            const AddSchemaName add_to_check{check_name};
-            walk_names(add_to_check);
-            if (check.refusal.is_some()) {
-                refusal = check.refusal;
-                return;
+        NameCheck check{};
+        auto check_name = [this, &check](SanitizedSchemaName const& name) noexcept {
+            if (check.refusal.is_some()) return;
+            const SchemaNameParts characters = cut_at_zero_(name.parts());
+            if (characters.name().size() == 0) return;
+            const SchemaHash hash = name.hash();
+            switch (judge_name_(check, hash, characters)) {
+                case NameVerdict::collision:
+                    check.refusal = ::fixy::some(SchemaRefusal::collision);
+                    return;
+                case NameVerdict::full:
+                    check.refusal = ::fixy::some(SchemaRefusal::full);
+                    return;
+                case NameVerdict::added:
+                    ++check.added;
+                    check.added_bytes = ::fixy::ByteCount{check.added_bytes.raw() + stored_bytes_of_(characters).raw()};
+                    break;
+                case NameVerdict::held:
+                    break;
+                default:
+                    ::fixy::unreachable();
             }
-            NameCheck const& checked = check;
-            std::size_t written = 0;
-            auto write_name = [this, &checked, &written, allocation](SanitizedSchemaName const& name) noexcept {
-                const SchemaNameParts characters = cut_at_zero_(name.parts());
-                if (characters.name().size() == 0) return;
-                const SchemaHash hash = name.hash();
-                const bool is_checked_name = checked.hashes.get(written).match(
-                    [hash](auto held) noexcept { return *held == hash; }, [] noexcept { return false; });
-                CRUCIBLE_FATAL_INVARIANT(is_checked_name);
-                const bool is_written = write_name_(allocation, hash, characters, NameSource::outside).is_none();
-                CRUCIBLE_FATAL_INVARIANT(is_written);
-                ++written;
-            };
-            const AddSchemaName add_to_table{write_name};
-            walk_names(add_to_table);
-            CRUCIBLE_FATAL_INVARIANT(written == checked.hashes.size());
-        });
-        if (!was_open) return ::fixy::err(SchemaRefusal::sealed);
-        return refusal.match([](SchemaRefusal why) noexcept { return SchemaRegistration{::fixy::err(why)}; },
-                             [] noexcept { return SchemaRegistration{::fixy::Unit{}}; });
+            const bool is_kept = check.hashes.append(hash).is_ok();
+            CRUCIBLE_FATAL_INVARIANT(is_kept);
+        };
+        const AddSchemaName add_to_check{check_name};
+        walk_names(add_to_check);
+        if (check.refusal.is_some()) {
+            return check.refusal.match([](SchemaRefusal why) noexcept { return SchemaRegistration{::fixy::err(why)}; },
+                                       [] noexcept { return SchemaRegistration{::fixy::Unit{}}; });
+        }
+        NameCheck const& checked = check;
+        std::size_t written = 0;
+        auto write_name = [this, &checked, &written, allocation](SanitizedSchemaName const& name) noexcept {
+            const SchemaNameParts characters = cut_at_zero_(name.parts());
+            if (characters.name().size() == 0) return;
+            const SchemaHash hash = name.hash();
+            const bool is_checked_name = checked.hashes.get(written).match(
+                [hash](auto held) noexcept { return *held == hash; }, [] noexcept { return false; });
+            CRUCIBLE_FATAL_INVARIANT(is_checked_name);
+            const bool is_written = write_name_(allocation, hash, characters, NameSource::outside).is_none();
+            CRUCIBLE_FATAL_INVARIANT(is_written);
+            ++written;
+        };
+        const AddSchemaName add_to_table{write_name};
+        walk_names(add_to_table);
+        CRUCIBLE_FATAL_INVARIANT(written == checked.hashes.size());
+        return SchemaRegistration{::fixy::Unit{}};
     }
 
     // The unqualified form is safe in either phase. The overload taking a
@@ -659,13 +670,14 @@ public:
 
     // Empties the table and opens it again.  A sealed table that opens again
     // takes writes, so only a test that reuses one table across cases may
-    // do this: it takes the test context, which code that ships cannot mint.
-    // The caller makes sure that no other thread uses the table.
-    void clear(::foundation::effects::Test const& test) {
+    // do this: it takes the proof of a reopen, which only the test context
+    // builds, and code that ships cannot mint that context.  The caller
+    // makes sure that no other thread uses the table.
+    void clear(TableReopen<SchemaTableOf>&& reopen) {
         entries_.clear();
         name_bytes_ = ::fixy::ByteCount{0};
         room_report_ = RoomReport::pending;
-        seal_.reopen(test);
+        seal_.reopen(reopen);
         CRUCIBLE_POST(0, count() == 0u);
         CRUCIBLE_POST(0, !is_sealed());
     }
@@ -678,6 +690,22 @@ private:
         outside,
         internal,
     };
+
+    // The body of the two overloads of register_name.
+    template <SchemaNameSource NameType>
+    [[nodiscard]] SchemaRegistration register_name_(WriteSection<SchemaTableOf>& section,
+                                                    ::foundation::effects::Alloc allocation, MutableView const& view,
+                                                    NameType const& name) {
+        CRUCIBLE_PRE(section.names(seal_));
+        CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
+        const SchemaNameParts parts = name.parts();
+        if (parts.name().size() == 0) return ::fixy::Unit{};
+        constexpr NameSource source =
+            std::same_as<NameType, InternalSchemaName> ? NameSource::internal : NameSource::outside;
+        return write_name_(allocation, name.hash(), parts, source)
+            .match([](SchemaRefusal why) noexcept { return SchemaRegistration{::fixy::err(why)}; },
+                   [] noexcept { return SchemaRegistration{::fixy::Unit{}}; });
+    }
 
     // The report of the first refusal of a name for lack of room: still to
     // give, or given.  The table gives it one time between two clears.
@@ -890,8 +918,27 @@ private:
     ::fixy::FixedList<SchemaEntry, Capacity> entries_{};
     ::fixy::ByteCount name_bytes_{0};
     RoomReport room_report_ = RoomReport::pending;
-    RegistrationSeal seal_;
+    // The phase of the table.  Its one word is an Atomic with acquire and
+    // release steps, so two threads write it at the same time.  It is
+    // mutable, so seal is a const door: the check of the statement
+    // synchronized{} admits a const door that writes only parts that two
+    // threads can write (foundation/Transfer.h).
+    mutable RegistrationSeal seal_;
 };
+
+// The phase gates of the two view doors of a table, found by
+// argument-dependent lookup from mint_view.  They are free functions, not
+// friends: the rule proof-routes refuses a friend function of a class that
+// states synchronized{}, and is_sealed is public.
+template <uint32_t Capacity>
+[[nodiscard]] bool view_ok(SchemaTableOf<Capacity> const& table, std::type_identity<schema_state::Mutable>) noexcept {
+    return !table.is_sealed();
+}
+
+template <uint32_t Capacity>
+[[nodiscard]] bool view_ok(SchemaTableOf<Capacity> const& table, std::type_identity<schema_state::Sealed>) noexcept {
+    return table.is_sealed();
+}
 
 // The global table: the names that arrive before the first Vigil seals it.
 using SchemaTable = SchemaTableOf<SCHEMA_TABLE_CAP>;
@@ -924,17 +971,31 @@ CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline LateSchemaTable& late_schema_table() 
     return table;
 }
 
-// The registration in the global table (SchemaTableOf::register_name).  It
-// gives the refusal sealed when the global table was sealed after the view
-// was minted, and then nothing is registered.  The copy of the name
-// allocates through the allocation capability of the caller.  The context of
-// the writer picks the entry of the write section (CtxMayEnterWriteSection).
+// The registration of one name in table, in a write section that the call
+// takes and ends (SchemaTableOf::register_name).  It gives the refusal sealed
+// when the table was sealed after the view was minted, and then nothing is
+// registered.  The copy of the name allocates through the allocation
+// capability of the caller.  The context of the writer picks the entry of
+// the write section (CtxMayEnterWriteSection).
+template <uint32_t Capacity, typename Ctx, SchemaNameSource NameType>
+    requires CtxMayEnterWriteSection<Ctx>
+[[nodiscard]] inline SchemaRegistration
+register_schema_name_in(SchemaTableOf<Capacity>& table, Ctx const& writer, ::foundation::effects::Alloc allocation,
+                        typename SchemaTableOf<Capacity>::MutableView const& view, NameType const& name) {
+    return table.try_enter_write_section(writer).match(
+        [&table, allocation, &view, &name](WriteSection<SchemaTableOf<Capacity>> section) {
+            return table.register_name(section, allocation, view, name);
+        },
+        [] { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
+}
+
+// The registration in the global table (register_schema_name_in).
 template <typename Ctx, SchemaNameSource NameType>
     requires CtxMayEnterWriteSection<Ctx>
 [[nodiscard]] inline SchemaRegistration register_schema_name(Ctx const& writer, ::foundation::effects::Alloc allocation,
                                                              SchemaTable::MutableView const& view,
                                                              NameType const& name) {
-    return global_schema_table().register_name(writer, allocation, view, name);
+    return register_schema_name_in(global_schema_table(), writer, allocation, view, name);
 }
 
 // True when a registration gave the refusal of a collision.
@@ -969,7 +1030,7 @@ register_schema_name(VigilFgCtx const& fg, ::foundation::effects::Alloc allocati
     SchemaTable& global_table = global_schema_table();
     SchemaRegistration in_global = global_table.mint_mutable_view(fg).match(
         [&fg, &global_table, allocation, &name](SchemaTable::MutableView global_view) {
-            return global_table.register_name(fg, allocation, global_view, name);
+            return register_schema_name_in(global_table, fg, allocation, global_view, name);
         },
         [] { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
     if (!is_sealed_refusal(in_global)) return in_global;
@@ -1005,7 +1066,7 @@ register_schema_name(VigilFgCtx const& fg, ::foundation::effects::Alloc allocati
     LateSchemaTable& late_table = late_schema_table();
     const LateSchemaTable::MutableView late_view =
         late_table.mint_mutable_view(fg).expect("nothing seals the late schema table, so it mints a mutable view");
-    SchemaRegistration in_late = late_table.register_name(fg, allocation, late_view, name);
+    SchemaRegistration in_late = register_schema_name_in(late_table, fg, allocation, late_view, name);
     CRUCIBLE_FATAL_INVARIANT(!is_sealed_refusal(in_late));
     return in_late;
 }
