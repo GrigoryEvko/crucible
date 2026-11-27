@@ -348,12 +348,15 @@ void run_floor(View<Value const> inputs, Value zero) {
 }
 
 #if defined(CRUCIBLE_BENCH_CORE_MATH)
-// The correctly rounded results of fixy/fp, each float function and exp of
-// double, have the bits of CORE-MATH on each input.
-void check_the_correct_rounds(View<double const> exp_doubles, View<float const> exp_inputs,
-                              View<float const> log_inputs, View<float const> erf_inputs) noexcept {
+// The correctly rounded results of fixy/fp, each float function and exp and
+// log of double, have the bits of CORE-MATH on each input.
+void check_the_correct_rounds(View<double const> exp_doubles, View<double const> log_doubles,
+                              View<float const> exp_inputs, View<float const> log_inputs,
+                              View<float const> erf_inputs) noexcept {
     bool const is_same = rows::xor_of_results(FixyKernel<Function::Exp>{}, exp_doubles)
                           == rows::core_math::xor_of(Function::Exp, exp_doubles)
+                      && rows::xor_of_results(FixyKernel<Function::Log>{}, log_doubles)
+                             == rows::core_math::xor_of(Function::Log, log_doubles)
                       && rows::xor_of_results(FixyKernel<Function::Exp>{}, exp_inputs)
                              == rows::core_math::xor_of(Function::Exp, exp_inputs)
                       && rows::xor_of_results(FixyKernel<Function::Log>{}, log_inputs)
@@ -375,7 +378,8 @@ int main() {
     HeapArray<float> const log_floats = draw_floats(Function::Log);
     HeapArray<float> const erf_floats = draw_floats(Function::Erf);
 #if defined(CRUCIBLE_BENCH_CORE_MATH)
-    check_the_correct_rounds(exp_doubles.view(), exp_floats.view(), log_floats.view(), erf_floats.view());
+    check_the_correct_rounds(exp_doubles.view(), log_doubles.view(), exp_floats.view(), log_floats.view(),
+                             erf_floats.view());
 #endif
     bench::print("=== {} cycles of the core in one ns at the start (the TSC counts 2.2466 GHz)\n",
                  ::fixy::Fixed<3>{measure_cycles_per_ns()});
