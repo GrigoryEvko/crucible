@@ -96,10 +96,10 @@ struct ClockChain {
 // and the macro operations at six for each cycle.
 //   code              fma  mul  add  cvt  ops   floor
 //   fixy exp double     7    3    3    0   33   5.5, the dispatch
-//   fixy exp float      4    2    2    2   33   5.5, the dispatch
+//   fixy exp float      5    1    1    2   33   5.5, the dispatch
 //   fixy log double     8    2    5    1   44   7.33, the dispatch
 //   fixy log float      6    1    1    3   35   5.83, the dispatch
-//   fixy erf double    11    2    4    2   50   8.33, the dispatch
+//   fixy erf double    11    2    4    2   37   6.5, the fma pipes
 //   fixy erf float      8    4    1    4   41   6.83, the dispatch
 //   cr_expf             6    2    1    3   30   5.0, the dispatch
 //   cr_logf             5    1    1    3   34   5.67, the dispatch
@@ -115,7 +115,7 @@ struct ClockChain {
 // the guide, so the floor is a lower bound too.  The chain x + 0 * y of the
 // row adds a multiply and an add, 6 cycles:
 //   fixy exp double 33 + 6 = 39   fixy log double 37 + 6 = 43   fixy erf double 72 + 6 = 78
-//   fixy exp float  31 + 6 = 37   fixy log float  27 + 6 = 33   fixy erf float  30 + 6 = 36
+//   fixy exp float  29 + 6 = 35   fixy log float  27 + 6 = 33   fixy erf float  30 + 6 = 36
 //   cr_expf         28 + 6 = 34   cr_logf         23 + 6 = 29   cr_erff         30 + 6 = 36
 // The Horner chain of fixy erf double holds 11 dependent fma.  fixy erf float
 // and cr_erff take an Estrin form of degree 7.  After the table, fixy log
@@ -136,7 +136,7 @@ struct Floor {
         case Function::Log:
             return is_double ? Floor{44.0 / 6.0, 43.0} : Floor{34.0 / 6.0, 29.0};
         case Function::Erf:
-            return is_double ? Floor{50.0 / 6.0, 78.0} : Floor{6.0, 36.0};
+            return is_double ? Floor{13.0 / 2.0, 78.0} : Floor{6.0, 36.0};
         default:
             ::fixy::unreachable();
     }
