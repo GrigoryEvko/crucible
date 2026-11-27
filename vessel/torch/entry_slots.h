@@ -356,10 +356,8 @@ struct InputOverflow {
         // the storage offset fold as in the word of a tensor
         // (pack_tensor_word), so an input past the limit keeps each fact
         // that changes the elements that the op reads.
-        const uint64_t placement = crucible::tensor_fields_of(meta)
-                                       .with<crucible::side::TensorRankField>(0)
-                                       .expect("the rank field holds zero")
-                                       .bits();
+        const uint64_t placement =
+            crucible::tensor_fields_of(meta).with_fitting<crucible::side::TensorRankField>(uint8_t{0}).bits();
         const uint64_t offset_word = static_cast<uint64_t>(meta.storage_offset) * crucible::detail::kStorageOffsetMix;
         digest = ::foundation::reflect::combine_ids(digest, placement ^ offset_word);
         count = ::fixy::saturating_add(count, uint32_t{1});
@@ -516,16 +514,13 @@ using GuardHeader = ::fixy::PackedWord<
     const uint32_t data_mask = (uint32_t{1} << stored) - 1;
     const uint64_t header =
         GuardHeader{}
-            .with<side::GuardInputCountField>(entry.num_inputs)
-            .expect("a count of 16 bits fits a field of 16 bits")
-            .with<side::GuardScalarCountField>(entry.num_scalar_args)
-            .expect("a count of 8 bits fits a field of 16 bits")
+            .with_fitting<side::GuardInputCountField>(entry.num_inputs)
+            .with_fitting<side::GuardScalarCountField>(entry.num_scalar_args)
+            .with_fitting<side::GuardDepthField>(depth.raw())
             .with<side::GuardTagsField>(static_cast<uint16_t>(entry.packed_scalar_types() & tag_mask))
             .expect("the mask keeps the tags of the stored slots")
             .with<side::GuardDataSlotsField>(static_cast<uint8_t>(entry.data_slot_bits & data_mask))
             .expect("the mask keeps the data slots of the stored slots")
-            .with<side::GuardDepthField>(depth.raw())
-            .expect("a depth of 16 bits fits a field of 16 bits")
             .bits();
     const uint32_t data_bits = uint32_t{entry.data_slot_bits} & data_mask;
 

@@ -157,22 +157,14 @@ using RecipeWord =
     using detail_recipe::enum_byte;
     namespace field = detail_recipe;
     const uint64_t packed = detail_recipe::RecipeWord{}
-                                .with<field::AccumDtypeField>(enum_byte(r.accum_dtype))
-                                .expect("a byte fits a field of 8 bits")
-                                .with<field::OutDtypeField>(enum_byte(r.out_dtype))
-                                .expect("a byte fits a field of 8 bits")
-                                .with<field::ReductionField>(enum_byte(r.reduction_algo))
-                                .expect("a byte fits a field of 8 bits")
-                                .with<field::RoundingField>(enum_byte(r.rounding))
-                                .expect("a byte fits a field of 8 bits")
-                                .with<field::ScalePolicyField>(enum_byte(r.scale_policy))
-                                .expect("a byte fits a field of 8 bits")
-                                .with<field::SoftmaxField>(enum_byte(r.softmax))
-                                .expect("a byte fits a field of 8 bits")
-                                .with<field::DeterminismField>(enum_byte(r.determinism))
-                                .expect("a byte fits a field of 8 bits")
-                                .with<field::RecipeFlagsField>(r.flags.raw())
-                                .expect("a byte fits a field of 8 bits")
+                                .with_fitting<field::AccumDtypeField>(enum_byte(r.accum_dtype))
+                                .with_fitting<field::OutDtypeField>(enum_byte(r.out_dtype))
+                                .with_fitting<field::ReductionField>(enum_byte(r.reduction_algo))
+                                .with_fitting<field::RoundingField>(enum_byte(r.rounding))
+                                .with_fitting<field::ScalePolicyField>(enum_byte(r.scale_policy))
+                                .with_fitting<field::SoftmaxField>(enum_byte(r.softmax))
+                                .with_fitting<field::DeterminismField>(enum_byte(r.determinism))
+                                .with_fitting<field::RecipeFlagsField>(r.flags.raw())
                                 .bits();
     const uint64_t mixed = ::foundation::reflect::fmix64(packed);
     const bool is_reserved = mixed == 0 || mixed == RecipeHash::sentinel().raw();
@@ -264,16 +256,11 @@ using PolicyWord = ::fixy::PackedWord<uint64_t, ::fixy::BitField<PolicyDetermini
     using detail_recipe::enum_byte;
     namespace field = detail_recipe;
     const uint64_t packed = detail_recipe::PolicyWord{}
-                                .with<field::PolicyDeterminismField>(enum_byte(policy.determinism))
-                                .expect("a byte fits a field of 8 bits")
-                                .with<field::Accum16Field>(enum_byte(policy.accum_16bit))
-                                .expect("a byte fits a field of 8 bits")
-                                .with<field::Accum8Field>(enum_byte(policy.accum_8bit))
-                                .expect("a byte fits a field of 8 bits")
-                                .with<field::PolicyFlagsField>(policy.flags.raw())
-                                .expect("a byte fits a field of 8 bits")
-                                .with<field::EagerField>(eager.bits)
-                                .expect("a word of 32 bits fits a field of 32 bits")
+                                .with_fitting<field::PolicyDeterminismField>(enum_byte(policy.determinism))
+                                .with_fitting<field::Accum16Field>(enum_byte(policy.accum_16bit))
+                                .with_fitting<field::Accum8Field>(enum_byte(policy.accum_8bit))
+                                .with_fitting<field::PolicyFlagsField>(policy.flags.raw())
+                                .with_fitting<field::EagerField>(eager.bits)
                                 .bits();
     const uint64_t mixed = ::foundation::reflect::fmix64(packed ^ detail_recipe::kNumericsSalt);
     const bool is_reserved = mixed == 0 || mixed == NumericsHash::sentinel().raw();

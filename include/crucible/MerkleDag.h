@@ -805,24 +805,18 @@ using TensorFields =
 
 // The fields of meta.  The device comes through device_of.  The placement word
 // of the overflow digest of vessel/torch/entry_slots.h takes these fields with
-// the rank field zero.  Each value is a byte, so each write has no test that
-// stays in the code.
+// the rank field zero.  Each value is a byte of its field, so each write has
+// no test.
 [[nodiscard, gnu::always_inline]] inline TensorFields tensor_fields_of(const TensorMeta& meta) noexcept {
     constexpr auto kValueBits = static_cast<uint8_t>(meta_flags::IS_NEG | meta_flags::IS_CONJ);
     const TensorDevice device = device_of(meta);
     return TensorFields{}
-        .with<side::TensorDtypeField>(::fixy::bit_cast<uint8_t>(meta.dtype))
-        .expect("a byte fits a field of 8 bits")
-        .with<side::TensorDeviceTypeField>(::fixy::bit_cast<uint8_t>(device.type()))
-        .expect("a byte fits a field of 8 bits")
-        .with<side::TensorDeviceIndexField>(::fixy::bit_cast<uint8_t>(device.index()))
-        .expect("a byte fits a field of 8 bits")
-        .with<side::TensorRankField>(meta.ndim)
-        .expect("a byte fits a field of 8 bits")
-        .with<side::TensorLayoutField>(::fixy::bit_cast<uint8_t>(meta.layout))
-        .expect("a byte fits a field of 8 bits")
-        .with<side::TensorValueBitsField>(static_cast<uint8_t>(meta.flags & kValueBits))
-        .expect("a byte fits a field of 8 bits");
+        .with_fitting<side::TensorDtypeField>(::fixy::bit_cast<uint8_t>(meta.dtype))
+        .with_fitting<side::TensorDeviceTypeField>(::fixy::bit_cast<uint8_t>(device.type()))
+        .with_fitting<side::TensorDeviceIndexField>(::fixy::bit_cast<uint8_t>(device.index()))
+        .with_fitting<side::TensorRankField>(meta.ndim)
+        .with_fitting<side::TensorLayoutField>(::fixy::bit_cast<uint8_t>(meta.layout))
+        .with_fitting<side::TensorValueBitsField>(static_cast<uint8_t>(meta.flags & kValueBits));
 }
 
 // The word of one tensor in the content hash of a region.  It folds each fact
