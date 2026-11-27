@@ -735,6 +735,11 @@ crucible_test(test_vessel_api_typed)
 crucible_test(test_vessel_c_entries)
 target_link_libraries(test_vessel_c_entries PRIVATE crucible_vessel)
 crucible_test(test_vessel_entry_slots)
+# The bits of the packed words of the record path: the generation of a
+# storage, the words of a recipe and of a numerics policy, the word of a
+# tensor, the placement word of the overflow digest, the header of the guard
+# word and the flags of a ring entry, each against a literal.
+crucible_test(test_record_packed_words)
 # The table of the handles of the Vigils of the vessel: each status of a
 # handle, on a table of two slots, and the end of a Vigil against the claims
 # and the reads of a second thread.
