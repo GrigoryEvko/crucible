@@ -160,14 +160,16 @@ constexpr ::fixy::FixedArray<DoubleCase, 15> kErfDoubleCases{
     DoubleCase{0x4018000000000000ULL, 0x3FF0000000000000ULL},
 };
 
-// exp of float: as for double, with the edges of the float form.
-constexpr ::fixy::FixedArray<FloatCase, 17> kExpFloatCases{
+// exp of float: as for double, with the edges of the float form, and each
+// side of the positive edge of the fast path at 0x1.5d589ep+6.
+constexpr ::fixy::FixedArray<FloatCase, 19> kExpFloatCases{
     FloatCase{0x00000000u, 0x3F800000u}, FloatCase{0x80000000u, 0x3F800000u}, FloatCase{0x7F800000u, 0x7F800000u},
     FloatCase{0xFF800000u, 0x00000000u}, FloatCase{0x7FC00001u, kNan32},      FloatCase{0x7F800001u, kNan32},
     FloatCase{0x3F800000u, 0x402DF854u}, FloatCase{0x42B17217u, 0x7F7FFF84u}, FloatCase{0x42B17218u, 0x7F800000u},
     FloatCase{0xC2CFF1B4u, 0x00000001u}, FloatCase{0xC2CFF1B5u, 0x00000000u}, FloatCase{0xC2AEAC4Fu, 0x00800026u},
     FloatCase{0xC2AEAC50u, 0x007FFFE6u}, FloatCase{0xC2C80000u, 0x0000001Bu}, FloatCase{0x00000001u, 0x3F800000u},
-    FloatCase{0x33000000u, 0x3F800000u}, FloatCase{0xB3000000u, 0x3F800000u},
+    FloatCase{0x33000000u, 0x3F800000u}, FloatCase{0xB3000000u, 0x3F800000u}, FloatCase{0x42AEAC4Fu, 0x7E7FFFB4u},
+    FloatCase{0x42AEAC50u, 0x7E80001Au},
 };
 
 // log of float: as for double, the five inputs whose log(double) is a float

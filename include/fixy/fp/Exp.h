@@ -59,7 +59,10 @@
 //   the slow path takes the input.  The slow path rounds exp(double) of the
 //   input, whose error is below one unit of a double.  So the round is wrong
 //   only when that result is a float midpoint (fixy/fp/RoundToFloat.h), and the
-//   sweep of the oracle lists each such input.  A result below 2^-126 always
+//   sweep of the oracle lists each such input.  One unsigned compare of the
+//   bits sends each |x| above 0x1.5d589ep+6, each infinity and each NaN to a
+//   cold path: a NaN gives the canonical NaN, the edges give +inf and +0, and
+//   each other input takes the slow path.  So a result below 2^-126 always
 //   takes the slow path.  The fma sites of the fast path: one in the
 //   reduction, two in the polynomial and one in the last step.
 //   The exhaustive sweep of the 2^32 inputs against CORE-MATH proves the
@@ -186,6 +189,11 @@ inline constexpr std::uint64_t kExpTable[2 * 128] = {
 inline constexpr float kExpFloatOverflowAbove = 0x1.62e42ep+6f;
 inline constexpr float kExpFloatZeroBelow = -0x1.9fe368p+6f;
 inline constexpr float kExpFloatSubnormalBelow = -0x1.5d589ep+6f;
+// The bits of |kExpFloatSubnormalBelow| without the sign, shifted left by one.
+// Each x with |x| at or below that magnitude takes the fast path: its result
+// is a normal finite float.
+inline constexpr std::uint32_t kExpFloatFastBitsTwice = __builtin_bit_cast(std::uint32_t, -kExpFloatSubnormalBelow)
+                                                     << 1;
 // The tolerance of the rounding test of the float fast path, in units of the
 // last bit of the double result: the error 2^-41 of the fast path times 2^53,
 // with a margin of two.
@@ -307,6 +315,19 @@ inline namespace CRUCIBLE_SIMD_TARGET {
     return static_cast<float>(result);
 }
 
+// The inputs past the range of the fast path of the float form: a NaN gives
+// the canonical NaN, a result past the largest float gives +inf, a result
+// below the smallest subnormal gives +0, and each other input takes the slow
+// path.  The slow path holds the subnormal results and each x above
+// |kExpFloatSubnormalBelow| below the edge of +inf.
+[[gnu::cold, gnu::noinline, nodiscard]] constexpr float exp_float_edge_(float value) noexcept {
+    if ((__builtin_bit_cast(std::uint32_t, value) & 0x7fffffffu) > 0x7f800000u)
+        return ::foundation::core::quiet_nan_of<float>;
+    if (value > kExpFloatOverflowAbove) return ::foundation::core::infinity_of<float>;
+    if (value < kExpFloatZeroBelow) return 0.0f;
+    return exp_float_slow_(value);
+}
+
 }  // namespace CRUCIBLE_SIMD_TARGET
 
 }  // namespace fixy::fp::detail
@@ -317,15 +338,11 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 
 [[nodiscard]] constexpr float exp(float value) noexcept {
     using ::fixy::fp::detail::fma_of_finite;
-    std::uint32_t const magnitude = __builtin_bit_cast(std::uint32_t, value) & 0x7fffffffu;
-    if (magnitude > 0x7f800000u) [[unlikely]]
-        return ::foundation::core::quiet_nan_of<float>;
-    if (value > detail::kExpFloatOverflowAbove) [[unlikely]]
-        return ::foundation::core::infinity_of<float>;
-    if (value < detail::kExpFloatZeroBelow) [[unlikely]]
-        return 0.0f;
-    if (value < detail::kExpFloatSubnormalBelow) [[unlikely]]
-        return detail::exp_float_slow_(value);
+    // One unsigned compare of the bits without the sign holds each input past
+    // the range of the fast path: the NaNs, the infinities, and each |x| above
+    // the edge of a subnormal result.  The cold path sorts them.
+    if ((__builtin_bit_cast(std::uint32_t, value) << 1) > detail::kExpFloatFastBitsTwice) [[unlikely]]
+        return detail::exp_float_edge_(value);
     double const input = static_cast<double>(value);
     // With a fused multiply-add, one fma gives x N / ln2 + the shift with one
     // round, two cycles before a multiply and an add.  So k can differ from
