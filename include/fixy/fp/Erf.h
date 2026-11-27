@@ -9,7 +9,9 @@
 // Each function is total and odd: erf(-x) = -erf(x) for each x, ±0 keep their
 // sign, and ±inf give ±1.  A NaN gives the canonical quiet NaN
 // quiet_nan_of<T>.  No function reads or writes errno or a flag of the
-// floating-point unit on purpose.
+// floating-point unit on purpose.  In erf(float), a signaling NaN gets to one
+// quiet compare, which raises the invalid flag, as IEEE 754 states for an
+// operation on a signaling NaN.
 //
 // Mode of the register
 //   Each function assumes the default mode of the floating-point unit: the
@@ -545,19 +547,20 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 
 [[nodiscard]] constexpr float erf(float value) noexcept {
     std::uint32_t const magnitude_bits = __builtin_bit_cast(std::uint32_t, value) & 0x7fffffffu;
-    if (magnitude_bits >= 0x7f800000u) [[unlikely]] {
-        if (magnitude_bits > 0x7f800000u) return ::foundation::core::quiet_nan_of<float>;
-        return ::foundation::core::fp::copy_sign(1.0f, value);
-    }
     // The and of the sign on the float register keeps the value off the
     // integer registers, so the chain of the result has no move there and
     // back.  The tests read the bits.
     float const magnitude = ::foundation::core::fp::abs(value);
-    // The test is true for a NaN, so after it the compiler knows that the
-    // magnitude is in [0, kErfFloatOneFrom).  Then the conversion of the index
-    // in erf_interval_float_ needs no check of its range under the sanitizer
-    // of the conversions.  A NaN does not get here.
-    if (!(magnitude < detail::kErfFloatOneFrom)) return ::foundation::core::fp::copy_sign(1.0f, value);
+    // One quiet compare holds the edge to 1, the infinities and the NaNs, and
+    // it raises no flag for a quiet NaN.  It is true for a NaN, so after it the
+    // compiler knows that the magnitude is in [0, kErfFloatOneFrom).  Then the
+    // conversion of the index in erf_interval_float_ needs no check of its
+    // range under the sanitizer of the conversions.
+    if (!__builtin_isless(magnitude, detail::kErfFloatOneFrom)) [[unlikely]] {
+        if (magnitude_bits > 0x7f800000u) [[unlikely]]
+            return ::foundation::core::quiet_nan_of<float>;
+        return ::foundation::core::fp::copy_sign(1.0f, value);
+    }
     // A result below 2^-123 takes the slow path: the rounding test reads 24
     // bits of precision, and a subnormal float has fewer.
     if (magnitude_bits < 0x02000000u) [[unlikely]]
