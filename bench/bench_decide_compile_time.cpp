@@ -67,21 +67,15 @@ namespace {
 // The buffer that valid_span points into, 64 elements long.
 constexpr std::size_t kSeqLen = 64;
 
-}  // namespace
-
-int main() {
-    bench::print_system_info();
-    bench::elevate_priority();
-
-    const bench::JsonTail json = bench::env_json();
-
-    // ── Volatile seeds — defeat constant-folding ───────────────────
-    //
-    // Each volatile read forces the compiler to load from memory at
-    // every iteration, foiling the constant evaluator's attempt to
-    // fold the entire bench body to a single boolean.  Without this
-    // the bench measures `(void)0` and reports 0 ns for everything.
-
+// The inputs of the rows.  Each row holds its own copy in its home
+// (bench::RowHome), so the distance from the inputs to the frame of the
+// timed loop depends only on the code of the row.
+//
+// Each volatile read forces the compiler to load from memory at every
+// iteration, foiling the constant evaluator's attempt to fold the entire
+// bench body to a single boolean.  Without this the bench measures
+// `(void)0` and reports 0 ns for everything.
+struct Seeds {
     volatile std::int32_t v_int_pos = 12345;
     volatile std::int32_t v_lo = -1000;
     volatile std::int32_t v_hi = 100000;
@@ -93,19 +87,37 @@ int main() {
     volatile bool v_bool_t = true;
     volatile bool v_bool_f = false;
 
-    // The buffer of valid_span, built once outside the lambda.
+    // The buffer of valid_span.
     ::fixy::FixedArray<std::int32_t, kSeqLen> inc_seq{};
-    for (::fixy::Index<kSeqLen> const i : inc_seq.indices())
-        inc_seq.set(i, static_cast<std::int32_t>(i.raw() * 7));
 
     // The input of intervals_pairwise_disjoint: 8 disjoint intervals that
     // tile [0, 800).  The pass of well-formedness and the quadratic pass of
     // the pairs both run.
     ::foundation::core::FixedArray<dc::Interval<std::uint64_t>, 8> intervals_disjoint{};
-    for (auto const position : intervals_disjoint.indices()) {
-        std::uint64_t const low = 100 * position.raw();
-        intervals_disjoint.set(position, dc::Interval<std::uint64_t>{.lo = low, .hi = low + 100});
+
+    Seeds() noexcept {
+        for (::fixy::Index<kSeqLen> const i : inc_seq.indices())
+            inc_seq.set(i, static_cast<std::int32_t>(i.raw() * 7));
+        for (auto const position : intervals_disjoint.indices()) {
+            std::uint64_t const low = 100 * position.raw();
+            intervals_disjoint.set(position, dc::Interval<std::uint64_t>{.lo = low, .hi = low + 100});
+        }
     }
+};
+
+// The report of a row whose step runs on the seeds in a home of its own.
+template <typename Step>
+[[nodiscard]] bench::Report run_on_seeds(::fixy::TextView name, Step step) {
+    return bench::run_in_home(name, []() noexcept { return Seeds{}; }, step);
+}
+
+}  // namespace
+
+int main() {
+    bench::print_system_info();
+    bench::elevate_priority();
+
+    const bench::JsonTail json = bench::env_json();
 
     bench::print("=== decide ===\n\n");
 
@@ -115,73 +127,73 @@ int main() {
     // sub-cycle predicates (positive, non_negative, in_range).
     ::fixy::FixedArray<bench::Report, 10> reports{
         // ── Scalar predicates (sub-nanosecond expected) ───────────
-        bench::run("decide::positive<int32>",
-                   [&] {
-                       bool r = dc::positive<std::int32_t>(v_int_pos);
-                       bench::do_not_optimize(r);
-                   }),
-        bench::run("decide::non_negative<int32>",
-                   [&] {
-                       bool r = dc::non_negative<std::int32_t>(v_int_pos);
-                       bench::do_not_optimize(r);
-                   }),
-        bench::run("decide::in_range<int32>",
-                   [&] {
-                       bool r = dc::in_range<std::int32_t>(v_int_pos, v_lo, v_hi);
-                       bench::do_not_optimize(r);
-                   }),
-        bench::run("decide::is_non_zero<u64>",
-                   [&] {
-                       // is_non_zero<T> takes T const& — peel volatile via prvalue
-                       // copy so the reference can bind without qualifier discard.
-                       std::uint64_t x = v_u64_a;
-                       bool r = dc::is_non_zero<std::uint64_t>(x);
-                       bench::do_not_optimize(r);
-                   }),
-        bench::run("decide::valid_span<u32>",
-                   [&] {
-                       bool r = dc::valid_span<std::uint32_t>(v_u32_a, &inc_seq.at(::fixy::index<0>()));
-                       bench::do_not_optimize(r);
-                   }),
+        run_on_seeds("decide::positive<int32>",
+                     [](Seeds& row) noexcept {
+                         bool r = dc::positive<std::int32_t>(row.v_int_pos);
+                         bench::do_not_optimize(r);
+                     }),
+        run_on_seeds("decide::non_negative<int32>",
+                     [](Seeds& row) noexcept {
+                         bool r = dc::non_negative<std::int32_t>(row.v_int_pos);
+                         bench::do_not_optimize(r);
+                     }),
+        run_on_seeds("decide::in_range<int32>",
+                     [](Seeds& row) noexcept {
+                         bool r = dc::in_range<std::int32_t>(row.v_int_pos, row.v_lo, row.v_hi);
+                         bench::do_not_optimize(r);
+                     }),
+        run_on_seeds("decide::is_non_zero<u64>",
+                     [](Seeds& row) noexcept {
+                         // is_non_zero<T> takes T const& — peel volatile via prvalue
+                         // copy so the reference can bind without qualifier discard.
+                         std::uint64_t x = row.v_u64_a;
+                         bool r = dc::is_non_zero<std::uint64_t>(x);
+                         bench::do_not_optimize(r);
+                     }),
+        run_on_seeds("decide::valid_span<u32>",
+                     [](Seeds& row) noexcept {
+                         bool r = dc::valid_span<std::uint32_t>(row.v_u32_a, &row.inc_seq.at(::fixy::index<0>()));
+                         bench::do_not_optimize(r);
+                     }),
 
         // ── Overflow guards (single-instruction expected) ─────────
-        bench::run("decide::no_overflow_sum<u64>",
-                   [&] {
-                       bool r = dc::no_overflow_sum<std::uint64_t>(v_u64_a, v_u64_b);
-                       bench::do_not_optimize(r);
-                   }),
+        run_on_seeds("decide::no_overflow_sum<u64>",
+                     [](Seeds& row) noexcept {
+                         bool r = dc::no_overflow_sum<std::uint64_t>(row.v_u64_a, row.v_u64_b);
+                         bench::do_not_optimize(r);
+                     }),
 
         // ── Power of two (single-instruction expected) ────────────
-        bench::run("decide::is_power_of_two_le<u64>",
-                   [&] {
-                       bool r = dc::is_power_of_two_le<std::uint64_t>(v_pow2, v_pow2_bound);
-                       bench::do_not_optimize(r);
-                   }),
+        run_on_seeds("decide::is_power_of_two_le<u64>",
+                     [](Seeds& row) noexcept {
+                         bool r = dc::is_power_of_two_le<std::uint64_t>(row.v_pow2, row.v_pow2_bound);
+                         bench::do_not_optimize(r);
+                     }),
 
         // ── Intervals (quadratic pass of the pairs, 8 intervals) ──
-        bench::run("decide::intervals_pairwise_disjoint<u64, 8>",
-                   [&] {
-                       bool r = dc::intervals_pairwise_disjoint(intervals_disjoint.view());
-                       bench::do_not_optimize(r);
-                   }),
+        run_on_seeds("decide::intervals_pairwise_disjoint<u64, 8>",
+                     [](Seeds& row) noexcept {
+                         bool r = dc::intervals_pairwise_disjoint(row.intervals_disjoint.view());
+                         bench::do_not_optimize(r);
+                     }),
 
-        bench::run("decide::implies(bool,bool)",
-                   [&] {
-                       bool r = dc::implies(v_bool_t, v_bool_f);
-                       bench::do_not_optimize(r);
-                   }),
+        run_on_seeds("decide::implies(bool,bool)",
+                     [](Seeds& row) noexcept {
+                         bool r = dc::implies(row.v_bool_t, row.v_bool_f);
+                         bench::do_not_optimize(r);
+                     }),
 
         // ── Domain predicates ─────────────────────────────────────
-        bench::run("decide::tier_replaces<CipherBenchTier>",
-                   [&] {
-                       // Hot-replaces-Warm: the canonical promotion case
-                       // exercised at the CipherTierPromotion sites.  The two
-                       // tiers go through the input sink, so the compiler
-                       // does not fold the call to a constant.
-                       bool r = dc::tier_replaces<CipherBenchTier>(bench::make_opaque(CipherBenchTier::Hot),
-                                                                   bench::make_opaque(CipherBenchTier::Warm));
-                       bench::do_not_optimize(r);
-                   }),
+        run_on_seeds("decide::tier_replaces<CipherBenchTier>",
+                     [](Seeds&) noexcept {
+                         // Hot-replaces-Warm: the canonical promotion case
+                         // exercised at the CipherTierPromotion sites.  The two
+                         // tiers go through the input sink, so the compiler
+                         // does not fold the call to a constant.
+                         bool r = dc::tier_replaces<CipherBenchTier>(bench::make_opaque(CipherBenchTier::Hot),
+                                                                     bench::make_opaque(CipherBenchTier::Warm));
+                         bench::do_not_optimize(r);
+                     }),
     };
 
     bench::emit_reports_text(reports.view());
