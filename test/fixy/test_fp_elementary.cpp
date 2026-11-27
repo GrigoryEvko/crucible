@@ -32,7 +32,7 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 // The digests of each function on its sample, on each level and each target.
 constexpr fe::FpDigests kDigests{
-    0x10BAF092FEFD09FDULL, 0x48B3390E0E753230ULL, 0x52AD80744BE47937ULL,
+    0x10BAF092FEFD09FDULL, 0x48B3390E0E753230ULL, 0x81567B07633715BFULL,
     0x578109E55FF5FA19ULL, 0x13CAEAE827152888ULL, 0x466D780B813F634AULL,
 };
 

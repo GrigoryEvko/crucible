@@ -14,7 +14,8 @@
 //     input of the whole list.
 //   - the edges of the paths: 1, the neighbors of 1, the two edges of the
 //     path near 1, the edges of k2 = 0 of the slow path, the neighbors of
-//     sqrt2 and sqrt2/2, the smallest and the largest subnormal
+//     sqrt2 and sqrt2/2, the two edges 0x1.6ap-1 and 0x1.6ap0 of the range of
+//     y of the reduction and their neighbors, the smallest and the largest subnormal
 //     input, the smallest normal input, the largest finite input, 2, 1/2 and
 //     the double nearest e.
 
@@ -30,7 +31,7 @@ struct HardCase {
     std::uint64_t expected = 0;
 };
 
-inline constexpr ::fixy::FixedArray<HardCase, 54> kLogHardCases{
+inline constexpr ::fixy::FixedArray<HardCase, 58> kLogHardCases{
     // The hardest inputs of each range of the list log.wc.
     HardCase{0x0001104D89F02A00ULL, 0xC08638DBB037825FULL},  // 0x0.1104d89f02ap-1022, subnormal, 2^-55.53
     HardCase{0x00019B99592DFC98ULL, 0xC086358D96B1CB2DULL},  // 0x0.19b99592dfc98p-1022, subnormal, 2^-52.96
@@ -80,6 +81,10 @@ inline constexpr ::fixy::FixedArray<HardCase, 54> kLogHardCases{
     HardCase{0x3FF6A09E667F3BCDULL, 0x3FD62E42FEFA39F0ULL},  // above sqrt2
     HardCase{0x3FE6A09E667F3BCCULL, 0xBFD62E42FEFA39F1ULL},  // below sqrt2/2
     HardCase{0x3FE6A09E667F3BCDULL, 0xBFD62E42FEFA39EEULL},  // above sqrt2/2
+    HardCase{0x3FE6A00000000000ULL, 0xBFD630030B3AAC49ULL},  // 0x1.6ap-1, the start of y: e = 0, row 0
+    HardCase{0x3FE69FFFFFFFFFFFULL, 0xBFD630030B3AAC4CULL},  // below 0x1.6ap-1: e = -1, row 511
+    HardCase{0x3FF6A00000000000ULL, 0x3FD62C82F2B9C795ULL},  // 0x1.6ap0, the end of y: e = 1, row 0
+    HardCase{0x3FF69FFFFFFFFFFFULL, 0x3FD62C82F2B9C792ULL},  // below 0x1.6ap0: e = 0, row 511
     HardCase{0x0000000000000001ULL, 0xC0874385446D71C3ULL},  // the smallest subnormal input
     HardCase{0x000FFFFFFFFFFFFFULL, 0xC086232BDD7ABCD2ULL},  // the largest subnormal input
     HardCase{0x0010000000000000ULL, 0xC086232BDD7ABCD2ULL},  // the smallest normal input
