@@ -59,8 +59,9 @@
 //   the form of Estrin below 1/2, and the fma of t and the seven of the form
 //   of Estrin in an interval.  The test test_fp_erf_float_exhaustive of each
 //   Release build of the gate proves the correct round of each of the 2^32
-//   inputs, against the round of erf(double).  The sweep of bench_fp_sweep
-//   against CORE-MATH proves it too.
+//   inputs, against the pinned digests of the results of CORE-MATH and the
+//   round of erf(double).  The sweep of bench_fp_sweep against CORE-MATH
+//   proves it too.
 //
 // Tables
 //   `python3 utils/tools/fp_tables.py erf` prints each table and constant of

@@ -7815,13 +7815,14 @@ target_compile_definitions(test_fp_elementary PRIVATE CRUCIBLE_TEST_HAS_V1_UNIT=
                                                       CRUCIBLE_TEST_HAS_V4_UNIT=${_fp_has_v4_unit})
 
 # test_fp_erf_float_exhaustive runs erf of float of fixy/fp on each of the
-# 2^32 floats against the round of erf(double).  The float form has no
-# run-time rounding test, so this test is its proof.  It takes about 30 s at
-# x86-64-v3, so only a Release build holds it: release-v3 of the gate for
-# each change of a C++ file, and release.  An instrumented build and the full
-# UBSan of ubsan-strict make it too slow.
+# 2^32 floats, in 4 parts, against the pinned digests of CORE-MATH and the
+# round of erf(double).  The float form has no run-time rounding test, so this
+# test is its proof.  All parts take about 30 s at x86-64-v3 on one core, so
+# only a Release build holds them: release-v3 of the gate for each change of a
+# C++ file, and release.  An instrumented build and the full UBSan of
+# ubsan-strict make them too slow.  The part count must be kParts of the test.
 if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT CRUCIBLE_UBSAN_STRICT AND NOT CRUCIBLE_PGO STREQUAL "generate")
-  fixy_test(test_fp_erf_float_exhaustive)
+  fixy_parted_test(test_fp_erf_float_exhaustive 4)
 endif()
 
 # The probes of exp, log and erf at x86-64-v3 and x86-64-v4 hold no fma that

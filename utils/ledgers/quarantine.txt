@@ -400,7 +400,7 @@ test/fixy/ | c-library-call | 940 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 8 | - | -
 test/fixy/ | enum-cast | 5 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
-test/fixy/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
+test/fixy/ | opted-out | 2 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | opted-out | 1 | ORACLE: sched_getcpu of the C library is the oracle of the current CPU | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | opted-out | 4 | ORACLE: the PyTorch tables, and the F16C instructions under each MXCSR state | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
@@ -446,7 +446,7 @@ test/fixy/ | opted-out | 4 | PROBE: two threads with no happens-before edge, and
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
 test/fixy/ | raw-pointer-object | 116 | - | -
-test/fixy/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
+test/fixy/ | region | 2 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 1 | ORACLE: sched_getcpu of the C library is the oracle of the current CPU | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
 test/fixy/ | region | 1 | ORACLE: the PyTorch tables, and the F16C instructions under each MXCSR state | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
