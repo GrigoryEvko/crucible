@@ -86,6 +86,67 @@ double error_in_ulp(Function function, ::fixy::Side<side::Input, double> input,
     return error < 0.0 ? -error : error;
 }
 
+namespace {
+
+// f(x) of MPFR into result, rounded to nearest at the precision of result.
+// Returns the ternary value of MPFR.
+int apply(Function function, mpfr_t result, mpfr_t argument) noexcept {
+    switch (function) {
+        case Function::Exp:
+            return mpfr_exp(result, argument, MPFR_RNDN);
+        case Function::Log:
+            return mpfr_log(result, argument, MPFR_RNDN);
+        case Function::Erf:
+            return mpfr_erf(result, argument, MPFR_RNDN);
+        default:
+            ::fixy::unreachable();
+    }
+}
+
+}  // namespace
+
+double rounded_by_mpfr(Function function, ::fixy::Side<side::Input, double> input) noexcept {
+    // The exponent range of a double: 2^-1074 = 0.5 * 2^-1073 is the smallest
+    // value, and the largest finite value is below 2^1024.
+    mpfr_exp_t const old_least = mpfr_get_emin();
+    mpfr_exp_t const old_most = mpfr_get_emax();
+    mpfr_set_emin(-1073);
+    mpfr_set_emax(1024);
+    mpfr_t argument;
+    mpfr_t result;
+    mpfr_init2(argument, 53);
+    mpfr_init2(result, 53);
+    mpfr_set_d(argument, input.value(), MPFR_RNDN);
+    int const ternary = apply(function, result, argument);
+    mpfr_subnormalize(result, ternary, MPFR_RNDN);
+    double const value = mpfr_get_d(result, MPFR_RNDN);
+    mpfr_clear(argument);
+    mpfr_clear(result);
+    mpfr_set_emin(old_least);
+    mpfr_set_emax(old_most);
+    return value;
+}
+
+double error_of_pair(Function function, ::fixy::Side<side::Input, double> input, Pair pair) noexcept {
+    mpfr_t argument;
+    mpfr_t exact;
+    mpfr_t sum;
+    mpfr_init2(argument, 53);
+    mpfr_init2(exact, 300);
+    mpfr_init2(sum, 300);
+    mpfr_set_d(argument, input.value(), MPFR_RNDN);
+    static_cast<void>(apply(function, exact, argument));
+    mpfr_set_d(sum, pair.high, MPFR_RNDN);
+    mpfr_add_d(sum, sum, pair.low, MPFR_RNDN);
+    mpfr_sub(sum, sum, exact, MPFR_RNDN);
+    mpfr_div(sum, sum, exact, MPFR_RNDN);
+    double const error = mpfr_get_d(sum, MPFR_RNDN);
+    mpfr_clear(argument);
+    mpfr_clear(exact);
+    mpfr_clear(sum);
+    return error < 0.0 ? -error : error;
+}
+
 }  // namespace fp_sweep
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

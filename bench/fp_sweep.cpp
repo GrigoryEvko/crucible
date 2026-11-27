@@ -9,7 +9,18 @@
 //                                    must be at most the bound of the header,
 //                                    and the sweep also counts the results
 //                                    that are not the correctly rounded result
-//                                    of CORE-MATH
+//                                    of CORE-MATH.  For a correctly rounded
+//                                    function that count must be zero
+//   bench_fp_sweep hard exp          each input of the list on standard input,
+//                                    a list .wc of CORE-MATH with one input in
+//                                    hexadecimal on each line, against
+//                                    CORE-MATH and the round of MPFR, through
+//                                    exp and through its slow path on its own
+//   bench_fp_sweep fast-bound exp    the relative error of the pair hi + lo of
+//                                    the fast path of exp(double) against MPFR
+//                                    on a sample: it must be at most eps_fast
+//                                    of the budget of fixy/fp/Exp.h.  The
+//                                    sweep also gives the rate of the slow path
 //
 //   bench_fp_sweep fma TYPE          the fma of a target with no fused
 //                                    multiply-add against the exact form and
@@ -31,11 +42,15 @@
 // float function, and 2^21 inputs of each region for a double function.
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/fp/Erf.h>
 #include <fixy/fp/Exp.h>
 #include <fixy/fp/Log.h>
 #include <fixy/os/Args.h>
+#include <fixy/os/Stdio.h>
 #include <foundation/Quarantine.h>
+#include <foundation/effects/Effect.h>
+#include <foundation/os/Errno.h>
 
 #include "fp_sweep_fma.h"
 #include "fp_sweep_oracles.h"
@@ -59,7 +74,7 @@ constexpr std::uint64_t kFmaRounds = std::uint64_t{1} << 24;
 [[nodiscard]] constexpr double bound_of(Function function) noexcept {
     switch (function) {
         case Function::Exp:
-            return 0.52;
+            return 0.5;
         case Function::Log:
             return 0.53;
         case Function::Erf:
@@ -68,6 +83,10 @@ constexpr std::uint64_t kFmaRounds = std::uint64_t{1} << 24;
             ::fixy::unreachable();
     }
 }
+
+// A correctly rounded double function: each result of its sweep must be the
+// result of CORE-MATH.
+[[nodiscard]] constexpr bool is_correctly_rounded(Function function) noexcept { return function == Function::Exp; }
 
 [[nodiscard]] ::fixy::TextView name_of(Function function) noexcept {
     switch (function) {
@@ -253,7 +272,7 @@ template <std::size_t Count>
         not_correctly_rounded += result.not_correctly_rounded;
         ++position;
     }
-    bool const holds = largest <= bound_of(function);
+    bool const holds = largest <= bound_of(function) && (!is_correctly_rounded(function) || not_correctly_rounded == 0);
     ::fixy::report(::fixy::Sink::Out,
                    "bench_fp_sweep: {} of double: largest error {} ulp, bound {} ulp, {} of {} inputs not correctly "
                    "rounded\n",
@@ -275,15 +294,265 @@ template <std::size_t Count>
     }
 }
 
+// The bound of the sweep fast-bound: eps_fast = 2^-65.20 of the budget of
+// fixy/fp/Exp.h, rounded up to 2^-65.19.
+constexpr double kExpFastBound = 0x1.c0d2771113e65p-66;
+
+// The domain of the slow path of exp(double): 2^-54 <= |x|, and a result from
+// 2^-1074 up to the largest finite value.
+[[nodiscard]] bool is_in_slow_domain(double value) noexcept {
+    double const magnitude = value < 0.0 ? -value : value;
+    return !(magnitude < 0x1p-54) && value > ::fixy::fp::detail::kExpZeroAtOrBelow
+        && !(value > ::fixy::fp::detail::kExpLargestFinite);
+}
+
+// 2^exponent for -1022 <= exponent <= 1023.
+[[nodiscard]] double power_of_two(std::int32_t exponent) noexcept {
+    return ::fixy::bit_cast<double>(static_cast<std::uint64_t>(exponent + 1023) << 52);
+}
+
+[[nodiscard]] std::int32_t hex_digit_of(char character) noexcept {
+    if (character >= '0' && character <= '9') return character - '0';
+    if (character >= 'a' && character <= 'f') return character - 'a' + 10;
+    if (character >= 'A' && character <= 'F') return character - 'A' + 10;
+    return -1;
+}
+
+// The double of the first token of a line of a list .wc of CORE-MATH: an
+// optional sign, 0x, the digit 0 or 1 or no digit, an optional point and at
+// most 13 hexadecimal digits, p and a decimal exponent.  A line that does not start
+// with such a token, as a comment or a NaN, gives no value.  The value is
+// exact: the mantissa has at most 53 bits, and two multiplies by powers of
+// two give the exponent.
+[[nodiscard]] ::fixy::Option<double> parse_hex_double(::fixy::TextView line) noexcept {
+    enum class Step : std::uint8_t {
+        Sign,
+        Zero,
+        Ex,
+        Lead,
+        AfterLead,
+        Fraction,
+        ExponentSign,
+        Exponent,
+        Done
+    };
+    Step step = Step::Sign;
+    bool is_negative = false;
+    bool is_exponent_negative = false;
+    std::uint64_t mantissa = 0;
+    std::int32_t fraction_digits = 0;
+    std::int32_t exponent = 0;
+    std::int32_t exponent_digits = 0;
+    for (char const character : line) {
+        if (step == Step::Done) break;
+        std::int32_t const digit = hex_digit_of(character);
+        switch (step) {
+            case Step::Sign:
+                if (character == '-' || character == '+') {
+                    is_negative = character == '-';
+                    step = Step::Zero;
+                } else if (character == '0') {
+                    step = Step::Ex;
+                } else {
+                    return ::fixy::none;
+                }
+                break;
+            case Step::Zero:
+                if (character != '0') return ::fixy::none;
+                step = Step::Ex;
+                break;
+            case Step::Ex:
+                if (character != 'x' && character != 'X') return ::fixy::none;
+                step = Step::Lead;
+                break;
+            case Step::Lead:
+                if (character == '.') {
+                    step = Step::Fraction;
+                    break;
+                }
+                if (digit < 0 || digit > 1) return ::fixy::none;
+                mantissa = static_cast<std::uint64_t>(digit);
+                step = Step::AfterLead;
+                break;
+            case Step::AfterLead:
+            case Step::Fraction:
+                if (character == 'p' || character == 'P') {
+                    step = Step::ExponentSign;
+                } else if (step == Step::AfterLead && character == '.') {
+                    step = Step::Fraction;
+                } else if (step == Step::Fraction && digit >= 0 && fraction_digits < 13) {
+                    mantissa = mantissa * 16 + static_cast<std::uint64_t>(digit);
+                    ++fraction_digits;
+                } else {
+                    return ::fixy::none;
+                }
+                break;
+            case Step::ExponentSign:
+                if (character == '-' || character == '+') {
+                    is_exponent_negative = character == '-';
+                    step = Step::Exponent;
+                    break;
+                }
+                [[fallthrough]];
+            case Step::Exponent:
+                if (character >= '0' && character <= '9' && exponent_digits < 5) {
+                    exponent = exponent * 10 + (character - '0');
+                    ++exponent_digits;
+                    step = Step::Exponent;
+                } else if (step == Step::Exponent && exponent_digits > 0) {
+                    step = Step::Done;
+                } else {
+                    return ::fixy::none;
+                }
+                break;
+            case Step::Done:
+            default:
+                break;
+        }
+    }
+    if (step != Step::Exponent && step != Step::Done) return ::fixy::none;
+    if (exponent_digits == 0) return ::fixy::none;
+    std::int32_t const scale = (is_exponent_negative ? -exponent : exponent) - 4 * fraction_digits;
+    if (scale < -1126 || scale > 1023) return ::fixy::none;
+    double value = static_cast<double>(mantissa);
+    if (scale < -1000) {
+        value = value * power_of_two(-1000) * power_of_two(scale + 1000);
+    } else {
+        value *= power_of_two(scale);
+    }
+    return ::fixy::some(is_negative ? -value : value);
+}
+
+// The reader of the list: a line of a list .wc holds far fewer than 256
+// characters.  It has static storage, as the one reader of standard input.
+::fixy::os::LineReader<256> g_list_reader;
+
+// The counts of the sweep hard.
+struct HardCounts {
+    std::uint64_t inputs = 0;
+    std::uint64_t exp_wrong = 0;
+    std::uint64_t slow_wrong = 0;
+    std::uint64_t oracles_differ = 0;
+};
+
+void check_hard_input(double input, HardCounts& counts) noexcept {
+    ++counts.inputs;
+    double const expected = correctly_rounded(Function::Exp, input);
+    double const by_mpfr = rounded_by_mpfr(Function::Exp, ::fixy::side_as<side::Input>(input));
+    if (!agree(by_mpfr, expected)) {
+        if (counts.oracles_differ < kShownMismatches) {
+            ::fixy::report(::fixy::Sink::Out, "  the oracles differ at {}: CORE-MATH {}, MPFR {}\n", input, expected,
+                           by_mpfr);
+        }
+        ++counts.oracles_differ;
+    }
+    double const got = ::fixy::fp::exp(input);
+    if (!agree(got, expected)) {
+        if (counts.exp_wrong < kShownMismatches) {
+            ::fixy::report(::fixy::Sink::Out, "  exp of {} gives {}, and the correct round is {}\n", input, got,
+                           expected);
+        }
+        ++counts.exp_wrong;
+    }
+    if (!is_in_slow_domain(input)) return;
+    double const slow = ::fixy::fp::detail::exp_accurate_(input);
+    if (!agree(slow, expected)) {
+        if (counts.slow_wrong < kShownMismatches) {
+            ::fixy::report(::fixy::Sink::Out, "  the slow path of {} gives {}, and the correct round is {}\n", input,
+                           slow, expected);
+        }
+        ++counts.slow_wrong;
+    }
+}
+
+// Each input of the list on standard input.  O(the count of the lines).
+[[nodiscard]] int sweep_hard_exp() noexcept {
+    ::fixy::InitLoadCtx const ctx{::foundation::effects::host::InitOwner::mint_init_context()};
+    HardCounts counts{};
+    bool has_ended = false;
+    bool has_failed = false;
+    while (!has_ended && !has_failed) {
+        g_list_reader.next_line(ctx).match(
+            [&](::fixy::Option<::fixy::TextView> line) {
+                line.match(
+                    [&](::fixy::TextView text) {
+                        parse_hex_double(text).match([&](double input) { check_hard_input(input, counts); }, [] {});
+                    },
+                    [&]() { has_ended = true; });
+            },
+            [&](::fixy::os::LineError) { has_failed = true; });
+    }
+    if (has_failed) {
+        ::fixy::report(::fixy::Sink::Err, "bench_fp_sweep: the read of the list on standard input failed\n");
+        return 2;
+    }
+    ::fixy::report(::fixy::Sink::Out,
+                   "bench_fp_sweep: exp of the hard list: {} inputs, {} not correctly rounded through exp, {} through "
+                   "the slow path, {} where CORE-MATH and MPFR differ\n",
+                   counts.inputs, counts.exp_wrong, counts.slow_wrong, counts.oracles_differ);
+    bool const holds =
+        counts.inputs > 0 && counts.exp_wrong == 0 && counts.slow_wrong == 0 && counts.oracles_differ == 0;
+    return holds ? 0 : 1;
+}
+
+// The regions of the sweep fast-bound: each input of the fast path.
+constexpr ::fixy::FixedArray<Region, 4> kExpFastRegions{
+    bits(0x3C90000000000000ULL, 0x407FFFFFFFFFFFFFULL),  // 2^-54 <= x < 512
+    bits(0xBC90000000000000ULL, 0xC07FFFFFFFFFFFFFULL),  // -512 < x <= -2^-54
+    values(-512.0, 512.0),
+    values(-1.0, 1.0),
+};
+
+// The pair of the fast path on each input of the regions.  O(4 * kRegionCount).
+[[nodiscard]] int sweep_fast_bound_exp() noexcept {
+    double largest = 0.0;
+    double largest_input = 0.0;
+    std::uint64_t inputs = 0;
+    std::uint64_t slow_calls = 0;
+    for (Region const& region : kExpFastRegions) {
+        for (std::uint64_t index = 0; index < kRegionCount; ++index) {
+            double const input = input_of(region, index);
+            double const magnitude = input < 0.0 ? -input : input;
+            if (magnitude < 0x1p-54 || !(magnitude < 512.0)) continue;
+            ++inputs;
+            ::fixy::fp::detail::DoubleWord const pair = ::fixy::fp::detail::exp_pair_(input, 0);
+            double const margin = pair.high * ::fixy::fp::detail::kExpMargin;
+            double const upper = pair.high + (pair.low + margin);
+            double const lower = pair.high + (pair.low - margin);
+            if (::fixy::bit_cast<std::uint64_t>(upper) != ::fixy::bit_cast<std::uint64_t>(lower)) ++slow_calls;
+            double const error =
+                error_of_pair(Function::Exp, ::fixy::side_as<side::Input>(input), Pair{pair.high, pair.low});
+            if (error > largest) {
+                largest = error;
+                largest_input = input;
+            }
+        }
+    }
+    double const in_bits = ::fixy::fp::log(largest) / 0x1.62e42fefa39efp-1;
+    ::fixy::report(::fixy::Sink::Out,
+                   "bench_fp_sweep: the fast pair of exp: {} inputs, largest relative error 2^{} at {}, bound "
+                   "2^-65.19, {} inputs take the slow path\n",
+                   inputs, ::fixy::Fixed<3>{in_bits}, largest_input, slow_calls);
+    return largest <= kExpFastBound ? 0 : 1;
+}
+
 [[nodiscard]] int run_sweep(::fixy::os::Args const& arguments) noexcept {
     ::fixy::Option<::fixy::CText> const kind = arguments.get(1);
     ::fixy::Option<::fixy::CText> const name = arguments.get(2);
     if (arguments.size() != 3 || kind.is_none() || name.is_none()) {
-        ::fixy::report(::fixy::Sink::Err, "usage: bench_fp_sweep float|double exp|log|erf, or bench_fp_sweep fma "
-                                          "float|double\n");
+        ::fixy::report(::fixy::Sink::Err, "usage: bench_fp_sweep float|double exp|log|erf, bench_fp_sweep fma "
+                                          "float|double, or bench_fp_sweep hard|fast-bound exp\n");
         return 2;
     }
     ::fixy::TextView const kind_text = ::fixy::Option<::fixy::CText>{kind}.expect("the count is three").view();
+    ::fixy::TextView const name_text = ::fixy::Option<::fixy::CText>{name}.expect("the count is three").view();
+    if (kind_text == "hard" || kind_text == "fast-bound") {
+        if (name_text != "exp") {
+            ::fixy::report(::fixy::Sink::Err, "usage: bench_fp_sweep hard exp, or bench_fp_sweep fast-bound exp\n");
+            return 2;
+        }
+        return kind_text == "hard" ? sweep_hard_exp() : sweep_fast_bound_exp();
+    }
     if (kind_text == "fma") {
         ::fixy::TextView const type_text = ::fixy::Option<::fixy::CText>{name}.expect("the count is three").view();
         if (type_text == "float") return sweep_fma_float(kFmaRounds);

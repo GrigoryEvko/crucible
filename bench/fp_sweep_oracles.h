@@ -9,6 +9,12 @@
 //                                    a double at f(x), with f(x) of MPFR at
 //                                    200 bits.  A subnormal f(x) has the last
 //                                    place 2^-1074
+//   rounded_by_mpfr(function, x)     the correctly rounded result of MPFR, at
+//                                    the precision of a double, with the
+//                                    subnormal range and the overflow of a
+//                                    double
+//   error_of_pair(function, x, p)    |p.high + p.low - f(x)| / f(x), with f(x)
+//                                    and the sum at 300 bits
 //
 // bench/fp_sweep_oracles.cpp holds the doors in a region of the C ABI of the
 // two libraries.  Only the preset bench builds them (CRUCIBLE_FP_SWEEP), and
@@ -41,5 +47,15 @@ struct Result final {};
 
 [[nodiscard]] double error_in_ulp(Function function, ::fixy::Side<side::Input, double> input,
                                   ::fixy::Side<side::Result, double> result) noexcept;
+
+[[nodiscard]] double rounded_by_mpfr(Function function, ::fixy::Side<side::Input, double> input) noexcept;
+
+// A value as the unevaluated sum high + low of two doubles.
+struct Pair {
+    double high = 0.0;
+    double low = 0.0;
+};
+
+[[nodiscard]] double error_of_pair(Function function, ::fixy::Side<side::Input, double> input, Pair pair) noexcept;
 
 }  // namespace fp_sweep

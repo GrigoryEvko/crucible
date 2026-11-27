@@ -665,6 +665,14 @@ if(_fp_sweep_ready)
       set_tests_properties(fp_sweep_${_sweep_function}_${_sweep_kind} PROPERTIES TIMEOUT 3600 LABELS "fp_sweep")
     endforeach()
   endforeach()
+  # The correct round of exp(double): each input of the list exp.wc of the
+  # pinned CORE-MATH on standard input, through exp and its slow path, and the
+  # error of the pair of its fast path against the bound of its budget.
+  add_test(NAME fp_sweep_exp_hard
+           COMMAND sh -c "\"$<TARGET_FILE:bench_fp_sweep>\" hard exp < \"${_core_math_directory}/src/binary64/exp/exp.wc\"")
+  set_tests_properties(fp_sweep_exp_hard PROPERTIES TIMEOUT 3600 LABELS "fp_sweep")
+  add_test(NAME fp_sweep_exp_fast_bound COMMAND bench_fp_sweep fast-bound exp)
+  set_tests_properties(fp_sweep_exp_fast_bound PROPERTIES TIMEOUT 3600 LABELS "fp_sweep")
   # The baseline unit of the fma sweep compiles for x86-64, which has no fused
   # multiply-add, so its fp::fma is the form in doubles.  The other units
   # compile for the host, and their fp::fma is the instruction, the second
