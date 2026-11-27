@@ -36,6 +36,7 @@ test/fixy/neg/neg_sess_send_unheld_permission.cpp | erased-brand | 2 | foundatio
 test/fixy/neg/neg_shared_read_on_the_erased_brand.cpp | erased-brand | 1 | fixy::OwnedRegion | -
 test/fixy/neg/neg_shared_read_on_the_erased_brand.cpp | erased-brand | 1 | fixy::SharedRegion | -
 test/fixy/neg/neg_spin_lock_without_permission.cpp | erased-brand | 1 | fixy::spin::SpinGuard | -
+test/fixy/neg/neg_spsc_end_pair_kept_past_its_frame.cpp | erased-brand | 1 | foundation::core::Ref | a negative-compile fixture of the store check keeps an erased Ref of a lent object in a capture, and the door refuses the body
 test/fixy/neg/neg_spsc_ends_body_keeps_its_end.cpp | erased-brand | 1 | foundation::core::Ref | a negative-compile fixture of the store check keeps an erased Ref of a lent object in a capture, and the door refuses the body
 test/fixy/neg/neg_witness_disjoint_direct_construction.cpp | erased-brand | 1 | fixy::Disjoint | -
 test/fixy/neg/neg_witness_net_streamreadended_direct_construction.cpp | erased-brand | 1 | fixy::net::StreamReadEnded | a witness row names one type, so the fixture spells the half or the token with the erased brand, and the brand does not reach the private constructor that the fixture probes

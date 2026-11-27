@@ -4323,21 +4323,30 @@ crucible_neg_compile_test(neg_tracering_drain_pure_no_context
   "no matching function for call to .crucible::TraceRing::drain_pure\\("
   "IsExecCtx")
 
-# The reset of a ring or a log moves each counter back, so it takes the two
-# ends of one ring or one log, which only a frame of the two ends lends to one
-# thread.  A producer that holds only its own end gives no consumer end, so a
-# reset while a second thread holds the consumer end does not compile.
+# The reset of a ring or a log moves each counter back, so it takes the pair
+# of the two ends of one ring or one log, which only a pair door lends to one
+# thread.  A producer that holds only its own end gives no pair, so a reset
+# while a second thread holds the consumer end does not compile.
 crucible_neg_compile_test(neg_tracering_reset_with_the_producer_end
-  "cannot convert .crucible::TraceRing::Producer. .aka .fixy::concurrent::SpscEnd<crucible::TraceRing, fixy::concurrent::SpscSide::producer>.. to .crucible::TraceRing::Consumer&."
+  "cannot convert .crucible::TraceRing::Producer. .aka .fixy::concurrent::SpscEnd<crucible::TraceRing, fixy::concurrent::SpscSide::producer>.. to .crucible::TraceRing::EndPair&."
   "neg_tracering_reset_with_the_producer_end\\.cpp:18:[0-9]+: error: cannot convert")
 crucible_neg_compile_test(neg_metalog_reset_with_the_producer_end
-  "cannot convert .crucible::MetaLog::Producer. .aka .fixy::concurrent::SpscEnd<crucible::MetaLog, fixy::concurrent::SpscSide::producer>.. to .crucible::MetaLog::Consumer&."
-  "neg_metalog_reset_with_the_producer_end\\.cpp:18:[0-9]+: error: cannot convert")
-# A frame of one log does not nest in a frame of another one, so the reset
-# takes the ends of one log.
+  "cannot convert .crucible::MetaLog::Producer. .aka .fixy::concurrent::SpscEnd<crucible::MetaLog, fixy::concurrent::SpscSide::producer>.. to .crucible::MetaLog::EndPair&."
+  "neg_metalog_reset_with_the_producer_end\\.cpp:17:[0-9]+: error: cannot convert")
+# A frame of one log in a frame of another one holds a borrow of the outer
+# end, which the store gate of the frame door refuses.
 crucible_neg_compile_test(neg_metalog_nested_frames_of_two_logs
   "neg_metalog_nested_frames_of_two_logs\\.cpp:[0-9]+:[0-9]+: error: no matching function for call to .with_consumer\\("
   "required for the satisfaction of .StoresNoBorrowOutside<Body>.")
+# Two frames of two rings, one in the other, give the ends of two owners, and
+# the reset takes only a pair, which a pair door builds from one split.  The
+# door of two held sides of two holders of one class gives no pair either.
+crucible_neg_compile_test(neg_tracering_nested_frames_of_two_rings
+  "neg_tracering_nested_frames_of_two_rings\\.cpp:24:[0-9]+: error: no matching function for call to .crucible::TraceRing::reset\\(crucible::TraceRing::Producer&, crucible::TraceRing::Consumer&\\)."
+  "candidate expects 1 argument, 2 provided")
+crucible_neg_compile_test(neg_tracering_reset_of_two_rings
+  "neg_tracering_reset_of_two_rings\\.cpp:56:[0-9]+: error: no matching function for call to .crucible::TraceRing::reset\\(crucible::TraceRing::Producer&, crucible::TraceRing::Consumer&\\)."
+  "candidate expects 1 argument, 2 provided")
 
 # Each pure gate also reads the source of the context (CtxHasPureSource).
 # A context that narrowed its row to the empty row with in_row keeps the

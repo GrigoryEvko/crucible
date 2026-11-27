@@ -154,6 +154,17 @@ int check_split() {
                   });
     if (!is_owner) return 1;
 
+    // The pair door gives the same two ends as one pair.
+    bool const is_pair_owner = with_end_pair(
+        log, producer_token, consumer_token, [&reader](::fixy::concurrent::SpscEndPair<CountLog>& ends) noexcept {
+            ProducerEnd<CountLog> const& producer = ends.producer();
+            ConsumerEnd<CountLog> const& consumer = ends.consumer();
+            return with_owner(reader, [&producer, &consumer](CountLog const& owner) noexcept {
+                return owner.is_owner_of(producer, consumer);
+            });
+        });
+    if (!is_pair_owner) return 1;
+
     // The producer end keeps its count, and the log keeps the published
     // count.  The borrow form of the door keeps the token with the caller.
     std::uint64_t const written = with_producer(log, producer_token, [](ProducerEnd<CountLog>& end) noexcept {
@@ -408,6 +419,21 @@ void token_of_a_second_split_ends_the_process(::fixy::TestRunnerCtx const& test)
                           [](ProducerEnd<CellLog>&, ConsumerEnd<CellLog>&) noexcept {});
                 static_cast<void>(producer);
                 static_cast<void>(first_consumer);
+            };
+            with_two_splits(body);
+        },
+        kForeignToken);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            auto body = []([[maybe_unused]] auto& first_split, auto first_producer, auto first_consumer, auto& split,
+                           auto producer, auto consumer) noexcept {
+                // The consumer token of the pair is foreign, so the door builds
+                // no pair of the ends of two splits.
+                with_end_pair(split, producer, first_consumer,
+                              [](::fixy::concurrent::SpscEndPair<CellLog>&) noexcept {});
+                static_cast<void>(consumer);
+                static_cast<void>(first_producer);
             };
             with_two_splits(body);
         },
@@ -762,6 +788,18 @@ public:
                               });
     }
 
+    // Writes count items and reads each item of the log, with the pair of the
+    // two ends of the one split.
+    [[nodiscard]] std::uint64_t write_and_read_pair(ProducerProof const& producer, ConsumerProof const& consumer,
+                                                    std::uint64_t count) noexcept {
+        return log_.with_end_pair(producer, consumer,
+                                  [count](::fixy::concurrent::SpscEndPair<CountLog>& ends) noexcept {
+                                      for (std::uint64_t item = 0; item < count; ++item)
+                                          static_cast<void>(CountLog::try_write(ends.producer()));
+                                      return read_all(ends.consumer());
+                                  });
+    }
+
     [[nodiscard]] std::uint64_t log_held() const noexcept {
         return log_.with_owner([](CountLog const& log) noexcept { return log.held(); });
     }
@@ -784,6 +822,10 @@ int check_held_ends() {
     // reads the two items from before the frame and the two of the frame.
     if (holder.write_and_read(producer, ProofDoor::consumer(), 2) != 4) return 3;
     if (holder.log_held() != 0) return 4;
+
+    // The pair door of the held split gives the two ends of that split.
+    if (holder.write_and_read_pair(producer, ProofDoor::consumer(), 3) != 3) return 5;
+    if (holder.log_held() != 0) return 6;
     return 0;
 }
 

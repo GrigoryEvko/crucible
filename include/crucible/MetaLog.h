@@ -189,9 +189,11 @@ struct CRUCIBLE_OWNER MetaLog {
     };
 
     // The two ends of a log.  The side doors below are the only doors that
-    // write a side of the log, and each takes the end of its side.
+    // write a side of the log, and each takes the end of its side.  A door
+    // that writes the two sides takes the pair of the two ends of one log.
     using Producer = ::fixy::concurrent::ProducerEnd<MetaLog>;
     using Consumer = ::fixy::concurrent::ConsumerEnd<MetaLog>;
+    using EndPair = ::fixy::concurrent::SpscEndPair<MetaLog>;
 
 private:
     // The counter of the tail.  Its two writes take the consumer end, and
@@ -441,15 +443,15 @@ public:
 
     // Empties the log: each counter and each copy of a counter go back to
     // zero.  Every counter here moves backwards, which the monotonicity
-    // contract otherwise forbids.  The door takes the two ends of the log,
-    // so the thread is in the frames of the two tokens of the log, and no
-    // other thread is in a frame of it.  The store gate of the frame doors
-    // refuses a frame of one log in a frame of another one
-    // (neg_metalog_nested_frames_of_two_logs), and the door compares the
-    // owners of the two ends in each build too, because the reset would move
-    // the counters of a log whose consumer another thread can hold.
-    static void reset(Producer& producer, Consumer& consumer) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_FATAL_INVARIANT(::fixy::same_object(producer.owner_, consumer.owner_));
+    // contract otherwise forbids.  The door takes the pair of the two ends of
+    // the log, so the thread is in the frame of the two sides of the log, and
+    // no other thread is in a frame of it.  Only a pair door builds a pair,
+    // from the two ends of one split, so two frames of two logs give no pair.
+    // A reset of a log whose consumer another thread can hold thus does not
+    // compile.
+    static void reset(EndPair& ends) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        Producer& producer = ends.producer();
+        Consumer& consumer = ends.consumer();
         MetaLog& log = *producer.owner_;
         producer_state& state = producer.state_;
         log.head_.reset_under_quiescence();

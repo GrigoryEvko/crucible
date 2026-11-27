@@ -221,6 +221,14 @@ public:
                                                   static_cast<Body&&>(body));
     }
 
+    // The body gets the pair of the two ends, as for a reset.
+    template <class Body>
+    auto with_end_pair(Body&& body) noexcept {
+        LocalProducerProof const producer{};
+        LocalConsumerProof const consumer{};
+        return split_.with_end_pair(producer, consumer, static_cast<Body&&>(body));
+    }
+
     // The body gets the owner as const.
     template <class Body>
     auto with_owner(Body&& body) const noexcept {
@@ -300,11 +308,9 @@ public:
         return pop_batch_erased_(erased_run_(std::move(runs))...);
     }
 
-    // Empties the ring, with the two ends in one frame.
+    // Empties the ring, with the pair of its two ends.
     void reset() noexcept {
-        local_.with_ends([](TraceRing::Producer& producer, TraceRing::Consumer& consumer) noexcept {
-            TraceRing::reset(producer, consumer);
-        });
+        local_.with_end_pair([](TraceRing::EndPair& ends) noexcept { TraceRing::reset(ends); });
     }
 
     [[nodiscard]] ::fixy::Stale<uint32_t> size() const noexcept {
@@ -376,11 +382,9 @@ public:
         local_.with_consumer([floor](MetaLog::Consumer& end) noexcept { MetaLog::release_to(end, floor); });
     }
 
-    // Empties the log, with the two ends in one frame.
+    // Empties the log, with the pair of its two ends.
     void reset() noexcept {
-        local_.with_ends([](MetaLog::Producer& producer, MetaLog::Consumer& consumer) noexcept {
-            MetaLog::reset(producer, consumer);
-        });
+        local_.with_end_pair([](MetaLog::EndPair& ends) noexcept { MetaLog::reset(ends); });
     }
 
     // A record holds the data pointer of its tensor, and no frame gives such

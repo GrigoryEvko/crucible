@@ -5137,6 +5137,28 @@ fixy_neg_compile_test(neg_spsc_ends_held_nested_door
 fixy_neg_compile_test(neg_spsc_ends_held_side_with_no_proof
   "use of deleted function .void fixy::concurrent::SpscHeldSide<Owner, Side, Proof>::with_end\\(Body&&\\) &"
   "a side of a held split lends its end only with the proof of the side")
+# A pair of ends names the two ends of one split for the frame of its door.
+# Only a pair door builds one, it does not copy and does not move, and the
+# body of its door keeps no borrow of it and gives none out.  The pair door
+# of a held split refuses a body that reaches a side of its proofs.
+fixy_neg_compile_test(neg_spsc_end_pair_construct
+  "fixy::concurrent::SpscEndPair<Owner>::SpscEndPair\\(fixy::concurrent::ProducerEnd<Owner>&, fixy::concurrent::ConsumerEnd<Owner>&\\)"
+  "is private within this context")
+fixy_neg_compile_test(neg_spsc_end_pair_copy
+  "use of deleted function .fixy::concurrent::SpscEndPair<Owner>::SpscEndPair\\(const fixy::concurrent::SpscEndPair<Owner>&\\)"
+  "a pair of ends lives in the frame of one door call")
+fixy_neg_compile_test(neg_spsc_end_pair_move
+  "use of deleted function .fixy::concurrent::SpscEndPair<Owner>::SpscEndPair\\(const fixy::concurrent::SpscEndPair<Owner>&\\)"
+  "neg_spsc_end_pair_move\\.cpp:27:[0-9]+: error:")
+fixy_neg_compile_test(neg_spsc_end_pair_kept_past_its_frame
+  "no matching function for call to .with_end_pair\\(fixy::concurrent::SpscSplit<.anonymous.::Owner, "
+  "StoresNoBorrowOutside")
+fixy_neg_compile_test(neg_spsc_end_pair_returned
+  "no matching function for call to .with_end_pair\\(fixy::concurrent::SpscSplit<.anonymous.::Owner, "
+  "HoldsNoBorrow")
+fixy_neg_compile_test(neg_spsc_end_pair_held_nested_door
+  "use of deleted function .void fixy::concurrent::SpscHeldSplit<Owner, Brand>::with_end_pair\\("
+  "a body of the pair door of a held split reaches a side of its proofs through a borrow")
 fixy_neg_compile_test(neg_spsc_ends_held_body_gives_its_end_out
   "use of deleted function .void fixy::concurrent::SpscHeldSide<Owner, Side, Proof>::with_end\\(const Proof&, Body&&\\) &"
   "the result of the door of a side leaves the frame, so it holds no reference and no address")

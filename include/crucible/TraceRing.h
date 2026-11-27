@@ -493,9 +493,11 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     };
 
     // The two ends of a ring.  The side doors below are the only doors that
-    // write a side of the ring, and each takes the end of its side.
+    // write a side of the ring, and each takes the end of its side.  A door
+    // that writes the two sides takes the pair of the two ends of one ring.
     using Producer = ::fixy::concurrent::ProducerEnd<TraceRing>;
     using Consumer = ::fixy::concurrent::ConsumerEnd<TraceRing>;
+    using EndPair = ::fixy::concurrent::SpscEndPair<TraceRing>;
 
 private:
     // head and tail are each written by one end and read by the other, so
@@ -640,14 +642,15 @@ public:
 
     // Empties the ring: each counter and each copy of a counter go back to
     // zero.  Every counter here moves backwards, which the monotonicity
-    // contract otherwise forbids.  The door takes the two ends of the ring,
-    // so the thread is in the frames of the two tokens of the ring, and no
-    // other thread is in a frame of it.  A frame of one ring can nest in a
-    // frame of another one, so the two ends can belong to two rings.  The
-    // door ends the process for them in each build, because the reset would
-    // move the counters of a ring whose consumer another thread can hold.
-    static void reset(Producer& producer, Consumer& consumer) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_FATAL_INVARIANT(::fixy::same_object(producer.owner_, consumer.owner_));
+    // contract otherwise forbids.  The door takes the pair of the two ends of
+    // the ring, so the thread is in the frame of the two sides of the ring,
+    // and no other thread is in a frame of it.  Only a pair door builds a
+    // pair, from the two ends of one split, so two frames of two rings give
+    // no pair (neg_tracering_nested_frames_of_two_rings).  A reset of a ring whose
+    // consumer another thread can hold thus does not compile.
+    static void reset(EndPair& ends) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        Producer& producer = ends.producer();
+        Consumer& consumer = ends.consumer();
         TraceRing& ring = *producer.owner_;
         ring.head_.reset_under_quiescence();
         ring.tail_.reset_under_quiescence();

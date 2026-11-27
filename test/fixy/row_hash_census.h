@@ -1638,6 +1638,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::concurrent::SpscFrameKey,
      "the key of the member doors of a split: an empty class that only a frame door builds, and it lives for one "
      "call of the door"},
+    {^^::fixy::concurrent::SpscEndPair,
+     "the pair of the two ends of one split: two references that only a pair door builds, and it lives for one "
+     "call of the door"},
     {^^::fixy::concurrent::spsc_no_statement,
      "the annotation of a split that states no transfer fact: an empty class that is never a value"},
     {^^::fixy::concurrent::ChannelFrameKey,

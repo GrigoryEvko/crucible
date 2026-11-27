@@ -62,10 +62,21 @@
 //     with_consumer(split, token, body)      body gets the consumer end
 //     with_ends(split, producer_token, consumer_token, body)
 //                                            body gets the two ends
+//     with_end_pair(split, producer_token, consumer_token, body)
+//                                            body gets the two ends as a pair
 //     with_owner(split, body)                body gets the owner as const
 //   The move form of a door gives the token back: alone for a body that gives
 //   void, and after the result in a Record for each other body.  The result of
 //   a body holds no borrow, so no reference to an end leaves its frame.
+//
+// Pair of ends
+//   A door of the owner that writes the two sides, such as the reset of a
+//   log, takes the two ends of one owner.  Two frames of two owners of one
+//   type, one in the other, give two ends of two owners, and no type tells
+//   them apart: two splits of one mint site have one brand.  So such a door
+//   takes a pair (SpscEndPair), which only a pair door builds, from the two
+//   ends of the one split that it opens.  A pair does not copy and does not
+//   move, so it lives only in the frame of its door.
 //
 // Two threads
 //   A split states synchronized{} of foundation/Transfer.h when two threads
@@ -104,6 +115,9 @@
 //   - with_held_ends(first, first_proof, second, second_proof, body) opens
 //     two sides of two types in one frame, for a producer that writes two
 //     owners in one step, or for the two sides of one split on one thread.
+//   - split_.with_end_pair(producer_proof, consumer_proof, body) gives the
+//     two ends of the one held split as a pair.  Two holders of one class
+//     give sides of one type, so a pair from two sides would prove nothing.
 //   - The proofs prove a thread for each side, not one holder of a split.  A
 //     proof of type P opens each side of proof P that its code reaches.  So a
 //     thread that holds the proof of one holder opens the side of a second
@@ -401,6 +415,18 @@ concept SpscEndsBody =
     && ReachesNoSideToken<Body, ProducerToken> && ReachesNoSideToken<Body, ConsumerToken>
     && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>;
 
+template <class Owner>
+class SpscEndPair;
+
+// The body of the frame door of the pair of ends: the rules of the body of the
+// two ends, with the pair in place of the two ends.
+template <class Body, class Owner, class ProducerToken, class ConsumerToken>
+concept SpscEndPairBody =
+    std::is_nothrow_invocable_v<Body&&, SpscEndPair<Owner>&>
+    && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, SpscEndPair<Owner>&>>
+    && ReachesNoSideToken<Body, ProducerToken> && ReachesNoSideToken<Body, ConsumerToken>
+    && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>;
+
 // The body of a read of the owner: it takes the owner as const with no throw,
 // its result holds no borrow, it holds no linear value by value, and it stores
 // no borrow outside the frame.
@@ -462,6 +488,22 @@ concept SpscHeldEndsBody =
     && SpscFrameValue<std::invoke_result_t<Body&&, FirstEnd&, SecondEnd&>> && !SpscReachesHeldSide<Body, FirstProof>
     && !SpscReachesHeldSide<Body, SecondProof> && ::foundation::linear::HoldsNoLinearValue<Body>
     && ::foundation::core::StoresNoBorrowOutside<Body>;
+
+// The body of the pair door of a held split: the rules of the body of two held
+// sides, with the pair in place of the two ends.
+template <class Body, class Owner, class ProducerProof, class ConsumerProof>
+concept SpscHeldEndPairBody =
+    std::is_nothrow_invocable_v<Body&&, SpscEndPair<Owner>&>
+    && SpscFrameValue<std::invoke_result_t<Body&&, SpscEndPair<Owner>&>> && !SpscReachesHeldSide<Body, ProducerProof>
+    && !SpscReachesHeldSide<Body, ConsumerProof> && ::foundation::linear::HoldsNoLinearValue<Body>
+    && ::foundation::core::StoresNoBorrowOutside<Body>;
+
+// A body of the pair door of a held split that reaches a side of either proof
+// through a borrow: the refused twin of the door binds to it.
+template <class Body, class Owner, class ProducerProof, class ConsumerProof>
+concept SpscHeldPairReachingBody =
+    std::is_nothrow_invocable_v<Body&&, SpscEndPair<Owner>&>
+    && (SpscReachesHeldSide<Body, ProducerProof> || SpscReachesHeldSide<Body, ConsumerProof>);
 
 // Two held sides of two types.  One type names one owner type, one side and
 // one proof, so two sides of two types are two objects.
@@ -680,6 +722,55 @@ constexpr auto with_ends(SpscSplit<Owner, Brand>& split, ProducerToken<Owner, Br
                          ConsumerToken<Owner, Brand>& consumer_token, Body&& body) noexcept
     -> std::invoke_result_t<Body&&, ProducerEnd<Owner>&, ConsumerEnd<Owner>&>;
 
+// Door of the pair of ends: body gets the two ends of the split as one pair,
+// and the door borrows the two tokens for the call.  The door compares the
+// Identity of each token with the split, as the door of the two ends does.
+// That compare is the one check at run time: two tokens that their holders
+// keep apart join only through a check of the object.  A door of the owner
+// that takes the pair, such as a reset, then has no check of its own.
+// Complexity: O(1), and the cost of body.
+template <class Owner, class Brand, class Body>
+    requires SpscEndPairBody<Body, Owner, ProducerToken<Owner, Brand>, ConsumerToken<Owner, Brand>>
+constexpr auto with_end_pair(SpscSplit<Owner, Brand>& split, ProducerToken<Owner, Brand>& producer_token,
+                             ConsumerToken<Owner, Brand>& consumer_token, Body&& body) noexcept
+    -> std::invoke_result_t<Body&&, SpscEndPair<Owner>&>;
+
+// The two ends of one split, as one object of one frame.  Only the pair door
+// of a split (with_end_pair) and the pair door of a held split build a pair,
+// each from the two ends of the one split that it opens.  So a door of the
+// owner that takes a pair, such as the reset of a log, gets the two ends of
+// one owner, and two frames of two owners give it no pair.  A pair does not
+// copy and does not move, so it lives only in the frame of its door, and it
+// lends each end for that frame.  The seal closes the byte routes to a pair.
+template <class Owner>
+class SpscEndPair final {
+public:
+    SpscEndPair(SpscEndPair const&) = delete("a pair of ends lives in the frame of one door call");
+    SpscEndPair& operator=(SpscEndPair const&) = delete("a pair of ends names the two ends of one split");
+    ~SpscEndPair() = default;
+
+    // The producer end and the consumer end, for the frame of the pair.
+    [[nodiscard]] constexpr ProducerEnd<Owner>& producer() & noexcept { return producer_; }
+    [[nodiscard]] constexpr ConsumerEnd<Owner>& consumer() & noexcept { return consumer_; }
+
+private:
+    template <class PairOwner, class Brand, class Body>
+        requires SpscEndPairBody<Body, PairOwner, ProducerToken<PairOwner, Brand>, ConsumerToken<PairOwner, Brand>>
+    friend constexpr auto with_end_pair(SpscSplit<PairOwner, Brand>& split,
+                                        ProducerToken<PairOwner, Brand>& producer_token,
+                                        ConsumerToken<PairOwner, Brand>& consumer_token, Body&& body) noexcept
+        -> std::invoke_result_t<Body&&, SpscEndPair<PairOwner>&>;
+    template <class, class>
+    friend class SpscHeldSplit;
+
+    constexpr SpscEndPair(ProducerEnd<Owner>& producer, ConsumerEnd<Owner>& consumer) noexcept
+        : producer_{producer}, consumer_{consumer} {}
+
+    ProducerEnd<Owner>& producer_;
+    ConsumerEnd<Owner>& consumer_;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+
 // Read of the owner: body gets the owner as const, and the door gives the
 // result of body.  A read opens no side, so the door takes no token.
 // Complexity: O(1), and the cost of body.
@@ -722,6 +813,11 @@ class SpscFrameKey final {
     friend constexpr auto with_ends(SpscSplit<Owner, Brand>& split, ProducerToken<Owner, Brand>& producer_token,
                                     ConsumerToken<Owner, Brand>& consumer_token, Body&& body) noexcept
         -> std::invoke_result_t<Body&&, ProducerEnd<Owner>&, ConsumerEnd<Owner>&>;
+    template <class Owner, class Brand, class Body>
+        requires SpscEndPairBody<Body, Owner, ProducerToken<Owner, Brand>, ConsumerToken<Owner, Brand>>
+    friend constexpr auto with_end_pair(SpscSplit<Owner, Brand>& split, ProducerToken<Owner, Brand>& producer_token,
+                                        ConsumerToken<Owner, Brand>& consumer_token, Body&& body) noexcept
+        -> std::invoke_result_t<Body&&, SpscEndPair<Owner>&>;
     template <class Owner, class Brand, class Body>
         requires SpscOwnerBody<Body, Owner>
     friend constexpr auto with_owner(SpscSplit<Owner, Brand> const& split, Body&& body) noexcept
@@ -799,6 +895,16 @@ constexpr auto with_ends(SpscSplit<Owner, Brand>& split, ProducerToken<Owner, Br
 }
 
 template <class Owner, class Brand, class Body>
+    requires SpscEndPairBody<Body, Owner, ProducerToken<Owner, Brand>, ConsumerToken<Owner, Brand>>
+constexpr auto with_end_pair(SpscSplit<Owner, Brand>& split, ProducerToken<Owner, Brand>& producer_token,
+                             ConsumerToken<Owner, Brand>& consumer_token, Body&& body) noexcept
+    -> std::invoke_result_t<Body&&, SpscEndPair<Owner>&> {
+    SpscFrameKey const key{};
+    SpscEndPair<Owner> pair{split.producer_end_(key, producer_token), split.consumer_end_(key, consumer_token)};
+    return static_cast<Body&&>(body)(pair);
+}
+
+template <class Owner, class Brand, class Body>
     requires SpscOwnerBody<Body, Owner>
 constexpr auto with_owner(SpscSplit<Owner, Brand> const& split, Body&& body) noexcept
     -> std::invoke_result_t<Body&&, Owner const&> {
@@ -829,6 +935,10 @@ template <class Owner, class Brand, class Body>
               && (!::foundation::linear::HoldsNoLinearValue<Body>)
 void with_ends(SpscSplit<Owner, Brand>& split, ProducerToken<Owner, Brand>& producer_token,
                ConsumerToken<Owner, Brand>& consumer_token, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+template <class Owner, class Brand, class Body>
+    requires std::is_invocable_v<Body&&, SpscEndPair<Owner>&> && (!::foundation::linear::HoldsNoLinearValue<Body>)
+void with_end_pair(SpscSplit<Owner, Brand>& split, ProducerToken<Owner, Brand>& producer_token,
+                   ConsumerToken<Owner, Brand>& consumer_token, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 template <class Owner, class Brand, class Body>
     requires std::is_invocable_v<Body&&, Owner const&> && (!::foundation::linear::HoldsNoLinearValue<Body>)
 void with_owner(SpscSplit<Owner, Brand> const& split, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
@@ -1110,6 +1220,31 @@ public:
     [[nodiscard]] constexpr consumer_side_type& consumer_side() & noexcept { return consumer_; }
     consumer_side_type& consumer_side() && = delete("a temporary held split ends at the end of the statement, and "
                                                     "its side with it: use a held split that has a name");
+
+    // Door of the pair of ends: body gets the two ends of this held split as
+    // one pair (SpscEndPair), for the caller that gives the proof of each
+    // side.  The door reads no byte of a proof.  One held split gives the two
+    // ends, so the pair names one owner with no check at run time.  The body
+    // reaches no side of either proof through a borrow, so no code inside it
+    // opens a second frame of a side.  Complexity: O(1), and the cost of body.
+    template <class Body>
+        requires SpscHeldEndPairBody<Body, Owner, typename Brand::producer_proof, typename Brand::consumer_proof>
+    constexpr auto with_end_pair(typename Brand::producer_proof const& /*producer_proof*/,
+                                 typename Brand::consumer_proof const& /*consumer_proof*/, Body&& body) & noexcept {
+        SpscEndPair<Owner> pair{producer_.end_, consumer_.end_};
+        return static_cast<Body&&>(body)(pair);
+    }
+    template <class Body>
+        requires SpscHeldPairReachingBody<Body, Owner, typename Brand::producer_proof, typename Brand::consumer_proof>
+    void with_end_pair(typename Brand::producer_proof const& producer_proof,
+                       typename Brand::consumer_proof const& consumer_proof, Body&& body) & =
+        delete("a body of the pair door of a held split reaches a side of its proofs through a borrow, so code in "
+               "the body could open a second frame of that side: capture only what the body reads");
+    template <class Body>
+        requires std::is_invocable_v<Body&&, SpscEndPair<Owner>&> && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    void with_end_pair(typename Brand::producer_proof const& producer_proof,
+                       typename Brand::consumer_proof const& consumer_proof,
+                       Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // Read of the owner, through the producer side.  Complexity: O(1), and the
     // cost of body.
