@@ -9,8 +9,8 @@
 // Each function is total and odd: erf(-x) = -erf(x) for each x, ±0 keep their
 // sign, and ±inf give ±1.  A NaN gives the canonical quiet NaN
 // quiet_nan_of<T>.  No function reads or writes errno or a flag of the
-// floating-point unit on purpose.  In erf(float), a signaling NaN gets to one
-// quiet compare, which raises the invalid flag, as IEEE 754 states for an
+// floating-point unit on purpose.  In each function, a signaling NaN gets to
+// one quiet compare, which raises the invalid flag, as IEEE 754 states for an
 // operation on a signaling NaN.
 //
 // Mode of the register
@@ -491,19 +491,20 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 [[nodiscard]] constexpr double erf(double value) noexcept {
     std::uint64_t const magnitude_bits = __builtin_bit_cast(std::uint64_t, value) & 0x7fffffffffffffffULL;
     double const magnitude = __builtin_bit_cast(double, magnitude_bits);
-    if (magnitude_bits >= 0x7ff0000000000000ULL) [[unlikely]] {
-        if (magnitude_bits > 0x7ff0000000000000ULL) return ::foundation::core::quiet_nan_of<double>;
+    // One quiet compare holds the edge to 1, the infinities and the NaNs, as
+    // in erf(float).  It is true for a NaN, so after it the compiler knows that
+    // the magnitude is in [0, kErfOneFrom).  Then the conversion of the index
+    // in erf_interval_ needs no check of its range under the sanitizer of the
+    // conversions.
+    if (!__builtin_isless(magnitude, detail::kErfOneFrom)) [[unlikely]] {
+        if (magnitude_bits > 0x7ff0000000000000ULL) [[unlikely]]
+            return ::foundation::core::quiet_nan_of<double>;
         return ::foundation::core::fp::copy_sign(1.0, value);
     }
     if (magnitude < 0.5) {
         if (magnitude < 0x1p-28) return detail::erf_tiny_(value);
         return detail::erf_small_<detail::kErfSmallDegree>(value);
     }
-    // The test is true for a NaN, so after it the compiler knows that the
-    // magnitude is in [1/2, kErfOneFrom).  Then the conversion of the index in
-    // erf_interval_ needs no check of its range under the sanitizer of the
-    // conversions.  A NaN does not get here.
-    if (!(magnitude < detail::kErfOneFrom)) return ::foundation::core::fp::copy_sign(1.0, value);
     return ::foundation::core::fp::copy_sign(detail::erf_interval_<detail::kErfDegree>(magnitude), value);
 }
 
