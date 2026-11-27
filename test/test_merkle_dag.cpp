@@ -606,7 +606,7 @@ two_ops(::fixy::BumpArena<crucible::DagArena>& arena, SchemaHash first, SchemaHa
         fact_input.strides[0] = crucible::tensor_dim(4);
         fact_input.strides[1] = crucible::tensor_dim(1);
         fact_input.layout = crucible::Layout::Sparse;
-        fact_input.flags = static_cast<uint8_t>(crucible::meta_flags::IS_NEG | crucible::meta_flags::IS_CONJ);
+        fact_input.set_flags(static_cast<uint8_t>(crucible::meta_flags::IS_NEG | crucible::meta_flags::IS_CONJ));
         fact_input.storage_offset = 5;
         const auto fact_run = mixed_ops(SchemaHash{0x66}, fact_input);
         golden("one tensor with each fact", hash_one_op(fact_run.view(), kTensor), 0x2FB41C5109940EECULL);

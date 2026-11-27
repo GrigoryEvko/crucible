@@ -450,11 +450,11 @@ void test_guard_word_reads_each_field_of_the_computation() {
     CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, sparse, alpha_one) == base) && "a layout moves the word");
 
     crucible::TensorMeta conjugate = matrix;
-    conjugate.flags = crucible::meta_flags::IS_CONJ;
+    conjugate.set_flags(crucible::meta_flags::IS_CONJ);
     CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, conjugate, alpha_one) == base) && "the conjugate bit moves it");
 
     crucible::TensorMeta negative = matrix;
-    negative.flags = crucible::meta_flags::IS_NEG;
+    negative.set_flags(crucible::meta_flags::IS_NEG);
     CRUCIBLE_FATAL_INVARIANT(!(guard_word_of(vector, negative, alpha_one) == base) && "the negative bit moves it");
 
     // A lane of extent zero and stride zero adds nothing to the XOR fold of
@@ -514,8 +514,8 @@ void test_guard_word_ignores_what_changes_at_each_iteration() {
     live.data_ptr = crucible::external_data_ptr(&live);
     live.version = 7;
     live.requires_grad = true;
-    live.flags = static_cast<uint8_t>(crucible::meta_flags::IS_LEAF | crucible::meta_flags::HAS_GRAD_FN
-                                      | crucible::meta_flags::IS_VIEW | crucible::meta_flags::IS_CONTIGUOUS);
+    live.set_flags(static_cast<uint8_t>(crucible::meta_flags::IS_LEAF | crucible::meta_flags::HAS_GRAD_FN
+                                        | crucible::meta_flags::IS_VIEW | crucible::meta_flags::IS_CONTIGUOUS));
     live.grad_fn_hash = crucible::grad_fn_hash(0x51DE);
     live.output_nr = 1;
     live.storage_nbytes = 4096;
@@ -718,11 +718,11 @@ void test_each_fact_of_a_tensor_moves_the_hash_and_the_digest() {
     expect_moved("layout", sparse);
 
     crucible::TensorMeta negative = vector;
-    negative.flags = crucible::meta_flags::IS_NEG;
+    negative.set_flags(crucible::meta_flags::IS_NEG);
     expect_moved("negative bit", negative);
 
     crucible::TensorMeta conjugate = vector;
-    conjugate.flags = crucible::meta_flags::IS_CONJ;
+    conjugate.set_flags(crucible::meta_flags::IS_CONJ);
     expect_moved("conjugate bit", conjugate);
 
     crucible::TensorMeta shifted = vector;
@@ -732,8 +732,8 @@ void test_each_fact_of_a_tensor_moves_the_hash_and_the_digest() {
     CRUCIBLE_FATAL_INVARIANT(unmoved == 0 && "each fact of a tensor that an op reads moves the hash and the digest");
 
     crucible::TensorMeta live = vector;
-    live.flags = static_cast<uint8_t>(crucible::meta_flags::IS_LEAF | crucible::meta_flags::HAS_GRAD_FN
-                                      | crucible::meta_flags::IS_VIEW | crucible::meta_flags::IS_CONTIGUOUS);
+    live.set_flags(static_cast<uint8_t>(crucible::meta_flags::IS_LEAF | crucible::meta_flags::HAS_GRAD_FN
+                                        | crucible::meta_flags::IS_VIEW | crucible::meta_flags::IS_CONTIGUOUS));
     CRUCIBLE_FATAL_INVARIANT(content_hash_of(live) == base && "the flags that no op reads move no hash");
     CRUCIBLE_FATAL_INVARIANT(overflow_digest_of(live) == base_digest && "the flags that no op reads move no digest");
 }

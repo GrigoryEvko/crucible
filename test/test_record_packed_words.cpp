@@ -147,8 +147,8 @@ void test_numerics_policy_word() {
     meta.strides[0] = crucible::tensor_dim(4);
     meta.strides[1] = crucible::tensor_dim(1);
     meta.layout = crucible::Layout::SparseCsr;
-    meta.flags = static_cast<uint8_t>(crucible::meta_flags::IS_NEG | crucible::meta_flags::IS_CONJ
-                                      | crucible::meta_flags::IS_LEAF | crucible::meta_flags::IS_VIEW);
+    meta.set_flags(static_cast<uint8_t>(crucible::meta_flags::IS_NEG | crucible::meta_flags::IS_CONJ
+                                        | crucible::meta_flags::IS_LEAF | crucible::meta_flags::IS_VIEW));
     meta.storage_offset = 5;
     return meta;
 }
@@ -181,7 +181,7 @@ void test_tensor_word() {
     edge.device_idx = 127;
     edge.ndim = crucible::kMaxTensorNDim;
     edge.layout = crucible::Layout::SparseBsc;
-    edge.flags = 0x3F;
+    edge.set_flags(0x3F);
     CRUCIBLE_TEST_ASSERT(kTest,
                          packed_fields_of(edge) == 0x00003005087F1418ULL && "the layout of the word of a tensor moved");
     ::fixy::check::pass(kTest, "  test_tensor_word: PASSED\n");
@@ -202,7 +202,7 @@ void test_undefined_dtype_keeps_each_field() {
     on_device.device_type = crucible::DeviceType::CUDA;
     on_device.device_idx = 1;
     crucible::TensorMeta conjugate = undefined;
-    conjugate.flags = crucible::meta_flags::IS_CONJ;
+    conjugate.set_flags(crucible::meta_flags::IS_CONJ);
     const ::fixy::FixedArray<crucible::TensorMeta, 3> others{sparse, on_device, conjugate};
     const uint64_t undefined_word =
         crucible::pack_tensor_word(undefined, crucible::detail::dim_hash_scalar_det(undefined));

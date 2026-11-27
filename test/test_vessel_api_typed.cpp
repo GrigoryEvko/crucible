@@ -163,7 +163,7 @@ void test_meta_roundtrip() {
     expected.device_idx = 1;
     expected.layout = crucible::Layout::Strided;
     expected.requires_grad = true;
-    expected.flags = 0x07;
+    expected.set_flags(0x07);
     expected.output_nr = 2;
     expected.storage_offset = 32;
     expected.version = 5;

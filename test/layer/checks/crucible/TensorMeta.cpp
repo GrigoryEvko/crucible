@@ -25,7 +25,36 @@ static_assert(sizeof(TensorDimArray) == sizeof(int64_t) * kMaxTensorNDim,
 static_assert(std::is_trivially_copyable_v<TensorDimArray>);
 static_assert(std::is_standard_layout_v<TensorDimArray>);
 
+static_assert(sizeof(TensorFlags) == 1);
+static_assert(std::is_trivially_copyable_v<TensorFlags>);
+static_assert(std::is_standard_layout_v<TensorFlags>);
+
+// The writer of the flags writes zero in each reserved bit, and no door makes
+// flags from a byte, so each value holds zero there.
+static_assert(!std::is_constructible_v<TensorFlags, uint8_t>);
+static_assert(!std::is_assignable_v<TensorFlags&, uint8_t>);
+template <class Change>
+[[nodiscard]] consteval uint8_t flags_after(Change change) {
+    TensorMeta changed{};
+    change(changed);
+    return changed.flags.bits();
+}
+static_assert(flags_after([](TensorMeta& meta) { meta.set_flags(0xFF); }) == meta_flags::KNOWN_BITS);
+static_assert(flags_after([](TensorMeta& meta) { meta.set_flags(0xC0); }) == 0);
+static_assert(flags_after([](TensorMeta& meta) { meta.set_flags(meta_flags::IS_VIEW); }) == meta_flags::IS_VIEW);
+static_assert([] {
+    TensorMeta meta{};
+    meta.set_flags(meta_flags::IS_LEAF | meta_flags::IS_CONJ);
+    const TensorFlags flags = meta.flags;
+    return flags.is_leaf() && flags.is_conj() && !flags.is_contiguous() && !flags.has_grad_fn() && !flags.is_view()
+        && !flags.is_neg();
+}());
+
 static_assert(sizeof(TensorMeta) == 176, "TensorMeta layout check");
+static_assert(std::is_standard_layout_v<TensorMeta>);
+static_assert(std::is_trivially_copyable_v<TensorMeta>);
+static_assert(std::is_aggregate_v<TensorMeta>);
+static_assert(offsetof(TensorMeta, flags) == 142);
 static_assert(offsetof(TensorMeta, storage_generation) == 156);
 static_assert(sizeof(StorageGeneration) == sizeof(uint32_t));
 static_assert(sizeof(StorageKey) == 16, "the key of a storage is the address word and the generation, and no more");
@@ -54,7 +83,7 @@ static_assert(is_unequal_after([](TensorMeta& meta) { meta.device_type = DeviceT
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.device_idx = 0; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.layout = Layout::Sparse; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.requires_grad = true; }));
-static_assert(is_unequal_after([](TensorMeta& meta) { meta.flags = 1; }));
+static_assert(is_unequal_after([](TensorMeta& meta) { meta.set_flags(1); }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.output_nr = 1; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.storage_offset = 1; }));
 static_assert(is_unequal_after([](TensorMeta& meta) { meta.version = 1; }));

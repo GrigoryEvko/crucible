@@ -68,7 +68,7 @@ struct[[= ::foundation::brand::arena_family_brand{}]] MemoryArena final {};
     meta.device_idx = 0;
     meta.layout = crucible::Layout::Strided;
     meta.storage_offset = first;
-    if (first != 0) meta.flags = crucible::meta_flags::IS_VIEW;
+    if (first != 0) meta.set_flags(crucible::meta_flags::IS_VIEW);
     meta.data_ptr =
         crucible::external_data_ptr(&*memory.get(offset + first * sizeof(float)).expect("the offset is in the memory"));
     return meta;

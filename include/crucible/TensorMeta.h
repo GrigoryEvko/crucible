@@ -171,7 +171,49 @@ inline constexpr uint8_t HAS_GRAD_FN = 1 << 2;
 inline constexpr uint8_t IS_VIEW = 1 << 3;
 inline constexpr uint8_t IS_NEG = 1 << 4;
 inline constexpr uint8_t IS_CONJ = 1 << 5;
+// The six named bits.  Each other bit is reserved.
+inline constexpr uint8_t KNOWN_BITS = IS_LEAF | IS_CONTIGUOUS | HAS_GRAD_FN | IS_VIEW | IS_NEG | IS_CONJ;
 }  // namespace meta_flags
+
+struct TensorMeta;
+
+// The flags of one tensor descriptor: the six bits of meta_flags, and bits 6
+// and 7, which are reserved and hold zero.  TensorMeta::set_flags is the one
+// writer, and it writes zero in each reserved bit, so each value of the type
+// holds zero there.  A copy of the flags of another descriptor keeps that
+// rule, so the copy is public.
+//
+// The conversion to uint8_t gives the byte to a reader that takes a byte.
+// The named readers give each bit.
+class[[= ::fixy::derive_protocol{}]] TensorFlags {
+public:
+    constexpr TensorFlags() noexcept = default;
+
+    [[nodiscard]] constexpr bool is_leaf() const noexcept { return has_bit_(meta_flags::IS_LEAF); }
+    [[nodiscard]] constexpr bool is_contiguous() const noexcept { return has_bit_(meta_flags::IS_CONTIGUOUS); }
+    [[nodiscard]] constexpr bool has_grad_fn() const noexcept { return has_bit_(meta_flags::HAS_GRAD_FN); }
+    [[nodiscard]] constexpr bool is_view() const noexcept { return has_bit_(meta_flags::IS_VIEW); }
+    [[nodiscard]] constexpr bool is_neg() const noexcept { return has_bit_(meta_flags::IS_NEG); }
+    [[nodiscard]] constexpr bool is_conj() const noexcept { return has_bit_(meta_flags::IS_CONJ); }
+
+    // The byte of the flags.  Each reserved bit holds zero.
+    [[nodiscard]] constexpr uint8_t bits() const noexcept { return bits_; }
+    [[nodiscard]] constexpr operator uint8_t() const noexcept { return bits_; }
+
+    [[nodiscard]] friend constexpr bool operator==(TensorFlags left, TensorFlags right) noexcept {
+        return left.bits_ == right.bits_;
+    }
+
+private:
+    friend struct TensorMeta;
+
+    constexpr explicit TensorFlags(uint8_t bits) noexcept
+        : bits_{static_cast<uint8_t>(bits & meta_flags::KNOWN_BITS)} {}
+
+    [[nodiscard]] constexpr bool has_bit_(uint8_t bit) const noexcept { return (bits_ & bit) != 0; }
+
+    uint8_t bits_ = 0;
+};
 
 // The descriptor of one tensor.  The Protocol family derives its equality from
 // its parts, and its hash, image and format from the parts that are not local
@@ -224,8 +266,8 @@ struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_b
     //   bit 3: is_view, shares storage with another tensor
     //   bit 4: is_neg, negation bit-view
     //   bit 5: is_conj, conjugate bit-view
-    //   bits 6 and 7: reserved
-    uint8_t flags = 0;
+    //   bits 6 and 7: reserved, and zero (TensorFlags)
+    TensorFlags flags{};
 
     uint8_t output_nr = 0;
 
@@ -241,6 +283,10 @@ struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_b
     // 64 bits.
     uint64_t storage_nbytes = 0;
     [[= ::fixy::local_part{}]] GradFnHash grad_fn_hash{};  // 0 means no grad_fn
+
+    // The one writer of the flags.  It writes the bits of meta_flags that the
+    // byte sets, and zero in each reserved bit.
+    constexpr void set_flags(uint8_t bits) noexcept { flags = TensorFlags{bits}; }
 
     // Two descriptors are equal when each field holds the same value, a
     // local part too: equal of the Protocol family reads each field in
@@ -467,14 +513,13 @@ struct[[= ::fixy::derive_protocol{}]] UncheckedTensorMeta {
     meta.device_type = std::move(device_type).value_or(DeviceType::CPU);
     meta.layout = std::move(layout).value_or(Layout::Strided);
 
-    constexpr uint8_t known_flags = meta_flags::IS_LEAF | meta_flags::IS_CONTIGUOUS | meta_flags::HAS_GRAD_FN
-                                  | meta_flags::IS_VIEW | meta_flags::IS_NEG | meta_flags::IS_CONJ;
-    if (fields.device_idx < -1 || fields.requires_grad > 1 || (fields.flags & ~known_flags) != 0) return ::fixy::none;
+    const bool has_reserved_flag = (fields.flags & ~meta_flags::KNOWN_BITS) != 0;
+    if (fields.device_idx < -1 || fields.requires_grad > 1 || has_reserved_flag) return ::fixy::none;
     // The record keeps one index for the host, so each stored device is the
     // device that device_of gives.
     meta.device_idx = normalize_device_index(meta.device_type, fields.device_idx);
     meta.requires_grad = fields.requires_grad == 1;
-    meta.flags = fields.flags;
+    meta.set_flags(fields.flags);
 
     meta.data_ptr = data_ptr;
     meta.output_nr = fields.output_nr;

@@ -76,7 +76,7 @@ constexpr crucible::StorageGeneration kUnknownInSecondPeriod =
     meta.device_idx = 0;
     meta.layout = crucible::Layout::Strided;
     meta.storage_offset = first;
-    if (first != 0) meta.flags = crucible::meta_flags::IS_VIEW;
+    if (first != 0) meta.set_flags(crucible::meta_flags::IS_VIEW);
     meta.data_ptr =
         crucible::mint_synthetic_data_ptr(crucible::SyntheticAddress{0x10000 + base + first * sizeof(float)});
     return meta;

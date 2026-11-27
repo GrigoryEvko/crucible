@@ -219,7 +219,7 @@ static void check_descriptor_images_agree() {
     meta.device_idx = 3;
     meta.layout = crucible::Layout::Strided;
     meta.requires_grad = true;
-    meta.flags = crucible::meta_flags::IS_LEAF | crucible::meta_flags::IS_CONJ;
+    meta.set_flags(crucible::meta_flags::IS_LEAF | crucible::meta_flags::IS_CONJ);
     meta.output_nr = 2;
     meta.storage_offset = -5;
     meta.version = 0x01020304u;

@@ -357,7 +357,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of 
         meta.storage_offset = tensor.storage_offset();
     }
 
-    meta.flags = flags;
+    meta.set_flags(flags);
 
     // c10's version counter is already uint32_t (TensorImpl.h), so a
     // mask-and-narrow would be a useless cast. Assert the width instead: a
