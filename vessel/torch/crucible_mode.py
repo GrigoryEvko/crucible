@@ -45,7 +45,6 @@ from crucible_native import (
     _DispatchLib,
     _VesselLib as _NativeVesselLib,
     check_handle_status,
-    wrap_tensor_backward,
 )
 
 
@@ -230,14 +229,14 @@ ROLE_STRUCTURAL, ROLE_DATA = 0, 1
 # later position is structural.
 MAX_SCHEMA_ARGUMENTS = 32
 
-# The op flags of an entry (op_flag of crucible/TraceRing.h), and the training
-# phases of bits 2 and 3 (TrainingPhase of crucible/Types.h).
+# The op flags of an entry (op_flag of crucible/TraceRing.h).  Bits 2 and 3
+# hold the training phase, a TrainingPhase of crucible/Types.h that the
+# dispatch library gives (crucible_dispatch_training_phase).
 OP_INFERENCE_MODE = 1 << 0
 OP_IS_MUTABLE = 1 << 1
 OP_PHASE_SHIFT = 2
 OP_TORCH_FUNCTION = 1 << 4
 OP_GRAD_ENABLED = 1 << 5
-PHASE_FORWARD, PHASE_BACKWARD, PHASE_OPTIMIZER = 0, 1, 2
 
 # The kinds of an argument of a schema, one for each row of the rules above
 # that reads the type of the argument.
@@ -534,22 +533,9 @@ class CrucibleMode(TorchDispatchMode):
         # overloads of the custom operators of the program.
         self._plans: dict = {}
         self._prev_compiled = False
-        # The Tensor.backward before the wrapper of the backward window, while
-        # the mode is entered.
-        self._tensor_backward = None
-
-    def __enter__(self):
-        """Enter the mode, and wrap Tensor.backward in the backward window of the dispatch library.
-
-        The phase of an op comes from the counter of that window, as on the
-        native paths (wrap_tensor_backward of crucible_native.py).
-        """
-        entered = super().__enter__()
-        self._tensor_backward = wrap_tensor_backward(self._dispatch)
-        return entered
 
     def __exit__(self, exc_type, exc_value, traceback):
-        """Leave the mode, put Tensor.backward back, and give up the producer claim of this thread.
+        """Leave the mode, and give up the producer claim of this thread.
 
         The create of the Vigil and each op claim the thread of the mode
         (crucible_create).  The exit gives the claim up (crucible_release_claim),
@@ -560,9 +546,6 @@ class CrucibleMode(TorchDispatchMode):
         try:
             return super().__exit__(exc_type, exc_value, traceback)
         finally:
-            if self._tensor_backward is not None:
-                torch.Tensor.backward = self._tensor_backward
-                self._tensor_backward = None
             if self._handle:
                 self._vessel.release_claim(self._handle)
 
@@ -849,16 +832,18 @@ class CrucibleMode(TorchDispatchMode):
         """Return the op flags of one op, as the native paths set them (entry_op_flags of record_kernel.h).
 
         The inference and the grad bits read the modes of this thread.  The
-        phase is BACKWARD in a backward window of the dispatch library, which
-        the wrapper of Tensor.backward opens.  It is OPTIMIZER for a fused
-        multi-tensor op with grad off, and FORWARD for each other op
-        (derive_training_phase of record_kernel.h).  TORCH_FUNCTION tells that
-        the native paths see the Python dispatch key: an argument is a tensor
-        subclass with __torch_dispatch__ (types is not empty), or a Python
-        dispatch mode other than this one is on the stack.  PyTorch takes this
-        mode off the stack while its handler runs, so the count of the stack
-        leaves it out.  The mode stands in for the native recorder, so its own
-        dispatch sets no bit.
+        dispatch library gives the phase from the rule of the native paths
+        (derive_training_phase of record_kernel.h): BACKWARD while the autograd
+        engine runs a graph task on this thread, OPTIMIZER for a fused
+        multi-tensor op with grad off, and FORWARD otherwise.  The two
+        sessions thus read one source of the phase.
+
+        TORCH_FUNCTION tells that the native paths see the Python dispatch
+        key: an argument is a tensor subclass with __torch_dispatch__ (types is
+        not empty), or a Python dispatch mode other than this one is on the
+        stack.  PyTorch takes this mode off the stack while its handler runs,
+        so the count of the stack leaves it out.  The mode stands in for the
+        native recorder, so its own dispatch sets no bit.
         """
         grad_enabled = torch.is_grad_enabled()
         flags = plan.schema_flags
@@ -866,13 +851,7 @@ class CrucibleMode(TorchDispatchMode):
             flags |= OP_INFERENCE_MODE
         if grad_enabled:
             flags |= OP_GRAD_ENABLED
-        if self._dispatch.backward_depth() != 0:
-            phase = PHASE_BACKWARD
-        elif plan.is_foreach and not grad_enabled:
-            phase = PHASE_OPTIMIZER
-        else:
-            phase = PHASE_FORWARD
-        flags |= phase << OP_PHASE_SHIFT
+        flags |= self._dispatch.training_phase(plan.is_foreach, grad_enabled) << OP_PHASE_SHIFT
         if types or torch._C._len_torch_dispatch_stack() > 0:
             flags |= OP_TORCH_FUNCTION
         return flags

@@ -392,40 +392,25 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // =====================================================================
-// The backward window
+// The backward pass
 //
-// The depth of the backward window this thread is inside. CrucibleNative wraps
-// Tensor.backward and counts up on entry and down on exit, so a non-zero depth
-// says that every operation arriving here belongs to a backward pass. It is
-// the one phase signal the recording paths cannot read off the operation
-// itself, and derive_training_phase() below is the only reader.
+// True when the autograd engine runs a graph task on the calling thread: a
+// node of the backward graph, the sum of its gradients into an input buffer,
+// or a final callback of the task.  The engine sets the graph task of each
+// thread that runs a node, the thread that called backward() and each device
+// thread, so the answer holds for each thread and for each entry of the
+// engine: Tensor.backward, torch.autograd.backward and torch.autograd.grad.
+// The gradient that the caller makes before the engine starts, such as the
+// ones_like of loss.backward(), is no node of the engine, so it reads false.
 //
-// A counter rather than a flag, because a double backward pass nests one
-// window inside another, and the inner exit must not end the outer window.
-//
-// Thread-local. A recording session holds the autograd engine on the thread
-// that called backward(), so the window and the operations it produces are on
-// one thread. A caller that reaches the engine another way runs backward
-// operations on a worker thread, where this counter reads zero — and the
-// producer question in recording_vigil() turns that thread away before any
-// phase is derived, so the phase it would have derived reaches no trace.
-// That phase would be FORWARD, a false label for a backward operation.  The
-// defect is latent: only the producer thread records.  A recording path that
-// admits a second thread must give the window to that thread first.
-//
-// One definition for both recording paths: two copies would let them write
-// different phase bits into one trace. Zero-initialized, so there is no
-// initializer to order and no guard variable on the path that reads it.
-//
-// The counter is process-wide (CRUCIBLE_PROCESS_WIDE): each thread has one
-// counter for the process, also when a second shared library compiles this
-// header.  Only libcrucible_dispatch.so compiles it today, and its C entries
-// crucible_dispatch_backward_enter and crucible_dispatch_backward_exit write
-// it.  A thread_local of a shared library takes the call of the TLS resolver
-// with each visibility, so the marker adds no call to the record of an op.
+// The one source of the backward phase, for the native paths and for the
+// C entry of CrucibleMode (crucible_dispatch_training_phase).  The body is in
+// crucible_fallback.cpp, the one unit that includes the header of the graph
+// task of the engine, so each unit of the dispatch library parses no such
+// header.
 // =====================================================================
 
-CRUCIBLE_PROCESS_WIDE inline thread_local uint32_t backward_depth = 0;
+[[nodiscard]] bool is_in_backward_pass() noexcept;
 
 // =====================================================================
 // Training phase
@@ -433,8 +418,8 @@ CRUCIBLE_PROCESS_WIDE inline thread_local uint32_t backward_depth = 0;
 // Derived from what the runtime is doing when the operation arrives, and
 // packed into bits 2 and 3 of op_flags.
 //
-// The backward window is asked first. It is the most specific of the three
-// signals, and an operation inside a backward window belongs to that window
+// The backward pass is asked first. It is the most specific of the three
+// signals, and an operation that the engine runs belongs to the backward pass
 // whatever else is true of it.
 //
 // The optimizer is read off two facts together. A `_foreach_` operator is one
@@ -471,7 +456,7 @@ CRUCIBLE_PROCESS_WIDE inline thread_local uint32_t backward_depth = 0;
 // the unboxed caller needs the same bit for the GRAD_ENABLED flag. One read
 // serves both, and the two cannot report different answers for one operation.
 [[nodiscard]] inline crucible::TrainingPhase derive_training_phase(bool is_foreach, bool grad_enabled) noexcept {
-    if (backward_depth != 0) return crucible::TrainingPhase::BACKWARD;
+    if (is_in_backward_pass()) return crucible::TrainingPhase::BACKWARD;
     if (is_foreach && !grad_enabled) return crucible::TrainingPhase::OPTIMIZER;
     return crucible::TrainingPhase::FORWARD;
 }

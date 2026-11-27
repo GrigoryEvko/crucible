@@ -1692,17 +1692,14 @@ class _DispatchLib:
                                "object by its address.  Use an interpreter with the GIL")
         return self._gil_lib.crucible_dispatch_storage_generation(ctypes.c_void_p(tensor.untyped_storage()._cdata))
 
-    def backward_enter(self) -> None:
-        """Open a backward window on this thread."""
-        self._lib.crucible_dispatch_backward_enter()
+    def training_phase(self, is_foreach: bool, grad_enabled: bool) -> int:
+        """The training phase of an op on this thread, from the rule of the native paths (derive_training_phase).
 
-    def backward_exit(self) -> None:
-        """Close the innermost backward window on this thread."""
-        self._lib.crucible_dispatch_backward_exit()
-
-    def backward_depth(self) -> int:
-        """How many backward windows are open on this thread."""
-        return self._lib.crucible_dispatch_backward_depth()
+        The value is a TrainingPhase of crucible/Types.h: BACKWARD while the
+        autograd engine runs a graph task on this thread, OPTIMIZER for a
+        fused multi-tensor op with grad off, and FORWARD otherwise.
+        """
+        return self._lib.crucible_dispatch_training_phase(int(is_foreach), int(grad_enabled))
 
     def set_mode(self, mode: TlsMode) -> None:
         """Set the CrucibleState TLS mode for this thread.
@@ -1789,37 +1786,6 @@ def _get_crucible_dispatch_key() -> Any:
     return None
 
 
-def wrap_tensor_backward(dispatch: _DispatchLib,
-                         window: Callable[[], contextlib.AbstractContextManager[Any]] = contextlib.nullcontext,
-                         after: Callable[[], None] | None = None) -> Callable[..., Any]:
-    """Wrap Tensor.backward in the backward window of the dispatch library, and return the Tensor.backward before it.
-
-    The phase of an op comes from a counter of the dispatch library
-    (derive_training_phase of record_kernel.h): each call of the wrapper opens
-    one window with crucible_dispatch_backward_enter, and closes it with
-    crucible_dispatch_backward_exit.  The two sessions, CrucibleNative and
-    CrucibleMode, install this one wrapper, so the two read one source of the
-    phase.  window gives a context around the call, such as the serialisation
-    of the controller, and after runs after the window closes.  The caller
-    puts the returned Tensor.backward back at its end.
-    """
-    original = torch.Tensor.backward
-
-    def backward(tensor: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
-        """Run one backward pass inside a marked window."""
-        with window():
-            dispatch.backward_enter()
-            try:
-                return original(tensor, *args, **kwargs)
-            finally:
-                dispatch.backward_exit()
-                if after is not None:
-                    after()
-
-    torch.Tensor.backward = backward  # type: ignore[method-assign]
-    return original
-
-
 # =====================================================================
 # CrucibleNative — the vessel controller
 # =====================================================================
@@ -1841,9 +1807,9 @@ class CrucibleNative:
       - Every ATen op goes through the recording kernels or crucibleFallback()
       - Scope hooks carry the module hierarchy, until the Vigil activates
       - Vigil records to TraceRing, bg thread builds DAG
-      - The Tensor.backward wrapper marks the backward window, from which the
-        C++ side derives the phase, and holds the autograd engine on this
-        thread so that the whole window reaches the ring
+      - The Tensor.backward wrapper holds the autograd engine on this thread,
+        so that the whole backward window reaches the ring.  The C++ side
+        reads the phase from the engine itself
 
     On deactivation:
       5. Disable DispatchKey::Crucible
@@ -2122,47 +2088,39 @@ class CrucibleNative:
 
     # ── The backward window ──────────────────────────────────────────
     #
-    # The phase of an operation is derived in C++ (record_kernel.h), and the
-    # one fact the derivation cannot read off the operation is whether a
-    # backward pass is running.  This wrapper is where that fact comes from:
-    # the window is the dynamic extent of Tensor.backward, bracketed by a
-    # counter in the dispatch library.
-    #
-    # The extent is a better signal than the thread the operation arrived on,
-    # and it is the serialisation below that makes it so.  Thread identity used
-    # to be the only option, because a backward pass over accelerator tensors
-    # ran on a device worker thread and a flag on the calling thread would have
-    # missed every operation of it.  With the engine held on the calling
-    # thread, the window and the operations it produces are on one thread, so
-    # the flag sees all of them.  The counter stays thread-local so that a
-    # caller who reaches the engine another way is merely short of a phase bit
-    # instead of labelling another thread's forward pass backward.
-    #
-    # Wrapping the class rather than the tensor is what makes this work for a
-    # caller who writes loss.backward() and nothing else.  torch.autograd.grad
-    # and a direct torch.autograd.backward call are not covered; a loop that
-    # uses either wraps it in recording_backward() to get the serialisation,
-    # and its backward operations carry the FORWARD phase bits.
+    # The phase of an operation comes from the autograd engine in C++
+    # (is_in_backward_pass of record_kernel.h), so each entry of the engine
+    # gives the phase BACKWARD with no wrapper.  This wrapper holds the
+    # serialisation of the engine (recording_backward) over the dynamic extent
+    # of Tensor.backward, so a caller who writes loss.backward() and nothing
+    # else gets one recorded stream.  torch.autograd.grad and a direct
+    # torch.autograd.backward call are not wrapped.  A loop that uses either
+    # wraps it in recording_backward() to get the serialisation.
 
     def _wrap_tensor_backward(self) -> None:
-        """Wrap Tensor.backward for the lifetime of this controller."""
+        """Wrap Tensor.backward in recording_backward for the lifetime of this controller."""
         if self._tensor_backward is not None:
             return
-        # Bound once, as the scope hooks bind it: the wrapper is installed
-        # after the library is loaded and removed before the controller lets go
-        # of it, so the handle cannot go away underneath a call.
-        self._tensor_backward = wrap_tensor_backward(self._dispatch, self.recording_backward,
-                                                     self.sync_scope_hooks)
+        original = torch.Tensor.backward
+        window = self.recording_backward
+        after = self.sync_scope_hooks
+
+        def backward(tensor: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
+            """Run one backward pass with the engine serialised, then match the scope hooks to the mode."""
+            with window():
+                try:
+                    return original(tensor, *args, **kwargs)
+                finally:
+                    after()
+
+        torch.Tensor.backward = backward  # type: ignore[method-assign]
+        self._tensor_backward = original
 
     def _restore_tensor_backward(self) -> None:
         """Put the runtime's own Tensor.backward back."""
         original, self._tensor_backward = self._tensor_backward, None
         if original is not None:
             torch.Tensor.backward = original  # type: ignore[method-assign]
-
-    def backward_depth(self) -> int:
-        """How many backward windows are open on this thread."""
-        return self._dispatch.backward_depth() if self._dispatch else 0
 
     @property
     def serialised_backward_windows(self) -> int:

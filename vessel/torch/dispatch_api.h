@@ -1,7 +1,7 @@
 #pragma once
 
-// The C ABI of libcrucible_dispatch.so: the TLS accessors, the backward
-// window, the schema accessors and the doors of the generation allocator,
+// The C ABI of libcrucible_dispatch.so: the TLS accessors, the training
+// phase, the schema accessors and the doors of the generation allocator,
 // which crucible_native.py binds by name through ctypes.  crucible_fallback.cpp
 // defines each one.
 //
@@ -35,9 +35,10 @@ CRUCIBLE_API uint8_t crucible_dispatch_get_tls_mode() noexcept;
 CRUCIBLE_API uint64_t crucible_dispatch_get_tls_context() noexcept;
 CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash) noexcept;
 CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() noexcept;
-CRUCIBLE_API void crucible_dispatch_backward_enter() noexcept;
-CRUCIBLE_API void crucible_dispatch_backward_exit() noexcept;
-CRUCIBLE_API uint32_t crucible_dispatch_backward_depth() noexcept;
+// The training phase (TrainingPhase of crucible/Types.h) of an op on the
+// calling thread, from the rule of the native paths.  is_foreach and
+// grad_enabled are 0 or 1.
+CRUCIBLE_API uint8_t crucible_dispatch_training_phase(uint8_t is_foreach, uint8_t grad_enabled) noexcept;
 CRUCIBLE_API uint32_t crucible_dispatch_schema_count() noexcept;
 CRUCIBLE_API int crucible_dispatch_schema_entry(uint32_t i, uint64_t* out_hash, const char** out_name) noexcept;
 // The eager word of the calling thread, and a CRUCIBLE_HANDLE_* status:

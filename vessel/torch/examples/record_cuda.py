@@ -188,11 +188,12 @@ def run_arm(device: str, iters: int, out_path: str, verbose: bool,
                 "leaving the backward window must give the engine its "
                 "worker threads back"
             )
-            # The C++ side derives the BACKWARD phase from this counter, so a
-            # window that closed must leave it at zero. A counter stuck above
-            # zero would label every later operation backward.
-            assert ctx.backward_depth() == 0, (
-                "the backward window did not close"
+            # The C++ side derives the BACKWARD phase from the graph task of
+            # the engine on this thread, so a finished backward pass must leave
+            # no graph task. A graph task that stays would label every later
+            # operation backward.
+            assert torch._C._current_graph_task_id() == -1, (
+                "the autograd engine left a graph task on this thread"
             )
             opt.step()
             if device.startswith("cuda"):

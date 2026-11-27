@@ -35,6 +35,7 @@
 #include <ATen/core/stack.h>
 #include <torch/library.h>
 #include <torch/csrc/autograd/function.h>
+#include <torch/csrc/autograd/graph_task.h>
 #include <torch/csrc/autograd/variable.h>
 
 #include <crucible/MerkleDag.h>
@@ -172,7 +173,6 @@ using crucible::vessel::ScalarArgs;
 using crucible::vessel::scalar_result_meta;
 using crucible::vessel::fnv1a_text;
 using crucible::vessel::schema_hash_of_fold;
-using crucible::vessel::backward_depth;
 using crucible::vessel::compute_shape_hash;
 using crucible::vessel::fill_meta;
 using crucible::vessel::is_foreach_op_name;
@@ -1234,6 +1234,12 @@ crucible::StorageGeneration crucible::vessel::storage_generation_at(const GilHel
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
+// The engine gives the id of the graph task of the calling thread, or -1 when
+// the thread runs no graph task.  The read takes no lock and no reference.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the autograd engine of PyTorch keeps the graph task of each thread")
+bool crucible::vessel::is_in_backward_pass() noexcept { return torch::autograd::get_current_graph_task_id() != -1; }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 // ── The error of a foreign call ─────────────────────────────────────
 //
 // PyTorch reports an error with a C++ exception, such as the TORCH_CHECK of
@@ -1249,8 +1255,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: PyTorch reports an error with a C++ exceptio
 namespace crucible::vessel {
 
 // The most bytes of the text of the slot.  The slot lives in the static TLS
-// of the library, whose limit is 256 bytes (the rule static-tls), beside the
-// counter of the backward window.
+// of the library, whose limit is 256 bytes (the rule static-tls).
 inline constexpr std::size_t kForeignErrorBytes = 224;
 
 // The last error of PyTorch on one thread: the first kForeignErrorBytes bytes
@@ -1472,35 +1477,12 @@ CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() noexcept {
     return c10::CrucibleState::get_tls_state().scope_hash();
 }
 
-// ── The backward window ─────────────────────────────────────────────
-//
-// The wrapper CrucibleNative installs over Tensor.backward brackets each
-// backward pass with these two calls, and record_kernel.h derives the BACKWARD
-// phase from a non-zero depth. Lives in the dispatch lib — no PyTorch patch
-// needed.
-//
-// The counter is owned here rather than in Python so that neither bound can be
-// crossed from outside: `enter` saturates at the maximum instead of wrapping to
-// zero and ending a window that is still open, and `exit` stops at zero instead
-// of wrapping to the maximum and leaving every later operation labelled
-// backward. Both bounds are unreachable from a matched bracket. They are here
-// for the caller that is not matched, whose trace is then short of a phase bit
-// rather than wrong about every one that follows.
-//
-// Not atomic: the counter is thread-local, one thread writes it, and that same
-// thread is the only reader.
-
-CRUCIBLE_API void crucible_dispatch_backward_enter() noexcept {
-    if (backward_depth != UINT32_MAX) [[likely]]
-        backward_depth++;
+// The training phase of an op on the calling thread, for CrucibleMode: the
+// phase of derive_training_phase of record_kernel.h, the one rule of the native
+// paths, as a TrainingPhase value.  is_foreach and grad_enabled are 0 or 1.
+CRUCIBLE_API uint8_t crucible_dispatch_training_phase(uint8_t is_foreach, uint8_t grad_enabled) noexcept {
+    return static_cast<uint8_t>(crucible::vessel::derive_training_phase(is_foreach != 0, grad_enabled != 0));
 }
-
-CRUCIBLE_API void crucible_dispatch_backward_exit() noexcept {
-    if (backward_depth != 0) [[likely]]
-        backward_depth--;
-}
-
-CRUCIBLE_API uint32_t crucible_dispatch_backward_depth() noexcept { return backward_depth; }
 
 // ── Schema table accessors ──────────────────────────────────────────
 //
